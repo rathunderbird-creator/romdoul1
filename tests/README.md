@@ -121,7 +121,14 @@ out), the orders left out of U listed by id, pool count = stock
 afterwards, and E (basis-overridden products settled since the basis entry:
 12 NR-3026 sales at 9.30 against a 9.00 basis give E 3.60, the guard passes
 and the REVAL is D1 + E; a reversal, a re-costed re-settlement, an SU order
-and an unexplained 1300 credit). Needs nothing extra:
+and an unexplained 1300 credit; E never takes more than the overridden
+lines' cost difference: a duplicate entry, a mixed order whose other product
+changed cost, a re-cost beyond purchase_cost and an unbooked order are not
+absorbed, an adjustment counts at its unit_cost), an order a COGS-REV
+reversed in full left out of SU and an ADJ netted into the booked amount,
+and the Returned orders the basis entry still counted kept in U
+(`returnedAfterBasis`: status at the cutoff from the order_status log, not
+restocked, not settled or booked). Needs nothing extra:
 
     node tests/fifo-rebuild-dryrun.test.mjs
 
@@ -158,6 +165,15 @@ reversal and re-settlement, an SU order, a stock adjustment and a wholesale
 order booked at 9.30 after TRUEUP-20261112: guard 0, E = 0.30 a unit, the
 FIFO-REVAL books D1 + E and the FIFO check variance is 0; an unexplained
 1300 credit still fails; a missing or duplicated basis entry is refused),
+the probes behind E's bounds (a mixed order whose other product's cost
+changes after the sale, an order settled before the cutoff and reversed
+after it — out of SU, -0.30 — one settled and reversed after it and back in
+U, a re-cost from 9.00 to 9.30: guard 0 and FIFO check variance 0; a
+duplicate COGS entry, a re-cost beyond purchase_cost and a write-off hidden
+behind a cheaper product on a mixed order still fail), the Returned orders
+the true-up still counted kept in U (status at the cutoff from the
+order_status activity log; one Returned before it, one restocked and the
+option without a basis entry left out or refused),
 the refusals (run once, phase 1 missing, bad basis / status / preset,
 lines already costed or booked) and the file as shipped: with no preset
 picked it refuses and changes nothing; with one picked it commits and its

@@ -44,8 +44,9 @@ check('the file has one PRESET block, one RUN block, a COMMIT and then the summa
     rebuildFile.split('-- >>> PRESET').length === 2 && rebuildFile.split('-- >>> RUN').length === 2 && rebuildFile.includes('-- <<< RUN')
     && /COMMIT;\s*-- The summary[\s\S]*ORDER BY x\.n;\s*$/.test(rebuildFile));
 check('the Romdoul1 preset carries the true-up as its basis entry, in the SQL and in the dry run',
-    /p_basis => '\{"NR-3026": 9\}'::JSONB,[\s\S]*?p_basis_ref => 'TRUEUP-20261112'\);/.test(rebuildFile)
-    && PRESETS.romdoul1_trueup_2026_11_12.basisRef === 'TRUEUP-20261112' && PRESETS.default.basisRef === null);
+    /p_basis => '\{"NR-3026": 9\}'::JSONB,[\s\S]*?p_basis_ref => 'TRUEUP-20261112',\s*p_u_returned_after_basis => true\);/.test(rebuildFile)
+    && PRESETS.romdoul1_trueup_2026_11_12.basisRef === 'TRUEUP-20261112' && PRESETS.default.basisRef === null
+    && PRESETS.romdoul1_trueup_2026_11_12.uReturnedAfterBasis === true && PRESETS.default.uReturnedAfterBasis === false);
 check('the file ships with no preset picked', /set_config\('fifo_rebuild\.preset', 'CHOOSE_A_PRESET', true\)/.test(rebuildFile));
 check('the temp tables are dropped as pg_temp.*', /DROP TABLE IF EXISTS pg_temp\._fr_basis, pg_temp\._fr_p,/.test(rebuildFile)
     && !/DROP TABLE IF EXISTS _fr/.test(rebuildFile));
@@ -231,29 +232,33 @@ async function readRaw(db) {
     return {
         products: await rows(`SELECT id, name, stock, purchase_cost, is_active FROM products`),
         items: await rows(`SELECT id::text AS id, product_id, cost_of_purchase, status, sale_id, ${iso('created_at')} AS created_at, ${iso('received_at')} AS received_at FROM inventory_items`),
-        sales: await rows(`SELECT id, shipping_status, payment_status, ${iso('date')} AS date FROM sales`),
+        sales: await rows(`SELECT id, shipping_status, payment_status, ${iso('date')} AS date, ${iso('created_at')} AS created_at,
+                                  ${iso('last_edited_at')} AS last_edited_at FROM sales`),
         saleItems: await rows(`SELECT id, sale_id, product_id, quantity FROM sale_items`),
         accounts: await rows(`SELECT id::text AS id, account_code, account_name FROM chart_of_accounts`),
         entries: await rows(`SELECT id::text AS id, reference_id, status, date::text AS date, ${iso('created_at')} AS created_at FROM journal_entries`),
         lines: await rows(`SELECT id::text AS id, journal_entry_id::text AS journal_entry_id, account_id::text AS account_id, debit, credit FROM journal_entry_lines`),
         txs: await rows(`SELECT id::text AS id, order_id FROM transactions WHERE order_id IS NOT NULL`),
-        moves: await rows(`SELECT reference_id, type, ${iso('created_at')} AS created_at FROM stock_movements`),
+        moves: await rows(`SELECT reference_id, order_id, type, ${iso('created_at')} AS created_at FROM stock_movements`),
+        statusLogs: await rows(`SELECT id::text AS id, metadata->>'orderId' AS order_id, metadata->>'status' AS status, ${iso('created_at')} AS created_at
+                                  FROM activity_logs WHERE action = 'order_status'`),
         restocks: await rows(`SELECT id::text AS id, product_id, cost, ${iso('date')} AS date FROM restocks`),
         purchaseOrders: await rows(`SELECT id::text AS id, status FROM purchase_orders`),
         poItems: await rows(`SELECT id::text AS id, purchase_order_id::text AS purchase_order_id, product_id, unit_price, ${iso('created_at')} AS created_at FROM purchase_order_items`),
         wholesaleItems: await rows(`SELECT id::text AS id, wholesale_order_id::text AS wholesale_order_id, product_id, quantity FROM wholesale_order_items`),
-        adjLines: await rows(`SELECT id::text AS id, adjustment_id::text AS adjustment_id, product_id, quantity FROM stock_adjustment_lines`),
+        adjLines: await rows(`SELECT id::text AS id, adjustment_id::text AS adjustment_id, product_id, quantity, unit_cost FROM stock_adjustment_lines`),
     };
 }
 const jsPlan = async (db, opts) => {
-    const { input } = buildInput(await readRaw(db), opts.basisArgs || [], { uStatuses: opts.uStatuses ? new Set(opts.uStatuses) : undefined, uFrom: opts.uFrom, basisRef: opts.basisRef });
+    const { input } = buildInput(await readRaw(db), opts.basisArgs || [], { uStatuses: opts.uStatuses ? new Set(opts.uStatuses) : undefined,
+        uFrom: opts.uFrom, basisRef: opts.basisRef, uReturnedAfterBasis: !!opts.uReturnedAfterBasis });
     return planStore(input);
 };
 const runSql = async (db, opts) => {
     await db.exec(rebuildFn);
     const basis = Object.fromEntries((opts.basisArgs || []).map(s => { const [k, v] = s.split('='); return [k, Number(v)]; }));
-    return (await db.query(`SELECT pg_temp.fifo_rebuild_pool($1::jsonb, $2::text[], $3::date, $4::date, $5::text) AS j`,
-        [JSON.stringify(basis), opts.uStatuses || null, opts.uFrom || null, '2026-11-13', opts.basisRef || null])).rows[0].j;
+    return (await db.query(`SELECT pg_temp.fifo_rebuild_pool($1::jsonb, $2::text[], $3::date, $4::date, $5::text, $6::boolean) AS j`,
+        [JSON.stringify(basis), opts.uStatuses || null, opts.uFrom || null, '2026-11-13', opts.basisRef || null, !!opts.uReturnedAfterBasis])).rows[0].j;
 };
 const errOf = async (fn) => { try { await fn(); return ''; } catch (e) { return String(e.message || e); } };
 
@@ -275,10 +280,14 @@ async function compare(db, tag, plan, res) {
     check(`${tag}: SQL SU orders = dry run`, JSON.stringify(su(res.settled_unshipped)) === JSON.stringify(su(plan.settled_unshipped)),
         { sql: res.settled_unshipped, js: plan.settled_unshipped });
     const es = l => l.map(x => [x.kind, x.id, JSON.stringify(x.refs), num(x.booked_before_cutoff), num(x.booked_after_cutoff),
-        num(x.overridden_qty), num(x.basis_value), num(x.basis_share), num(x.E), x.note]);
+        num(x.overridden_qty), num(x.basis_value), num(x.direction), num(x.ledger_excess), num(x.cost_excess), num(x.E), x.source, x.note]);
     check(`${tag}: SQL E subjects = dry run (${plan.basis_sales.subjects.length})`,
         JSON.stringify(es(res.basis_sales.subjects)) === JSON.stringify(es(plan.basis_sales.subjects)),
         { sql: res.basis_sales.subjects, js: plan.basis_sales.subjects });
+    const ra = x => [num(x.orders), num(x.qty), num(x.basis_value), JSON.stringify(x.list.map(k => [k.order_id, k.status_at_cutoff, num(k.qty), num(k.basis_value)]))];
+    check(`${tag}: SQL Returned orders kept in U = dry run (${plan.u_returned_after_basis.orders})`,
+        JSON.stringify(ra(res.u_returned_after_basis)) === JSON.stringify(ra(plan.u_returned_after_basis)),
+        { sql: res.u_returned_after_basis, js: plan.u_returned_after_basis });
     for (const why of ['by_status', 'before_u_from']) {
         const a = res.excluded_from_u[why], b = plan.excluded_from_u[why];
         check(`${tag}: SQL excluded_from_u.${why} = dry run`, num(a.orders) === b.orders && near(a.qty, b.qty) && near(a.basis_value, b.basis_value, 0.001)
@@ -624,7 +633,10 @@ for (const [offset, ok] of [[1, true], [-1.01, false]]) {
 // SU1 settled after the cutoff and restocked: in SU at its booked 9.30, so
 // it adds nothing to E. P1 settled before the cutoff: not a subject. B is
 // 44 - 9.30 (SU) - 2.40 (E) = 32.30.
-async function seedE(db, extra = []) {
+// opt.trueup adds to the true-up's 1300 debit (goods the true-up counted that
+// opt.more seeds); opt.more(ctx) adds rows (ctx: q, A, entry, txEntry, cogs,
+// at, post).
+async function seedE(db, extra = [], opt = {}) {
     const q = (s, p) => db.query(s, p);
     const at = h => `2026-11-12T${String(h).padStart(2, '0')}:00:00Z`;
     const post = m => `2026-11-13T01:${String(m).padStart(2, '0')}:00Z`;
@@ -654,7 +666,8 @@ async function seedE(db, extra = []) {
         await entry(`TX-${tx}`, created, cogs(amt));
     };
     await txEntry('P1', at(10), 9);
-    await entry('TRUEUP-20261112', '2026-11-12T14:51:05.206569Z', [[A.inv, 129, 0], [A.eq, 0, 129]]);
+    const tu = 129 + (opt.trueup || 0);
+    await entry('TRUEUP-20261112', '2026-11-12T14:51:05.206569Z', [[A.inv, tu, 0], [A.eq, 0, tu]]);
     await txEntry('S1', post(1), 9.3);
     await txEntry('S2', post(2), 9.3);
     await txEntry('S3', post(3), 9.3);
@@ -670,6 +683,7 @@ async function seedE(db, extra = []) {
     await q(`INSERT INTO wholesale_order_items (id, wholesale_order_id, product_id, quantity, unit_price) VALUES ('${L(2201)}', '${W(7)}', 'pN', 2, 15)`);
     await entry(`WSO-${W(7)}-COGS`, post(10), cogs(18.6));
     for (const [ref, amt] of extra) await entry(ref, post(20), amt > 0 ? [[A.eq, amt, 0], [A.inv, 0, amt]] : [[A.inv, -amt, 0], [A.eq, 0, -amt]]);
+    if (opt.more) await opt.more({ q, A, entry, txEntry, cogs, at, post });
     return { A, adj };
 }
 const optsE = { basisArgs: ['NR-3026=9'], basisRef: 'TRUEUP-20261112' };
@@ -686,8 +700,9 @@ const optsE = { basisArgs: ['NR-3026=9'], basisRef: 'TRUEUP-20261112' };
         JSON.stringify(plan.basis_sales.subjects.map(x => x.kind + ':' + x.id))
         === JSON.stringify(['adjustment:' + adj, 'retail:R1', 'retail:S1', 'retail:S2', 'retail:S3', 'retail:S4', 'retail:SU1', 'wholesale:' + W(7)]),
         plan.basis_sales.subjects);
-    check('E: S1 9.30 booked - 9.00 basis = 0.30; S4 mixes pX: 13.30 - 13.00 = 0.30',
-        near(sub.get('S1').E, 0.3, 1e-6) && near(sub.get('S4').E, 0.3, 1e-6) && near(sub.get('S4').basis_share, 13, 1e-6));
+    check('E: S1 9.30 booked - 9.00 basis = 0.30 from the ledger; S4 mixes pX: only its pN line, 1 x (9.30 - 9.00) = 0.30',
+        near(sub.get('S1').E, 0.3, 1e-6) && sub.get('S1').source === 'ledger' && sub.get('S1').direction === 1
+        && near(sub.get('S4').E, 0.3, 1e-6) && sub.get('S4').source === 'cost difference (mixed)' && near(sub.get('S4').cost_excess, 0.3, 1e-6));
     check('E: R1 settled, reversed and settled again after the cutoff counts once (0.30)',
         near(sub.get('R1').booked_after_cutoff, 9.3, 1e-6) && near(sub.get('R1').E, 0.3, 1e-6) && sub.get('R1').refs.length === 3);
     check('E: SU1 (in SU at its booked 9.30) adds 0', near(sub.get('SU1').E, 0, 1e-6) && /SU/.test(sub.get('SU1').note));
@@ -727,7 +742,8 @@ const optsE = { basisArgs: ['NR-3026=9'], basisRef: 'TRUEUP-20261112' };
     const r = (await db.query(`SELECT pg_temp.fifo_rebuild_run('romdoul1_trueup_2026_11_12') AS j`)).rows[0].j;
     check('E: the romdoul1_trueup_2026_11_12 preset finds TRUEUP-20261112, E 2.40, guard 0, REVAL 3.60',
         r.preset === 'romdoul1_trueup_2026_11_12' && r.basis_sales.basis_ref === 'TRUEUP-20261112' && near(r.ledger.E, 2.4)
-        && near(r.ledger.guard_diff, 0) && near(r.entry.amount, 3.6) && r.options.basis_ref === 'TRUEUP-20261112', r.ledger);
+        && near(r.ledger.guard_diff, 0) && near(r.entry.amount, 3.6) && r.options.basis_ref === 'TRUEUP-20261112'
+        && r.options.u_returned_after_basis === true && num(r.u_returned_after_basis.orders) === 0, r.ledger);
 }
 {
     // The basis entry must exist exactly once.
@@ -740,6 +756,156 @@ const optsE = { basisArgs: ['NR-3026=9'], basisRef: 'TRUEUP-20261112' };
     check('E: a basis entry that is there twice is refused', /the basis entry TRUEUP-20261112 matches 2 journal entries/.test(e2), e2);
     const j2 = await errOf(() => jsPlan(db, optsE));
     check('E: ...and the dry run refuses it too', /matches 2 journal entries/.test(j2), j2);
+}
+
+// ===========================================================================
+// 6. E only explains the overridden lines' cost difference; REV / ADJ net
+//    into the booked amount; Returned orders the true-up still counted
+// ===========================================================================
+// S5: a mixed order (1 pN + 2 pY, pY has no stock), booked 9.30 + 2 x 5 after
+// the cutoff; the true-up counted its goods (+19).
+const seedMixed = async ({ q, txEntry, post }) => {
+    await q(`INSERT INTO products (id, name, price, stock, purchase_cost, is_active) VALUES ('pY', 'Other Y', 10, 0, 5, true)`);
+    await q(`INSERT INTO sales (id, total, shipping_status, payment_status, date) VALUES ('S5', 40, 'Delivered', 'Paid', '${day(30)}')`);
+    await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES
+        ('e-s5n', 'S5', 'pN', 'x', 20, 1), ('e-s5y', 'S5', 'pY', 'x', 10, 2)`);
+    await txEntry('S5', post(31), 19.3);
+};
+{
+    // Balanced: S5 (mixed, +0.30), BK (settled at 9.30 before the cutoff,
+    // reversed after it and restocked: -0.30, not SU), RV (shipped unsettled
+    // at the true-up, settled and reversed after it, Returned and Unpaid
+    // again: in U, 0), P1 (settled at 9.00 before the cutoff, re-costed to
+    // 9.30 after it: +0.30). E = 2.40 + 0.30 - 0.30 + 0 + 0.30 = 2.70.
+    // Final pN: stock 4 (BK's unit back) + U 2 (UN, RV) at 9.30, pX 2 at 4:
+    // V 63.80, basis 62, D1 1.80. True-up +19 (S5) + 9 (RV) + 9.30 (BK's
+    // pre-cutoff COGS, which the true-up absorbed): B 50.00 = 62 - 9.30 - 2.70.
+    const db = await makeDb();
+    await seedE(db, [], { trueup: 37.3, more: async (ctx) => {
+        const { q, A, entry, txEntry, cogs, at, post } = ctx;
+        await seedMixed(ctx);
+        await q(`INSERT INTO sales (id, total, shipping_status, payment_status, date) VALUES
+            ('BK', 20, 'ReStock', 'Paid', '${day(30)}'), ('RV', 20, 'Returned', 'Unpaid', '${day(30)}')`);
+        await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('e-bk', 'BK', 'pN', 'x', 20, 1), ('e-rv', 'RV', 'pN', 'x', 20, 1)`);
+        await txEntry('BK', at(11), 9.3);
+        await entry('ORD-BK-COGS-REV', post(32), [[A.inv, 9.3, 0], [A.cogs, 0, 9.3]]);
+        await q(`UPDATE products SET stock = stock + 1 WHERE id = 'pN'`);
+        await q(`INSERT INTO inventory_items (id, product_id, cost_of_purchase, status, received_at) VALUES ($1, 'pN', 9.3, 'in_stock', '2026-11-13T01:32:00Z')`, [L(2301)]);
+        await q(`INSERT INTO inventory_items (id, product_id, cost_of_purchase, status, sale_id, received_at) VALUES ($1, 'pN', 9.3, 'sold', 'RV', $2)`, [L(2302), day(5)]);
+        await txEntry('RV', post(33), 9.3);
+        await entry('ORD-RV-COGS-REV', post(34), [[A.inv, 9.3, 0], [A.cogs, 0, 9.3]]);
+        await entry('ORD-P1-COGS-ADJ', post(35), cogs(0.3));
+    } });
+    const plan = await jsPlan(db, optsE);
+    const L6 = plan.ledger;
+    const sub = new Map(plan.basis_sales.subjects.map(x => [x.id, x]));
+    check('E probes: E 2.70, SU 9.30 (BK left out), B 50.00, D1 1.80, guard 0, REVAL 4.50',
+        near(L6.E, 2.7, 1e-6) && near(L6.settled_unshipped_booked, 9.3, 1e-6) && near(L6.B, 50, 1e-6) && near(L6.D1, 1.8, 1e-6)
+        && near(L6.guard_diff, 0, 1e-6) && near(L6.reval_amount, 4.5, 1e-6), L6);
+    check('E probes: a mixed order counts only its NR-3026 line (0.30, not 19.30 - 19.00 read through pY)',
+        near(sub.get('S5').E, 0.3, 1e-6) && sub.get('S5').source === 'cost difference (mixed)', sub.get('S5'));
+    check('E probes: settled before the cutoff and reversed after it: -0.30, and not in SU (the REV un-books it)',
+        near(sub.get('BK').E, -0.3, 1e-6) && sub.get('BK').direction === -1 && sub.get('BK').source === 'ledger'
+        && !plan.settled_unshipped.some(o => o.order_id === 'BK'), sub.get('BK'));
+    check('E probes: settled and reversed after the cutoff, still Returned and unpaid: back in U, E 0',
+        near(sub.get('RV').E, 0, 1e-6) && plan.linePlan.some(l => l.order_id === 'RV'), sub.get('RV'));
+    check('E probes: re-costed from 9.00 to 9.30 after the cutoff (held throughout): 0.30 from the ledger',
+        near(sub.get('P1').E, 0.3, 1e-6) && sub.get('P1').direction === 0 && sub.get('P1').source === 'ledger', sub.get('P1'));
+    // The other product's cost changes after S5 was booked: E does not move.
+    await db.query(`UPDATE products SET purchase_cost = 6 WHERE id = 'pY'`);
+    const plan2 = await jsPlan(db, optsE);
+    check('E probes: pY purchase_cost 5 -> 6 after the sale: S5 still 0.30, guard still 0',
+        near(plan2.ledger.E, 2.7, 1e-6) && near(plan2.ledger.guard_diff, 0, 1e-6), plan2.ledger);
+    const res = await runSql(db, optsE);
+    await compare(db, 'E probes', plan2, res);
+    const chk = (await db.query(`SELECT wp_internal.fifo_inventory_check() AS j`)).rows[0].j;
+    check('E probes: after the rebuild fifo_inventory_check variance 0', near(chk.variance, 0, 1e-6) && chk.product_mismatches === 0, chk);
+}
+{
+    // Not absorbed: a duplicate ORD-S1-COGS (9.30) on top of S1's receipt,
+    // and P1 re-costed by 3.00 (beyond purchase_cost) after the cutoff.
+    const db = await makeDb();
+    await seedE(db, [], { more: async ({ entry, cogs, post }) => {
+        await entry('ORD-S1-COGS', post(36), cogs(9.3));
+        await entry('ORD-P1-COGS-ADJ', post(37), cogs(3));
+    } });
+    const plan = await jsPlan(db, optsE);
+    const sub = new Map(plan.basis_sales.subjects.map(x => [x.id, x]));
+    check('E negative: a duplicate COGS entry stays out of E (S1 0.30, its ledger 9.60 not used): guard -12.30',
+        near(plan.ledger.E, 2.4, 1e-6) && near(sub.get('S1').E, 0.3, 1e-6) && near(sub.get('S1').ledger_excess, 9.6, 1e-6)
+        && sub.get('S1').source === 'cost difference (ledger outside basis..cost)'
+        && near(plan.ledger.guard_diff, -12.3, 1e-6) && !plan.ledger.guard_pass, { L: plan.ledger, S1: sub.get('S1') });
+    check('E negative: a re-cost beyond purchase_cost on an order held throughout adds 0',
+        near(sub.get('P1').E, 0, 1e-6) && near(sub.get('P1').ledger_excess, 3, 1e-6), sub.get('P1'));
+    const e = await errOf(() => runSql(db, optsE));
+    check('E negative: the SQL raises with the same E (2.40)', /stopped, nothing was changed/.test(e) && e.includes('E 2.40'), e);
+}
+{
+    // Not masked: pY's cost drops 5 -> 4 after S5 was booked, and 2.00 is
+    // written off 1300 with no reason. The guard shows the 2.00.
+    const db = await makeDb();
+    await seedE(db, [['MANUAL-WRITEOFF', 2]], { trueup: 19, more: seedMixed });
+    await db.query(`UPDATE products SET purchase_cost = 4 WHERE id = 'pY'`);
+    const plan = await jsPlan(db, optsE);
+    check('E negative: a mixed order whose other product got cheaper does not hide a 2.00 write-off (E 2.70, guard -2.00)',
+        near(plan.ledger.E, 2.7, 1e-6) && near(plan.ledger.guard_diff, -2, 1e-6) && !plan.ledger.guard_pass, plan.ledger);
+    const e = await errOf(() => runSql(db, optsE));
+    check('E negative: ...and the SQL raises', /stopped, nothing was changed/.test(e) && e.includes('E 2.70'), e);
+}
+{
+    // Returned orders and the true-up (U = Shipped / Delivered):
+    //   RA shipped at the true-up (counted in U), Returned after it, not
+    //      restocked -> kept in U;
+    //   RN created after the true-up (its goods were in S), shipped and
+    //      Returned -> kept in U;
+    //   RB already Returned at the true-up (not counted) -> left out;
+    //   RD shipped at the true-up, Returned after it, but restocked (an 'in'
+    //      movement, its unit is back in S) -> left out.
+    // True-up +9 (RA) + 9 (RD) + 9 (RN): B 59.30 = (7 x 9 + 8) - 9.30 - 2.40.
+    const optsR = { basisArgs: ['NR-3026=9'], basisRef: 'TRUEUP-20261112', uStatuses: ['Shipped', 'Delivered'], uFrom: '2026-10-21', uReturnedAfterBasis: true };
+    const db = await makeDb();
+    await seedE(db, [], { trueup: 27, more: async ({ q, at, post }) => {
+        await q(`INSERT INTO sales (id, total, shipping_status, payment_status, date, created_at, last_edited_at) VALUES
+            ('RA', 20, 'Returned', 'Unpaid', '${day(30)}', '${at(1)}', '${post(40)}'),
+            ('RB', 20, 'Returned', 'Unpaid', '${day(30)}', '${at(1)}', '${at(5)}'),
+            ('RD', 20, 'Returned', 'Unpaid', '${day(30)}', '${at(1)}', '${post(41)}'),
+            ('RN', 20, 'Returned', 'Unpaid', '${day(30)}', '${post(42)}', '${post(43)}')`);
+        await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES
+            ('e-ra', 'RA', 'pN', 'x', 20, 1), ('e-rb', 'RB', 'pN', 'x', 20, 1), ('e-rd', 'RD', 'pN', 'x', 20, 1), ('e-rn', 'RN', 'pN', 'x', 20, 1)`);
+        const log = (id, status, t) => q(`INSERT INTO activity_logs (action, description, metadata, created_at) VALUES ('order_status', 'x', $1::jsonb, $2)`,
+            [JSON.stringify(status ? { orderId: id, status } : { orderId: id }), t]);
+        await log('RA', 'Confirmed', at(2)); await log('RA', 'Shipped', at(3)); await log('RA', null, at(4)); await log('RA', 'Returned', post(40));
+        await log('RB', 'Shipped', at(2)); await log('RB', 'Returned', at(5));
+        await log('RD', 'Shipped', at(3)); await log('RD', 'Returned', post(41));
+        await log('RN', 'Shipped', post(42)); await log('RN', 'Returned', post(43));
+        for (const [n, sid, d] of [[2401, 'RA', 6], [2402, 'RB', 7], [2404, 'RN', 8]]) {
+            await q(`INSERT INTO inventory_items (id, product_id, cost_of_purchase, status, sale_id, received_at) VALUES ($1, 'pN', 9.3, 'sold', $2, $3)`, [L(n), sid, day(d)]);
+        }
+        await q(`INSERT INTO inventory_items (id, product_id, cost_of_purchase, status, received_at) VALUES ($1, 'pN', 9.3, 'in_stock', '2026-11-13T01:41:00Z')`, [L(2403)]);
+        await q(`UPDATE products SET stock = stock + 1 WHERE id = 'pN'`);
+        await q(`INSERT INTO stock_movements (product_id, product_name, type, quantity, reference_id, created_at) VALUES ('pN', 'x', 'in', 1, 'RD', '${post(41)}')`);
+    } });
+    const plan = await jsPlan(db, optsR);
+    const RA = plan.u_returned_after_basis;
+    check('Returned after the basis entry: RA (was Shipped) and RN (created after it) kept in U, guard 0',
+        near(plan.ledger.guard_diff, 0, 1e-6) && plan.ledger.guard_pass && RA.orders === 2 && near(RA.basis_value, 18, 1e-6)
+        && JSON.stringify(RA.list.map(k => [k.order_id, k.status_at_cutoff])) === '[["RA","Shipped"],["RN","created after the basis entry"]]', { L: plan.ledger, RA });
+    check('Returned after the basis entry: RB (Returned at the true-up) and RD (restocked) stay out of U',
+        JSON.stringify(plan.excluded_from_u.by_status.order_ids) === '["RB","RD"]' && plan.totals.U === 3, plan.excluded_from_u);
+    const off = await jsPlan(db, { ...optsR, uReturnedAfterBasis: false });
+    check('Returned after the basis entry: without the option the guard fails by +18.00 (their basis value)',
+        near(off.ledger.guard_diff, 18, 1e-6) && !off.ledger.guard_pass, off.ledger);
+    const eNo = await errOf(() => runSql(db, { uReturnedAfterBasis: true }));
+    check('Returned after the basis entry: the option without a basis entry is refused', /needs the basis entry/.test(eNo), eNo);
+    const jNo = await errOf(() => jsPlan(db, { uReturnedAfterBasis: true }));
+    check('Returned after the basis entry: ...and the dry run refuses it too', /needs a basis entry/.test(jNo), jNo);
+    const res = await runSql(db, optsR);
+    await compare(db, 'Returned after the basis entry', plan, res);
+    const lu = new Map((await db.query(`SELECT id, cogs_cost FROM sale_items WHERE id IN ('e-ra', 'e-rn', 'e-rb', 'e-rd')`)).rows.map(r => [r.id, r]));
+    check('Returned after the basis entry: RA / RN lines hold their layer (9.30), RB / RD none',
+        near(lu.get('e-ra').cogs_cost, 9.3) && near(lu.get('e-rn').cogs_cost, 9.3) && lu.get('e-rb').cogs_cost === null && lu.get('e-rd').cogs_cost === null, [...lu.values()]);
+    const chk = (await db.query(`SELECT wp_internal.fifo_inventory_check() AS j`)).rows[0].j;
+    check('Returned after the basis entry: after the rebuild fifo_inventory_check variance 0', near(chk.variance, 0, 1e-6) && chk.product_mismatches === 0, chk);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

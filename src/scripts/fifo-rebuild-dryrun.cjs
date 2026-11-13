@@ -40,10 +40,20 @@
  *        basis cost is products.purchase_cost unless --basis overrides it
  *   E  = what left 1300 since the basis entry beyond the basis cost, for the
  *        products whose basis is overridden (--basis-ref names the entry,
- *        e.g. TRUEUP-20261112; see basisSalesE): the net 1300 credit of each
- *        such order's / adjustment's entries created after that entry, minus
- *        its share at the basis cost. NR-3026 sold at 9.30 against the 9.00
- *        basis adds 0.30 a unit. No basis entry, no overrides: E = 0.
+ *        e.g. TRUEUP-20261112; see basisSalesE): per order / adjustment with
+ *        an overridden line and an entry after the basis entry, only the
+ *        cost difference of its overridden lines — read from the ledger when
+ *        every line is overridden and each amount held lies between those
+ *        lines at the basis and at the cost booked, else from the lines. A
+ *        duplicate entry or any other extra 1300 change is never absorbed.
+ *        NR-3026 sold at 9.30 against the 9.00 basis adds 0.30 a unit. No
+ *        basis entry, no overrides: E = 0.
+ *   An order's COGS = its TX / ORD-<id>-COGS entries net of -COGS-ADJ and
+ *   -COGS-REV; an order a COGS-REV reversed in full is not booked (it can
+ *   be in U again).
+ *   --u-returned-after-basis (the Romdoul1 preset): a Returned order the
+ *   basis entry still counted stays in U although Returned is not a U status
+ *   (see returnedAfterBasis).
  *   Guard: |D1 - (V - SU - B - E)| <= 1, i.e. basis x (S+U) - SU - E must
  *   equal B. When it fails, the rebuild must not book D1. The rebuild
  *   records SU on those orders' lines as cogs_booked, so the FIFO check
@@ -58,10 +68,11 @@
  *   or, instead of --preset, the options one by one:
  *        [--basis=<product name or id>=<cost>[,...]] [--basis-ref=<reference_id>]
  *        [--u-statuses=Shipped,Delivered[,Returned]] [--u-from=YYYY-MM-DD]
+ *        [--u-returned-after-basis]
  *   --preset  the same named option sets as migrations/fifo_rebuild_pool.sql:
  *             romdoul1_trueup_2026_11_12 = --basis=NR-3026=9
  *               --basis-ref=TRUEUP-20261112 --u-statuses=Shipped,Delivered
- *               --u-from=2026-10-21;
+ *               --u-from=2026-10-21 --u-returned-after-basis;
  *             default = no basis override, U = Shipped, Delivered, Returned,
  *               no cutoff.
  *   --store   defaults to Romdoul1.
@@ -80,8 +91,8 @@ const SETTLED = new Set(['Paid', 'Settled', 'Paid/Settled']);
 const HOLDS_STOCK = new Set(['Shipped', 'Delivered', 'Returned']);
 // Kept in step with the presets of migrations/fifo_rebuild_pool.sql.
 const PRESETS = {
-    romdoul1_trueup_2026_11_12: { basis: ['NR-3026=9'], basisRef: 'TRUEUP-20261112', uStatuses: ['Shipped', 'Delivered'], uFrom: '2026-10-21' },
-    default: { basis: [], basisRef: null, uStatuses: null, uFrom: null },
+    romdoul1_trueup_2026_11_12: { basis: ['NR-3026=9'], basisRef: 'TRUEUP-20261112', uStatuses: ['Shipped', 'Delivered'], uFrom: '2026-10-21', uReturnedAfterBasis: true },
+    default: { basis: [], basisRef: null, uStatuses: null, uFrom: null, uReturnedAfterBasis: false },
 };
 const PAGE = 1000;
 
@@ -119,44 +130,76 @@ function newestFirst(a, b) {
  * products whose basis is overridden (the same rule as the SQL rebuild).
  * A subject is a retail order, a wholesale order or a stock adjustment that
  * has at least one line of an overridden product and at least one entry
- * touching 1300 created after the basis entry. Per subject:
+ * touching 1300 created after the basis entry. E only ever explains the
+ * cost difference of the overridden lines; anything else stays in the guard.
+ * Per subject:
  *   c_pre / c_post = net 1300 credit of its entries created up to / after it
- *   bv = its lines at the basis cost (every line, overridden or not)
- *   retail / wholesale: share = ([c_pre + c_post > 0] - [c_pre > 0]) x bv,
- *     i.e. +bv when the ledger started holding its COGS after the cutoff,
- *     -bv when it stopped (a reversal), 0 when nothing changed (settled and
- *     reversed after it, or held throughout: a re-settlement at a new cost
- *     is then all E);
- *   a retail order in SU: share = c_post (SU already counts what was booked);
- *   stock adjustment: share = -bv (its lines are signed, removal < 0);
- *   E_subject = round(c_post - share, 2), E = their sum.
+ *   sg = +1 (retail / wholesale: a credit takes its quantity out), -1 (stock
+ *     adjustment: lines are signed, a removal is < 0)
+ *   held(x) = round(x, 2) > 0 (adjustment: <> 0); held before = held(c_pre);
+ *     held after = held(c_pre + c_post), and for a retail order only while
+ *     the rebuild counts it as booked (a COGS-REV that reversed it in full
+ *     un-books it)
+ *   d = held after - held before (+1 booked after the cutoff, -1 reversed
+ *     after it, 0 neither); 0 for an order in SU (SU counts what it booked)
+ *   per line: b = basis cost, c = the cost the ledger books it at (the
+ *     adjustment line's unit_cost when > 0, else purchase_cost)
+ *   X (cost difference) = sg x d x sum over overridden lines of q x (c - b)
+ *   L (ledger) = c_post - sg x d x sum over every line of q x b
+ *   E_subject = L when the subject is pure (every line with a quantity is
+ *     overridden) and each amount the ledger held (sg x c_pre when held
+ *     before, sg x (c_pre + c_post) when held after) lies between the
+ *     overridden lines at b and at c, give or take a cent a unit (and
+ *     |c_post| <= a cent a unit when held neither before nor after); else X.
+ *     So a duplicate entry, a re-cost beyond purchase_cost or a quantity
+ *     change is never absorbed, and a mixed order never reads the cost of its
+ *     other products.
+ *   E = sum of round(E_subject, 2).
  * E > 0 when more left 1300 than the basis cost (NR-3026 sold at 9.30
  * against a 9.00 basis: +0.30 a unit). bs = {basis_ref, cutoff, subjects:
- * [{kind, id, c_pre, c_post, refs, lines: [{product_id, q}]}]}.
+ * [{kind, id, c_pre, c_post, refs, lines: [{product_id, q, uc}]}]};
+ * ctx = {pcOf: Map product -> purchase_cost, booked: Set of booked orders}.
  */
-function basisSalesE(bs, basis, basisOf, suSet) {
+function basisSalesE(bs, basis, basisOf, suSet, ctx = {}) {
     const none = { basis_ref: bs ? bs.basis_ref || null : null, cutoff: bs ? bs.cutoff || null : null, E: 0, subjects: [] };
     if (!bs || !bs.cutoff || !basis || basis.size === 0) return none;
+    const pcOf = ctx.pcOf || new Map();
+    const booked = ctx.booked || null;
     const subjects = [];
     for (const s of bs.subjects || []) {
-        const over = s.lines.filter((l) => basis.has(l.product_id));
-        if (!over.length) continue;
-        const bv = s.lines.reduce((t, l) => t + l.q * (basisOf.has(l.product_id) ? basisOf.get(l.product_id) : 0), 0);
-        let share, note;
-        if (s.kind === 'adjustment') { share = -bv; note = 'stock adjustment after the cutoff'; }
-        else if (s.kind === 'retail' && suSet.has(s.id)) { share = s.c_post; note = 'in SU (booked amount already counted)'; }
-        else {
-            const before = r2(s.c_pre) > 0 ? 1 : 0;
-            const after = r2(s.c_pre + s.c_post) > 0 ? 1 : 0;
-            share = (after - before) * bv;
-            note = after > before ? 'settled after the cutoff' : after < before ? 'reversed after the cutoff'
-                : after ? 'held before and after the cutoff' : 'not held after the cutoff';
+        const lines = s.lines.filter((l) => basisOf.has(l.product_id)).map((l) => ({
+            q: l.q, over: basis.has(l.product_id), b: basisOf.get(l.product_id),
+            c: num(l.uc) > 0 ? num(l.uc) : num(pcOf.get(l.product_id)),
+        }));
+        if (!lines.some((l) => l.over)) continue;
+        const sg = s.kind === 'adjustment' ? -1 : 1;
+        const inSu = s.kind === 'retail' && suSet.has(s.id);
+        const held = (x) => (s.kind === 'adjustment' ? r2(x) !== 0 : r2(x) > 0);
+        const hb = held(s.c_pre);
+        const ha = held(s.c_pre + s.c_post) && (s.kind !== 'retail' || !booked || booked.has(s.id));
+        const d = inSu ? 0 : (ha ? 1 : 0) - (hb ? 1 : 0);
+        let bv = 0, overQty = 0, overAbs = 0, xUnit = 0, r1 = 0, r3 = 0, pure = true;
+        for (const l of lines) {
+            bv += l.q * l.b;
+            if (l.over) {
+                overQty += l.q; overAbs += Math.abs(l.q); xUnit += l.q * (l.c - l.b);
+                r1 += l.q * Math.min(l.b, l.c); r3 += l.q * Math.max(l.b, l.c);
+            } else if (l.q !== 0) pure = false;
         }
+        const lo = Math.min(r1, r3), hi = Math.max(r1, r3), tol = 0.01 * overAbs;
+        const inRange = (a) => a >= lo - tol - 1e-9 && a <= hi + tol + 1e-9;
+        const X = sg * d * xUnit;
+        const Lg = inSu ? 0 : s.c_post - sg * d * bv;
+        const ledgerOk = pure && !inSu && (!hb || inRange(sg * s.c_pre)) && (!ha || inRange(sg * (s.c_pre + s.c_post)))
+            && (hb || ha || Math.abs(s.c_post) <= tol + 1e-9);
+        const note = inSu ? 'in SU (booked amount already counted)' : d > 0 ? 'booked after the cutoff'
+            : d < 0 ? 'reversed after the cutoff' : ha ? 'held before and after the cutoff' : 'not held after the cutoff';
+        const source = inSu ? 'SU' : ledgerOk ? 'ledger' : pure ? 'cost difference (ledger outside basis..cost)' : 'cost difference (mixed)';
         subjects.push({
             kind: s.kind, id: s.id, refs: s.refs.slice().sort(),
             booked_before_cutoff: r2(s.c_pre), booked_after_cutoff: r2(s.c_post),
-            overridden_qty: r4(over.reduce((t, l) => t + l.q, 0)), basis_value: r2(bv),
-            basis_share: r2(share), E: r2(s.c_post - share), note,
+            overridden_qty: r4(overQty), basis_value: r2(bv), direction: d,
+            ledger_excess: r2(Lg), cost_excess: r2(X), E: ledgerOk ? r2(Lg) : r2(X), source, note,
         });
     }
     subjects.sort((a, b) => (a.kind !== b.kind ? (a.kind < b.kind ? -1 : 1) : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -167,12 +210,17 @@ function basisSalesE(bs, basis, basisOf, suSet) {
 // subject, split at the basis entry's created_at. Refuses unless exactly one
 // entry carries basisRef.
 const UUID_RE = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
-function basisSalesInput(raw, facts, basisRef) {
+// The created_at of the one entry that set the basis (null without basisRef).
+function basisCutoff(raw, basisRef) {
     if (!basisRef) return null;
     const hits = raw.entries.filter((e) => e.reference_id === basisRef);
     if (hits.length !== 1) throw new Error(`the basis entry ${basisRef} matches ${hits.length} journal entries (expected exactly one)`);
-    const cutoff = hits[0].created_at;
-    if (!cutoff) throw new Error(`the basis entry ${basisRef} has no created_at`);
+    if (!hits[0].created_at) throw new Error(`the basis entry ${basisRef} has no created_at`);
+    return hits[0].created_at;
+}
+function basisSalesInput(raw, facts, basisRef) {
+    if (!basisRef) return null;
+    const cutoff = basisCutoff(raw, basisRef);
     const cutKey = tsKey(cutoff);
     const txOrder = new Map(raw.txs.filter((t) => t.order_id !== null && t.order_id !== undefined).map((t) => [t.id, t.order_id]));
     const subjectOf = (ref) => {
@@ -194,14 +242,46 @@ function basisSalesInput(raw, facts, basisRef) {
         const out = facts.invOutByEntry.get(e.id);
         if (tsKey(e.created_at) > cutKey) { s.c_post += out; s.refs.push(e.reference_id); s.post = true; } else s.c_pre += out;
     }
-    const add = (kind, id, product_id, q) => {
+    const add = (kind, id, product_id, q, uc) => {
         const s = subj.get(`${kind}|${id}`);
-        if (s && product_id) s.lines.push({ product_id, q });
+        if (s && product_id) s.lines.push({ product_id, q, uc });
     };
-    for (const li of raw.saleItems) add('retail', li.sale_id, li.product_id, Math.max(0, num(li.quantity)));
-    for (const li of raw.wholesaleItems || []) add('wholesale', li.wholesale_order_id, li.product_id, Math.max(0, num(li.quantity)));
-    for (const li of raw.adjLines || []) add('adjustment', li.adjustment_id, li.product_id, num(li.quantity));
+    for (const li of raw.saleItems) add('retail', li.sale_id, li.product_id, Math.max(0, num(li.quantity)), null);
+    for (const li of raw.wholesaleItems || []) add('wholesale', li.wholesale_order_id, li.product_id, Math.max(0, num(li.quantity)), null);
+    for (const li of raw.adjLines || []) add('adjustment', li.adjustment_id, li.product_id, num(li.quantity), li.unit_cost);
     return { basis_ref: basisRef, cutoff, subjects: [...subj.values()].filter((s) => s.post) };
+}
+
+// Returned orders that the basis entry still counted: unsettled, not
+// booked, not restocked (no 'in' movement), Returned now while 'Returned'
+// is not a U status, and either created after the basis entry or edited
+// after it with the latest status the activity log records at or before it
+// one of Pending / Confirmed / Shipped / Delivered. Their goods were in S or
+// U at the true-up, so 1300 still holds them: they stay in U. An order the
+// log cannot place stays out (the guard then fails, it is never absorbed).
+// Map order id -> its status at the cutoff.
+const PRE_RETURN = new Set(['Pending', 'Confirmed', 'Shipped', 'Delivered']);
+function returnedAfterBasis(raw, cutoff, uStatuses, cogsOrders) {
+    const out = new Map();
+    if (!cutoff || uStatuses.has('Returned')) return out;
+    const cutKey = tsKey(cutoff);
+    const back = new Set();
+    for (const m of raw.moves || []) if (m.type === 'in') { if (m.reference_id) back.add(m.reference_id); if (m.order_id) back.add(m.order_id); }
+    const logs = new Map();
+    for (const l of raw.statusLogs || []) {
+        if (!l.order_id || l.status === null || l.status === undefined || tsKey(l.created_at) > cutKey) continue;
+        const cur = logs.get(l.order_id);
+        const k = tsKey(l.created_at);
+        if (!cur || k > cur.k || (k === cur.k && String(l.id) > String(cur.id))) logs.set(l.order_id, { k, id: l.id, status: l.status });
+    }
+    for (const s of raw.sales) {
+        if (s.shipping_status !== 'Returned' || SETTLED.has(s.payment_status || '') || cogsOrders.has(s.id) || back.has(s.id)) continue;
+        let st = null;
+        if (s.created_at && tsKey(s.created_at) > cutKey) st = 'created after the basis entry';
+        else if (s.last_edited_at && tsKey(s.last_edited_at) > cutKey) st = logs.has(s.id) ? logs.get(s.id).status : null;
+        if (st === 'created after the basis entry' || PRE_RETURN.has(st)) out.set(s.id, st);
+    }
+    return out;
 }
 
 /**
@@ -254,12 +334,18 @@ function planStore(input) {
     }
     suOrders.sort((a, b) => (a.order_id < b.order_id ? -1 : a.order_id > b.order_id ? 1 : 0));
     const SU = r2(suOrders.reduce((t, o) => t + o.booked, 0));
-    const basisSales = basisSalesE(input.basisSales, basis, basisOf, new Set(suOrders.map((o) => o.order_id)));
+    const basisSales = basisSalesE(input.basisSales, basis, basisOf, new Set(suOrders.map((o) => o.order_id)),
+        { pcOf: new Map(products.map((p) => [p.id, num(p.purchase_cost)])), booked: cogsOrders });
     const E = basisSales.E;
+    // Returned orders the basis entry still counted (returnedAfterBasis): in U
+    // although 'Returned' is not a U status.
+    const uRet = input.uReturnedAfter || new Map();
+    const inUStatus = (sid, st) => uStatuses.has(st) || uRet.has(sid);
 
     const uLinesByProduct = new Map();
     const diag = { settledNoCogsOrders: new Set(), cogsNotSettledOrders: new Set(), fractionalLines: 0 };
     const excluded = { by_status: { orders: new Set(), qty: 0, basis_value: 0 }, before_u_from: { orders: new Set(), qty: 0, basis_value: 0 } };
+    const retKept = new Map();
     const explain = { returned_u: 0, pre_ledger_start_u: 0 };
     for (const li of saleItems) {
         if (!li.product_id || !holds(li.sale_id)) continue;
@@ -272,13 +358,17 @@ function planStore(input) {
         if (q === 0) continue;
         const s = sales.get(li.sale_id) || {};
         const atBasis = q * (basisOf.get(li.product_id) || 0);
-        const ex = !uStatuses.has(s.shipping_status) ? excluded.by_status
+        const ex = !inUStatus(li.sale_id, s.shipping_status) ? excluded.by_status
             : uFromKey !== null && tsKey(s.date) < uFromKey ? excluded.before_u_from : null;
         if (ex) {
             if (!basisOf.has(li.product_id)) continue;
             ex.orders.add(li.sale_id); ex.qty += q; ex.basis_value += atBasis; continue;
         }
-        if (s.shipping_status === 'Returned') explain.returned_u += atBasis;
+        if (!uStatuses.has(s.shipping_status) && basisOf.has(li.product_id)) {
+            const k = retKept.get(li.sale_id) || { order_id: li.sale_id, status_at_cutoff: uRet.get(li.sale_id), qty: 0, basis_value: 0 };
+            k.qty += q; k.basis_value += atBasis; retKept.set(li.sale_id, k);
+        }
+        if (s.shipping_status === 'Returned' && !uRet.has(li.sale_id)) explain.returned_u += atBasis;
         else if (ledgerStartKey !== null && tsKey(s.date) < ledgerStartKey) explain.pre_ledger_start_u += atBasis;
         const poolUnits = Math.floor(q);
         const frac = r4(q - poolUnits);
@@ -484,6 +574,11 @@ function planStore(input) {
             orders: x.orders.size, qty: r4(x.qty), basis_value: r2(x.basis_value),
             order_ids: [...x.orders].sort(),
         }])),
+        u_returned_after_basis: (() => {
+            const list = [...retKept.values()].sort((a, b) => (a.order_id < b.order_id ? -1 : a.order_id > b.order_id ? 1 : 0))
+                .map((k) => ({ order_id: k.order_id, status_at_cutoff: k.status_at_cutoff, qty: r4(k.qty), basis_value: r2(k.basis_value) }));
+            return { orders: list.length, qty: r4(list.reduce((t, k) => t + k.qty, 0)), basis_value: r2(list.reduce((t, k) => t + k.basis_value, 0)), list };
+        })(),
         diagnostics: {
             settled_holding_orders_without_cogs_entry: diag.settledNoCogsOrders.size,
             unsettled_holding_orders_with_cogs_entry: diag.cogsNotSettledOrders.size,
@@ -549,14 +644,19 @@ function ledgerFacts(raw) {
     const txOrder = new Map(raw.txs.filter((t) => t.order_id !== null && t.order_id !== undefined).map((t) => [t.id, t.order_id]));
     const opening = raw.entries.filter((e) => e.reference_id === 'OPENING-INV').map((e) => e.date).sort()[0] || null;
 
+    // [order, 'BASE' | 'ADJ' | 'REV']: ORD-<id>-COGS and TX-<tx> are the
+    // entries that book an order's COGS; -COGS-ADJ and -COGS-REV change it.
     const orderOfRef = (ref) => {
-        let m = ref.match(/^ORD-(.+)-COGS$/);
-        if (m) return m[1];
+        let m = ref.match(/^ORD-(.+)-COGS-(ADJ|REV)$/);
+        if (m) return [m[1], m[2]];
+        m = ref.match(/^ORD-(.+)-COGS$/);
+        if (m) return [m[1], 'BASE'];
         m = ref.match(/^TX-(.+)$/);
-        return m && txOrder.has(m[1]) ? txOrder.get(m[1]) : null;
+        return m && txOrder.has(m[1]) ? [txOrder.get(m[1]), 'BASE'] : null;
     };
     let B = 0, Bposted = 0, Bdraft = 0;
-    const cogsOrders = new Set();
+    const baseOrders = new Set();
+    const revOrders = new Set();
     const invOutByEntry = new Map();
     const cogsEntries = new Set();
     for (const l of raw.lines) {
@@ -567,15 +667,23 @@ function ledgerFacts(raw) {
             if (e && (e.status || 'Posted') === 'Draft') Bdraft += amt; else Bposted += amt;
             invOutByEntry.set(l.journal_entry_id, (invOutByEntry.get(l.journal_entry_id) || 0) - amt);
         } else if (l.account_id === cogsAcc[0] && e && e.reference_id) {
-            const order = orderOfRef(e.reference_id);
-            if (order !== null) { cogsOrders.add(order); cogsEntries.add(e.id); }
+            const k = orderOfRef(e.reference_id);
+            if (k === null) continue;
+            cogsEntries.add(e.id);
+            if (k[1] === 'BASE') baseOrders.add(k[0]);
+            if (k[1] === 'REV') revOrders.add(k[0]);
         }
     }
+    // What the order's COGS entries took out of 1300, net of its -COGS-ADJ and
+    // -COGS-REV (os_order_cogs_net). Booked = it has an ORD-<id>-COGS / TX
+    // entry and no COGS-REV reversed it in full (the app's
+    // os_order_cogs_in_ledger: what a REV took back does not count).
     const cogsBooked = new Map();
     for (const id of cogsEntries) {
-        const order = orderOfRef(entryById.get(id).reference_id);
+        const order = orderOfRef(entryById.get(id).reference_id)[0];
         cogsBooked.set(order, (cogsBooked.get(order) || 0) + (invOutByEntry.get(id) || 0));
     }
+    const cogsOrders = new Set([...baseOrders].filter((o) => !(revOrders.has(o) && r2(num(cogsBooked.get(o))) <= 0)));
     return { invAcc: invAcc[0], cogsAcc: cogsAcc[0], B, Bposted, Bdraft, cogsOrders, cogsBooked, opening, invOutByEntry };
 }
 
@@ -597,8 +705,11 @@ function unsettledHoldingOrders(raw, cogsOrders) {
  * opts = { uStatuses (Set), uFrom ('YYYY-MM-DD'), basisRef (reference_id of the
  * entry that set the basis: E counts what moved after it) }. raw may also
  * carry wholesaleItems ({wholesale_order_id, product_id, quantity}) and
- * adjLines ({adjustment_id, product_id, quantity}) for E, and entries need
- * created_at.
+ * adjLines ({adjustment_id, product_id, quantity, unit_cost}) for E, and
+ * entries need created_at. opts.uReturnedAfterBasis (needs basisRef) keeps
+ * the Returned orders of returnedAfterBasis in U: it reads sales.created_at /
+ * last_edited_at, raw.statusLogs ({id, order_id, status, created_at} of the
+ * order_status activity log) and the 'in' moves ({reference_id, order_id}).
  */
 function buildInput(raw, basisArgs, opts = {}) {
     const { products, items, saleItems } = raw;
@@ -643,11 +754,15 @@ function buildInput(raw, basisArgs, opts = {}) {
         basisNotes.push({ product_id: hits[0].id, name: hits[0].name, purchase_cost: num(hits[0].purchase_cost), basis_cost: Number(m[2]) });
     }
 
+    if (opts.uReturnedAfterBasis && !opts.basisRef) throw new Error('--u-returned-after-basis needs a basis entry (--basis-ref)');
+    const uReturnedAfter = opts.uReturnedAfterBasis
+        ? returnedAfterBasis(raw, basisCutoff(raw, opts.basisRef), opts.uStatuses || HOLDS_STOCK, cogsOrders) : new Map();
+
     return {
         input: {
             products, items, sales, saleItems, cogsOrders, cogsBooked, shipAt, receiptCost, B: r2(facts.B), basis,
             uStatuses: opts.uStatuses, uFrom: localMidnight(opts.uFrom), ledgerStart: localMidnight(facts.opening),
-            basisSales: basisSalesInput(raw, facts, opts.basisRef || null),
+            basisSales: basisSalesInput(raw, facts, opts.basisRef || null), uReturnedAfter,
         },
         meta: { B_posted: r2(facts.Bposted), B_draft: r2(facts.Bdraft), cogs_booked_orders: cogsOrders.size, basis_overrides: basisNotes, ledger_start: facts.opening },
     };
@@ -660,7 +775,7 @@ async function loadStore(sb, basisArgs, opts) {
         .catch(() => fetchAll(sb, 'inventory_items', itemCols));
     const [products, sales, saleItems, accounts] = await Promise.all([
         fetchAll(sb, 'products', 'id,name,stock,purchase_cost,is_active'),
-        fetchAll(sb, 'sales', 'id,shipping_status,payment_status,date'),
+        fetchAll(sb, 'sales', 'id,shipping_status,payment_status,date,created_at,last_edited_at'),
         fetchAll(sb, 'sale_items', 'id,sale_id,product_id,quantity'),
         fetchAll(sb, 'chart_of_accounts', 'id,account_code,account_name'),
     ]);
@@ -681,10 +796,21 @@ async function loadStore(sb, basisArgs, opts) {
     }
     if (opts && opts.basisRef) {
         raw.wholesaleItems = await fetchAll(sb, 'wholesale_order_items', 'id,wholesale_order_id,product_id,quantity');
-        raw.adjLines = await fetchAll(sb, 'stock_adjustment_lines', 'id,adjustment_id,product_id,quantity');
+        raw.adjLines = await fetchAll(sb, 'stock_adjustment_lines', 'id,adjustment_id,product_id,quantity,unit_cost');
     }
     const uOrders = unsettledHoldingOrders(raw, ledgerFacts(raw).cogsOrders);
-    raw.moves = await fetchIn(sb, 'stock_movements', 'id,reference_id,type,created_at', 'reference_id', uOrders, (q) => q.eq('type', 'out'));
+    raw.moves = await fetchIn(sb, 'stock_movements', 'id,reference_id,order_id,type,created_at', 'reference_id', uOrders, (q) => q.eq('type', 'out'));
+    if (opts && opts.uReturnedAfterBasis) {
+        // The Returned candidates: their 'in' movements (by reference_id or
+        // order_id) and their order_status activity log.
+        const byId = new Map(raw.sales.map((s) => [s.id, s]));
+        const cands = uOrders.filter((id) => (byId.get(id) || {}).shipping_status === 'Returned');
+        const cols = 'id,reference_id,order_id,type,created_at';
+        raw.moves.push(...await fetchIn(sb, 'stock_movements', cols, 'reference_id', cands, (q) => q.eq('type', 'in')));
+        raw.moves.push(...await fetchIn(sb, 'stock_movements', cols, 'order_id', cands, (q) => q.eq('type', 'in')));
+        const logs = await fetchIn(sb, 'activity_logs', 'id,metadata,created_at', 'metadata->>orderId', cands, (q) => q.eq('action', 'order_status'));
+        raw.statusLogs = logs.map((l) => ({ id: l.id, order_id: (l.metadata || {}).orderId || null, status: (l.metadata || {}).status ?? null, created_at: l.created_at }));
+    }
     return buildInput(raw, basisArgs, opts);
 }
 
@@ -712,7 +838,9 @@ async function main() {
     let preset = null;
     if (presetName) {
         if (!Object.prototype.hasOwnProperty.call(PRESETS, presetName)) throw new Error(`unknown --preset "${presetName}" (use ${Object.keys(PRESETS).join(' or ')})`);
-        if (['basis', 'basis-ref', 'u-statuses', 'u-from'].some((k) => arg(k, null) !== null)) throw new Error('--preset cannot be combined with --basis, --basis-ref, --u-statuses or --u-from');
+        if (['basis', 'basis-ref', 'u-statuses', 'u-from'].some((k) => arg(k, null) !== null) || args.includes('--u-returned-after-basis')) {
+            throw new Error('--preset cannot be combined with --basis, --basis-ref, --u-statuses, --u-from or --u-returned-after-basis');
+        }
         preset = PRESETS[presetName];
     }
     const basisArgs = preset ? preset.basis : (arg('basis', '') || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -721,6 +849,7 @@ async function main() {
     for (const st of uStatuses) if (!HOLDS_STOCK.has(st)) throw new Error(`--u-statuses: "${st}" does not hold stock (use ${[...HOLDS_STOCK].join(', ')})`);
     const uFrom = preset ? preset.uFrom : (arg('u-from', '') || null);
     const basisRef = preset ? preset.basisRef : (arg('basis-ref', '') || null);
+    const uReturnedAfterBasis = preset ? !!preset.uReturnedAfterBasis : args.includes('--u-returned-after-basis');
     if (uFrom && !/^\d{4}-\d{2}-\d{2}$/.test(uFrom)) throw new Error('--u-from must be YYYY-MM-DD');
 
     const { createClient } = require('@supabase/supabase-js');
@@ -729,7 +858,7 @@ async function main() {
     if (!inst) throw new Error(`unknown store "${storeName}" (known: ${instances.map((i) => i.name).join(', ')})`);
     const sb = createClient(inst.url, inst.anonKey || inst.key);
 
-    const { input, meta } = await loadStore(sb, basisArgs, { uStatuses, uFrom, basisRef });
+    const { input, meta } = await loadStore(sb, basisArgs, { uStatuses, uFrom, basisRef, uReturnedAfterBasis });
     const plan = planStore(input);
 
     fs.mkdirSync(outDir, { recursive: true });
@@ -740,11 +869,11 @@ async function main() {
     const summary = {
         store: storeName, generated_at: new Date().toISOString(), read_only: true,
         totals: plan.totals, ledger: { ...plan.ledger, B_posted: meta.B_posted, B_draft: meta.B_draft },
-        options: { preset: presetName || null, u_statuses: [...uStatuses], u_from: uFrom, basis_ref: basisRef, ledger_start: meta.ledger_start },
+        options: { preset: presetName || null, u_statuses: [...uStatuses], u_from: uFrom, basis_ref: basisRef, u_returned_after_basis: uReturnedAfterBasis, ledger_start: meta.ledger_start },
         basis_overrides: meta.basis_overrides,
         settled_unshipped: plan.settled_unshipped,
         basis_sales: plan.basis_sales,
-        residual: plan.residual, excluded_from_u: plan.excluded_from_u,
+        residual: plan.residual, excluded_from_u: plan.excluded_from_u, u_returned_after_basis: plan.u_returned_after_basis,
         diagnostics: { ...plan.diagnostics, cogs_booked_orders: meta.cogs_booked_orders },
         anomalies: plan.anomalies,
         files: [`${base}_products.csv`, `${base}_unsettled_lines.csv`, `${base}_rows.csv`],
@@ -760,7 +889,10 @@ async function main() {
     console.log(`V ${L.V} (in_stock ${L.V_in_stock} + unsettled ${L.V_unsettled}) | B ${L.B} (posted ${meta.B_posted}, draft ${meta.B_draft}) | SU ${L.settled_unshipped_booked} on ${plan.settled_unshipped.length} orders`);
     const BS = plan.basis_sales;
     console.log(`E ${L.E} (basis-overridden products moved since ${BS.basis_ref || 'no basis entry'}${BS.cutoff ? ' at ' + BS.cutoff : ''}, ${BS.subjects.length} orders / adjustments)`);
-    for (const x of BS.subjects) console.log(`  E ${x.kind} ${x.id}: booked after ${x.booked_after_cutoff} - basis share ${x.basis_share} = ${x.E} (${x.note}; ${x.overridden_qty} overridden units; ${x.refs.join(', ')})`);
+    for (const x of BS.subjects) {
+        const off = r2(x.ledger_excess - x.E);
+        console.log(`  E ${x.kind} ${x.id}: ${x.E} from ${x.source} (${x.note}; booked after ${x.booked_after_cutoff}, ledger ${x.ledger_excess}, cost difference ${x.cost_excess}${off ? `, ${off} NOT explained` : ''}; ${x.overridden_qty} overridden units; ${x.refs.join(', ')})`);
+    }
     console.log(`basis value of S+U ${L.basis_value_S_plus_U} | D1 ${L.D1} | V-B ${L.V_minus_B} | D1-(V-SU-B-E) ${L.guard_diff} -> guard ${L.guard_pass ? 'PASS' : 'FAIL (do not book D1)'}`);
     console.log(`FIFO-REVAL amount D1 + E = ${L.reval_amount} (${L.reval_amount >= 0 ? 'Dr 1300 / Cr 5000' : 'Dr 5000 / Cr 1300'})`);
     const R = plan.residual;
@@ -770,6 +902,8 @@ async function main() {
         console.log('  If one is not real stock (Romdoul1: Test Product), set its stock to 0 with NO ledger entry before fifo_rebuild_pool.sql:');
         console.log("  UPDATE products SET stock = 0 WHERE name = '<name>' AND is_active = false;  (not Adjust Stock / the Inventory page: they book Dr 5000 / Cr 1300)");
     }
+    const RA = plan.u_returned_after_basis;
+    if (RA.orders) console.log(`kept in U, Returned after ${basisRef}: ${RA.orders} orders (${RA.basis_value} at basis: ${RA.list.map((k) => `${k.order_id} was ${k.status_at_cutoff}`).join(', ')})`);
     const X = plan.excluded_from_u;
     if (X.by_status.orders || X.before_u_from.orders) console.log(`left out of U: ${X.by_status.orders} orders by status (${X.by_status.basis_value}: ${X.by_status.order_ids.join(', ')}), ${X.before_u_from.orders} orders before ${uFrom} (${X.before_u_from.basis_value}: ${X.before_u_from.order_ids.join(', ')})`);
     console.log(`written to ${outDir}`);
@@ -779,4 +913,4 @@ if (require.main === module) {
     main().catch((e) => { console.error(e.message || e); process.exit(1); });
 }
 
-module.exports = { planStore, buildInput, ledgerFacts, unsettledHoldingOrders, basisSalesE, basisSalesInput, tsKey, PRESETS };
+module.exports = { planStore, buildInput, ledgerFacts, unsettledHoldingOrders, basisSalesE, basisSalesInput, returnedAfterBasis, tsKey, PRESETS };

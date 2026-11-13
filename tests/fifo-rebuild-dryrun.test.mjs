@@ -4,7 +4,7 @@
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const { planStore } = require('../src/scripts/fifo-rebuild-dryrun.cjs');
+const { planStore, buildInput, returnedAfterBasis } = require('../src/scripts/fifo-rebuild-dryrun.cjs');
 
 let pass = 0, fail = 0;
 const check = (l, c) => { c ? pass++ : fail++; console.log(c ? 'PASS' : 'FAIL', l); };
@@ -15,7 +15,7 @@ let seq = 0;
 const row = (product_id, cost, day, status = 'in_stock', sale_id = null) =>
     ({ id: `00000000-0000-0000-0000-${String(++seq).padStart(12, '0')}`, product_id, cost_of_purchase: cost, status, sale_id, created_at: ts(day) });
 
-function run({ products, items, sales = [], saleItems = [], cogs = [], booked = {}, shipAt = {}, receipt = {}, B, basis, uStatuses, uFrom, basisSales }) {
+function run({ products, items, sales = [], saleItems = [], cogs = [], booked = {}, shipAt = {}, receipt = {}, B, basis, uStatuses, uFrom, basisSales, uReturnedAfter }) {
     return planStore({
         products, items,
         sales: new Map(sales.map((s) => [s.id, s])),
@@ -24,6 +24,7 @@ function run({ products, items, sales = [], saleItems = [], cogs = [], booked = 
         receiptCost: new Map(Object.entries(receipt).map(([k, v]) => [k, { cost: v, source: 'restock (last receipt)' }])),
         B, basis: basis ? new Map(Object.entries(basis)) : undefined,
         uStatuses: uStatuses ? new Set(uStatuses) : undefined, uFrom, basisSales,
+        uReturnedAfter: uReturnedAfter ? new Map(Object.entries(uReturnedAfter)) : undefined,
     });
 }
 const byAction = (plan, pid, re) => plan.rowPlan.filter((r) => r.product_id === pid && re.test(r.action));
@@ -206,7 +207,8 @@ const byAction = (plan, pid, re) => plan.rowPlan.filter((r) => r.product_id === 
     check('E: 12 sales at 9.30 against 9.00 -> E 3.60, guard 0, PASS', near(p.ledger.E, 3.6) && near(p.ledger.guard_diff, 0) && p.ledger.guard_pass);
     check('E: D1 stays V - basis value (0.60); REVAL = D1 + E = V - B (4.20)',
         near(p.ledger.D1, 0.6) && near(p.ledger.reval_amount, 4.2) && near(p.ledger.reval_amount, p.ledger.V - p.ledger.B));
-    check('E: the per-order list carries each order at 0.30', p.basis_sales.subjects.length === 12 && p.basis_sales.subjects.every((x) => near(x.E, 0.3) && x.note === 'settled after the cutoff'));
+    check('E: the per-order list carries each order at 0.30, from the ledger',
+        p.basis_sales.subjects.length === 12 && p.basis_sales.subjects.every((x) => near(x.E, 0.3) && x.note === 'booked after the cutoff' && x.source === 'ledger'));
     // Reversed after the cutoff (settled before it): the unit came back to S
     // at 9.00 but 1300 got 9.30 -> E -0.30. Held throughout and re-settled
     // at a new cost (REV 9.00, COGS 9.30) -> E 0.30. Settled and reversed
@@ -217,11 +219,36 @@ const byAction = (plan, pid, re) => plan.rowPlan.filter((r) => r.product_id === 
         { kind: 'retail', id: 'zero', c_pre: 0, c_post: 0, refs: ['ORD-zero-COGS-REV', 'TX-z'], lines: [{ product_id: 'N', q: 1 }] },
         { kind: 'retail', id: 'plain', c_pre: 0, c_post: 4, refs: ['TX-p'], lines: [{ product_id: 'X', q: 1 }] },
     ];
-    const q = run({ ...base, products: [...products, { id: 'X', name: 'X', stock: 0, purchase_cost: 4 }], basisSales: { ...bs, subjects: [...subjects, ...more] } });
+    const withX = [...products, { id: 'X', name: 'X', stock: 0, purchase_cost: 4 }, { id: 'Y', name: 'Y', stock: 0, purchase_cost: 6 }];
+    const q = run({ ...base, products: withX, cogs: [...base.cogs, 'held'], basisSales: { ...bs, subjects: [...subjects, ...more] } });
     const by = new Map(q.basis_sales.subjects.map((x) => [x.id, x]));
     check('E: reversed after the cutoff -0.30, held and re-costed +0.30, settled and reversed 0, not overridden left out',
         near(by.get('rev').E, -0.3) && by.get('rev').note === 'reversed after the cutoff'
         && near(by.get('held').E, 0.3) && near(by.get('zero').E, 0) && !by.has('plain') && near(q.ledger.E, 3.6));
+    // E never takes more than the overridden lines' cost difference.
+    const probes = [
+        // a duplicate COGS entry on a 1-unit order: 18.60 out, E stays 0.30
+        { kind: 'retail', id: 'dup', c_pre: 0, c_post: 18.6, refs: ['TX-d', 'ORD-dup-COGS'], lines: [{ product_id: 'N', q: 1 }] },
+        // a mixed order (N + 2 Y) booked when Y cost 5; Y now costs 6: only N's 0.30
+        { kind: 'retail', id: 'mix', c_pre: 0, c_post: 19.3, refs: ['TX-m'], lines: [{ product_id: 'N', q: 1 }, { product_id: 'Y', q: 2 }] },
+        // held throughout, re-costed by 3.00 (beyond purchase_cost): 0
+        { kind: 'retail', id: 'big', c_pre: 9, c_post: 3, refs: ['ORD-big-COGS-ADJ'], lines: [{ product_id: 'N', q: 1 }] },
+        // a stock adjustment removing 2 at its unit_cost 9.20: 0.40 from the ledger
+        { kind: 'adjustment', id: 'adj', c_pre: 0, c_post: 18.4, refs: ['ADJ-a'], lines: [{ product_id: 'N', q: -2, uc: 9.2 }] },
+    ];
+    const pr = run({ ...base, products: withX, cogs: [...base.cogs, 'dup', 'mix', 'big'], basisSales: { ...bs, subjects: probes } });
+    const pb = new Map(pr.basis_sales.subjects.map((x) => [x.id, x]));
+    check('E: a duplicate entry is not absorbed (0.30 from the cost difference, ledger 9.60 left in the guard)',
+        near(pb.get('dup').E, 0.3) && near(pb.get('dup').ledger_excess, 9.6) && pb.get('dup').source === 'cost difference (ledger outside basis..cost)');
+    check('E: a mixed order counts only its overridden line (0.30), whatever its other product costs now',
+        near(pb.get('mix').E, 0.3) && pb.get('mix').source === 'cost difference (mixed)' && near(pb.get('mix').ledger_excess, -1.7));
+    check('E: a re-cost beyond purchase_cost on an order held throughout adds 0', near(pb.get('big').E, 0) && pb.get('big').direction === 0);
+    check('E: an adjustment booked at its unit_cost 9.20 adds 2 x 0.20 = 0.40', near(pb.get('adj').E, 0.4) && pb.get('adj').source === 'ledger');
+    check('E: the probes total 1.00', near(pr.ledger.E, 1));
+    // A retail order the rebuild does not count as booked (a REV reversed it)
+    // is not held after the cutoff, whatever its net.
+    const nb = run({ ...base, basisSales: { ...bs, subjects: [{ kind: 'retail', id: 'nb', c_pre: 0, c_post: 9.3, refs: ['ORD-nb-COGS-ADJ'], lines: [{ product_id: 'N', q: 1 }] }] } });
+    check('E: an order that is not booked adds 0, and its 9.30 stays in the guard', near(nb.ledger.E, 0) && nb.basis_sales.subjects[0].direction === 0);
     // An unexplained 1300 credit still fails.
     const bad = run({ ...base, B: base.B - 2, basisSales: bs });
     check('E: an unexplained 2.00 out of 1300 still fails the guard (-2.00)', near(bad.ledger.guard_diff, -2) && !bad.ledger.guard_pass);
@@ -231,6 +258,73 @@ const byAction = (plan, pid, re) => plan.rowPlan.filter((r) => r.product_id === 
         cogs: [...base.cogs, 'su'], booked: { su: 9.3 }, B: base.B - 9.3,
         basisSales: { ...bs, subjects: [...subjects, { kind: 'retail', id: 'su', c_pre: 0, c_post: 9.3, refs: ['TX-su'], lines: [{ product_id: 'N', q: 1 }] }] } });
     check('E: an order in SU adds 0 to E and the guard still passes', near(su.ledger.E, 3.6) && near(su.ledger.settled_unshipped_booked, 9.3) && su.ledger.guard_pass);
+}
+
+// 11. COGS-REV / -COGS-ADJ net into an order's booked amount, and an order a
+//     REV reversed in full is not booked (buildInput's ledger facts).
+{
+    const raw = {
+        products: [{ id: 'N', name: 'NR-3026', stock: 1, purchase_cost: 9 }],
+        items: [{ id: 'r1', product_id: 'N', cost_of_purchase: 9, status: 'in_stock', sale_id: null, created_at: ts(1) }],
+        sales: [
+            { id: 'rs', shipping_status: 'ReStock', payment_status: 'Paid', date: ts(1) },
+            { id: 'aj', shipping_status: 'ReStock', payment_status: 'Paid', date: ts(1) },
+        ],
+        saleItems: [{ id: 'l1', sale_id: 'rs', product_id: 'N', quantity: 1 }, { id: 'l2', sale_id: 'aj', product_id: 'N', quantity: 1 }],
+        accounts: [{ id: 'inv', account_code: '1300' }, { id: 'cg', account_code: '5000' }, { id: 'eq', account_code: '3000' }],
+        entries: [
+            { id: 'e1', reference_id: 'ORD-rs-COGS', created_at: ts(2) }, { id: 'e2', reference_id: 'ORD-rs-COGS-REV', created_at: ts(3) },
+            { id: 'e3', reference_id: 'ORD-aj-COGS', created_at: ts(2) }, { id: 'e4', reference_id: 'ORD-aj-COGS-ADJ', created_at: ts(3) },
+            { id: 'e5', reference_id: 'OPEN', created_at: ts(1) },
+        ],
+        lines: [
+            { journal_entry_id: 'e1', account_id: 'cg', debit: 9, credit: 0 }, { journal_entry_id: 'e1', account_id: 'inv', debit: 0, credit: 9 },
+            { journal_entry_id: 'e2', account_id: 'inv', debit: 9, credit: 0 }, { journal_entry_id: 'e2', account_id: 'cg', debit: 0, credit: 9 },
+            { journal_entry_id: 'e3', account_id: 'cg', debit: 9, credit: 0 }, { journal_entry_id: 'e3', account_id: 'inv', debit: 0, credit: 9 },
+            { journal_entry_id: 'e4', account_id: 'cg', debit: 1, credit: 0 }, { journal_entry_id: 'e4', account_id: 'inv', debit: 0, credit: 1 },
+            { journal_entry_id: 'e5', account_id: 'inv', debit: 9, credit: 0 }, { journal_entry_id: 'e5', account_id: 'eq', debit: 0, credit: 9 },
+        ],
+        txs: [], moves: [], restocks: [], purchaseOrders: [], poItems: [],
+    };
+    const p = planStore(buildInput(raw, []).input);
+    check('booked: an order reversed in full by its COGS-REV is not in SU; an ADJ adds to the booked amount (aj 9 + 1 = 10)',
+        JSON.stringify(p.settled_unshipped.map((o) => [o.order_id, o.booked])) === '[["aj",10]]');
+}
+
+// 12. Returned orders the basis entry still counted stay in U
+//     (returnedAfterBasis, and planStore with uReturnedAfter).
+{
+    const cutoff = '2026-11-12T14:51:05.206569+00:00';
+    const before = '2026-11-12T10:00:00+00:00', after = '2026-11-13T02:00:00+00:00';
+    const raw = {
+        sales: [
+            { id: 'ra', shipping_status: 'Returned', payment_status: 'Unpaid', created_at: before, last_edited_at: after },
+            { id: 'rb', shipping_status: 'Returned', payment_status: 'Unpaid', created_at: before, last_edited_at: before },
+            { id: 'rc', shipping_status: 'Returned', payment_status: 'Unpaid', created_at: before, last_edited_at: after },
+            { id: 'rd', shipping_status: 'Returned', payment_status: 'Unpaid', created_at: before, last_edited_at: after },
+            { id: 'rn', shipping_status: 'Returned', payment_status: 'Unpaid', created_at: after, last_edited_at: after },
+            { id: 'rp', shipping_status: 'Returned', payment_status: 'Paid', created_at: after, last_edited_at: after },
+            { id: 'rk', shipping_status: 'Returned', payment_status: 'Unpaid', created_at: after, last_edited_at: after },
+        ],
+        statusLogs: [
+            { id: '1', order_id: 'ra', status: 'Shipped', created_at: before }, { id: '2', order_id: 'ra', status: 'Returned', created_at: after },
+            { id: '3', order_id: 'rb', status: 'Returned', created_at: before },
+            { id: '4', order_id: 'rc', status: null, created_at: before },
+            { id: '5', order_id: 'rd', status: 'Delivered', created_at: before },
+        ],
+        moves: [{ reference_id: '', order_id: 'rd', type: 'in', created_at: after }],
+    };
+    const m = returnedAfterBasis(raw, cutoff, new Set(['Shipped', 'Delivered']), new Set(['rk']));
+    check('returnedAfterBasis: kept = ra (was Shipped) and rn (created after); not rb (Returned then), rc (no status logged), rd (restocked), rp (settled), rk (booked)',
+        JSON.stringify([...m].sort()) === '[["ra","Shipped"],["rn","created after the basis entry"]]');
+    check('returnedAfterBasis: nothing when Returned is a U status', returnedAfterBasis(raw, cutoff, new Set(['Shipped', 'Delivered', 'Returned']), new Set()).size === 0);
+    const sales = [{ id: 'ra', shipping_status: 'Returned', payment_status: 'Unpaid', date: ts(25) }, { id: 'rb', shipping_status: 'Returned', payment_status: 'Unpaid', date: ts(25) }];
+    const saleItems = [{ id: 'a', sale_id: 'ra', product_id: 'A', quantity: 1 }, { id: 'b', sale_id: 'rb', product_id: 'A', quantity: 1 }];
+    const pl = run({ products: [{ id: 'A', name: 'A', stock: 0, purchase_cost: 7 }], items: [row('A', 7, 1, 'sold', 'ra')], sales, saleItems, B: 7,
+        uStatuses: ['Shipped', 'Delivered'], uReturnedAfter: { ra: 'Shipped' } });
+    check('planStore: ra in U (7.00), rb left out by status, guard 0',
+        pl.totals.U === 1 && JSON.stringify(pl.excluded_from_u.by_status.order_ids) === '["rb"]' && near(pl.ledger.guard_diff, 0)
+        && pl.u_returned_after_basis.orders === 1 && near(pl.u_returned_after_basis.basis_value, 7) && near(pl.residual.u_on_returned_orders, 0));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
