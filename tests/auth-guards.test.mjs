@@ -4,6 +4,7 @@
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
+import { useLiveTypes } from './live-schema.mjs';
 
 const { PGlite } = await import(process.env.PGLITE_DIST || '@electric-sql/pglite');
 
@@ -31,11 +32,13 @@ INSERT INTO users (id, name, email, role_id, pin) VALUES
  ('u2','Sok','s@x.com','salesman','5678'),
  ('u3','NoPin','n@x.com','cashier','');
 `);
+await useLiveTypes(db); // users on the live column types
 
 const strip = f => fs.readFileSync(f, 'utf8').replace(/NOTIFY[^;]*;/g, '');
 await db.exec(strip(PIN_MIG)); // prerequisite, as the migration header orders it
 await db.exec(strip(MIG));
 await db.exec(strip(MIG)); // safe to re-run
+await useLiveTypes(db); // and session_tokens as live has it
 check('migration runs twice', true);
 
 const login = async (pin, id) => (await q(`SELECT * FROM login_with_pin($1,$2)`, [pin, id])).rows;

@@ -6,6 +6,7 @@
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
+import { useLiveTypes } from './live-schema.mjs';
 
 const { PGlite } = await import(process.env.PGLITE_DIST || '@electric-sql/pglite');
 
@@ -20,6 +21,7 @@ export async function makeDb() {
     let schema = strip(mig('full_schema.sql')).replace(/CREATE EXTENSION[^;]*;/g, '');
     schema = schema.replace(/INSERT INTO storage[\s\S]*?END \$\$;/, '');
     await db.exec(schema);
+    await useLiveTypes(db); // the live column types, not full_schema's
     await db.exec(`GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;`);
     await db.exec(strip(mig('add_auth_guards.sql')));
     for (const f of ['add_transaction_order_link.sql', 'add_transaction_reference_notes.sql',
@@ -31,6 +33,7 @@ export async function makeDb() {
                      'add_config_functions.sql', 'add_session_guards.sql']) {
         await db.exec(strip(mig(f)));
     }
+    await useLiveTypes(db); // and on the columns the migrations added
     return db;
 }
 

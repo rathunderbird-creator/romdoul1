@@ -19,6 +19,7 @@
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
+import { useLiveTypes, lineUuid as SI } from './live-schema.mjs'; // SI: a line label as the uuid sale_items.id is live
 
 const { PGlite } = await import(process.env.PGLITE_DIST || '@electric-sql/pglite');
 
@@ -47,6 +48,7 @@ await db.exec(`CREATE OR REPLACE FUNCTION uuid_generate_v4() RETURNS uuid LANGUA
 let schema = strip(mig('full_schema.sql')).replace(/CREATE EXTENSION[^;]*;/g, '');
 schema = schema.replace(/INSERT INTO storage[\s\S]*?END \$\$;/, '');
 await db.exec(schema);
+await useLiveTypes(db); // the live column types, not full_schema's
 await db.exec(`GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;`);
 await db.exec(strip(mig('add_auth_guards.sql')));
 for (const f of ['add_transaction_order_link.sql', 'add_transaction_reference_notes.sql',
@@ -76,7 +78,7 @@ await db.exec(`
     ALTER TABLE wholesale_order_items DROP COLUMN cogs_cost, DROP COLUMN cogs_short_qty;
     ALTER TABLE stock_movements DROP COLUMN unit_cost;
 `);
-await q(`INSERT INTO products (id, name) VALUES ('tmp', 'tmp')`);
+await q(`INSERT INTO products (id, name, price) VALUES ('tmp', 'tmp', 1)`);
 check('pre-FIFO table refuses written_off',
     /check constraint/i.test(await errOf(`INSERT INTO inventory_items (product_id, status) VALUES ('tmp', 'written_off')`)));
 await q(`DELETE FROM products WHERE id = 'tmp'`);
@@ -95,6 +97,7 @@ await q(`UPDATE inventory_items SET received_at = '2025-12-01T00:00:00Z' WHERE i
 await db.exec(strip(mig('add_fifo_costing.sql')));
 await db.exec(strip(mig('add_session_guards.sql')));
 await db.exec(strip(mig('add_session_guards.sql')));
+await useLiveTypes(db); // and on the columns add_fifo_costing.sql re-added
 check('migration runs twice (with the guards re-run after it)', true);
 const kept = await one(`SELECT received_at = '2025-12-01T00:00:00Z'::timestamptz AS ok FROM inventory_items WHERE id = '00000000-0000-0000-0000-0000000000a2'`);
 check('re-run keeps an explicit received_at', kept.ok === true);
@@ -147,11 +150,11 @@ await q(`INSERT INTO inventory_items (id, product_id, cost_of_purchase, status, 
 await q(`INSERT INTO sales (id, total, shipping_status, payment_status) VALUES
     ('S1', 100, 'Shipped', 'Unpaid'), ('S2', 50, 'Shipped', 'Unpaid'), ('S3', 30, 'Pending', 'Unpaid')`);
 await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES
-    ('S1-a', 'S1', 'p1', 'Speaker', 20, 4),
-    ('S2-a', 'S2', 'p2', 'Mic', 15, 5),
-    ('S3-a', 'S3', 'p1', 'Speaker', 20, 1),
-    ('S3-b', 'S3', 'p1', 'Speaker', 20, 1),
-    ('S3-c', 'S3', 'p2', 'Mic', 15, 1)`);
+    ('${SI('S1-a')}', 'S1', 'p1', 'Speaker', 20, 4),
+    ('${SI('S2-a')}', 'S2', 'p2', 'Mic', 15, 5),
+    ('${SI('S3-a')}', 'S3', 'p1', 'Speaker', 20, 1),
+    ('${SI('S3-b')}', 'S3', 'p1', 'Speaker', 20, 1),
+    ('${SI('S3-c')}', 'S3', 'p2', 'Mic', 15, 1)`);
 
 const consume = (prod, qty, kind, consumer, line) =>
     one(`SELECT cost, short_qty FROM wp_internal.fifo_consume($1, $2, $3, $4, $5)`, [prod, qty, kind, consumer, line]);
@@ -177,7 +180,7 @@ check('fallback: newest-received priced layer (p1 -> 7)', await fb('p1') === 7);
 check('fallback: only zero-cost layers -> purchase_cost (p3 -> 0.80)', await fb('p3') === 0.8);
 check('fallback: nothing at all -> 0 (p4)', await fb('p4') === 0);
 
-await q(`INSERT INTO products (id, name, purchase_cost) VALUES ('p5', 'Bag', 2.5)`);
+await q(`INSERT INTO products (id, name, price, purchase_cost) VALUES ('p5', 'Bag', 5, 2.5)`);
 const addCost = num((await one(`SELECT wp_internal.fifo_add_layers('p5', 3, 0, '2026-06-01T00:00:00Z', 'RST-x') AS c`)).c);
 check('add_layers: cost 0 falls back (purchase_cost 2.5)', addCost === 2.5);
 const p5 = (await q(`SELECT cost_of_purchase, status, receipt_ref, received_at = '2026-06-01T00:00:00Z'::timestamptz AS at
@@ -193,10 +196,10 @@ check('add_layers: products.stock untouched', num((await one(`SELECT COALESCE(st
 // ---------------------------------------------------------------------------
 // Consume order by received_at, id
 // ---------------------------------------------------------------------------
-const c1 = await consume('p1', 4, 'retail', 'S1', 'S1-a');
+const c1 = await consume('p1', 4, 'retail', 'S1', SI('S1-a'));
 check('consume 4: cost 5+5+5+6 = 21, no shortfall', near(c1.cost, 21) && c1.short_qty === 0, c1);
-await lineAdd('S1-a', c1.cost, c1.short_qty);
-const s1Rows = await heldBy('retail', 'S1', 'S1-a');
+await lineAdd(SI('S1-a'), c1.cost, c1.short_qty);
+const s1Rows = await heldBy('retail', 'S1', SI('S1-a'));
 check('consume: oldest received first, ties by id (11, 12, 13 of t1, then 21 of t2)',
     JSON.stringify(s1Rows) === JSON.stringify([L(11), L(12), L(13), L(21)]), s1Rows);
 const s1Meta = await one(`SELECT bool_and(sale_id = 'S1') AS sid, bool_and(consumed_at IS NOT NULL) AS at
@@ -208,52 +211,52 @@ check('consume: L22 (same t2, larger id) still in stock',
 // ---------------------------------------------------------------------------
 // Partial return gives back the newest first
 // ---------------------------------------------------------------------------
-const r1 = await giveBack('retail', 'S1', 'S1-a', 1);
+const r1 = await giveBack('retail', 'S1', SI('S1-a'), 1);
 check('partial return 1: gives back the t2 layer (6), no short units', near(r1.cost, 6) && num(r1.short_qty) === 0, r1);
-await lineSub('S1-a', r1.cost, r1.short_qty);
+await lineSub(SI('S1-a'), r1.cost, r1.short_qty);
 check('partial return: the three oldest stay consumed',
-    JSON.stringify(await heldBy('retail', 'S1', 'S1-a')) === JSON.stringify([L(11), L(12), L(13)]));
+    JSON.stringify(await heldBy('retail', 'S1', SI('S1-a'))) === JSON.stringify([L(11), L(12), L(13)]));
 const back = await one(`SELECT status, sale_id, consumer_kind, consumer_id, consumer_line_id, consumed_at FROM inventory_items WHERE id = '${L(21)}'`);
 check('returned row is clean in_stock', back.status === 'in_stock' && back.sale_id === null && back.consumer_kind === null
     && back.consumer_id === null && back.consumer_line_id === null && back.consumed_at === null, back);
-check('line cost follows (15 left)', near((await one(`SELECT cogs_cost FROM sale_items WHERE id = 'S1-a'`)).cogs_cost, 15));
+check('line cost follows (15 left)', near((await one(`SELECT cogs_cost FROM sale_items WHERE id = '${SI('S1-a')}'`)).cogs_cost, 15));
 
 // ---------------------------------------------------------------------------
 // Round trip: return everything, take it again -> same rows, same cost
 // ---------------------------------------------------------------------------
-const r2 = await giveBack('retail', 'S1', 'S1-a');
+const r2 = await giveBack('retail', 'S1', SI('S1-a'));
 check('full return: cost 15', near(r2.cost, 15) && num(r2.short_qty) === 0, r2);
-await lineSub('S1-a', r2.cost, r2.short_qty);
-check('full return: line holds nothing (cogs_cost NULL)', (await one(`SELECT cogs_cost FROM sale_items WHERE id = 'S1-a'`)).cogs_cost === null);
-const c2 = await consume('p1', 4, 'retail', 'S1', 'S1-a');
-await lineAdd('S1-a', c2.cost, c2.short_qty);
+await lineSub(SI('S1-a'), r2.cost, r2.short_qty);
+check('full return: line holds nothing (cogs_cost NULL)', (await one(`SELECT cogs_cost FROM sale_items WHERE id = '${SI('S1-a')}'`)).cogs_cost === null);
+const c2 = await consume('p1', 4, 'retail', 'S1', SI('S1-a'));
+await lineAdd(SI('S1-a'), c2.cost, c2.short_qty);
 check('re-consume: same rows as the first time',
-    JSON.stringify(await heldBy('retail', 'S1', 'S1-a')) === JSON.stringify(s1Rows));
+    JSON.stringify(await heldBy('retail', 'S1', SI('S1-a'))) === JSON.stringify(s1Rows));
 check('re-consume: same cost (21)', near(c2.cost, 21));
 
 // ---------------------------------------------------------------------------
 // Shortfall at the last receipt cost; a later return gives short units back first
 // ---------------------------------------------------------------------------
-const c3 = await consume('p2', 5, 'retail', 'S2', 'S2-a');
+const c3 = await consume('p2', 5, 'retail', 'S2', SI('S2-a'));
 check('shortfall: 2 layers (4 + 4.5) + 3 short at the last receipt cost 4.5 = 22',
     near(c3.cost, 22) && c3.short_qty === 3, c3);
-await lineAdd('S2-a', c3.cost, c3.short_qty);
+await lineAdd(SI('S2-a'), c3.cost, c3.short_qty);
 check('shortfall: no phantom rows', num((await one(`SELECT count(*) AS n FROM inventory_items WHERE product_id = 'p2'`)).n) === 2);
-const r3 = await giveBack('retail', 'S2', 'S2-a', 2);
+const r3 = await giveBack('retail', 'S2', SI('S2-a'), 2);
 check('return 2 of a short line: both are short units at 4.5 (9), no rows back',
     near(r3.cost, 9) && num(r3.short_qty) === 2, r3);
-await lineSub('S2-a', r3.cost, r3.short_qty);
-check('return of short units leaves the layers consumed', (await heldBy('retail', 'S2', 'S2-a')).length === 2);
-const r4 = await giveBack('retail', 'S2', 'S2-a', 2);
+await lineSub(SI('S2-a'), r3.cost, r3.short_qty);
+check('return of short units leaves the layers consumed', (await heldBy('retail', 'S2', SI('S2-a'))).length === 2);
+const r4 = await giveBack('retail', 'S2', SI('S2-a'), 2);
 check('return 2 more: last short unit (4.5) then the newest layer (4.5) = 9',
     near(r4.cost, 9) && num(r4.short_qty) === 1, r4);
-await lineSub('S2-a', r4.cost, r4.short_qty);
-check('the oldest layer (4) is what stays', JSON.stringify(await heldBy('retail', 'S2', 'S2-a')) === JSON.stringify([L(41)]));
-const r5 = await giveBack('retail', 'S2', 'S2-a');
+await lineSub(SI('S2-a'), r4.cost, r4.short_qty);
+check('the oldest layer (4) is what stays', JSON.stringify(await heldBy('retail', 'S2', SI('S2-a'))) === JSON.stringify([L(41)]));
+const r5 = await giveBack('retail', 'S2', SI('S2-a'));
 check('full return of the rest: 4', near(r5.cost, 4) && num(r5.short_qty) === 0, r5);
-await lineSub('S2-a', r5.cost, r5.short_qty);
+await lineSub(SI('S2-a'), r5.cost, r5.short_qty);
 check('total released = total charged (22)', near(num(r3.cost) + num(r4.cost) + num(r5.cost), 22));
-const s2line = await one(`SELECT cogs_cost, cogs_short_qty FROM sale_items WHERE id = 'S2-a'`);
+const s2line = await one(`SELECT cogs_cost, cogs_short_qty FROM sale_items WHERE id = '${SI('S2-a')}'`);
 check('line back to empty', s2line.cogs_cost === null && num(s2line.cogs_short_qty) === 0, s2line);
 
 const c4 = await consume('p4', 2, 'wholesale', 'W1', 'line-1');
@@ -264,7 +267,7 @@ check('wholesale consume leaves sale_id NULL',
     (await one(`SELECT sale_id, status FROM inventory_items WHERE id = '${L(51)}'`)).sale_id === null);
 check('unknown consumer kind is refused', /unknown consumer kind/.test(await errOf(
     `SELECT * FROM wp_internal.fifo_consume('p1', 1, 'gift', 'x', 'y')`)));
-const c0 = await consume('p1', 0, 'retail', 'S1', 'S1-a');
+const c0 = await consume('p1', 0, 'retail', 'S1', SI('S1-a'));
 check('consume 0: nothing', near(c0.cost, 0) && c0.short_qty === 0);
 
 // ---------------------------------------------------------------------------
@@ -282,10 +285,10 @@ await q(`UPDATE inventory_items SET consumer_kind = 'retail' WHERE id = $1`, [wo
 const rw = await giveBack('retail', 'ADJ1', 'ADJ1-l');
 check('a written_off row is never returned, whatever its consumer columns', near(rw.cost, 0)
     && (await one(`SELECT status FROM inventory_items WHERE id = $1`, [woIds[0]])).status === 'written_off');
-const c6 = await consume('p5', 10, 'retail', 'S1', 'S1-x');
+const c6 = await consume('p5', 10, 'retail', 'S1', SI('S1-x'));
 check('a later consume never picks written_off rows (3 left: 2.5 + 3.1 + 3.1, 7 short at 3.1)',
     near(c6.cost, 2.5 + 3.1 + 3.1 + 7 * 3.1) && c6.short_qty === 7, c6);
-await giveBack('retail', 'S1', 'S1-x');
+await giveBack('retail', 'S1', SI('S1-x'));
 check('...and returning them puts back only the 3 real rows',
     num((await one(`SELECT count(*) AS n FROM inventory_items WHERE product_id = 'p5' AND status = 'in_stock'`)).n) === 3);
 
@@ -335,7 +338,7 @@ await q(`UPDATE products p SET stock = (SELECT count(*) FROM inventory_items i W
 const poolValue = num((await one(`SELECT COALESCE(sum(cost_of_purchase), 0) AS v FROM inventory_items WHERE status = 'in_stock'`)).v);
 const inv = (await one(`SELECT id FROM chart_of_accounts WHERE account_code = '1300'`)).id;
 const eq = (await one(`SELECT id FROM chart_of_accounts WHERE account_code = '3000'`)).id;
-const je = (await one(`INSERT INTO journal_entries (description, reference_id, status) VALUES ('Opening', 'OPENING-INV', 'Posted') RETURNING id`)).id;
+const je = (await one(`INSERT INTO journal_entries (date, description, reference_id, status) VALUES ('2026-11-01', 'Opening', 'OPENING-INV', 'Posted') RETURNING id`)).id;
 await q(`INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit) VALUES ($1, $2, $3, 0), ($1, $4, 0, $3)`,
     [je, inv, poolValue + 21, eq]);
 let chk = (await one(`SELECT wp_internal.fifo_inventory_check() AS j`)).j;
@@ -345,17 +348,17 @@ check('check: variance 0 when 1300 = pool + shipped-unbooked', near(chk.variance
 check('check: no product mismatches', chk.product_mismatches === 0, chk.products);
 check('check: p3 shortfall line is wholesale, so retail short lines = 0', num(chk.shortfall.retail_lines) === 0);
 // Settled before ship: COGS booked on S3 (17), goods still in the pool.
-const je2 = (await one(`INSERT INTO journal_entries (description, reference_id, status) VALUES ('S3 COGS', 'ORD-S3-COGS', 'Draft') RETURNING id`)).id;
+const je2 = (await one(`INSERT INTO journal_entries (date, description, reference_id, status) VALUES ('2026-11-01', 'S3 COGS', 'ORD-S3-COGS', 'Draft') RETURNING id`)).id;
 const cogsAcc = (await one(`SELECT id FROM chart_of_accounts WHERE account_code = '5000'`)).id;
 await q(`INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit) VALUES ($1, $2, 17, 0), ($1, $3, 0, 17)`, [je2, cogsAcc, inv]);
-await q(`UPDATE sale_items SET cogs_booked = CASE id WHEN 'S3-a' THEN 6 WHEN 'S3-b' THEN 7 ELSE 4 END WHERE sale_id = 'S3'`);
+await q(`UPDATE sale_items SET cogs_booked = CASE id WHEN '${SI('S3-a')}' THEN 6 WHEN '${SI('S3-b')}' THEN 7 ELSE 4 END WHERE sale_id = 'S3'`);
 chk = (await one(`SELECT wp_internal.fifo_inventory_check() AS j`)).j;
 check('check: settled-unshipped booked 17 counted, variance still 0',
     near(chk.retail_booked_not_out, 17) && near(chk.variance, 0) && near(chk.ledger_1300_posted, poolValue + 21), chk);
 // Ship S3-a at a different cost than booked, without the COGS-ADJ: variance shows it.
-const c7 = await consume('p1', 1, 'retail', 'S3', 'S3-a');
-await lineAdd('S3-a', c7.cost, c7.short_qty);
-await q(`UPDATE sale_items SET cogs_booked = 5 WHERE id = 'S3-a'`); // booked 5, actual 6
+const c7 = await consume('p1', 1, 'retail', 'S3', SI('S3-a'));
+await lineAdd(SI('S3-a'), c7.cost, c7.short_qty);
+await q(`UPDATE sale_items SET cogs_booked = 5 WHERE id = '${SI('S3-a')}'`); // booked 5, actual 6
 chk = (await one(`SELECT wp_internal.fifo_inventory_check() AS j`)).j;
 check('check: booked-vs-actual difference without its ADJ shows as variance (-1 = ledger short of the 1 not yet booked)',
     near(chk.retail_booked_out_diff, 1) && near(chk.variance, -1) && chk.product_mismatches === 1, chk);
@@ -416,11 +419,11 @@ await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('p
 const addErr = await errOf(`SELECT add_product_stock(p_product_id => 'p9', p_quantity => 2, p_cost => 2.5)`);
 check('add_product_stock works (layers get received_at by default)', addErr === '', addErr);
 await q(`INSERT INTO sales (id, total, shipping_status, payment_status) VALUES ('S9', 12, 'Pending', 'Unpaid')`);
-await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('S9-a', 'S9', 'p9', 'Lamp', 12, 1)`);
+await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('${SI('S9-a')}', 'S9', 'p9', 'Lamp', 12, 1)`);
 const shipErr = await errOf(`SELECT set_order_shipping_status(p_order_id => 'S9', p_expected_status => 'Pending', p_new_status => 'Shipped')`);
 check('ship path works', shipErr === '', shipErr);
-const s9 = await one(`SELECT (SELECT cogs_cost FROM sale_items WHERE id = 'S9-a') AS cogs,
-    (SELECT count(*) FROM inventory_items WHERE sale_id = 'S9' AND consumer_kind = 'retail' AND consumer_line_id = 'S9-a') AS fifo_sold,
+const s9 = await one(`SELECT (SELECT cogs_cost FROM sale_items WHERE id = '${SI('S9-a')}') AS cogs,
+    (SELECT count(*) FROM inventory_items WHERE sale_id = 'S9' AND consumer_kind = 'retail' AND consumer_line_id = '${SI('S9-a')}') AS fifo_sold,
     (SELECT max(unit_cost) FROM stock_movements WHERE reference_id = 'S9' AND type = 'out') AS mv_cost,
     (SELECT purchase_cost FROM products WHERE id = 'p9') AS pc`);
 check('wired: ship takes a layer for the line, freezes 2.50 on it and on the movement; Add Stock set purchase_cost',

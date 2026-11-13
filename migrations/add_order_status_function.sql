@@ -227,8 +227,8 @@ BEGIN
     IF round(v_amt, 2) <= 0 OR NOT wp_internal.os_post_cogs_move(p_order_id, 'ADJ', v_amt, p_date) THEN
         RETURN 0;
     END IF;
-    UPDATE sale_items si SET cogs_booked = (v_lines->>si.id)::NUMERIC
-     WHERE si.sale_id = p_order_id AND v_lines ? si.id;
+    UPDATE sale_items si SET cogs_booked = (v_lines->>si.id::TEXT)::NUMERIC
+     WHERE si.sale_id = p_order_id AND v_lines ? si.id::TEXT;
     RETURN round(v_amt, 2);
 END;
 $$;
@@ -308,7 +308,7 @@ BEGIN
          WHERE si.sale_id = ANY(v_ids) AND si.product_id IS NOT NULL
          ORDER BY si.sale_id, si.created_at, si.id
     LOOP
-        v_back := wp_internal.fifo_give_back_line('retail', r.sale_id, r.id);
+        v_back := wp_internal.fifo_give_back_line('retail', r.sale_id, r.id::TEXT);
         v_value := v_value || jsonb_build_object(r.product_id, COALESCE((v_value->>r.product_id)::NUMERIC, 0) + v_back);
     END LOOP;
 
@@ -460,7 +460,7 @@ BEGIN
         LOOP
             UPDATE products SET stock = GREATEST(0, COALESCE(stock, 0) - r.quantity) WHERE id = r.product_id;
             -- The oldest layers go to this line; their cost is frozen on it.
-            PERFORM wp_internal.fifo_take_line('retail', p_order_id, r.id);
+            PERFORM wp_internal.fifo_take_line('retail', p_order_id, r.id::TEXT);
         END LOOP;
         -- Settled before it shipped: book the actual cost's difference.
         PERFORM wp_internal.os_true_up_booked_cogs(p_order_id, v_day);
@@ -475,7 +475,7 @@ BEGIN
              ORDER BY created_at, id
         LOOP
             UPDATE products SET stock = COALESCE(stock, 0) + r.quantity WHERE id = r.product_id;
-            PERFORM wp_internal.fifo_give_back_line('retail', p_order_id, r.id);
+            PERFORM wp_internal.fifo_give_back_line('retail', p_order_id, r.id::TEXT);
         END LOOP;
         -- Only the newest generation: a re-shipped order has one per shipment.
         SELECT max(created_at) INTO v_newest FROM stock_movements WHERE reference_id = p_order_id AND type = 'out';
@@ -607,7 +607,7 @@ BEGIN
         -- below, so the units come back to the same layers where they can.
         FOR r IN SELECT id FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL ORDER BY created_at, id
         LOOP
-            v_given := v_given + wp_internal.fifo_give_back_line('retail', p_order_id, r.id);
+            v_given := v_given + wp_internal.fifo_give_back_line('retail', p_order_id, r.id::TEXT);
         END LOOP;
         -- An order settled before the FIFO wiring (COGS in the ledger, no
         -- line with cogs_booked) is taken as booked at the layer value its
@@ -676,7 +676,7 @@ BEGIN
 
     FOR r IN SELECT id FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL ORDER BY created_at, id
     LOOP
-        PERFORM wp_internal.fifo_take_line('retail', p_order_id, r.id);
+        PERFORM wp_internal.fifo_take_line('retail', p_order_id, r.id::TEXT);
     END LOOP;
     IF v_paid AND NOT v_had_products THEN
         PERFORM wp_internal.os_book_paid_unbooked(p_order_id, COALESCE(NULLIF(v_fields->>'movement_date', '')::date, CURRENT_DATE));

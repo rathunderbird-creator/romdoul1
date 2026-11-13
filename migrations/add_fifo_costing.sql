@@ -132,6 +132,11 @@ CREATE INDEX IF NOT EXISTS inventory_items_consumer_idx
     ON inventory_items (consumer_kind, consumer_id, consumer_line_id);
 CREATE INDEX IF NOT EXISTS inventory_items_sale_idx
     ON inventory_items (sale_id) WHERE sale_id IS NOT NULL;
+-- A line is found by its id as text (consumer_line_id, the RPCs' p_line):
+-- sale_items.id is uuid on the live stores and TEXT on older installs, so
+-- the lookups compare id::TEXT, which this index serves on either.
+CREATE INDEX IF NOT EXISTS sale_items_id_text_idx
+    ON sale_items ((id::TEXT));
 
 -- Frozen per-line cost: the FIFO cost of the units the line holds now (NULL
 -- when it holds none), and how many of those units the pool could not
@@ -286,7 +291,7 @@ BEGIN
     IF p_kind = 'retail' THEN
         SELECT si.cogs_cost, COALESCE(si.cogs_short_qty, 0), si.product_id
           INTO v_line_cost, v_line_short, v_product
-          FROM sale_items si WHERE si.id = p_line;
+          FROM sale_items si WHERE si.id::TEXT = p_line;
     ELSIF p_line ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
         SELECT wi.cogs_cost, COALESCE(wi.cogs_short_qty, 0), wi.product_id
           INTO v_line_cost, v_line_short, v_product
@@ -388,7 +393,7 @@ DECLARE
     v_short NUMERIC;
 BEGIN
     IF p_kind = 'retail' THEN
-        SELECT product_id, COALESCE(quantity, 0) INTO v_product, v_qty FROM sale_items WHERE id = p_line;
+        SELECT product_id, COALESCE(quantity, 0) INTO v_product, v_qty FROM sale_items WHERE id::TEXT = p_line;
     ELSIF p_kind = 'wholesale' THEN
         SELECT product_id, COALESCE(quantity, 0) INTO v_product, v_qty FROM wholesale_order_items WHERE id = p_line::uuid;
     ELSE
@@ -409,7 +414,7 @@ BEGIN
     IF p_kind = 'retail' THEN
         UPDATE sale_items SET cogs_cost = COALESCE(cogs_cost, 0) + v_cost,
                               cogs_short_qty = COALESCE(cogs_short_qty, 0) + v_short
-         WHERE id = p_line;
+         WHERE id::TEXT = p_line;
     ELSE
         UPDATE wholesale_order_items SET cogs_cost = COALESCE(cogs_cost, 0) + v_cost,
                                          cogs_short_qty = COALESCE(cogs_short_qty, 0) + v_short
@@ -455,7 +460,7 @@ DECLARE
 BEGIN
     IF p_kind = 'retail' THEN
         SELECT product_id, COALESCE(quantity, 0), cogs_cost INTO v_product, v_qty, v_line_cost
-          FROM sale_items WHERE id = p_line;
+          FROM sale_items WHERE id::TEXT = p_line;
     ELSIF p_kind = 'wholesale' THEN
         SELECT product_id, COALESCE(quantity, 0), cogs_cost INTO v_product, v_qty, v_line_cost
           FROM wholesale_order_items WHERE id = p_line::uuid;
@@ -498,7 +503,7 @@ BEGIN
     END IF;
 
     IF p_kind = 'retail' THEN
-        UPDATE sale_items SET cogs_cost = NULL, cogs_short_qty = 0 WHERE id = p_line;
+        UPDATE sale_items SET cogs_cost = NULL, cogs_short_qty = 0 WHERE id::TEXT = p_line;
     ELSE
         UPDATE wholesale_order_items SET cogs_cost = NULL, cogs_short_qty = 0, cogs_backfill = false WHERE id = p_line::uuid;
     END IF;
@@ -516,15 +521,15 @@ RETURNS TABLE (line_id TEXT, product_id TEXT, amount NUMERIC)
 LANGUAGE sql
 STABLE
 AS $$
-    SELECT si.id, si.product_id, round(si.cogs_cost, 2)
+    SELECT si.id::TEXT, si.product_id, round(si.cogs_cost, 2)
       FROM sale_items si
      WHERE si.sale_id = p_order_id AND si.product_id IS NOT NULL AND si.cogs_cost IS NOT NULL
     UNION ALL
     SELECT x.id, x.product_id,
            round(wp_internal.fifo_peek_cost(x.product_id, x.upto)
                  - wp_internal.fifo_peek_cost(x.product_id, x.upto - x.qty), 2)
-      FROM (SELECT si.id, si.product_id, GREATEST(COALESCE(si.quantity, 0), 0) AS qty,
-                   sum(GREATEST(COALESCE(si.quantity, 0), 0))
+      FROM (SELECT si.id::TEXT AS id, si.product_id, GREATEST(COALESCE(si.quantity, 0), 0)::NUMERIC AS qty,
+                   sum(GREATEST(COALESCE(si.quantity, 0), 0)::NUMERIC)
                        OVER (PARTITION BY si.product_id ORDER BY si.created_at, si.id) AS upto
               FROM sale_items si
              WHERE si.sale_id = p_order_id AND si.product_id IS NOT NULL AND si.cogs_cost IS NULL) x;

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { writeFileSync, rmSync } from 'fs';
 import { build } from 'esbuild';
+import { useLiveTypes } from './live-schema.mjs';
 
 const { PGlite } = await import(process.env.PGLITE_DIST || '@electric-sql/pglite');
 
@@ -30,6 +31,7 @@ rmSync(bundlePath);
 // The accounting tables exactly as migrations/full_schema.sql creates and
 // seeds them — two independent databases, so the seeded UUIDs differ.
 const ACCOUNTING_SCHEMA = `
+CREATE OR REPLACE FUNCTION uuid_generate_v4() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()';
 CREATE TABLE chart_of_accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     account_code TEXT UNIQUE NOT NULL,
@@ -66,6 +68,9 @@ const source = new PGlite();
 const target = new PGlite();
 await source.exec(ACCOUNTING_SCHEMA);
 await target.exec(ACCOUNTING_SCHEMA);
+// Both on the live column types (journal_entries.date NOT NULL, no default).
+await useLiveTypes(source);
+await useLiveTypes(target);
 // The SOURCE store ran the description-column migration; the target did not —
 // the schema-drift case restore must survive.
 await source.exec(`ALTER TABLE journal_entry_lines ADD COLUMN description TEXT;`);
@@ -73,8 +78,8 @@ await source.exec(`ALTER TABLE journal_entry_lines ADD COLUMN description TEXT;`
 // The source store sold things: a custom account, an entry, lines.
 await source.exec(`INSERT INTO chart_of_accounts (account_code, account_name, account_type) VALUES ('7000', 'Custom Marketing', 'Expense');`);
 await source.exec(`
-INSERT INTO journal_entries (id, description, reference_id) VALUES
-('11111111-1111-1111-1111-111111111111', 'Sale #1', 'S-1');
+INSERT INTO journal_entries (id, date, description, reference_id) VALUES
+('11111111-1111-1111-1111-111111111111', '2026-11-01', 'Sale #1', 'S-1');
 INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
 SELECT '11111111-1111-1111-1111-111111111111', id, 25, 0, 'cash in' FROM chart_of_accounts WHERE account_code = '1000';
 INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description)

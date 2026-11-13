@@ -275,3 +275,49 @@ repo's esbuild. Same PGlite setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite
     node tests/fifo-read-readiness.test.mjs
+
+## The live column types (live-schema.mjs, live-schema-romdoul1.json)
+
+The live stores were built by hand long before migrations/full_schema.sql,
+and their columns differ from it: sale_items.quantity, products.stock,
+purchase_order_items.quantity, stock_movements.quantity and
+warehouse_stock.quantity are int4, sale_items.id and
+warehouse_stock.warehouse_id are uuid, restocks.id is text, and several
+columns are NOT NULL with no default (journal_entries.date,
+purchase_orders.order_date, sales.total, products.price, ...). The first
+FIFO go-live on Romdoul1 failed on exactly that (round(double precision,
+integer) in fifo_rebuild_pool.sql), because every harness had run on
+full_schema.sql's NUMERIC columns.
+
+So every PGlite harness calls useLiveTypes(db) from tests/live-schema.mjs
+after the schema and again after the migration stack: each column listed in
+tests/live-schema-romdoul1.json is altered to the live type, nullability and
+default (views around it are re-created), and the harness refuses to go on
+if any shared column still differs. A test line label becomes the uuid
+sale_items.id is live with lineUuid('S1-a'). The JSON is schema only (no
+data). To refresh it, run the query in tests/live-schema-from-csv.mjs in the
+store's SQL editor, save the result as CSV, then:
+
+    node tests/live-schema-from-csv.mjs <export.csv> romdoul1
+
+## fifo-golive-rehearsal.test.mjs
+
+Part C of the owner runbook on a Romdoul1-shaped store on the live column
+types: the pre-FIFO full_schema.sql and packs as last released (read from
+git, commit e5ecec4, so the test needs the repo history), integer stock
+(Test Product at 10, an inactive product at 0), shipped / delivered /
+returned / paid orders with integer quantities, the Posted true-up
+TRUEUP-20261112 and later Draft receipts at 9.30 for NR-3026 (basis 9.00),
+wholesale orders, POs, stock movements and the status log. Then
+add_fifo_costing.sql twice, the Test Product UPDATE, the dry run's plan of
+the same data (guard 0), the whole fifo_rebuild_pool.sql with only its
+PRESET line edited to romdoul1_trueup_2026_11_12 (the SQL summary must
+equal the dry run), the four packs and add_session_guards.sql in the
+runbook order, and day one: ship, settle, settle-before-ship, restock a
+Returned order, edit a shipped order, Add Stock with a retry id, a
+wholesale order out of a warehouse, a PO receipt and a warehouse stock
+adjustment, each keeping fifo_inventory_check at variance 0 and layers =
+stock. Same PGlite setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/fifo-golive-rehearsal.test.mjs

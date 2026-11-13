@@ -113,7 +113,7 @@ await bookOpening(12);
 const ob = (await one(`INSERT INTO wholesale_orders (customer_name, status, total_amount) VALUES ('Old shop', 'Open', 60) RETURNING id`)).id;
 await q(`INSERT INTO wholesale_order_items (wholesale_order_id, product_id, product_name, quantity, unit_price, cogs_cost, cogs_short_qty)
          VALUES ($1, 'X', 'Lamp', 3, 20, 12, 3)`, [ob]);
-const bje = (await one(`INSERT INTO journal_entries (description, reference_id, status) VALUES ('old COGS', $1, 'Posted') RETURNING id`, [`WSO-${ob}-COGS`])).id;
+const bje = (await one(`INSERT INTO journal_entries (date, description, reference_id, status) VALUES ('2026-11-01', 'old COGS', $1, 'Posted') RETURNING id`, [`WSO-${ob}-COGS`])).id;
 await q(`INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
          SELECT $1, id, CASE WHEN account_code = '5000' THEN 12 ELSE 0 END, CASE WHEN account_code = '1300' THEN 12 ELSE 0 END
            FROM chart_of_accounts WHERE account_code IN ('5000', '1300')`, [bje]);
@@ -146,7 +146,7 @@ await bookOpening(8.5);
 check('Add Stock at no cost: the last receipt cost (8.50)',
     num((await one(`SELECT count(*) AS n FROM inventory_items WHERE product_id = 'V' AND cost_of_purchase = 8.5`)).n) === 4);
 const sup = (await one(`INSERT INTO suppliers (name) VALUES ('Supplier') RETURNING id`)).id;
-const po = (await one(`INSERT INTO purchase_orders (supplier_id, status, total_amount) VALUES ($1, 'Ordered', 40) RETURNING id`, [sup])).id;
+const po = (await one(`INSERT INTO purchase_orders (supplier_id, order_date, status, total_amount) VALUES ($1, '2026-11-01', 'Ordered', 40) RETURNING id`, [sup])).id;
 await q(`INSERT INTO purchase_order_items (purchase_order_id, product_id, quantity, unit_price) VALUES ($1, 'V', 4, 10)`, [po]);
 await q(`SELECT public.receive_purchase_order(p_po_id => $1::uuid, p_today => '${DAY}')`, [po]);
 const pr = (await q(`SELECT cost_of_purchase FROM inventory_items WHERE product_id = 'V' AND receipt_ref = $1`, [`PO-${po}`])).rows;
@@ -162,7 +162,7 @@ await checkBalanced('order across receipts');
 // line value, and the GRN entry books exactly that.
 await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('P8', 'Pin', 1, 0, 0.1), ('P9', 'Clip', 2, 0, 1)`);
 const receivePo = async (total, lines) => {
-    const id = (await one(`INSERT INTO purchase_orders (supplier_id, status, total_amount) VALUES ($1, 'Ordered', $2) RETURNING id`, [sup, total])).id;
+    const id = (await one(`INSERT INTO purchase_orders (supplier_id, order_date, status, total_amount) VALUES ($1, '2026-11-01', 'Ordered', $2) RETURNING id`, [sup, total])).id;
     for (const [pid, qty, price] of lines) {
         await q(`INSERT INTO purchase_order_items (purchase_order_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)`, [id, pid, qty, price]);
     }

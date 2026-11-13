@@ -182,8 +182,8 @@ CREATE OR REPLACE FUNCTION wp_internal.op_mark_cogs_booked(p_order_id TEXT, p_li
 RETURNS VOID
 LANGUAGE sql
 AS $$
-    UPDATE sale_items si SET cogs_booked = COALESCE(si.cogs_booked, 0) + (p_lines->>si.id)::NUMERIC
-     WHERE si.sale_id = p_order_id AND p_lines ? si.id;
+    UPDATE sale_items si SET cogs_booked = COALESCE(si.cogs_booked, 0) + (p_lines->>si.id::TEXT)::NUMERIC
+     WHERE si.sale_id = p_order_id AND p_lines ? si.id::TEXT;
 $$;
 
 -- A Draft entry that carried p_amount of an order's COGS was deleted: the
@@ -229,10 +229,10 @@ BEGIN
               FROM (SELECT s2.id,
                            (SELECT count(*) FROM inventory_items ii
                              WHERE ii.status = 'sold' AND ii.consumer_kind = 'retail'
-                               AND ii.consumer_id = p_order_id AND ii.consumer_line_id = s2.id) AS n,
+                               AND ii.consumer_id = p_order_id AND ii.consumer_line_id = s2.id::TEXT) AS n,
                            (SELECT COALESCE(sum(COALESCE(ii.cost_of_purchase, 0)), 0) FROM inventory_items ii
                              WHERE ii.status = 'sold' AND ii.consumer_kind = 'retail'
-                               AND ii.consumer_id = p_order_id AND ii.consumer_line_id = s2.id) AS cost
+                               AND ii.consumer_id = p_order_id AND ii.consumer_line_id = s2.id::TEXT) AS cost
                       FROM sale_items s2 WHERE s2.sale_id = p_order_id) h
              WHERE si.id = h.id AND si.sale_id = p_order_id AND si.product_id IS NOT NULL
                AND si.cogs_cost IS NULL AND COALESCE(si.quantity, 0) > 0;
@@ -354,7 +354,7 @@ BEGIN
     END IF;
     v_number := wp_internal.wp_next_entry_number(p_type, p_date);
     INSERT INTO journal_entries (date, description, reference_id, status, entry_number)
-    VALUES (p_date, 'Retail - ' || regexp_replace(v_number, '^JE-\d+-', '') || ' — ' || p_name,
+    VALUES (COALESCE(p_date, CURRENT_DATE), 'Retail - ' || regexp_replace(v_number, '^JE-\d+-', '') || ' — ' || p_name,
             'TX-' || p_tx, COALESCE(p_status, 'Draft'), v_number)
     RETURNING id INTO v_entry;
     INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
@@ -396,7 +396,7 @@ BEGIN
     IF COALESCE(v_cost, 0) <= 0 THEN RETURN; END IF;
     v_number := wp_internal.wp_next_entry_number('RCP', p_date);
     INSERT INTO journal_entries (date, description, reference_id, status, entry_number)
-    VALUES (p_date, 'Retail - ' || regexp_replace(v_number, '^JE-\d+-', '') || ' — ' || p_name || ' · cost of goods sold',
+    VALUES (COALESCE(p_date, CURRENT_DATE), 'Retail - ' || regexp_replace(v_number, '^JE-\d+-', '') || ' — ' || p_name || ' · cost of goods sold',
             'ORD-' || p_order_id || '-COGS', 'Draft', v_number)
     RETURNING id INTO v_entry;
     INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
@@ -677,7 +677,7 @@ BEGIN
     END IF;
     v_number := wp_internal.wp_next_entry_number('DLV', p_date);
     INSERT INTO journal_entries (date, description, reference_id, status, entry_number)
-    VALUES (p_date, 'Retail - ' || regexp_replace(v_number, '^JE-\d+-', '') || ' — ' || p_name,
+    VALUES (COALESCE(p_date, CURRENT_DATE), 'Retail - ' || regexp_replace(v_number, '^JE-\d+-', '') || ' — ' || p_name,
             'TX-' || p_tx, 'Posted', v_number)
     RETURNING id INTO v_entry;
     INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
@@ -1105,7 +1105,7 @@ BEGIN
                   WHERE si.sale_id = ANY(v_restock_ids) AND si.product_id IS NOT NULL
                   ORDER BY si.sale_id, si.created_at, si.id
         LOOP
-            PERFORM wp_internal.fifo_give_back_line('retail', r.sale_id, r.id);
+            PERFORM wp_internal.fifo_give_back_line('retail', r.sale_id, r.id::TEXT);
         END LOOP;
         FOR r IN SELECT unnest(v_restock_ids) AS id
         LOOP

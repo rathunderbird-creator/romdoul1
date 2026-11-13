@@ -31,6 +31,7 @@
 //   * the packs load only once the rebuild is recorded in fifo_rebuild_log.
 // See tests/README.md for how to run it.
 import { makeDb, harness } from './fifo-test-db.mjs';
+import { lineUuid as SI } from './live-schema.mjs'; // a line label as the uuid sale_items.id is live
 
 const db = await makeDb();
 const { q, one, num, near, check, errOf, seedLayers, checkBalanced, fifoCheck, entries, done } = harness(db);
@@ -49,7 +50,7 @@ const order = async (id, lines, status = 'Pending', total = 50) => {
     await q(`INSERT INTO sales (id, total, shipping_status, payment_status, customer_snapshot)
              VALUES ($1, $2, $3, 'Unpaid', jsonb_build_object('name', 'Cust ' || $1))`, [id, total, status]);
     for (const [lid, pid, qty] of lines) {
-        await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ($1, $2, $3, $3, 10, $4)`, [lid, id, pid, qty]);
+        await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ($1, $2, $3, $3, 10, $4)`, [SI(lid), id, pid, qty]);
     }
 };
 const ship = (id, from, to) => q(`SELECT public.set_order_shipping_status(p_order_id => $1, p_expected_status => $2, p_new_status => $3,
@@ -57,7 +58,7 @@ const ship = (id, from, to) => q(`SELECT public.set_order_shipping_status(p_orde
 const pay = async (id, from, updates) => (await one(`SELECT public.set_order_payment(p_order_id => $1, p_expected_status => $2,
     p_updates => $3::jsonb, p_fields => jsonb_build_object('today', '${DAY}')) AS r`, [id, from, JSON.stringify(updates)])).r;
 const settle = (id, total = 50) => pay(id, 'Unpaid', { payment_status: 'Paid', amount_received: total, settle_date: DAY, post_to_ledger: true });
-const line = async id => one(`SELECT cogs_cost, cogs_short_qty, cogs_booked FROM sale_items WHERE id = $1`, [id]);
+const line = async id => one(`SELECT cogs_cost, cogs_short_qty, cogs_booked FROM sale_items WHERE id = $1`, [SI(id)]);
 const heldRows = async order => (await q(`SELECT id FROM inventory_items WHERE status = 'sold' AND consumer_kind = 'retail'
     AND consumer_id = $1 ORDER BY id`, [order])).rows.map(r => r.id);
 const poolCount = async p => num((await one(`SELECT count(*) AS n FROM inventory_items WHERE product_id = $1 AND status = 'in_stock'`, [p])).n);
@@ -73,14 +74,14 @@ const txCogs = async order => {
 // ---------------------------------------------------------------------------
 // 1. Ship, settle, unship, re-ship
 // ---------------------------------------------------------------------------
-await order('O1', [['o1-a', 'A', 2], ['o1-b', 'B', 1]]);
+await order('O1', [[SI('o1-a'), 'A', 2], [SI('o1-b'), 'B', 1]]);
 await ship('O1', 'Pending', 'Shipped');
-let la = await line('o1-a'), lb = await line('o1-b');
+let la = await line(SI('o1-a')), lb = await line(SI('o1-b'));
 check('ship: A line takes the two oldest layers (5 + 5)', near(la.cogs_cost, 10) && near(la.cogs_short_qty, 0), la);
 check('ship: B line takes its oldest layer (10)', near(lb.cogs_cost, 10), lb);
 const firstRows = await heldRows('O1');
 check('ship: three layers held by the order, linked by line and sale_id', firstRows.length === 3
-    && num((await one(`SELECT count(*) AS n FROM inventory_items WHERE sale_id = 'O1' AND consumer_line_id IN ('o1-a', 'o1-b')`)).n) === 3);
+    && num((await one(`SELECT count(*) AS n FROM inventory_items WHERE sale_id = 'O1' AND consumer_line_id IN ('${SI('o1-a')}', '${SI('o1-b')}')`)).n) === 3);
 const mv = (await q(`SELECT product_id, unit_cost, unit_price FROM stock_movements WHERE reference_id = 'O1' AND type = 'out' ORDER BY product_id`)).rows;
 check('ship: movements carry the FIFO unit cost next to the selling price',
     mv.length === 2 && near(mv[0].unit_cost, 5) && near(mv[1].unit_cost, 10) && near(mv[0].unit_price, 10), mv);
@@ -91,21 +92,21 @@ check('order_cogs = the frozen cost (20)', near((await one(`SELECT public.order_
 
 await settle('O1');
 check('settle: the receipt books COGS at the layers (20), not purchase_cost (16)', near(await txCogs('O1'), 20));
-la = await line('o1-a'); lb = await line('o1-b');
+la = await line(SI('o1-a')); lb = await line(SI('o1-b'));
 check('settle: each line records what it booked', near(la.cogs_booked, 10) && near(lb.cogs_booked, 10), [la, lb]);
 await checkBalanced('settled');
 
 await ship('O1', 'Shipped', 'Pending');
 check('unship: the order holds no rows; the same rows are back in stock', (await heldRows('O1')).length === 0
     && num((await one(`SELECT count(*) AS n FROM inventory_items WHERE id = ANY($1) AND status = 'in_stock' AND consumer_kind IS NULL AND sale_id IS NULL`, [firstRows])).n) === 3);
-la = await line('o1-a');
+la = await line(SI('o1-a'));
 check('unship: line holds nothing (cogs_cost NULL), booked kept', la.cogs_cost === null && near(la.cogs_booked, 10), la);
 c = await checkBalanced('unshipped, settled');
 check('check: booked-not-out = 20', near(c.retail_booked_not_out, 20), c);
 
 await ship('O1', 'Pending', 'Shipped');
 check('re-ship: the same rows again', JSON.stringify(await heldRows('O1')) === JSON.stringify(firstRows));
-check('re-ship: same cost, no adjustment entry', near((await line('o1-a')).cogs_cost, 10) && (await entries('ORD-O1-COGS-ADJ')).length === 0);
+check('re-ship: same cost, no adjustment entry', near((await line(SI('o1-a'))).cogs_cost, 10) && (await entries('ORD-O1-COGS-ADJ')).length === 0);
 await checkBalanced('re-shipped');
 
 // ---------------------------------------------------------------------------
@@ -155,7 +156,7 @@ await ship('O1', 'Returned', 'ReStock');
 await checkBalanced('restocked, payment side not yet run (booked, nothing held)');
 const side1 = (await one(`SELECT public.apply_restock_payment_side(p_ids => ARRAY['O1'], p_fields => '{}'::jsonb) AS r`)).r;
 check('restock with a Draft receipt: receipt deleted with its COGS, no COGS-REV',
-    await txCogs('O1') === 0 && (await entries('ORD-O1-COGS-REV')).length === 0 && (await line('o1-a')).cogs_booked === null, side1);
+    await txCogs('O1') === 0 && (await entries('ORD-O1-COGS-REV')).length === 0 && (await line(SI('o1-a'))).cogs_booked === null, side1);
 check('restock: the rows are back in stock', num((await one(`SELECT count(*) AS n FROM inventory_items WHERE id = ANY($1) AND status = 'in_stock'`, [firstRows])).n) === 3);
 const ret = (await q(`SELECT product_id, unit_cost FROM stock_movements WHERE source = 'Customer Return' ORDER BY product_id`)).rows;
 check('restock: Customer Return movements carry the returned cost', ret.length === 2 && near(ret[0].unit_cost, 5) && near(ret[1].unit_cost, 10), ret);
@@ -192,7 +193,7 @@ check('edit shipped settled: the extra unit\'s cost is booked as an ADJ, booked 
     o6adj.length === 1 && near(o6adj[0].cogs, num(o6[0].cogs_cost) - o6first) && near(o6[0].cogs_booked, o6[0].cogs_cost), { o6, o6adj });
 check('edit: no layer is left held by a line that no longer exists',
     num((await one(`SELECT count(*) AS n FROM inventory_items i WHERE i.consumer_kind = 'retail'
-        AND NOT EXISTS (SELECT 1 FROM sale_items s WHERE s.id = i.consumer_line_id)`)).n) === 0);
+        AND NOT EXISTS (SELECT 1 FROM sale_items s WHERE s.id::TEXT = i.consumer_line_id)`)).n) === 0);
 await checkBalanced('edited shipped settled order');
 
 await order('O7', [['o7-a', 'B', 1]]);
@@ -272,21 +273,21 @@ await checkBalanced('pre-FIFO order restocked', -3 - 14);
 // and settling again at C keeps it — the test's +1 start stands for that 0.
 await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('E', 'Lamp', 12, 0, 4)`);
 await seedLayers('E', 1, 5, '2026-01-05T00:00:00Z');
-await order('O13', [['o13-a', 'E', 1]], 'Shipped', 12);
-await q(`UPDATE inventory_items SET status = 'sold', sale_id = 'O13', consumer_kind = 'retail', consumer_id = 'O13', consumer_line_id = 'o13-a'
+await order('O13', [[SI('o13-a'), 'E', 1]], 'Shipped', 12);
+await q(`UPDATE inventory_items SET status = 'sold', sale_id = 'O13', consumer_kind = 'retail', consumer_id = 'O13', consumer_line_id = '${SI('o13-a')}'
           WHERE product_id = 'E'`);
 await q(`UPDATE products SET stock = 0 WHERE id = 'E'`);
 await q(`UPDATE sales SET payment_status = 'Paid', amount_received = 12 WHERE id = 'O13'`);
 const tx13 = (await one(`INSERT INTO transactions (date, type, category, amount, description, order_id)
     VALUES (now(), 'Income', 'លក់រាយ', 12, 'Cust O13', 'O13') RETURNING id`)).id;
-const je13 = (await one(`INSERT INTO journal_entries (description, reference_id, status) VALUES ('old receipt', $1, 'Draft') RETURNING id`, ['TX-' + tx13])).id;
+const je13 = (await one(`INSERT INTO journal_entries (date, description, reference_id, status) VALUES ('2026-11-01', 'old receipt', $1, 'Draft') RETURNING id`, ['TX-' + tx13])).id;
 await q(`INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
          SELECT $1, id, CASE account_code WHEN '1000' THEN 12 WHEN '5000' THEN 4 ELSE 0 END,
                         CASE account_code WHEN '4000' THEN 12 WHEN '1300' THEN 4 ELSE 0 END
            FROM chart_of_accounts WHERE account_code IN ('1000', '4000', '5000', '1300')`, [je13]);
 await checkBalanced('pre-FIFO settled order (booked at purchase_cost 4, row at 5)', -17 + 1);
 await pay('O13', 'Paid', { payment_status: 'Unpaid' });
-const l13 = await line('o13-a');
+const l13 = await line(SI('o13-a'));
 check('pre-FIFO order leaves Paid: the line is adopted at its row\'s cost (5), nothing booked',
     near(l13.cogs_cost, 5) && near(l13.cogs_short_qty, 0) && l13.cogs_booked === null, l13);
 await checkBalanced('pre-FIFO order unsettled', -17);
@@ -406,14 +407,14 @@ await checkBalanced('E3 deleted', V);
 // purchase_cost 3 in a Posted receipt, cogs_booked NULL). On a trued store
 // it counts 0: the hand-made history below starts at V + 2 (5 opened, 3
 // booked) and must stay there through edits.
-await order('P1', [['p1-a', 'F', 1]], 'Shipped', 20);
-await q(`UPDATE inventory_items SET status = 'sold', sale_id = 'P1', consumer_kind = 'retail', consumer_id = 'P1', consumer_line_id = 'p1-a'
+await order('P1', [[SI('p1-a'), 'F', 1]], 'Shipped', 20);
+await q(`UPDATE inventory_items SET status = 'sold', sale_id = 'P1', consumer_kind = 'retail', consumer_id = 'P1', consumer_line_id = '${SI('p1-a')}'
           WHERE id = (SELECT id FROM inventory_items WHERE product_id = 'F' AND status = 'in_stock' ORDER BY received_at, id LIMIT 1)`);
 await q(`UPDATE products SET stock = stock - 1 WHERE id = 'F'`);
 await q(`UPDATE sales SET payment_status = 'Paid', amount_received = 20 WHERE id = 'P1'`);
 const txP1 = (await one(`INSERT INTO transactions (date, type, category, amount, description, order_id)
     VALUES (now(), 'Income', 'លក់រាយ', 20, 'Cust P1', 'P1') RETURNING id`)).id;
-const jeP1 = (await one(`INSERT INTO journal_entries (description, reference_id, status) VALUES ('old receipt', $1, 'Posted') RETURNING id`, ['TX-' + txP1])).id;
+const jeP1 = (await one(`INSERT INTO journal_entries (date, description, reference_id, status) VALUES ('2026-11-01', 'old receipt', $1, 'Posted') RETURNING id`, ['TX-' + txP1])).id;
 await q(`INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
          SELECT $1, id, CASE account_code WHEN '1000' THEN 20 WHEN '5000' THEN 3 ELSE 0 END,
                         CASE account_code WHEN '4000' THEN 20 WHEN '1300' THEN 3 ELSE 0 END
@@ -692,7 +693,7 @@ await checkBalanced('NZ1 unpaid', V10);
 for (const dep of [false, true]) {
     const o = dep ? 'NY2' : 'NY1';
     await order(o, [], 'Pending', 30);
-    await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ($1, $2, NULL, 'placeholder', 30, 1)`, [`${o}-s`, o]);
+    await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ($1, $2, NULL, 'placeholder', 30, 1)`, [SI(`${o}-s`), o]);
     if (dep) await depositPaid(o, 30); else await pay(o, 'Unpaid', paid30);
     check(`${o} Paid with a service line only: nothing booked`, near(await cogsOf(o), 0));
     await editTo(o, kTwo);
@@ -711,7 +712,7 @@ for (const dep of [false, true]) {
 // The same while shipped: the service line is replaced by products that ship
 // with the edit.
 await order('NY3', [], 'Pending', 30);
-await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('NY3-s', 'NY3', NULL, 'placeholder', 30, 1)`);
+await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('${SI('NY3-s')}', 'NY3', NULL, 'placeholder', 30, 1)`);
 await pay('NY3', 'Unpaid', paid30);
 await ship('NY3', 'Pending', 'Shipped');
 await editTo('NY3', kTwo);
@@ -721,7 +722,7 @@ check('NY3 (Paid, Shipped) edited from a service line to 2 x K: booked at its co
 await checkBalanced('NY3 edited', V10);
 // An Unpaid order gets nothing booked by an edit.
 await order('NY4', [], 'Pending', 30);
-await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('NY4-s', 'NY4', NULL, 'placeholder', 30, 1)`);
+await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('${SI('NY4-s')}', 'NY4', NULL, 'placeholder', 30, 1)`);
 await editTo('NY4', kTwo);
 check('NY4 (Unpaid) edited to products: nothing booked', near(await cogsOf('NY4'), 0) && (await bookedK('NY4'))[0].cogs_booked === null);
 

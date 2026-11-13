@@ -4,6 +4,7 @@
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
+import { useLiveTypes } from './live-schema.mjs';
 import { writeFileSync, rmSync } from 'fs';
 import { build } from 'esbuild';
 
@@ -47,6 +48,7 @@ CREATE TABLE app_config (
 -- the anon key, so anon already has table privileges there.
 GRANT ALL ON app_config TO anon, authenticated;
 `);
+await useLiveTypes(db); // app_config on the live column types
 
 const strip = f => fs.readFileSync(f, 'utf8').replace(/NOTIFY[^;]*;/g, '');
 await db.exec(strip(MIG));
@@ -204,6 +206,7 @@ CREATE TABLE users (
 GRANT ALL ON users TO anon, authenticated;
 INSERT INTO users (id, name, role_id, pin) VALUES ('mgr','Mara','manager','2222');
 `);
+await useLiveTypes(db); // users on the live column types
 await db.exec(strip(path.join(repo, 'migrations', 'applied', 'secure_pin_check.sql')));
 await db.exec(strip(path.join(repo, 'migrations', 'add_auth_guards.sql')));
 await db.exec(strip(path.join(repo, 'migrations', 'add_session_guards.sql')));

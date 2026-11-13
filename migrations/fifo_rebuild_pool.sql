@@ -383,7 +383,7 @@ BEGIN
     SELECT p.id, p.name,
            COALESCE(p.purchase_cost, 0) AS pc,
            COALESCE(p.stock, 0) AS raw_stock,
-           GREATEST(0, floor(COALESCE(p.stock, 0)))::INT AS s,
+           GREATEST(0, floor(COALESCE(p.stock, 0)::NUMERIC))::INT AS s,
            COALESCE(b.cost, COALESCE(p.purchase_cost, 0)) AS basis_cost,
            wp_internal.fifo_fallback_cost(p.id) AS fallback,
            COALESCE(rs.cost, po.cost, wp_internal.fifo_fallback_cost(p.id)) AS filler_cost
@@ -514,7 +514,7 @@ BEGIN
         HAVING bool_or(post)
     ), lines AS (
         -- uc: the cost an adjustment line was booked at (its unit_cost).
-        SELECT 'retail' AS kind, si.sale_id AS subject, si.product_id, GREATEST(COALESCE(si.quantity, 0), 0) AS q, NULL::NUMERIC AS uc
+        SELECT 'retail' AS kind, si.sale_id AS subject, si.product_id, GREATEST(COALESCE(si.quantity, 0), 0)::NUMERIC AS q, NULL::NUMERIC AS uc
           FROM sale_items si WHERE si.product_id IS NOT NULL
         UNION ALL
         SELECT 'wholesale', wi.wholesale_order_id::TEXT, wi.product_id, GREATEST(COALESCE(wi.quantity, 0), 0), NULL::NUMERIC
@@ -582,8 +582,8 @@ BEGIN
     -- (oldest-shipped line first).
     CREATE TEMP TABLE _fr_lines ON COMMIT DROP AS
     WITH l AS (
-        SELECT si.id AS line_id, si.sale_id AS order_id, si.product_id,
-               GREATEST(COALESCE(si.quantity, 0), 0) AS qty,
+        SELECT si.id::TEXT AS line_id, si.sale_id AS order_id, si.product_id,
+               GREATEST(COALESCE(si.quantity, 0), 0)::NUMERIC AS qty,
                COALESCE((SELECT max(m.created_at) FROM stock_movements m
                           WHERE m.reference_id = o.id AND m.type = 'out'), o.date) AS ship_at
           FROM sale_items si
@@ -605,8 +605,8 @@ BEGIN
     CREATE TEMP TABLE _fr_excl ON COMMIT DROP AS
     SELECT CASE WHEN NOT (COALESCE(o.shipping_status, '') = ANY (v_u_statuses) OR o.ret_status IS NOT NULL)
                 THEN 'by_status' ELSE 'before_u_from' END AS why,
-           o.id AS order_id, GREATEST(COALESCE(si.quantity, 0), 0) AS qty,
-           GREATEST(COALESCE(si.quantity, 0), 0) * p.basis_cost AS basis_value
+           o.id AS order_id, GREATEST(COALESCE(si.quantity, 0), 0)::NUMERIC AS qty,
+           GREATEST(COALESCE(si.quantity, 0), 0)::NUMERIC * p.basis_cost AS basis_value
       FROM sale_items si
       JOIN _fr_orders o ON o.id = si.sale_id
       JOIN _fr_p p ON p.id = si.product_id
@@ -795,10 +795,10 @@ BEGIN
           FROM _fr_rows r JOIN _fr_pp pp ON pp.id = r.product_id JOIN _fr_orders o ON o.id = r.sale_id
          WHERE r.pos >= pp.need AND r.status = 'sold' AND o.holds AND (o.settled OR o.booked)
     ), hl AS (
-        SELECT si.id AS line_id, si.sale_id, si.product_id,
-               floor(GREATEST(COALESCE(si.quantity, 0), 0))::INT AS units,
-               sum(floor(GREATEST(COALESCE(si.quantity, 0), 0))::INT)
-                   OVER (PARTITION BY si.sale_id, si.product_id ORDER BY si.id COLLATE "C" ROWS UNBOUNDED PRECEDING) AS cum
+        SELECT si.id::TEXT AS line_id, si.sale_id, si.product_id,
+               floor(GREATEST(COALESCE(si.quantity, 0), 0)::NUMERIC)::INT AS units,
+               sum(floor(GREATEST(COALESCE(si.quantity, 0), 0)::NUMERIC)::INT)
+                   OVER (PARTITION BY si.sale_id, si.product_id ORDER BY si.id::TEXT COLLATE "C" ROWS UNBOUNDED PRECEDING) AS cum
           FROM sale_items si
          WHERE si.sale_id IN (SELECT sale_id FROM h) AND si.product_id IS NOT NULL
     )
@@ -835,14 +835,14 @@ BEGIN
       JOIN _fr_p p ON p.id = l.product_id
       JOIN LATERAL (SELECT COALESCE(sum(u.cost), 0) + l.frac * p.fallback AS cost
                       FROM _fr_units u WHERE u.line_id = l.line_id AND u.product_id = l.product_id) c ON true
-     WHERE si.id = l.line_id;
+     WHERE si.id::TEXT = l.line_id;
 
     -- SU orders: their booked COGS on their lines (os_spread_booked's split).
     WITH ln AS (
         SELECT si.id, si.sale_id, su.booked,
-               GREATEST(COALESCE(si.quantity, 0), 0) AS q,
+               GREATEST(COALESCE(si.quantity, 0), 0)::NUMERIC AS q,
                si.product_id IS NOT NULL AS is_product,
-               sum(CASE WHEN si.product_id IS NOT NULL THEN GREATEST(COALESCE(si.quantity, 0), 0) ELSE 0 END)
+               sum(CASE WHEN si.product_id IS NOT NULL THEN GREATEST(COALESCE(si.quantity, 0), 0)::NUMERIC ELSE 0 END)
                    OVER (PARTITION BY si.sale_id) AS tq,
                row_number() OVER (PARTITION BY si.sale_id
                                   ORDER BY (si.product_id IS NULL), si.quantity DESC NULLS LAST, si.created_at, si.id) AS rn
@@ -879,7 +879,7 @@ BEGIN
         SELECT h.id, h.oid, h.qty, COALESCE(b.amt, 0) AS amt,
                round(COALESCE(b.amt, 0) * CASE WHEN sum(h.w) OVER (PARTITION BY h.oid) > 0
                                                THEN h.w / sum(h.w) OVER (PARTITION BY h.oid)
-                                               ELSE h.qty / sum(h.qty) OVER (PARTITION BY h.oid) END, 4) AS part,
+                                               ELSE h.qty::NUMERIC / sum(h.qty) OVER (PARTITION BY h.oid) END, 4) AS part,
                row_number() OVER (PARTITION BY h.oid ORDER BY h.w DESC, h.id) AS rn
           FROM held h LEFT JOIN booked b ON b.oid = h.oid::TEXT
     ), fixed AS (
@@ -920,7 +920,7 @@ BEGIN
     END IF;
 
     SELECT string_agg(l.line_id, ', ') INTO v_txt
-      FROM _fr_lines l JOIN sale_items si ON si.id = l.line_id JOIN _fr_p p ON p.id = l.product_id
+      FROM _fr_lines l JOIN sale_items si ON si.id::TEXT = l.line_id JOIN _fr_p p ON p.id = l.product_id
      WHERE si.cogs_cost IS DISTINCT FROM
            (SELECT COALESCE(sum(i.cost_of_purchase), 0) FROM inventory_items i
              WHERE i.status = 'sold' AND i.consumer_kind = 'retail' AND i.consumer_line_id = l.line_id) + l.frac * p.fallback;
@@ -965,7 +965,7 @@ BEGIN
     END IF;
 
     SELECT (SELECT COALESCE(sum(cost_of_purchase), 0) FROM inventory_items WHERE status = 'in_stock')
-         + (SELECT COALESCE(sum(si.cogs_cost), 0) FROM sale_items si WHERE si.id IN (SELECT line_id FROM _fr_lines))
+         + (SELECT COALESCE(sum(si.cogs_cost), 0) FROM sale_items si WHERE si.id::TEXT IN (SELECT line_id FROM _fr_lines))
       INTO v_amount;
     IF v_amount <> v_V_raw THEN
         RAISE EXCEPTION 'FIFO rebuild check failed, nothing was changed: the table value % is not the planned V %.', v_amount, v_V_raw;

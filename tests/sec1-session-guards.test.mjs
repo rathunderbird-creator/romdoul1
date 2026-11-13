@@ -15,6 +15,7 @@
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
+import { useLiveTypes } from './live-schema.mjs';
 
 const { PGlite } = await import(process.env.PGLITE_DIST || '@electric-sql/pglite');
 
@@ -46,6 +47,7 @@ let schema = strip(mig('full_schema.sql')).replace(/CREATE EXTENSION[^;]*;/g, ''
 // Drop the Supabase storage-bucket section (storage schema doesn't exist here).
 schema = schema.replace(/INSERT INTO storage[\s\S]*?END \$\$;/, '');
 await db.exec(schema);
+await useLiveTypes(db); // the live column types, not full_schema's
 // Simulate Supabase's default API grants, which the lockdowns must undo.
 await db.exec(`GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;`);
 await db.exec(strip(mig('add_auth_guards.sql'))); // restores the users lockdown
@@ -60,6 +62,7 @@ for (const f of ['add_transaction_order_link.sql', 'add_transaction_reference_no
 }
 await db.exec(strip(mig('add_session_guards.sql')));
 await db.exec(strip(mig('add_session_guards.sql'))); // safe to re-run
+await useLiveTypes(db); // and on the columns the migrations added
 check('migration runs twice', true);
 
 // ---------------------------------------------------------------------------
