@@ -1,4 +1,4 @@
-// Dev-only preview: open http://localhost:5173/dev/filterBars.html?page=je (or ?page=po)
+// Dev-only preview: open http://localhost:5173/dev/filterBars.html?page=je (or ?page=po|ret|pay)
 // while `npm run dev` is running.
 //
 // Mounts the real Journal Entries / Purchase Orders pages with a mock store so
@@ -14,6 +14,8 @@ import { ToastProvider } from '../context/ToastContext';
 import { LanguageProvider } from '../context/LanguageContext';
 import JournalEntriesPage from '../pages/accounting/JournalEntriesPage';
 import PurchaseOrdersPage from '../pages/procurement/PurchaseOrdersPage';
+import ReturningItems from '../pages/ReturningItems';
+import CustomerPayment from '../pages/CustomerPayment';
 
 const base: Record<string, unknown> = {
     currentUser: { id: 'dev', name: 'Dev', role: 'Admin', permissions: [] },
@@ -22,11 +24,13 @@ const base: Record<string, unknown> = {
     sales: [],
     users: [],
     hasPermission: () => true,
+    trackingUrlTemplates: {},
+    salesUpdatedAt: 0,
 };
 // Anything else a page reads becomes a no-op function.
 const mockStore = new Proxy(base, { get: (t, k: string) => (k in t ? t[k] : () => undefined) });
 
-const page = new URLSearchParams(location.search).get('page') === 'po' ? 'po' : 'je';
+const page = new URLSearchParams(location.search).get('page') || 'je';
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
@@ -37,7 +41,7 @@ createRoot(document.getElementById('root')!).render(
                         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         <StoreContext.Provider value={mockStore as any}>
                             <main style={{ padding: '12px' }}>
-                                {page === 'po' ? <PurchaseOrdersPage /> : <JournalEntriesPage />}
+                                {page === 'po' ? <PurchaseOrdersPage /> : page === 'ret' ? <ReturningItems /> : page === 'pay' ? <CustomerPayment /> : <JournalEntriesPage />}
                             </main>
                         </StoreContext.Provider>
                     </MemoryRouter>
