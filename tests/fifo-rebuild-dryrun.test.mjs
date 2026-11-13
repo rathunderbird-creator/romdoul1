@@ -15,7 +15,7 @@ let seq = 0;
 const row = (product_id, cost, day, status = 'in_stock', sale_id = null) =>
     ({ id: `00000000-0000-0000-0000-${String(++seq).padStart(12, '0')}`, product_id, cost_of_purchase: cost, status, sale_id, created_at: ts(day) });
 
-function run({ products, items, sales = [], saleItems = [], cogs = [], booked = {}, shipAt = {}, receipt = {}, B, basis, uStatuses, uFrom }) {
+function run({ products, items, sales = [], saleItems = [], cogs = [], booked = {}, shipAt = {}, receipt = {}, B, basis, uStatuses, uFrom, basisSales }) {
     return planStore({
         products, items,
         sales: new Map(sales.map((s) => [s.id, s])),
@@ -23,7 +23,7 @@ function run({ products, items, sales = [], saleItems = [], cogs = [], booked = 
         shipAt: new Map(Object.entries(shipAt)),
         receiptCost: new Map(Object.entries(receipt).map(([k, v]) => [k, { cost: v, source: 'restock (last receipt)' }])),
         B, basis: basis ? new Map(Object.entries(basis)) : undefined,
-        uStatuses: uStatuses ? new Set(uStatuses) : undefined, uFrom,
+        uStatuses: uStatuses ? new Set(uStatuses) : undefined, uFrom, basisSales,
     });
 }
 const byAction = (plan, pid, re) => plan.rowPlan.filter((r) => r.product_id === pid && re.test(r.action));
@@ -182,6 +182,55 @@ const byAction = (plan, pid, re) => plan.rowPlan.filter((r) => r.product_id === 
     check('excluded: Returned by status, the old order before the cutoff, with ids',
         JSON.stringify(X.by_status.order_ids) === '["ret"]' && JSON.stringify(X.before_u_from.order_ids) === '["old"]'
         && X.before_u_from.qty === 2 && near(X.before_u_from.basis_value, 6) && p.totals.U === 1);
+}
+
+// 10. E: NR-3026 at a 9.00 basis, purchase_cost 9.30. The true-up put
+//     12 + 2 units in 1300 at 9.00 (126); 12 sales after it booked 9.30 each
+//     (Cr 1300 111.60). Left: stock 2 at 9.30. Without E the guard is off
+//     by -3.60 (Romdoul1 on 2026-11-13); with E = 12 x 0.30 it passes, and
+//     the REVAL books D1 + E = 0.60 + 3.60 = V - B.
+{
+    const products = [{ id: 'N', name: 'NR-3026', stock: 2, purchase_cost: 9.3 }];
+    const items = [row('N', 9.3, 1), row('N', 9.3, 2)];
+    const sales = [], saleItems = [], subjects = [];
+    for (let i = 1; i <= 12; i++) {
+        sales.push({ id: `o${i}`, shipping_status: 'Delivered', payment_status: 'Paid', date: ts(20) });
+        saleItems.push({ id: `l${i}`, sale_id: `o${i}`, product_id: 'N', quantity: 1 });
+        subjects.push({ kind: 'retail', id: `o${i}`, c_pre: 0, c_post: 9.3, refs: [`TX-${i}`], lines: [{ product_id: 'N', q: 1 }] });
+    }
+    const base = { products, items, sales, saleItems, cogs: sales.map((s) => s.id), B: 126 - 111.6, basis: { N: 9 } };
+    const bs = { basis_ref: 'TRUEUP-20261112', cutoff: '2026-11-12T14:51:05.206569+00:00', subjects };
+    const off = run(base);
+    check('E: without the basis entry the guard fails by -3.60', near(off.ledger.guard_diff, -3.6) && !off.ledger.guard_pass && off.ledger.E === 0);
+    const p = run({ ...base, basisSales: bs });
+    check('E: 12 sales at 9.30 against 9.00 -> E 3.60, guard 0, PASS', near(p.ledger.E, 3.6) && near(p.ledger.guard_diff, 0) && p.ledger.guard_pass);
+    check('E: D1 stays V - basis value (0.60); REVAL = D1 + E = V - B (4.20)',
+        near(p.ledger.D1, 0.6) && near(p.ledger.reval_amount, 4.2) && near(p.ledger.reval_amount, p.ledger.V - p.ledger.B));
+    check('E: the per-order list carries each order at 0.30', p.basis_sales.subjects.length === 12 && p.basis_sales.subjects.every((x) => near(x.E, 0.3) && x.note === 'settled after the cutoff'));
+    // Reversed after the cutoff (settled before it): the unit came back to S
+    // at 9.00 but 1300 got 9.30 -> E -0.30. Held throughout and re-settled
+    // at a new cost (REV 9.00, COGS 9.30) -> E 0.30. Settled and reversed
+    // after the cutoff -> 0. A product that is not overridden adds nothing.
+    const more = [
+        { kind: 'retail', id: 'rev', c_pre: 9.3, c_post: -9.3, refs: ['ORD-rev-COGS-REV'], lines: [{ product_id: 'N', q: 1 }] },
+        { kind: 'retail', id: 'held', c_pre: 9, c_post: 0.3, refs: ['ORD-held-COGS', 'ORD-held-COGS-REV'], lines: [{ product_id: 'N', q: 1 }] },
+        { kind: 'retail', id: 'zero', c_pre: 0, c_post: 0, refs: ['ORD-zero-COGS-REV', 'TX-z'], lines: [{ product_id: 'N', q: 1 }] },
+        { kind: 'retail', id: 'plain', c_pre: 0, c_post: 4, refs: ['TX-p'], lines: [{ product_id: 'X', q: 1 }] },
+    ];
+    const q = run({ ...base, products: [...products, { id: 'X', name: 'X', stock: 0, purchase_cost: 4 }], basisSales: { ...bs, subjects: [...subjects, ...more] } });
+    const by = new Map(q.basis_sales.subjects.map((x) => [x.id, x]));
+    check('E: reversed after the cutoff -0.30, held and re-costed +0.30, settled and reversed 0, not overridden left out',
+        near(by.get('rev').E, -0.3) && by.get('rev').note === 'reversed after the cutoff'
+        && near(by.get('held').E, 0.3) && near(by.get('zero').E, 0) && !by.has('plain') && near(q.ledger.E, 3.6));
+    // An unexplained 1300 credit still fails.
+    const bad = run({ ...base, B: base.B - 2, basisSales: bs });
+    check('E: an unexplained 2.00 out of 1300 still fails the guard (-2.00)', near(bad.ledger.guard_diff, -2) && !bad.ledger.guard_pass);
+    // An order in SU adds nothing (SU already counts its booked amount).
+    const su = run({ ...base, sales: [...sales, { id: 'su', shipping_status: 'ReStock', payment_status: 'Paid', date: ts(20) }],
+        saleItems: [...saleItems, { id: 'lsu', sale_id: 'su', product_id: 'N', quantity: 1 }],
+        cogs: [...base.cogs, 'su'], booked: { su: 9.3 }, B: base.B - 9.3,
+        basisSales: { ...bs, subjects: [...subjects, { kind: 'retail', id: 'su', c_pre: 0, c_post: 9.3, refs: ['TX-su'], lines: [{ product_id: 'N', q: 1 }] }] } });
+    check('E: an order in SU adds 0 to E and the guard still passes', near(su.ledger.E, 3.6) && near(su.ledger.settled_unshipped_booked, 9.3) && su.ledger.guard_pass);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
