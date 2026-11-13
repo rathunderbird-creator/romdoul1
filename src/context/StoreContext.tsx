@@ -1897,6 +1897,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return updateConfigOps({ removedCommuneCodes: { op: 'append', items: [code] } });
     };
 
+    // Un-hide an official district/commune: drop its code from the removed
+    // list (same scoped removeItems op the other lists use, so a concurrent
+    // hide of a different code on another terminal survives).
+    const restoreDistrictEntry = (code: string) =>
+        updateConfigOps({ removedDistrictCodes: { op: 'removeItems', values: [code] } });
+    const restoreCommuneEntry = (code: string) =>
+        updateConfigOps({ removedCommuneCodes: { op: 'removeItems', values: [code] } });
+
     const addCustomerCare = (name: string) => {
         if ((config.customerCare || []).includes(name)) return Promise.resolve();
         return updateConfigOps({ customerCare: { op: 'append', items: [name] } });
@@ -4519,6 +4527,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             removeDistrictEntry,
             addCustomCommune,
             removeCommuneEntry,
+            restoreDistrictEntry,
+            restoreCommuneEntry,
             customerCare,
             addCustomerCare,
             removeCustomerCare,

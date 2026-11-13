@@ -7,23 +7,10 @@ import ConfigModal from './ConfigModal';
 import type { Sale, CartItem } from '../types';
 import LazyAvatar from './LazyAvatar';
 import ShippingPointSelector from './ShippingPointSelector';
+import { useLocationTree } from '../hooks/useLocationTree';
+import { findByName, locLabel, pickerOptions } from '../utils/locationTree';
 
 import { sendTelegramOrderNotification } from '../utils/telegram';
-
-interface LocationInfo {
-    code: string;
-    khmer: string;
-    latin: string;
-}
-interface Commune extends LocationInfo {
-    villages?: LocationInfo[];
-}
-interface District extends LocationInfo {
-    communes?: Commune[];
-}
-interface Province extends LocationInfo {
-    districts?: District[];
-}
 
 interface CheckoutFormProps {
     cartItems: CartItem[];
@@ -141,13 +128,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     };
 
     const [formData, setFormData] = useState(initialFormState);
-    const [locationData, setLocationData] = useState<Province[]>([]);
+    // Gazetteer + Sales Setup's custom / hidden districts and communes.
+    const { tree: locationData } = useLocationTree();
     
-    useEffect(() => {
-        import('../data/cambodia.json').then((module) => {
-            setLocationData(module.default as Province[]);
-        });
-    }, []);
     const [productSelection, setProductSelection] = useState({ id: '', quantity: 1 });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isShippingPointSelectorOpen, setIsShippingPointSelectorOpen] = useState(false);
@@ -278,21 +261,24 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     const addressPreviewText = [formData.address, formData.commune, formData.district, cleanCityPreview].filter(Boolean).join(', ');
 
     // Derived Location Hierarchy
+    // Lists hold every entry, hidden ones flagged; pickerOptions below shows
+    // only the visible ones plus whatever this order already holds, so an old
+    // order in a since-hidden district still displays and stays editable.
     const availableDistricts = React.useMemo(() => {
         if (!formData.city) return [];
-        for (const p of locationData) {
-            if (formData.city.includes(p.khmer)) {
-                return p.districts || [];
-            }
-        }
-        return [];
-    }, [formData.city]);
+        const p = findByName(locationData, formData.city)
+            || locationData.find(x => formData.city.includes(x.khmer));
+        return p?.districts || [];
+    }, [formData.city, locationData]);
 
     const availableCommunes = React.useMemo(() => {
         if (!formData.district || availableDistricts.length === 0) return [];
-        const dFound = availableDistricts.find(d => d.khmer === formData.district);
-        return dFound?.communes || [];
+        return findByName(availableDistricts, formData.district)?.communes || [];
     }, [formData.district, availableDistricts]);
+
+    const cityPicker = pickerOptions(locationData, formData.city);
+    const districtPicker = pickerOptions(availableDistricts, formData.district);
+    const communePicker = pickerOptions(availableCommunes, formData.commune);
 
     const handleShippingPointSelect = (data: {
         province: string;
@@ -911,11 +897,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 <div>
                                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>រាជធានី / ខេត្ត <span style={{ color: '#EF4444' }}>*</span></label>
                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                        <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'var(--color-surface)' }} value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })}>
+                                        <select className="search-input" style={{ flex: 1, padding: '10px 12px', background: 'var(--color-surface)' }} value={cityPicker.value} onChange={e => setFormData({ ...formData, city: e.target.value })}>
                                             <option value="">-- បង្ហាញរាជធានី និងខេត្ត --</option>
-                                            {locationData.map(p => (
+                                            {cityPicker.options.map(p => (
                                                 <option key={p.code} value={p.khmer}>
-                                                    {p.khmer} ({p.latin})
+                                                    {locLabel(p)}
                                                 </option>
                                             ))}
                                         </select>
@@ -930,11 +916,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         <select 
                                             className="search-input" 
                                             style={{ width: '100%', padding: '10px 12px', background: 'var(--color-surface)' }} 
-                                            value={formData.district} 
+                                            value={districtPicker.value} 
                                             onChange={e => setFormData({ ...formData, district: e.target.value, commune: '' })}
                                         >
                                             <option value="">ជ្រើសរើសស្រុក...</option>
-                                            {availableDistricts.map(d => <option key={d.code} value={d.khmer}>{d.khmer} ({d.latin})</option>)}
+                                            {districtPicker.options.map(d => <option key={d.code} value={d.khmer}>{locLabel(d)}</option>)}
                                         </select>
                                     ) : (
                                         <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'var(--color-surface)' }} value={formData.district} onChange={e => setFormData({ ...formData, district: e.target.value })} placeholder="ស្រុក / ខណ្ឌ" disabled={!formData.city} />
@@ -946,11 +932,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         <select 
                                             className="search-input" 
                                             style={{ width: '100%', padding: '10px 12px', background: 'var(--color-surface)' }} 
-                                            value={formData.commune} 
+                                            value={communePicker.value} 
                                             onChange={e => setFormData({ ...formData, commune: e.target.value })}
                                         >
                                             <option value="">ជ្រើសរើសឃុំ...</option>
-                                            {availableCommunes.map(c => <option key={c.code} value={c.khmer}>{c.khmer} ({c.latin})</option>)}
+                                            {communePicker.options.map(c => <option key={c.code} value={c.khmer}>{locLabel(c)}</option>)}
                                         </select>
                                     ) : (
                                         <input className="search-input" style={{ width: '100%', padding: '10px 12px', background: 'var(--color-surface)' }} value={formData.commune} onChange={e => setFormData({ ...formData, commune: e.target.value })} placeholder="ឃុំ / សង្កាត់" disabled={!formData.district} />
