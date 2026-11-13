@@ -16,6 +16,10 @@ import { supabase } from '../lib/supabase';
 //    so a line deleted mid-read can't shift the pages and silently drop a line
 //    of some other entry (offset paging could), and no row ceiling cuts off the
 //    newest lines — hitting the safety limit is an error, not a quiet cut.
+//    Line ids are random uuids, so the id space is cut into ID_RANGES equal
+//    ranges, each keyset-paged on its own and all read side by side: about
+//    one round trip for the whole ledger instead of one per 1000 lines (on
+//    Romdoul1, 9,000+ lines took 10 sequential requests, ~4.6s).
 //  - given entries (entryIds): batches of ids, so each entry's lines arrive
 //    together in one request.
 //
@@ -26,6 +30,9 @@ import { supabase } from '../lib/supabase';
 const PAGE = 1000;
 const SAFETY_LIMIT = 2_000_000;
 const ID_BATCH = 200;
+const ID_RANGES = 16;
+// Range k covers ids from k/16 up to (k+1)/16 of the uuid space, by first hex digit.
+const rangeBound = (k: number) => `${k.toString(16)}0000000-0000-0000-0000-000000000000`;
 
 type Row = { id: string; created_at?: string | null; journal_entry_id?: unknown; debit?: unknown; account_id?: unknown };
 
@@ -50,18 +57,26 @@ export async function fetchJournalLinesByEntry<L extends object>(
             }
         }
     } else {
-        let last: string | null = null;
-        for (;;) {
-            let q = supabase.from('journal_entry_lines').select(select).order('id', { ascending: true }).limit(PAGE);
-            if (last !== null) q = q.gt('id', last);
-            const { data, error } = await q;
-            if (error) throw error;
-            const page = (data || []) as unknown as (L & Row)[];
-            rows.push(...page);
-            if (page.length < PAGE) break;
-            last = page[page.length - 1].id;
-            if (rows.length >= SAFETY_LIMIT) throw new Error(`${label}: more than ${SAFETY_LIMIT} journal lines — stopped instead of showing a partial ledger.`);
-        }
+        const readRange = async (k: number) => {
+            const out: (L & Row)[] = [];
+            let last: string | null = null;
+            for (;;) {
+                let q = supabase.from('journal_entry_lines').select(select).order('id', { ascending: true }).limit(PAGE);
+                if (last !== null) q = q.gt('id', last);
+                else if (k > 0) q = q.gte('id', rangeBound(k));
+                if (k < ID_RANGES - 1) q = q.lt('id', rangeBound(k + 1));
+                const { data, error } = await q;
+                if (error) throw error;
+                const page = (data || []) as unknown as (L & Row)[];
+                out.push(...page);
+                if (page.length < PAGE) return out;
+                last = page[page.length - 1].id;
+                if (out.length >= SAFETY_LIMIT) throw new Error(`${label}: more than ${SAFETY_LIMIT} journal lines — stopped instead of showing a partial ledger.`);
+            }
+        };
+        const parts = await Promise.all(Array.from({ length: ID_RANGES }, (_, k) => readRange(k)));
+        for (const p of parts) rows.push(...p);
+        if (rows.length >= SAFETY_LIMIT) throw new Error(`${label}: more than ${SAFETY_LIMIT} journal lines — stopped instead of showing a partial ledger.`);
     }
 
     const byEntry = new Map<string, L[]>();
