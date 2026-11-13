@@ -399,6 +399,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         // list. The source filter resets too, so each page starts unfiltered.
         setAccountFilters(new Set());
         setSourceFilters(new Set());
+        setCounterFilters(new Set());
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode]);
 
@@ -539,15 +540,32 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             if (mains.length === 0) continue;
             const amount = mains.reduce((s, l) => s + (mode === 'revenue' ? l.credit - l.debit : l.debit - l.credit), 0);
             if (amount <= 0) continue;
-            const counters = entryLines.filter(l => !mains.includes(l));
+            const others = entryLines.filter(l => !mains.includes(l));
+            // Received Into / Paid From is where the money went: the lines on
+            // the other side of the entry (debits for revenue, credits for an
+            // expense), never a Revenue/Expense account. A retail receipt also
+            // carries its cost of sales (Dr 5000 COGS / Cr 1300 Inventory) —
+            // those lines are not where the money was received, and listing
+            // them made this column read "Bank Account (ABA), Cost of Goods
+            // Sold, Inventory" in a random order.
+            const moneySide = others.filter(l => {
+                const type = accountById.get(l.accountId)?.account_type;
+                if (type === 'Revenue' || type === 'Expense') return false;
+                return mode === 'revenue' ? l.debit > l.credit : l.credit > l.debit;
+            });
+            // An unusual entry with no such line keeps showing every other
+            // line, as before, so the column never goes blank.
+            const counterLines = moneySide.length > 0 ? moneySide : others;
+            const counterIds = Array.from(new Set(counterLines.map(l => l.accountId)))
+                .sort((a, b) => (accountById.get(a)?.account_code || '').localeCompare(accountById.get(b)?.account_code || ''));
             out.push({
                 entryId,
                 date: entryLines[0].date,
                 description: entryLines[0].description,
                 accountName: mains.map(l => accountById.get(l.accountId)?.account_name || '?').join(', '),
                 accountIds: mains.map(l => l.accountId),
-                counterName: counters.map(l => accountById.get(l.accountId)?.account_name || '?').join(', ') || '—',
-                counterIds: counters.map(l => l.accountId),
+                counterName: counterIds.map(id => accountById.get(id)?.account_name || '?').join(', ') || '—',
+                counterIds,
                 amount,
                 status: entryLines[0].status,
                 ref: entryLines[0].ref,
@@ -597,7 +615,14 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         if (n.has(id)) n.delete(id); else n.add(id);
         return n;
     });
-    const filtersActive = !!(search.trim() || dateFrom || dateTo || statusFilter !== 'All' || originFilter !== 'All' || accountFilters.size > 0 || sourceFilters.size > 0);
+    // Received Into (revenue) / Paid From (expense): the cash/bank side of the entry.
+    const [counterFilters, setCounterFilters] = useState<ReadonlySet<string>>(new Set());
+    const toggleCounterFilter = (id: string) => setCounterFilters(prev => {
+        const n = new Set(prev);
+        if (n.has(id)) n.delete(id); else n.add(id);
+        return n;
+    });
+    const filtersActive = !!(search.trim() || dateFrom || dateTo || statusFilter !== 'All' || originFilter !== 'All' || accountFilters.size > 0 || sourceFilters.size > 0 || counterFilters.size > 0);
 
     // Everything but the dropdown filters — the per-option counts come from
     // this set, so they respect the search/date/status/origin filters without
@@ -624,6 +649,16 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         () => accounts.filter(a => a.account_type === cfg.accountType && (existingAccountIds.has(a.id) || accountFilters.has(a.id))),
         [accounts, cfg.accountType, existingAccountIds, accountFilters]
     );
+    const existingCounterIds = useMemo(() => {
+        const s = new Set<string>();
+        rows.forEach(r => r.counterIds.forEach(id => s.add(id)));
+        return s;
+    }, [rows]);
+    const filterCounters = useMemo(
+        () => accounts.filter(a => existingCounterIds.has(a.id) || counterFilters.has(a.id)),
+        [accounts, existingCounterIds, counterFilters]
+    );
+    const showCounterFilter = filterCounters.length > 1 || counterFilters.size > 0;
     const existingSources = useMemo(() => {
         const s = new Set<EntrySource>();
         rows.forEach(r => s.add(r.source));
@@ -642,30 +677,39 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
 
     // Each dropdown's counts respect the OTHER dropdown (plus the filters
     // above), so an option always predicts exactly what ticking it would show.
+    const passSource = useCallback((r: EntryRow) => sourceFilters.size === 0 || sourceFilters.has(r.source), [sourceFilters]);
+    const passAccount = useCallback((r: EntryRow) => accountFilters.size === 0 || r.accountIds.some(id => accountFilters.has(id)), [accountFilters]);
+    const passCounter = useCallback((r: EntryRow) => counterFilters.size === 0 || r.counterIds.some(id => counterFilters.has(id)), [counterFilters]);
     const sourceCounts = useMemo(() => {
         const m = new Map<EntrySource, number>();
         baseFilteredRows.forEach(r => {
-            if (accountFilters.size > 0 && !r.accountIds.some(id => accountFilters.has(id))) return;
+            if (!passAccount(r) || !passCounter(r)) return;
             m.set(r.source, (m.get(r.source) || 0) + 1);
         });
         return m;
-    }, [baseFilteredRows, accountFilters]);
+    }, [baseFilteredRows, passAccount, passCounter]);
     const accountCounts = useMemo(() => {
         const m = new Map<string, number>();
         baseFilteredRows.forEach(r => {
-            if (sourceFilters.size > 0 && !sourceFilters.has(r.source)) return;
+            if (!passSource(r) || !passCounter(r)) return;
             // An imported entry can carry several lines on the same account —
             // dedupe so it counts once per account it touches.
             new Set(r.accountIds).forEach(id => m.set(id, (m.get(id) || 0) + 1));
         });
         return m;
-    }, [baseFilteredRows, sourceFilters]);
+    }, [baseFilteredRows, passSource, passCounter]);
+    const counterCounts = useMemo(() => {
+        const m = new Map<string, number>();
+        baseFilteredRows.forEach(r => {
+            if (!passSource(r) || !passAccount(r)) return;
+            new Set(r.counterIds).forEach(id => m.set(id, (m.get(id) || 0) + 1));
+        });
+        return m;
+    }, [baseFilteredRows, passSource, passAccount]);
 
     const filteredRows = useMemo(
-        () => baseFilteredRows.filter(r =>
-            (sourceFilters.size === 0 || sourceFilters.has(r.source)) &&
-            (accountFilters.size === 0 || r.accountIds.some(id => accountFilters.has(id)))),
-        [baseFilteredRows, sourceFilters, accountFilters]
+        () => baseFilteredRows.filter(r => passSource(r) && passAccount(r) && passCounter(r)),
+        [baseFilteredRows, passSource, passAccount, passCounter]
     );
 
     const filteredTotal = useMemo(() => filteredRows.reduce((s, r) => s + r.amount, 0), [filteredRows]);
@@ -1202,9 +1246,23 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             emptyTitle={`No ${mode} entries here match the current filters`}
                         />
                     )}
+                    {!loading && showCounterFilter && (
+                        <FilterDropdown
+                            allLabel={mode === 'revenue' ? 'All Received Into' : 'All Paid From'}
+                            noun={mode === 'revenue' ? 'received-into account' : 'paid-from account'}
+                            options={filterCounters.map(a => ({
+                                key: a.id, label: a.account_name, count: counterCounts.get(a.id) || 0,
+                                title: `${a.account_code} · ${a.account_name}`,
+                            }))}
+                            selected={counterFilters}
+                            onToggle={toggleCounterFilter}
+                            onClear={() => setCounterFilters(new Set())}
+                            emptyTitle={`No ${mode} entries here match the current filters`}
+                        />
+                    )}
                     {filtersActive && (
                         <button
-                            onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setStatusFilter('All'); setOriginFilter('All'); setAccountFilters(new Set()); setSourceFilters(new Set()); }}
+                            onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setStatusFilter('All'); setOriginFilter('All'); setAccountFilters(new Set()); setSourceFilters(new Set()); setCounterFilters(new Set()); }}
                             style={{ ...inputStyle, width: 'auto', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
                         >
                             Clear

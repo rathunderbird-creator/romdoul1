@@ -1,4 +1,4 @@
-// Dev-only preview: open http://localhost:5173/dev/filterBars.html?page=je (or ?page=po|ret|pay)
+// Dev-only preview: open http://localhost:5173/dev/filterBars.html?page=je (or ?page=po|ret|pay|rev|exp)
 // while `npm run dev` is running.
 //
 // Mounts the real Journal Entries / Purchase Orders pages with a mock store so
@@ -16,6 +16,7 @@ import JournalEntriesPage from '../pages/accounting/JournalEntriesPage';
 import PurchaseOrdersPage from '../pages/procurement/PurchaseOrdersPage';
 import ReturningItems from '../pages/ReturningItems';
 import CustomerPayment from '../pages/CustomerPayment';
+import RevenueExpenseEntryPage from '../pages/accounting/RevenueExpenseEntryPage';
 
 const base: Record<string, unknown> = {
     currentUser: { id: 'dev', name: 'Dev', role: 'Admin', permissions: [] },
@@ -41,7 +42,7 @@ createRoot(document.getElementById('root')!).render(
                         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         <StoreContext.Provider value={mockStore as any}>
                             <main style={{ padding: '12px' }}>
-                                {page === 'po' ? <PurchaseOrdersPage /> : page === 'ret' ? <ReturningItems /> : page === 'pay' ? <CustomerPayment /> : <JournalEntriesPage />}
+                                {page === 'po' ? <PurchaseOrdersPage /> : page === 'ret' ? <ReturningItems /> : page === 'pay' ? <CustomerPayment /> : page === 'rev' || page === 'exp' ? <RevenueExpenseEntryPage mode={page === 'rev' ? 'revenue' : 'expense'} /> : <JournalEntriesPage />}
                             </main>
                         </StoreContext.Provider>
                     </MemoryRouter>
