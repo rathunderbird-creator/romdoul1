@@ -19,6 +19,10 @@ import { getShippingCoColor } from '../utils/orderUtils';
 import { StatsCard, Modal } from '../components';
 import type { Sale } from '../types';
 
+// Height of every control in the filter row, so it lines up on one row.
+const FILTER_H = 36;
+const filterCtl: React.CSSProperties = { width: 'auto', flex: '0 0 auto', height: `${FILTER_H}px`, boxSizing: 'border-box', padding: '0 10px' };
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 type AgeFilter = 'all' | '7' | '30';
 
@@ -198,7 +202,7 @@ const ReturningItems: React.FC = () => {
             onClick={() => setConfirmIds(ids)}
             disabled={ids.length === 0}
             title="Use only when the parcel is physically back in the shop"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '8px', border: '1px solid #C084FC', background: '#F5F3FF', color: '#7E22CE', fontWeight: 600, fontSize: '12px', cursor: ids.length ? 'pointer' : 'not-allowed', opacity: ids.length ? 1 : 0.5, whiteSpace: 'nowrap' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', height: `${FILTER_H}px`, boxSizing: 'border-box', flexShrink: 0, padding: '0 12px', borderRadius: '8px', border: '1px solid #C084FC', background: '#F5F3FF', color: '#7E22CE', fontWeight: 600, fontSize: '12px', cursor: ids.length ? 'pointer' : 'not-allowed', opacity: ids.length ? 1 : 0.5, whiteSpace: 'nowrap' }}
         >
             <Undo2 size={14} /> {label}
         </button>
@@ -214,23 +218,25 @@ const ReturningItems: React.FC = () => {
                     trend={stats.over30 > 0 ? <span style={{ color: '#DC2626' }}>{stats.over30} over 30 days</span> : undefined} />
             </div>
 
-            <div className="glass-panel" style={{ padding: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-                <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '1 1 260px' }}>
+            {/* One row on desktop: .search-input is width 100% by default, so every
+                control here sets its own width and the FILTER_H height. */}
+            <div className="glass-panel" style={{ padding: '12px', display: 'flex', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: '8px', alignItems: 'center' }}>
+                <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '1 1 auto', minWidth: isMobile ? undefined : '200px', maxWidth: isMobile ? undefined : '420px' }}>
                     <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                     <input className="search-input" value={search} onChange={e => setSearch(e.target.value)}
                         placeholder="Search order, customer, phone, tracking, product"
-                        style={{ width: '100%', padding: '8px 10px 8px 30px' }} />
+                        style={{ width: '100%', height: `${FILTER_H}px`, boxSizing: 'border-box', padding: '0 10px 0 30px' }} />
                 </div>
-                <select value={carrier} onChange={e => setCarrier(e.target.value)} className="search-input" style={{ padding: '8px 10px' }}>
+                <select value={carrier} onChange={e => setCarrier(e.target.value)} className="search-input" style={filterCtl}>
                     <option value="">All carriers</option>
                     {carriers.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-                <select value={age} onChange={e => setAge(e.target.value as AgeFilter)} className="search-input" style={{ padding: '8px 10px' }}>
+                <select value={age} onChange={e => setAge(e.target.value as AgeFilter)} className="search-input" style={filterCtl}>
                     <option value="all">Any age</option>
                     <option value="7">7+ days</option>
                     <option value="30">30+ days</option>
                 </select>
-                <button onClick={load} title="Refresh" className="search-input" style={{ padding: '8px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+                <button onClick={load} title="Refresh" className="search-input" style={{ ...filterCtl, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                     <RefreshCw size={14} />
                 </button>
                 <div style={{ flex: 1 }} />

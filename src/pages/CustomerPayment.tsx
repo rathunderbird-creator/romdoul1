@@ -377,7 +377,7 @@ const CustomerPaymentPage: React.FC = () => {
             .select(cols)
             .like('reference_id', 'TX-%')
             .order('id', { ascending: true })
-            .range(from, to) as unknown as PromiseLike<{ data: JeRow[] | null; error: unknown }>);
+            .range(from, to) as unknown as PromiseLike<{ data: JeRow[] | null; error: unknown }>, 1000, { concurrency: 4 });
         (async () => {
             try {
                 // Lines and accounts read flat and joined here (an embedded
@@ -400,9 +400,16 @@ const CustomerPaymentPage: React.FC = () => {
                     statusMissing = true;
                     rows = await load('id, reference_id');
                 }
-                // Only these entries' lines, fetched by id batch (each entry's lines in one request).
+                // Lines are read only for Draft entries: they give the
+                // "Deposited into" prefill when a Draft is posted, and a
+                // Posted entry is never posted again (an Unpost reloads this,
+                // and the entry is then Draft). Reading every receipt's lines
+                // took ~2s on Romdoul1 and held up the Status column.
+                const draftIds = rows.filter(r => r.status === 'Draft').map(r => String(r.id || ''));
                 const [linesByEntry, accountRows] = await Promise.all([
-                    fetchJournalLinesByEntry<JeLine & { journal_entry_id: string }>('journal_entry_id, account_id, debit', 'CustomerPayment ledger lines', { entryIds: rows.map(r => String(r.id || '')) }),
+                    draftIds.length > 0
+                        ? fetchJournalLinesByEntry<JeLine & { journal_entry_id: string }>('journal_entry_id, account_id, debit', 'CustomerPayment ledger lines', { entryIds: draftIds })
+                        : Promise.resolve(new Map<string, (JeLine & { journal_entry_id: string })[]>()),
                     accountsP,
                 ]);
                 const accountById = new Map(accountRows.map(a => [a.id, a]));
