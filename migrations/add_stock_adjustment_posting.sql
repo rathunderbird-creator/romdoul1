@@ -203,7 +203,7 @@ BEGIN
                 v_short := v_short || format('%s: removing %s, only %s in stock; ', r.name, -r.quantity, COALESCE(r.stock, 0));
             ELSIF adj.warehouse_id IS NOT NULL AND adj.warehouse_id <> '' THEN
                 SELECT quantity INTO v_ws_qty FROM warehouse_stock
-                 WHERE warehouse_id = adj.warehouse_id AND product_id = r.product_id FOR UPDATE;
+                 WHERE warehouse_id::TEXT = adj.warehouse_id AND product_id = r.product_id FOR UPDATE;
                 IF FOUND AND COALESCE(v_ws_qty, 0) < -r.quantity THEN
                     v_short := v_short || format('%s: removing %s, only %s in this warehouse; ', r.name, -r.quantity, COALESCE(v_ws_qty, 0));
                 END IF;
@@ -244,10 +244,11 @@ BEGIN
 
         IF adj.warehouse_id IS NOT NULL AND adj.warehouse_id <> '' THEN
             UPDATE warehouse_stock SET quantity = COALESCE(quantity, 0) + r.quantity
-             WHERE warehouse_id = adj.warehouse_id AND product_id = r.product_id;
+             WHERE warehouse_id::TEXT = adj.warehouse_id AND product_id = r.product_id;
             IF NOT FOUND AND r.quantity > 0 THEN
                 INSERT INTO warehouse_stock (warehouse_id, product_id, quantity)
-                VALUES (adj.warehouse_id, r.product_id, r.quantity);
+                -- warehouse_stock.warehouse_id is uuid on the live stores.
+                VALUES (adj.warehouse_id::UUID, r.product_id, r.quantity);
             END IF;
         END IF;
 

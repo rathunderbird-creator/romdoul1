@@ -20,6 +20,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
 import fs from 'fs';
+import { useLiveTypes, alterColumnTypes, lineUuid as SI } from './live-schema.mjs'; // SI: a line label as the uuid sale_items.id is live
 
 const { PGlite } = await import(process.env.PGLITE_DIST || '@electric-sql/pglite');
 const require = createRequire(import.meta.url);
@@ -51,13 +52,19 @@ check('the file ships with no preset picked', /set_config\('fifo_rebuild\.preset
 check('the temp tables are dropped as pg_temp.*', /DROP TABLE IF EXISTS pg_temp\._fr_basis, pg_temp\._fr_p,/.test(rebuildFile)
     && !/DROP TABLE IF EXISTS _fr/.test(rebuildFile));
 
-async function makeDb() {
+// Every store is on the live column types (tests/live-schema.mjs). With
+// numericQty, sale_items.quantity and products.stock are then made NUMERIC
+// again: a store whose columns take fractions (the fresh-install schema
+// before this release), so the fractional paths stay covered. Romdoul1
+// (int4) is the default, and section 1b runs the seeded store on it.
+async function makeDb({ numericQty = false } = {}) {
     const db = new PGlite();
     await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated;`);
     await db.exec(`CREATE OR REPLACE FUNCTION uuid_generate_v4() RETURNS uuid LANGUAGE sql AS 'SELECT gen_random_uuid()';`);
     let schema = strip(mig('full_schema.sql')).replace(/CREATE EXTENSION[^;]*;/g, '');
     schema = schema.replace(/INSERT INTO storage[\s\S]*?END \$\$;/, '');
     await db.exec(schema);
+    await useLiveTypes(db); // the live column types, not full_schema's
     await db.exec(`GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;`);
     await db.exec(strip(mig('add_auth_guards.sql')));
     for (const f of ['add_transaction_order_link.sql', 'add_transaction_reference_notes.sql',
@@ -69,6 +76,11 @@ async function makeDb() {
                      'add_config_functions.sql', 'add_session_guards.sql',
                      'add_fifo_costing.sql', 'add_session_guards.sql']) {
         await db.exec(strip(mig(f)));
+    }
+    await useLiveTypes(db); // and on the columns the migrations added
+    if (numericQty) {
+        await alterColumnTypes(db, [{ table: 'sale_items', column: 'quantity', to: 'numeric', default: '1' },
+                                    { table: 'products', column: 'stock', to: 'numeric', default: '0' }]);
     }
     return db;
 }
@@ -111,23 +123,23 @@ async function seed(db) {
         ('Q3', 1, 'Confirmed', 'Paid', '${day(23)}'),
         ('Q4', 1, 'Pending', 'Paid', '${day(23)}')`);
     await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES
-        ('l-h1', 'H1', 'pD', 'x', 1, 1),
-        ('l-h2', 'H2', 'pE', 'x', 1, 1),
-        ('l-h3', 'H3', 'pF', 'x', 1, 9),
-        ('l-k1a', 'K1', 'pE', 'x', 1, 0.5),
-        ('l-k1b', 'K1', 'pE', 'x', 1, 2),
-        ('l-k2', 'K2', 'pE', 'x', 1, 1),
-        ('l-p1', 'P1', 'pE', 'x', 1, 1),
-        ('l-u1', 'U1', 'pF', 'x', 1, 2),
-        ('l-u2', 'U2', 'pF', 'x', 1, 1.5),
-        ('l-u3', 'U3', 'pF', 'x', 1, 1),
-        ('l-u4', 'U4', 'pC', 'x', 1, 1),
-        ('l-q1a', 'Q1', 'pA', 'x', 1, 2),
-        ('l-q1e', 'Q1', 'pE', 'x', 1, 1),
-        ('l-q1s', 'Q1', NULL, 'wrap', 1, 2),
-        ('l-q2s', 'Q2', NULL, 'service', 1, 1),
-        ('l-q3', 'Q3', 'pA', 'x', 1, 1),
-        ('l-q4', 'Q4', 'pA', 'x', 1, 1)`);
+        ('${SI('l-h1')}', 'H1', 'pD', 'x', 1, 1),
+        ('${SI('l-h2')}', 'H2', 'pE', 'x', 1, 1),
+        ('${SI('l-h3')}', 'H3', 'pF', 'x', 1, 9),
+        ('${SI('l-k1a')}', 'K1', 'pE', 'x', 1, 0.5),
+        ('${SI('l-k1b')}', 'K1', 'pE', 'x', 1, 2),
+        ('${SI('l-k2')}', 'K2', 'pE', 'x', 1, 1),
+        ('${SI('l-p1')}', 'P1', 'pE', 'x', 1, 1),
+        ('${SI('l-u1')}', 'U1', 'pF', 'x', 1, 2),
+        ('${SI('l-u2')}', 'U2', 'pF', 'x', 1, 1.5),
+        ('${SI('l-u3')}', 'U3', 'pF', 'x', 1, 1),
+        ('${SI('l-u4')}', 'U4', 'pC', 'x', 1, 1),
+        ('${SI('l-q1a')}', 'Q1', 'pA', 'x', 1, 2),
+        ('${SI('l-q1e')}', 'Q1', 'pE', 'x', 1, 1),
+        ('${SI('l-q1s')}', 'Q1', NULL, 'wrap', 1, 2),
+        ('${SI('l-q2s')}', 'Q2', NULL, 'service', 1, 1),
+        ('${SI('l-q3')}', 'Q3', 'pA', 'x', 1, 1),
+        ('${SI('l-q4')}', 'Q4', 'pA', 'x', 1, 1)`);
     await q(`INSERT INTO stock_movements (product_id, product_name, type, quantity, reference_id, created_at) VALUES
         ('pF', 'x', 'out', 2, 'U1', '${day(27, '10:00:01')}'),
         ('pF', 'x', 'out', 2, 'U1', '${day(26, '10:00:01')}'),
@@ -174,7 +186,7 @@ async function seed(db) {
         ('${L(9001)}', 'pB', 1, 7.0, '${day(3)}'),
         ('${L(9002)}', 'pB', 1, 7.5, '${day(4)}'),
         ('${L(9003)}', 'pB', 1, 0, '${day(6)}')`);
-    await q(`INSERT INTO purchase_orders (id, status) VALUES ('${L(9101)}', 'Received'), ('${L(9102)}', 'Draft')`);
+    await q(`INSERT INTO purchase_orders (id, order_date, status) VALUES ('${L(9101)}', '2026-10-01', 'Received'), ('${L(9102)}', '2026-10-01', 'Draft')`);
     await q(`INSERT INTO purchase_order_items (id, purchase_order_id, product_id, quantity, unit_price, created_at) VALUES
         ('${L(9111)}', '${L(9101)}', 'pC2', 1, 5.3, '${day(3)}'),
         ('${L(9112)}', '${L(9102)}', 'pC2', 1, 9, '${day(8)}'),
@@ -337,10 +349,11 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
       FROM products p`)).rows.filter(r => num(r.s) !== num(r.n));
 
 // ===========================================================================
-// 1. Default options (U = Shipped / Delivered / Returned, no cutoff)
+// 1. Default options (U = Shipped / Delivered / Returned, no cutoff), on a
+//    store with NUMERIC quantities (the seed's fractional cases)
 // ===========================================================================
 {
-    const db = await makeDb();
+    const db = await makeDb({ numericQty: true });
     const A = await seed(db);
     const before = await jsPlan(db, {});
     // B so that the guard passes with 0.40 to spare.
@@ -371,40 +384,40 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     const pC = await q(`SELECT status, cost_of_purchase AS cost, consumer_line_id AS line FROM inventory_items WHERE product_id = 'pC' ORDER BY received_at DESC`);
     check('no rows: pC gets 3 fillers at purchase_cost 4 — 2 in_stock, the oldest sold to U4',
         pC.length === 3 && pC.every(r => num(r.cost) === 4) && pC[0].status === 'in_stock' && pC[1].status === 'in_stock'
-        && pC[2].status === 'sold' && pC[2].line === 'l-u4', pC);
+        && pC[2].status === 'sold' && pC[2].line === SI('l-u4'), pC);
     check('no rows: pC2 filler at the received PO line cost (5.3, not the Draft PO 9)',
         num((await one(`SELECT cost_of_purchase AS c FROM inventory_items WHERE product_id = 'pC2'`)).c) === 5.3);
     // Cost-0 rows.
     check('cost-0 rows: pD 0 and NULL rows re-costed to the newest priced row (6)',
         num((await st(L(402))).cost) === 6 && num((await st(L(403))).cost) === 6 && (await st(L(402))).status === 'in_stock');
     check('cost-0 rows: pD settled history row stays sold to H1, stamped to its line',
-        (await st(L(401))).status === 'sold' && (await st(L(401))).sale_id === 'H1' && (await st(L(401))).line === 'l-h1');
+        (await st(L(401))).status === 'sold' && (await st(L(401))).sale_id === 'H1' && (await st(L(401))).line === SI('l-h1'));
     // Leftovers.
     for (const [id, why] of [[501, 'Pending order'], [502, 'ReStock order'], [503, 'null sale_id'], [507, "status 'returned'"]]) {
         const r = await st(L(id));
         check(`leftover sold row on a ${why} is written off with sale_id cleared`, r.status === 'written_off' && r.sale_id === null && r.kind === 'reconcile', r);
     }
     const h2 = await st(L(504)), k2 = await st(L(506));
-    check('history: settled H2 row stays sold, stamped retail / H2 / l-h2', h2.status === 'sold' && h2.kind === 'retail' && h2.cid === 'H2' && h2.line === 'l-h2', h2);
-    check('history: TX-booked K2 row stays sold, stamped to l-k2', k2.status === 'sold' && k2.line === 'l-k2', k2);
+    check('history: settled H2 row stays sold, stamped retail / H2 / l-h2', h2.status === 'sold' && h2.kind === 'retail' && h2.cid === 'H2' && h2.line === SI('l-h2'), h2);
+    check('history: TX-booked K2 row stays sold, stamped to l-k2', k2.status === 'sold' && k2.line === SI('l-k2'), k2);
     // K1 (ORD-K1-COGS booked) holds 3 rows; its lines are 0.5 (no whole unit) and 2.
     const k1 = await q(`SELECT id::text AS id, consumer_line_id AS line FROM inventory_items WHERE sale_id = 'K1' ORDER BY id`);
     check('history: K1 rows stamped by line room (0.5 line holds none, the 2-line two), the extra row left unstamped',
-        k1.length === 3 && k1[0].line === 'l-k1b' && k1[1].line === 'l-k1b' && k1[2].line === null, k1);
+        k1.length === 3 && k1[0].line === SI('l-k1b') && k1[1].line === SI('l-k1b') && k1[2].line === null, k1);
     check('history: K1 and K2 orders (COGS-booked) are not in U', !plan.linePlan.some(l => l.order_id === 'K1' || l.order_id === 'K2'));
     // Unsettled shipped lines take the next-newest layers.
     const held = async line => (await q(`SELECT id::text AS id FROM inventory_items WHERE consumer_line_id = $1 AND status = 'sold' ORDER BY received_at, id`, [line])).map(r => r.id);
     check('U: pF in_stock = the newest 2 (6, 5)', (await st(L(606))).status === 'in_stock' && (await st(L(605))).status === 'in_stock');
     check('U: oldest-shipped line l-u3 (no movement: its order date, Oct 15) gets the oldest of the U slice (L601, pulled from history)',
-        JSON.stringify(await held('l-u3')) === JSON.stringify([L(601)]));
+        JSON.stringify(await held(SI('l-u3'))) === JSON.stringify([L(601)]));
     check('U: l-u1 (newest out movement Oct 27 10:00:01) next: L602 + L603',
-        JSON.stringify(await held('l-u1')) === JSON.stringify([L(602), L(603)]));
-    check('U: l-u2 (Returned, Oct 27 10:00:02) last: L604', JSON.stringify(await held('l-u2')) === JSON.stringify([L(604)]));
-    const lu = new Map((await q(`SELECT id, cogs_cost, cogs_short_qty FROM sale_items WHERE id LIKE 'l-u%'`)).map(r => [r.id, r]));
+        JSON.stringify(await held(SI('l-u1'))) === JSON.stringify([L(602), L(603)]));
+    check('U: l-u2 (Returned, Oct 27 10:00:02) last: L604', JSON.stringify(await held(SI('l-u2'))) === JSON.stringify([L(604)]));
+    const lu = new Map((await q(`SELECT id, cogs_cost, cogs_short_qty FROM sale_items WHERE id::TEXT LIKE '${SI('l-u').slice(0, 6)}%'`)).map(r => [r.id, r]));
     check('U: cogs_cost l-u3 1, l-u1 5, l-u2 4 + 0.5 short at the fallback 6 = 7, l-u4 4',
-        num(lu.get('l-u3').cogs_cost) === 1 && num(lu.get('l-u1').cogs_cost) === 5 && num(lu.get('l-u2').cogs_cost) === 7
-        && num(lu.get('l-u4').cogs_cost) === 4, [...lu.values()]);
-    check('U: the fractional part is the line\'s cogs_short_qty', num(lu.get('l-u2').cogs_short_qty) === 0.5 && num(lu.get('l-u1').cogs_short_qty) === 0);
+        num(lu.get(SI('l-u3')).cogs_cost) === 1 && num(lu.get(SI('l-u1')).cogs_cost) === 5 && num(lu.get(SI('l-u2')).cogs_cost) === 7
+        && num(lu.get(SI('l-u4')).cogs_cost) === 4, [...lu.values()]);
+    check('U: the fractional part is the line\'s cogs_short_qty', num(lu.get(SI('l-u2')).cogs_short_qty) === 0.5 && num(lu.get(SI('l-u1')).cogs_short_qty) === 0);
     const u1 = await st(L(602));
     check('U: assigned rows carry sale_id and consumed_at = ship time',
         u1.sale_id === 'U1' && num((await one(`SELECT consumed_at = '${day(27, '10:00:01')}'::timestamptz AS ok FROM inventory_items WHERE id = $1`, [L(602)])).ok ? 1 : 0) === 1);
@@ -415,10 +428,10 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     check('the guard counts SU: expected B = basis value - SU', near(res.ledger.expected_B, res.ledger.basis_value_S_plus_U - 9.5, 1e-6));
     const qb = new Map((await q(`SELECT id, cogs_booked, cogs_cost FROM sale_items WHERE sale_id IN ('Q1', 'Q2', 'Q3', 'Q4')`)).map(r => [r.id, r]));
     check('SU Q1: 6 split by quantity over its product lines (pA 2 -> 4, pE 1 -> 2), the no-product line none, no cogs_cost',
-        num(qb.get('l-q1a').cogs_booked) === 4 && num(qb.get('l-q1e').cogs_booked) === 2 && qb.get('l-q1s').cogs_booked === null
+        num(qb.get(SI('l-q1a')).cogs_booked) === 4 && num(qb.get(SI('l-q1e')).cogs_booked) === 2 && qb.get(SI('l-q1s')).cogs_booked === null
         && [...qb.values()].every(r => r.cogs_cost === null), [...qb.values()]);
-    check('SU Q2 (no product line): all 3.5 on its first line', num(qb.get('l-q2s').cogs_booked) === 3.5);
-    check('Q3 and Q4 get no cogs_booked', qb.get('l-q3').cogs_booked === null && qb.get('l-q4').cogs_booked === null);
+    check('SU Q2 (no product line): all 3.5 on its first line', num(qb.get(SI('l-q2s')).cogs_booked) === 3.5);
+    check('Q3 and Q4 get no cogs_booked', qb.get(SI('l-q3')).cogs_booked === null && qb.get(SI('l-q4')).cogs_booked === null);
     // Wholesale backfill.
     const wl = new Map((await q(`SELECT id::text AS id, cogs_cost, cogs_short_qty FROM wholesale_order_items`)).map(r => [r.id, r]));
     check('wholesale W1: Posted COGS 9 allocated by purchase_cost x qty (6 : 10) = 3.375 / 5.625, all short',
@@ -476,21 +489,49 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     const again3 = await errOf(() => runSql(db, {}));
     check('...and with that gone too, refused by the pool\'s FIFO state', /already carries FIFO state/.test(again3), again3);
     // The phase 1 primitives on the rebuilt pool.
-    const ret = await one(`SELECT cost, short_qty FROM wp_internal.fifo_return('retail', 'U1', 'l-u1')`);
-    check('after: fifo_return of a U line gives back exactly its rows (5)', near(ret.cost, 5) && (await held('l-u1')).length === 0, ret);
-    const back = await one(`SELECT cost FROM wp_internal.fifo_consume('pF', 2, 'retail', 'U1', 'l-u1')`);
-    check('after: taking them again picks the same rows', near(back.cost, 5) && JSON.stringify(await held('l-u1')) === JSON.stringify([L(602), L(603)]));
+    const ret = await one(`SELECT cost, short_qty FROM wp_internal.fifo_return('retail', 'U1', '${SI('l-u1')}')`);
+    check('after: fifo_return of a U line gives back exactly its rows (5)', near(ret.cost, 5) && (await held(SI('l-u1'))).length === 0, ret);
+    const back = await one(`SELECT cost FROM wp_internal.fifo_consume('pF', 2, 'retail', 'U1', '${SI('l-u1')}')`);
+    check('after: taking them again picks the same rows', near(back.cost, 5) && JSON.stringify(await held(SI('l-u1'))) === JSON.stringify([L(602), L(603)]));
     const fb = await one(`SELECT cost FROM wp_internal.fifo_consume('pB', 1, 'retail', 'U4', 'x')`);
     check('after: pB\'s next unit out is a filler (7.5), older than the real layer', near(fb.cost, 7.5));
-    const h = await one(`SELECT cost FROM wp_internal.fifo_return('retail', 'H2', 'l-h2')`);
+    const h = await one(`SELECT cost FROM wp_internal.fifo_return('retail', 'H2', '${SI('l-h2')}')`);
     check('after: a stamped history row can be given back', near(h.cost, 5) && (await st(L(504))).status === 'in_stock');
+}
+
+// ===========================================================================
+// 1b. The same seeded store on the live int4 quantities (Romdoul1): the
+//     fractions round as int4 stores them (pQ stock 8, l-k1a 1, l-u2 2), and
+//     the SQL still matches the dry run under both option sets.
+// ===========================================================================
+for (const [tag, opts] of [['live int4, defaults', {}],
+                           ['live int4, true-up options', { basisArgs: ['NR-3026=9'], uStatuses: ['Shipped', 'Delivered'], uFrom: '2026-10-21' }]]) {
+    const db = await makeDb();
+    const types = (await db.query(`SELECT table_name || '.' || column_name AS c, udt_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND (table_name, column_name) IN (('sale_items', 'quantity'), ('products', 'stock'), ('sale_items', 'id'))
+        ORDER BY 1`)).rows.map(r => `${r.c}:${r.udt_name}`).join(' ');
+    check(`${tag}: the store is on the live types`, types === 'products.stock:int4 sale_items.id:uuid sale_items.quantity:int4', types);
+    const A = await seed(db);
+    const qty = (await db.query(`SELECT (SELECT stock FROM products WHERE id = 'pQ') AS pq,
+        (SELECT quantity FROM sale_items WHERE id = '${SI('l-u2')}') AS u2`)).rows[0];
+    check(`${tag}: int4 rounds the seed's fractions (pQ 8, l-u2 2)`, num(qty.pq) === 8 && num(qty.u2) === 2, qty);
+    const before = await jsPlan(db, opts);
+    await bookOpening(db, A, Math.round((before.ledger.expected_B - before.ledger.B) * 100) / 100);
+    const plan = await jsPlan(db, opts);
+    check(`${tag}: the dry run passes the guard`, plan.ledger.guard_pass, plan.ledger);
+    const res = await runSql(db, opts);
+    await compare(db, tag, plan, res);
+    check(`${tag}: no fractional anomaly, no fractional U`, res.anomalies.length === 0 && num(res.totals.u_frac_qty) === 0, res.anomalies);
+    check(`${tag}: every product: in_stock count = stock`, (await poolEqStock(db)).length === 0, await poolEqStock(db));
+    const chk = (await db.query(`SELECT wp_internal.fifo_inventory_check() AS j`)).rows[0].j;
+    check(`${tag}: fifo_inventory_check variance 0, pool = stock`, near(chk.variance, 0, 1e-6) && chk.product_mismatches === 0, chk);
 }
 
 // ===========================================================================
 // 2. The Romdoul1 true-up options: a basis override, Returned left out, a cutoff
 // ===========================================================================
 {
-    const db = await makeDb();
+    const db = await makeDb({ numericQty: true });
     const A = await seed(db);
     const opts = { basisArgs: ['NR-3026=9'], uStatuses: ['Shipped', 'Delivered'], uFrom: '2026-10-21' };
     const before = await jsPlan(db, opts);
@@ -499,8 +540,8 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     check('true-up options: the dry run guard residual is 0', near(plan.ledger.guard_diff, 0, 1e-6), plan.ledger);
     const res = await runSql(db, opts);
     await compare(db, 'true-up options', plan, res);
-    const lu = new Map((await db.query(`SELECT id, cogs_cost FROM sale_items WHERE id LIKE 'l-u%'`)).rows.map(r => [r.id, r]));
-    check('true-up options: Returned U2 and pre-cutoff U3 are left out of U', lu.get('l-u2').cogs_cost === null && lu.get('l-u3').cogs_cost === null);
+    const lu = new Map((await db.query(`SELECT id, cogs_cost FROM sale_items WHERE id::TEXT LIKE '${SI('l-u').slice(0, 6)}%'`)).rows.map(r => [r.id, r]));
+    check('true-up options: Returned U2 and pre-cutoff U3 are left out of U', lu.get(SI('l-u2')).cogs_cost === null && lu.get(SI('l-u3')).cogs_cost === null);
     check('true-up options: U = U1 (2) + U4 (1)', num(res.totals.U) === 3);
     check('true-up options: the summary lists the orders left out of U (U2 by status, U3 before the cutoff)',
         JSON.stringify(res.excluded_from_u.by_status.order_ids) === '["U2"]' && JSON.stringify(res.excluded_from_u.before_u_from.order_ids) === '["U3"]'
@@ -508,7 +549,7 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     const pn = plan.productRows.find(r => r.product_id === 'pN');
     check('true-up options: NR-3026 layers at 9.30 against a 9.00 basis add 0.60 to D1', near(pn.d1, 0.6, 1e-6));
     check('true-up options: with U smaller, the next-older pF row L602 is written off and U1 keeps L603 + L604', (await db.query(`SELECT status FROM inventory_items WHERE id = $1`, [L(602)])).rows[0].status === 'written_off'
-        && (await db.query(`SELECT count(*) AS n FROM inventory_items WHERE consumer_line_id = 'l-u1' AND id IN ($1, $2)`, [L(603), L(604)])).rows[0].n == 2);
+        && (await db.query(`SELECT count(*) AS n FROM inventory_items WHERE consumer_line_id = '${SI('l-u1')}' AND id IN ($1, $2)`, [L(603), L(604)])).rows[0].n == 2);
     const chk = (await db.query(`SELECT wp_internal.fifo_inventory_check() AS j`)).rows[0].j;
     check('true-up options: fifo_inventory_check variance 0 after the rebuild', near(chk.variance, 0, 1e-6), chk);
 }
@@ -517,7 +558,7 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
 // 3. The D1 guard, the other refusals, and nothing changed when they fire
 // ===========================================================================
 {
-    const db = await makeDb();
+    const db = await makeDb({ numericQty: true });
     const A = await seed(db);
     const before = await jsPlan(db, {});
     await bookOpening(db, A, Math.round((before.ledger.expected_B - before.ledger.B + 5) * 100) / 100);
@@ -543,13 +584,13 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     const ep = await errOf(() => runSql(db, {}));
     check('without phase 1 the run names the file to run first', /run migrations\/add_fifo_costing\.sql/.test(ep), ep);
     await db.query(`ALTER FUNCTION wp_internal.fifo_fallback_cost_hidden(TEXT) RENAME TO fifo_fallback_cost`);
-    await db.query(`UPDATE sale_items SET cogs_cost = 1 WHERE id = 'l-h1'`);
+    await db.query(`UPDATE sale_items SET cogs_cost = 1 WHERE id = '${SI('l-h1')}'`);
     const ec = await errOf(() => runSql(db, {}));
     check('a line that already has a cogs_cost is refused (phase 3 live)', /already carry a FIFO cost/.test(ec), ec);
-    await db.query(`UPDATE sale_items SET cogs_cost = NULL, cogs_booked = 1 WHERE id = 'l-h1'`);
+    await db.query(`UPDATE sale_items SET cogs_cost = NULL, cogs_booked = 1 WHERE id = '${SI('l-h1')}'`);
     const ecb = await errOf(() => runSql(db, {}));
     check('a line that already has a cogs_booked is refused', /already carry a FIFO cost/.test(ecb), ecb);
-    await db.query(`UPDATE sale_items SET cogs_booked = NULL WHERE id = 'l-h1'`);
+    await db.query(`UPDATE sale_items SET cogs_booked = NULL WHERE id = '${SI('l-h1')}'`);
     await db.exec(rebuildFn);
     const ep2 = await errOf(() => db.query(`SELECT pg_temp.fifo_rebuild_run('romdoul1')`));
     check('an unknown preset is refused and names the two presets', /pick a preset first.*"romdoul1".*romdoul1_trueup_2026_11_12.*default/.test(ep2), ep2);
@@ -561,7 +602,7 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
 // ===========================================================================
 for (const [offset, ok] of [[1, true], [-1.01, false]]) {
     const db = await makeDb();
-    await db.query(`INSERT INTO products (id, name, stock, purchase_cost) VALUES ('g', 'G', 1, 5)`);
+    await db.query(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('g', 'G', 10, 1, 5)`);
     await db.query(`INSERT INTO inventory_items (product_id, cost_of_purchase, status) VALUES ('g', 4, 'in_stock')`);
     const A = { inv: (await db.query(`SELECT id FROM chart_of_accounts WHERE account_code = '1300'`)).rows[0].id,
                 eq: (await db.query(`SELECT id FROM chart_of_accounts WHERE account_code = '3000'`)).rows[0].id };
@@ -572,7 +613,7 @@ for (const [offset, ok] of [[1, true], [-1.01, false]]) {
 {
     const db = await makeDb();
     // One product, pool 3 at 4 against stock 2 at purchase_cost 5: D1 = -2.
-    await db.query(`INSERT INTO products (id, name, stock, purchase_cost) VALUES ('g', 'G', 2, 5)`);
+    await db.query(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('g', 'G', 10, 2, 5)`);
     for (let i = 0; i < 3; i++) await db.query(`INSERT INTO inventory_items (product_id, cost_of_purchase, status) VALUES ('g', 4, 'in_stock')`);
     const A = { inv: (await db.query(`SELECT id FROM chart_of_accounts WHERE account_code = '1300'`)).rows[0].id,
                 eq: (await db.query(`SELECT id FROM chart_of_accounts WHERE account_code = '3000'`)).rows[0].id };
@@ -648,9 +689,9 @@ async function seedE(db, extra = [], opt = {}) {
         ('R1', 20, 'Delivered', 'Paid', '${day(30)}'), ('SU1', 20, 'ReStock', 'Paid', '${day(30)}'),
         ('P1', 20, 'Delivered', 'Paid', '${day(30)}'), ('UN', 20, 'Shipped', 'Unpaid', '${day(30)}')`);
     await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES
-        ('e-s1', 'S1', 'pN', 'x', 20, 1), ('e-s2', 'S2', 'pN', 'x', 20, 1), ('e-s3', 'S3', 'pN', 'x', 20, 1),
-        ('e-s4n', 'S4', 'pN', 'x', 20, 1), ('e-s4x', 'S4', 'pX', 'x', 10, 1), ('e-r1', 'R1', 'pN', 'x', 20, 1),
-        ('e-su1', 'SU1', 'pN', 'x', 20, 1), ('e-p1', 'P1', 'pN', 'x', 20, 1), ('e-un', 'UN', 'pN', 'x', 20, 1)`);
+        ('${SI('e-s1')}', 'S1', 'pN', 'x', 20, 1), ('${SI('e-s2')}', 'S2', 'pN', 'x', 20, 1), ('${SI('e-s3')}', 'S3', 'pN', 'x', 20, 1),
+        ('${SI('e-s4n')}', 'S4', 'pN', 'x', 20, 1), ('${SI('e-s4x')}', 'S4', 'pX', 'x', 10, 1), ('${SI('e-r1')}', 'R1', 'pN', 'x', 20, 1),
+        ('${SI('e-su1')}', 'SU1', 'pN', 'x', 20, 1), ('${SI('e-p1')}', 'P1', 'pN', 'x', 20, 1), ('${SI('e-un')}', 'UN', 'pN', 'x', 20, 1)`);
     for (let i = 1; i <= 4; i++) await q(`INSERT INTO inventory_items (id, product_id, cost_of_purchase, status, sale_id, received_at) VALUES ($1, 'pN', 9.3, $2, $3, $4)`,
         [L(2000 + i), i === 1 ? 'sold' : 'in_stock', i === 1 ? 'UN' : null, day(i)]);
     for (let i = 1; i <= 2; i++) await q(`INSERT INTO inventory_items (id, product_id, cost_of_purchase, status, received_at) VALUES ($1, 'pX', 4, 'in_stock', $2)`, [L(2100 + i), day(i)]);
@@ -768,7 +809,7 @@ const seedMixed = async ({ q, txEntry, post }) => {
     await q(`INSERT INTO products (id, name, price, stock, purchase_cost, is_active) VALUES ('pY', 'Other Y', 10, 0, 5, true)`);
     await q(`INSERT INTO sales (id, total, shipping_status, payment_status, date) VALUES ('S5', 40, 'Delivered', 'Paid', '${day(30)}')`);
     await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES
-        ('e-s5n', 'S5', 'pN', 'x', 20, 1), ('e-s5y', 'S5', 'pY', 'x', 10, 2)`);
+        ('${SI('e-s5n')}', 'S5', 'pN', 'x', 20, 1), ('${SI('e-s5y')}', 'S5', 'pY', 'x', 10, 2)`);
     await txEntry('S5', post(31), 19.3);
 };
 {
@@ -786,7 +827,7 @@ const seedMixed = async ({ q, txEntry, post }) => {
         await seedMixed(ctx);
         await q(`INSERT INTO sales (id, total, shipping_status, payment_status, date) VALUES
             ('BK', 20, 'ReStock', 'Paid', '${day(30)}'), ('RV', 20, 'Returned', 'Unpaid', '${day(30)}')`);
-        await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('e-bk', 'BK', 'pN', 'x', 20, 1), ('e-rv', 'RV', 'pN', 'x', 20, 1)`);
+        await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ('${SI('e-bk')}', 'BK', 'pN', 'x', 20, 1), ('${SI('e-rv')}', 'RV', 'pN', 'x', 20, 1)`);
         await txEntry('BK', at(11), 9.3);
         await entry('ORD-BK-COGS-REV', post(32), [[A.inv, 9.3, 0], [A.cogs, 0, 9.3]]);
         await q(`UPDATE products SET stock = stock + 1 WHERE id = 'pN'`);
@@ -871,7 +912,7 @@ const seedMixed = async ({ q, txEntry, post }) => {
             ('RD', 20, 'Returned', 'Unpaid', '${day(30)}', '${at(1)}', '${post(41)}'),
             ('RN', 20, 'Returned', 'Unpaid', '${day(30)}', '${post(42)}', '${post(43)}')`);
         await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES
-            ('e-ra', 'RA', 'pN', 'x', 20, 1), ('e-rb', 'RB', 'pN', 'x', 20, 1), ('e-rd', 'RD', 'pN', 'x', 20, 1), ('e-rn', 'RN', 'pN', 'x', 20, 1)`);
+            ('${SI('e-ra')}', 'RA', 'pN', 'x', 20, 1), ('${SI('e-rb')}', 'RB', 'pN', 'x', 20, 1), ('${SI('e-rd')}', 'RD', 'pN', 'x', 20, 1), ('${SI('e-rn')}', 'RN', 'pN', 'x', 20, 1)`);
         const log = (id, status, t) => q(`INSERT INTO activity_logs (action, description, metadata, created_at) VALUES ('order_status', 'x', $1::jsonb, $2)`,
             [JSON.stringify(status ? { orderId: id, status } : { orderId: id }), t]);
         await log('RA', 'Confirmed', at(2)); await log('RA', 'Shipped', at(3)); await log('RA', null, at(4)); await log('RA', 'Returned', post(40));
@@ -901,9 +942,9 @@ const seedMixed = async ({ q, txEntry, post }) => {
     check('Returned after the basis entry: ...and the dry run refuses it too', /needs a basis entry/.test(jNo), jNo);
     const res = await runSql(db, optsR);
     await compare(db, 'Returned after the basis entry', plan, res);
-    const lu = new Map((await db.query(`SELECT id, cogs_cost FROM sale_items WHERE id IN ('e-ra', 'e-rn', 'e-rb', 'e-rd')`)).rows.map(r => [r.id, r]));
+    const lu = new Map((await db.query(`SELECT id, cogs_cost FROM sale_items WHERE id IN ('${SI('e-ra')}', '${SI('e-rn')}', '${SI('e-rb')}', '${SI('e-rd')}')`)).rows.map(r => [r.id, r]));
     check('Returned after the basis entry: RA / RN lines hold their layer (9.30), RB / RD none',
-        near(lu.get('e-ra').cogs_cost, 9.3) && near(lu.get('e-rn').cogs_cost, 9.3) && lu.get('e-rb').cogs_cost === null && lu.get('e-rd').cogs_cost === null, [...lu.values()]);
+        near(lu.get(SI('e-ra')).cogs_cost, 9.3) && near(lu.get(SI('e-rn')).cogs_cost, 9.3) && lu.get(SI('e-rb')).cogs_cost === null && lu.get(SI('e-rd')).cogs_cost === null, [...lu.values()]);
     const chk = (await db.query(`SELECT wp_internal.fifo_inventory_check() AS j`)).rows[0].j;
     check('Returned after the basis entry: after the rebuild fifo_inventory_check variance 0', near(chk.variance, 0, 1e-6) && chk.product_mismatches === 0, chk);
 }

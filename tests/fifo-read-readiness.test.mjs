@@ -15,6 +15,7 @@ import path from 'path';
 import fs from 'fs';
 import { writeFileSync, rmSync } from 'fs';
 import { build } from 'esbuild';
+import { useLiveTypes } from './live-schema.mjs';
 
 const { PGlite } = await import(process.env.PGLITE_DIST || '@electric-sql/pglite');
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -40,11 +41,13 @@ async function baseDb() {
     let schema = strip(mig('full_schema.sql')).replace(/CREATE EXTENSION[^;]*;/g, '');
     schema = schema.replace(/INSERT INTO storage[\s\S]*?END \$\$;/, '');
     await db.exec(schema);
+    await useLiveTypes(db); // the live column types, not full_schema's
     await db.exec(`GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;`);
     await db.exec(strip(mig('add_auth_guards.sql')));
     for (const f of ['add_transaction_order_link.sql', 'add_transaction_reference_notes.sql', 'add_purchase_order_bill_date.sql']) {
         await db.exec(strip(mig(f)));
     }
+    await useLiveTypes(db);
     await db.exec(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('A', 'Speaker', 20, 0, 4)`);
     return db;
 }

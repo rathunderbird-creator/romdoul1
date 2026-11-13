@@ -194,7 +194,7 @@ DECLARE
     v_entry UUID;
 BEGIN
     INSERT INTO journal_entries (date, description, reference_id, status, entry_number)
-    VALUES (p_date, v_area || ' - ' || regexp_replace(v_number, '^JE-\d+-', '') || ' — ' || p_name,
+    VALUES (COALESCE(p_date, CURRENT_DATE), v_area || ' - ' || regexp_replace(v_number, '^JE-\d+-', '') || ' — ' || p_name,
             p_reference, 'Draft', v_number)
     RETURNING id INTO v_entry;
     INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
@@ -289,7 +289,8 @@ BEGIN
     IF p_restock_id IS NOT NULL THEN
         -- The product first, so a retry racing the first try waits for it.
         SELECT stock INTO v_stock FROM products WHERE id = p_product_id FOR UPDATE;
-        SELECT * INTO v_done FROM restocks WHERE id = p_restock_id;
+        -- restocks.id is TEXT on the live stores (uuid on a fresh install).
+        SELECT * INTO v_done FROM restocks WHERE id::TEXT = p_restock_id::TEXT;
         IF FOUND THEN
             IF v_done.product_id IS DISTINCT FROM p_product_id OR COALESCE(v_done.quantity, 0) <> p_quantity THEN
                 RAISE EXCEPTION 'This stock was already added (% units) — refresh before adding more.', COALESCE(v_done.quantity, 0);

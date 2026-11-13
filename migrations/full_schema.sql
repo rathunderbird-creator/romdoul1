@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS products (
     sku TEXT,
     price NUMERIC DEFAULT 0,
     purchase_cost NUMERIC DEFAULT 0,
-    stock NUMERIC DEFAULT 0,
-    low_stock_threshold NUMERIC DEFAULT 5,
+    stock INTEGER DEFAULT 0,          -- int4 on the live stores
+    low_stock_threshold INTEGER DEFAULT 5,
     low_stock_alert BOOLEAN DEFAULT true,
     is_active BOOLEAN DEFAULT true,
     image TEXT,
@@ -106,12 +106,12 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS deposit_date DATE;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS deposit_method TEXT;
 
 CREATE TABLE IF NOT EXISTS sale_items (
-    id TEXT PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), -- uuid on the live stores
     sale_id TEXT REFERENCES sales(id) ON DELETE CASCADE,
     product_id TEXT REFERENCES products(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
     price NUMERIC DEFAULT 0,
-    quantity NUMERIC DEFAULT 1,
+    quantity INTEGER NOT NULL DEFAULT 1, -- int4 NOT NULL on the live stores
     image TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -355,7 +355,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     purchase_order_id UUID REFERENCES purchase_orders(id) ON DELETE CASCADE,
     product_id TEXT REFERENCES products(id) ON DELETE SET NULL,
-    quantity NUMERIC DEFAULT 1,
+    quantity INTEGER NOT NULL DEFAULT 1, -- int4 NOT NULL on the live stores
     unit_price NUMERIC DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -425,7 +425,7 @@ CREATE TABLE IF NOT EXISTS warehouse_stock (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     warehouse_id TEXT NOT NULL,
     product_id TEXT NOT NULL,
-    quantity NUMERIC DEFAULT 0,
+    quantity INTEGER NOT NULL DEFAULT 0, -- int4 NOT NULL on the live stores
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE (warehouse_id, product_id)
