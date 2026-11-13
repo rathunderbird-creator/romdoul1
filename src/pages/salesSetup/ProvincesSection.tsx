@@ -19,7 +19,7 @@ import {
     type LocNode, type LocProvince, type LocDistrict, type LocCommune,
 } from '../../utils/locationTree';
 import {
-    fetchShippingPoints, saveShippingPoint, setShippingPointShutdown, deleteShippingPoint, parseLatLng, placeShippingPoints,
+    fetchShippingPoints, saveShippingPoint, setShippingPointShutdown, deleteShippingPoint, parseLatLng, isInCambodia, placeShippingPoints,
     type ShippingPoint, type ShippingPointFields,
 } from '../../utils/shippingPoints';
 
@@ -81,6 +81,9 @@ interface EditorState {
     id: string | null;
     fields: Omit<ShippingPointFields, 'lat' | 'lng'>;
     latLng: string;
+    /** The position text the editor opened with (edit only). An unchanged
+     *  stored position is saved as is even if it is outside the Cambodia box. */
+    originalLatLng?: string;
     /** Average position of the points already in the chosen area, if any. */
     suggestion?: { lat: number; lng: number; count: number; where: string };
 }
@@ -106,7 +109,19 @@ const PointEditor: React.FC<{
         setError(null);
         const ll = parseLatLng(state.latLng);
         if (!f.name.trim()) { setError('សូមបញ្ចូលឈ្មោះទីតាំង (Enter a name)'); return; }
-        if (!ll) { setError('Enter the position as "latitude, longitude" (e.g. 11.5564, 104.9282) or paste a Google Maps link.'); return; }
+        if (!ll) {
+            setError(/^\s*-?\d{3}\.\d+\s*,\s*-?\d{1,2}\.\d+\s*$/.test(state.latLng)
+                ? 'Latitude and longitude look swapped. Enter latitude first (about 10–14.7), then longitude (about 102–108), e.g. 11.5564, 104.9282.'
+                : 'Enter the position as "latitude, longitude" (e.g. 11.5564, 104.9282) or paste a Google Maps link.');
+            return;
+        }
+        const unchanged = state.id !== null && state.latLng.trim() === (state.originalLatLng || '').trim();
+        if (!isInCambodia(ll[0], ll[1]) && !unchanged) {
+            setError(isInCambodia(ll[1], ll[0])
+                ? `${ll[0]}, ${ll[1]} is outside Cambodia — latitude and longitude look swapped. Enter latitude first (about 10–14.7), then longitude (about 102–108).`
+                : `${ll[0]}, ${ll[1]} is outside Cambodia. Latitude is about 10–14.7 and longitude about 102–108.`);
+            return;
+        }
         setSaving(true);
         try {
             await saveShippingPoint({ ...f, lat: ll[0], lng: ll[1] }, state.id);
@@ -348,14 +363,18 @@ const ProvincesSection: React.FC = () => {
             },
         });
     };
-    const openEdit = (pt: ShippingPoint) => setEditor({
-        id: pt.id,
-        latLng: Number.isFinite(pt.lat) && Number.isFinite(pt.lng) ? `${pt.lat}, ${pt.lng}` : '',
-        fields: {
-            name: pt.name || '', courier: pt.courier || '', province: pt.province || '', district: pt.district || '', commune: pt.commune || '',
-            phone: pt.phone || '', contactName: pt.contact_name || '', isShutdown: !!pt.is_shutdown,
-        },
-    });
+    const openEdit = (pt: ShippingPoint) => {
+        const latLng = Number.isFinite(pt.lat) && Number.isFinite(pt.lng) ? `${pt.lat}, ${pt.lng}` : '';
+        setEditor({
+            id: pt.id,
+            latLng,
+            originalLatLng: latLng,
+            fields: {
+                name: pt.name || '', courier: pt.courier || '', province: pt.province || '', district: pt.district || '', commune: pt.commune || '',
+                phone: pt.phone || '', contactName: pt.contact_name || '', isShutdown: !!pt.is_shutdown,
+            },
+        });
+    };
     const togglePoint = async (pt: ShippingPoint) => {
         setBusyPoint(pt.id);
         try {
