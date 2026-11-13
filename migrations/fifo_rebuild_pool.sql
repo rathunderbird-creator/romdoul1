@@ -23,7 +23,9 @@
 --         true-up: NR-3026 at the 9.00 basis the true-up booked, from the
 --         true-up entry (reference TRUEUP-20261112, which must exist exactly
 --         once) on; U only from Shipped / Delivered orders (Returned left
---         out); orders dated before 2026-10-21 left out of U.
+--         out, except an order the true-up still counted that turned
+--         Returned after it and is not restocked yet: see "Returned after the
+--         basis entry" below); orders dated before 2026-10-21 left out of U.
 --     'default'  any other store, after its own count and true-up: basis =
 --         purchase_cost (no override, so E = 0), U from Shipped / Delivered /
 --         Returned, no cutoff.
@@ -45,7 +47,8 @@
 --   On success the last statement lists the summary, one row per item: the
 --   FIFO-REVAL entry (reference, number, amount), its amount D1 + E, D1, E,
 --   V, B, SU, the guard difference, the orders and adjustments behind E, the
---   orders left out of U, the orders whose booked COGS was
+--   orders left out of U, the Returned orders kept in U, the orders whose
+--   booked COGS was
 --   recorded (SU), the wholesale backfill and the anomalies. The same
 --   summary is kept in public.fifo_rebuild_log. On any failure the editor
 --   shows the error and nothing is kept.
@@ -55,9 +58,22 @@
 --       floored at 0 and listed under "anomalies").
 --   U = whole units on retail lines of orders that hold stock (Shipped /
 --       Delivered / Returned, narrowed by p_u_statuses and p_u_from), are not
---       settled (payment_status Paid / Settled / Paid/Settled) and have no
---       COGS entry (an entry with a 5000 line whose reference is
---       ORD-<order>-COGS, or TX-<tx> of a transaction linked to the order).
+--       settled (payment_status Paid / Settled / Paid/Settled) and are not
+--       booked. Booked = a COGS entry (an entry with a 5000 line whose
+--       reference is ORD-<order>-COGS, or TX-<tx> of a transaction linked to
+--       the order) that no ORD-<order>-COGS-REV reversed in full (the app's
+--       os_order_cogs_in_ledger). An order's booked amount is the net 1300
+--       credit of those entries and its -COGS-ADJ / -COGS-REV.
+--   Returned after the basis entry (p_u_returned_after_basis, Romdoul1
+--       preset; needs p_basis_ref): when Returned is not a U status, an
+--       unsettled, unbooked Returned order with no 'in' stock movement still
+--       counts in U when it was created after the basis entry, or was edited
+--       after it (sales.last_edited_at) and the latest order_status
+--       activity_logs status at or before it is Pending / Confirmed / Shipped
+--       / Delivered. The true-up held its goods (in S or U), and they are not
+--       back in stock, so 1300 still holds them; a later restock gives its
+--       layers back. An order the log cannot place stays out, and the guard
+--       fails rather than absorbing it.
 --   The rows of P, any status, newest first (received_at DESC, id DESC):
 --   1. rows in the first S+U places whose cost is 0 / NULL are re-costed to
 --      wp_internal.fifo_fallback_cost(P) as it stands before the rebuild;
@@ -78,10 +94,11 @@
 --      oldest row, at the last receipt cost (newest restock with cost > 0,
 --      else newest line of a Received PO with unit_price > 0), else the
 --      fallback cost;
---   SU orders (a COGS entry, status not Shipped / Delivered / Returned, at
+--   SU orders (booked, status not Shipped / Delivered / Returned, at
 --   least one line, booked amount not 0): their goods are inside S but the
 --   ledger already took their COGS out of 1300. The amount (net 1300 credit
---   of the order's COGS entries) is recorded on their lines as cogs_booked,
+--   of the order's COGS entries, -COGS-ADJ and -COGS-REV included) is
+--   recorded on their lines as cogs_booked,
 --   by quantity over the product lines in cents (the first, largest, takes
 --   the remainder; no product line: all on the first line), as
 --   os_spread_booked does, so the FIFO check counts it and a later ship books
@@ -110,29 +127,44 @@
 --        is the cutoff. Without p_basis_ref or overrides E = 0. After the
 --        cutoff the app still books at purchase_cost (NR-3026: 9.30), so each
 --        such sale takes 0.30 a unit more out of 1300 than the basis put in;
---        E is that excess, read from the ledger lines. A subject is a retail
---        order (TX-<tx of the order>, ORD-<id>-COGS / -COGS-ADJ / -COGS-REV),
---        a wholesale order (WSO-<uuid>-COGS…) or a stock adjustment (ADJ-<id>)
+--        E is that excess and nothing else. A subject is a retail order
+--        (TX-<tx of the order>, ORD-<id>-COGS / -COGS-ADJ / -COGS-REV), a
+--        wholesale order (WSO-<uuid>-COGS…) or a stock adjustment (ADJ-<id>)
 --        with at least one line of an overridden product and at least one
---        entry touching 1300 created after the cutoff. Per subject, with
---        c_pre / c_post = net 1300 credit of its entries created up to /
---        after the cutoff and bv = its lines at the basis cost:
---          retail / wholesale: share = ([c_pre + c_post > 0] - [c_pre > 0])
---            x bv: +bv when the ledger started holding its COGS after the
---            cutoff (settled), -bv when it stopped (reversed), 0 when
---            neither (settled and reversed after it: c_post nets to 0;
---            held throughout: a re-settlement at a new cost is all E);
---          a retail order in SU: share = c_post (SU counts what was booked);
---          stock adjustment: share = -bv (lines signed, removal < 0);
---          E_subject = c_post - share; E = their sum (E > 0 when more left
---          1300 than the basis). Orders still in U have no COGS entry, so
---          they add nothing. Each subject is counted once over all its
---          entries, so a REV and a later re-settlement net out. Limit: a
---          COGS-ADJ that only changes the quantity of an order held
---          throughout counts in full (no line history to price it at the
---          basis) — the guard then fails loudly, it is never absorbed.
---        Today's purchase_cost is used only as the basis of products that
---        are not overridden, as everywhere else in the guard.
+--        entry touching 1300 created after the cutoff. Per subject:
+--          c_pre / c_post = net 1300 credit of its entries created up to /
+--            after the cutoff (each subject counted once over all its
+--            entries, so a REV and a later re-settlement net out);
+--          sg = +1 (retail / wholesale), -1 (adjustment: lines signed);
+--          held(x) = round(x, 2) > 0 (adjustment <> 0); held before =
+--            held(c_pre), held after = held(c_pre + c_post) and, for a
+--            retail order, booked;
+--          d = held after - held before (+1 booked after the cutoff, -1
+--            reversed after it, 0 neither); 0 for an order in SU (SU counts
+--            what it booked, so it adds nothing);
+--          per line b = basis cost, c = the cost the ledger books it at (an
+--            adjustment line's unit_cost when > 0, else purchase_cost);
+--          X (cost difference) = sg x d x sum over the overridden lines of
+--            q x (c - b);
+--          L (ledger) = c_post - sg x d x sum over all lines of q x b;
+--          E_subject = L when the subject is pure (every line with a
+--            quantity is overridden) and each amount the ledger held
+--            (sg x c_pre when held before, sg x (c_pre + c_post) when held
+--            after) lies between its overridden lines at b and at c, a cent
+--            a unit either side (held neither: |c_post| <= a cent a unit);
+--            otherwise X.
+--          E = sum of round(E_subject, 2) (E > 0 when more left 1300 than
+--          the basis). So E never takes more than the overridden lines'
+--          cost difference: a duplicate entry, a re-cost beyond
+--          purchase_cost, a quantity change (the amounts fall outside the
+--          range) or a cost change of another product on a mixed order (E
+--          never reads it) stays in the guard and fails it when over $1.
+--          Orders still in U have no COGS held, so they add nothing.
+--        Limit: a sale booked at a cost that is no longer purchase_cost (the
+--        owner changed it again) falls outside the range, so it counts at
+--        today's purchase_cost; the difference stays in the guard. The
+--        summary lists each subject's ledger and cost figures and its
+--        source so such a gap can be seen.
 --   When |D1 - (V - SU - B - E)| > 1 the run RAISES with the numbers: the
 --   ledger does not match the counted stock at the basis cost, and booking
 --   would be wrong. When it passes and D1 + E is not 0, ONE Draft entry is
@@ -155,7 +187,8 @@
 --   * the store has not exactly one 1300 and one 5000 account;
 --   * a p_basis entry does not match exactly one product (by id or name);
 --   * p_basis_ref (the preset's basis entry) does not match exactly one
---     journal entry.
+--     journal entry;
+--   * p_u_returned_after_basis is on without p_basis_ref.
 --
 -- AFTER THE WRITES IT CHECKS (and raises on failure): per product the
 -- in_stock count is S; every U line holds exactly floor(qty) rows and its
@@ -206,7 +239,8 @@ CREATE OR REPLACE FUNCTION pg_temp.fifo_rebuild_pool(
     p_u_statuses TEXT[] DEFAULT NULL,
     p_u_from DATE DEFAULT NULL,
     p_run_date DATE DEFAULT NULL,
-    p_basis_ref TEXT DEFAULT NULL)
+    p_basis_ref TEXT DEFAULT NULL,
+    p_u_returned_after_basis BOOLEAN DEFAULT false)
 RETURNS JSONB
 LANGUAGE plpgsql
 AS $fn$
@@ -250,6 +284,7 @@ DECLARE
     v_anomalies JSONB;
     v_su_list JSONB;
     v_excluded JSONB;
+    v_ret JSONB;
 BEGIN
     v_ymd := to_char(v_date, 'YYYYMMDD');
     v_bak := 'inventory_items_bak_' || v_ymd;
@@ -338,6 +373,9 @@ BEGIN
             RAISE EXCEPTION 'FIFO rebuild: the basis entry % has no created_at. Nothing was changed.', p_basis_ref;
         END IF;
     END IF;
+    IF COALESCE(p_u_returned_after_basis, false) AND v_cutoff IS NULL THEN
+        RAISE EXCEPTION 'FIFO rebuild: p_u_returned_after_basis needs the basis entry (p_basis_ref). Nothing was changed.';
+    END IF;
 
     -- Per product: S, the basis cost, the fallback cost (before any change)
     -- and the last receipt cost for fillers.
@@ -360,17 +398,23 @@ BEGIN
                   WHERE o.status = 'Received' AND i.product_id IS NOT NULL AND i.unit_price > 0
                   ORDER BY i.product_id, i.created_at DESC NULLS LAST, i.id) po ON po.product_id = p.id;
 
-    -- Orders with a COGS entry: an entry with a 5000 line, referenced
-    -- ORD-<order>-COGS or TX-<tx of the order>; amt = what those entries
-    -- took out of 1300 (credit - debit).
+    -- Orders' COGS entries: entries with a 5000 line, referenced
+    -- ORD-<order>-COGS or TX-<tx of the order> (they book it; has_base) and
+    -- ORD-<order>-COGS-ADJ / -COGS-REV (they change it); amt = what they
+    -- took out of 1300 (credit - debit), as os_order_cogs_net counts it.
     CREATE TEMP TABLE _fr_booked ON COMMIT DROP AS
-    SELECT x.order_id, sum(x.inv_out) AS amt
+    SELECT x.order_id, sum(x.inv_out) AS amt, bool_or(x.kind = 'BASE') AS has_base, bool_or(x.kind = 'REV') AS has_rev
       FROM (SELECT CASE
+                     WHEN e.reference_id ~ '^ORD-.+-COGS-ADJ$' THEN substring(e.reference_id FROM '^ORD-(.+)-COGS-ADJ$')
+                     WHEN e.reference_id ~ '^ORD-.+-COGS-REV$' THEN substring(e.reference_id FROM '^ORD-(.+)-COGS-REV$')
                      WHEN e.reference_id ~ '^ORD-.+-COGS$' THEN substring(e.reference_id FROM '^ORD-(.+)-COGS$')
                      WHEN e.reference_id ~ '^TX-.+$' THEN
                          (SELECT t.order_id FROM transactions t
                            WHERE t.order_id IS NOT NULL AND t.id::TEXT = substring(e.reference_id FROM '^TX-(.+)$'))
                    END AS order_id,
+                   CASE WHEN e.reference_id ~ '^ORD-.+-COGS-ADJ$' THEN 'ADJ'
+                        WHEN e.reference_id ~ '^ORD-.+-COGS-REV$' THEN 'REV'
+                        ELSE 'BASE' END AS kind,
                    (SELECT COALESCE(sum(COALESCE(l.credit, 0) - COALESCE(l.debit, 0)), 0) FROM journal_entry_lines l
                      WHERE l.journal_entry_id = e.id AND l.account_id = v_inv) AS inv_out
               FROM journal_entries e
@@ -378,20 +422,51 @@ BEGIN
      WHERE x.order_id IS NOT NULL
      GROUP BY x.order_id;
 
+    -- booked: the order has a COGS entry and no COGS-REV reversed it in full
+    -- (the app's os_order_cogs_in_ledger: what a REV took back does not
+    -- count). ret_status: set below for a Returned order kept in U.
     CREATE TEMP TABLE _fr_orders ON COMMIT DROP AS
     SELECT s.id, s.shipping_status, s.payment_status, s.date,
            COALESCE(s.shipping_status, '') = ANY (c_holds) AS holds,
            COALESCE(s.payment_status, '') = ANY (c_settled) AS settled,
-           EXISTS (SELECT 1 FROM _fr_booked b WHERE b.order_id = s.id) AS booked
+           EXISTS (SELECT 1 FROM _fr_booked b WHERE b.order_id = s.id AND b.has_base
+                      AND NOT (b.has_rev AND round(b.amt, 2) <= 0)) AS booked,
+           NULL::TEXT AS ret_status
       FROM sales s;
     ALTER TABLE _fr_orders ADD PRIMARY KEY (id);
 
-    -- SU: booked, goods still on hand.
+    -- Returned orders the basis entry still counted (p_u_returned_after_basis,
+    -- the Romdoul1 preset): unsettled, not booked, not restocked (no 'in'
+    -- movement), Returned now while Returned is not a U status, and created
+    -- after the basis entry, or edited after it with the latest status the
+    -- order_status activity log records at or before it one of Pending /
+    -- Confirmed / Shipped / Delivered. Their goods were in S or U at the
+    -- true-up, so 1300 still holds them: they stay in U. An order the log
+    -- cannot place stays out (the guard then fails; it is never absorbed).
+    IF COALESCE(p_u_returned_after_basis, false) AND NOT ('Returned' = ANY (v_u_statuses)) THEN
+        UPDATE _fr_orders o
+           SET ret_status = x.st
+          FROM (SELECT s.id,
+                       CASE WHEN s.created_at > v_cutoff THEN 'created after the basis entry'
+                            WHEN s.last_edited_at > v_cutoff THEN
+                                (SELECT a.metadata->>'status' FROM activity_logs a
+                                  WHERE a.action = 'order_status' AND a.metadata->>'orderId' = s.id
+                                    AND a.metadata->>'status' IS NOT NULL AND a.created_at <= v_cutoff
+                                  ORDER BY a.created_at DESC, a.id::TEXT COLLATE "C" DESC LIMIT 1) END AS st
+                  FROM sales s WHERE s.shipping_status = 'Returned') x
+         WHERE x.id = o.id AND NOT o.settled AND NOT o.booked
+           AND x.st IN ('created after the basis entry', 'Pending', 'Confirmed', 'Shipped', 'Delivered')
+           AND NOT EXISTS (SELECT 1 FROM stock_movements m
+                            WHERE m.type = 'in' AND (m.reference_id = o.id OR m.order_id = o.id));
+    END IF;
+
+    -- SU: booked, goods still on hand; the amount is net of -COGS-ADJ and
+    -- -COGS-REV.
     CREATE TEMP TABLE _fr_su ON COMMIT DROP AS
     SELECT o.id AS order_id, COALESCE(o.shipping_status, '') AS shipping_status,
            COALESCE(o.payment_status, '') AS payment_status, round(b.amt, 2) AS booked
       FROM _fr_orders o JOIN _fr_booked b ON b.order_id = o.id
-     WHERE NOT o.holds AND round(b.amt, 2) <> 0
+     WHERE o.booked AND NOT o.holds AND round(b.amt, 2) <> 0
        AND EXISTS (SELECT 1 FROM sale_items si WHERE si.sale_id = o.id);
     SELECT round(COALESCE(sum(booked), 0), 2),
            COALESCE(jsonb_agg(jsonb_build_object('order_id', order_id, 'shipping_status', shipping_status,
@@ -438,48 +513,68 @@ BEGIN
          GROUP BY kind, subject
         HAVING bool_or(post)
     ), lines AS (
-        SELECT 'retail' AS kind, si.sale_id AS subject, si.product_id, GREATEST(COALESCE(si.quantity, 0), 0) AS q
+        -- uc: the cost an adjustment line was booked at (its unit_cost).
+        SELECT 'retail' AS kind, si.sale_id AS subject, si.product_id, GREATEST(COALESCE(si.quantity, 0), 0) AS q, NULL::NUMERIC AS uc
           FROM sale_items si WHERE si.product_id IS NOT NULL
         UNION ALL
-        SELECT 'wholesale', wi.wholesale_order_id::TEXT, wi.product_id, GREATEST(COALESCE(wi.quantity, 0), 0)
+        SELECT 'wholesale', wi.wholesale_order_id::TEXT, wi.product_id, GREATEST(COALESCE(wi.quantity, 0), 0), NULL::NUMERIC
           FROM wholesale_order_items wi WHERE wi.product_id IS NOT NULL
         UNION ALL
-        SELECT 'adjustment', al.adjustment_id::TEXT, al.product_id, COALESCE(al.quantity, 0)
+        SELECT 'adjustment', al.adjustment_id::TEXT, al.product_id, COALESCE(al.quantity, 0), al.unit_cost
           FROM stock_adjustment_lines al WHERE al.product_id IS NOT NULL
-    ), bv AS (
-        SELECT l.kind, l.subject, sum(l.q * p.basis_cost) AS bv,
-               sum(l.q) FILTER (WHERE b.product_id IS NOT NULL) AS over_qty
-          FROM lines l JOIN _fr_p p ON p.id = l.product_id LEFT JOIN _fr_basis b ON b.product_id = l.product_id
+    ), lv AS (
+        -- b = basis cost, c = the cost the ledger books the line at.
+        SELECT l.kind, l.subject, l.q, p.basis_cost AS b, (bs.product_id IS NOT NULL) AS over,
+               CASE WHEN COALESCE(l.uc, 0) > 0 THEN l.uc ELSE p.pc END AS c
+          FROM lines l JOIN _fr_p p ON p.id = l.product_id LEFT JOIN _fr_basis bs ON bs.product_id = l.product_id
          WHERE (l.kind, l.subject) IN (SELECT kind, subject FROM subj)
-         GROUP BY l.kind, l.subject
-        HAVING bool_or(b.product_id IS NOT NULL)
+    ), agg AS (
+        SELECT kind, subject,
+               sum(q * b) AS bv,
+               COALESCE(sum(q) FILTER (WHERE over), 0) AS over_qty,
+               COALESCE(sum(abs(q)) FILTER (WHERE over), 0) AS over_abs,
+               COALESCE(sum(q * (c - b)) FILTER (WHERE over), 0) AS x_unit,
+               COALESCE(sum(q * least(b, c)) FILTER (WHERE over), 0) AS r1,
+               COALESCE(sum(q * greatest(b, c)) FILTER (WHERE over), 0) AS r3,
+               bool_and(over OR q = 0) AS pure
+          FROM lv GROUP BY kind, subject
+        HAVING bool_or(over)
     ), f AS (
-        SELECT s.*, v.bv, v.over_qty,
+        SELECT s.*, a.bv, a.over_qty, a.x_unit, a.pure,
+               least(a.r1, a.r3) AS lo, greatest(a.r1, a.r3) AS hi, 0.01 * a.over_abs AS tol,
+               CASE WHEN s.kind = 'adjustment' THEN -1 ELSE 1 END AS sg,
                (s.kind = 'retail' AND EXISTS (SELECT 1 FROM _fr_su su WHERE su.order_id = s.subject)) AS in_su,
-               (CASE WHEN round(s.c_pre + s.c_post, 2) > 0 THEN 1 ELSE 0 END) AS held_after,
-               (CASE WHEN round(s.c_pre, 2) > 0 THEN 1 ELSE 0 END) AS held_before
-          FROM subj s JOIN bv v ON v.kind = s.kind AND v.subject = s.subject
+               CASE WHEN s.kind = 'adjustment' THEN round(s.c_pre, 2) <> 0 ELSE round(s.c_pre, 2) > 0 END AS hb,
+               (CASE WHEN s.kind = 'adjustment' THEN round(s.c_pre + s.c_post, 2) <> 0 ELSE round(s.c_pre + s.c_post, 2) > 0 END)
+               AND (s.kind <> 'retail' OR COALESCE((SELECT o.booked FROM _fr_orders o WHERE o.id = s.subject), false)) AS ha
+          FROM subj s JOIN agg a ON a.kind = s.kind AND a.subject = s.subject
     ), g AS (
-        SELECT f.*,
-               CASE WHEN f.kind = 'adjustment' THEN -f.bv
-                    WHEN f.in_su THEN f.c_post
-                    ELSE (f.held_after - f.held_before) * f.bv END AS share,
-               CASE WHEN f.kind = 'adjustment' THEN 'stock adjustment after the cutoff'
-                    WHEN f.in_su THEN 'in SU (booked amount already counted)'
-                    WHEN f.held_after > f.held_before THEN 'settled after the cutoff'
-                    WHEN f.held_after < f.held_before THEN 'reversed after the cutoff'
-                    WHEN f.held_after = 1 THEN 'held before and after the cutoff'
-                    ELSE 'not held after the cutoff' END AS note
-          FROM f
+        SELECT f.*, CASE WHEN f.in_su THEN 0 ELSE f.ha::INT - f.hb::INT END AS d FROM f
+    ), h AS (
+        SELECT g.*, g.sg * g.d * g.x_unit AS x,
+               CASE WHEN g.in_su THEN 0 ELSE g.c_post - g.sg * g.d * g.bv END AS lg,
+               (g.pure AND NOT g.in_su
+                AND (NOT g.hb OR g.sg * g.c_pre BETWEEN g.lo - g.tol AND g.hi + g.tol)
+                AND (NOT g.ha OR g.sg * (g.c_pre + g.c_post) BETWEEN g.lo - g.tol AND g.hi + g.tol)
+                AND (g.hb OR g.ha OR abs(g.c_post) <= g.tol)) AS ledger_ok
+          FROM g
     )
-    SELECT kind, subject, refs, c_pre, c_post, bv, over_qty, share, note, round(c_post - share, 2) AS e
-      FROM g;
+    SELECT kind, subject, refs, c_pre, c_post, bv, over_qty, d, round(x, 2) AS x, round(lg, 2) AS lg,
+           CASE WHEN ledger_ok THEN round(lg, 2) ELSE round(x, 2) END AS e,
+           CASE WHEN in_su THEN 'SU' WHEN ledger_ok THEN 'ledger'
+                WHEN pure THEN 'cost difference (ledger outside basis..cost)' ELSE 'cost difference (mixed)' END AS source,
+           CASE WHEN in_su THEN 'in SU (booked amount already counted)'
+                WHEN d > 0 THEN 'booked after the cutoff'
+                WHEN d < 0 THEN 'reversed after the cutoff'
+                WHEN ha THEN 'held before and after the cutoff'
+                ELSE 'not held after the cutoff' END AS note
+      FROM h;
     SELECT round(COALESCE(sum(e), 0), 2),
            COALESCE(jsonb_agg(jsonb_build_object(
                'kind', kind, 'id', subject, 'refs', refs,
                'booked_before_cutoff', round(c_pre, 2), 'booked_after_cutoff', round(c_post, 2),
-               'overridden_qty', round(over_qty, 4), 'basis_value', round(bv, 2),
-               'basis_share', round(share, 2), 'E', e, 'note', note)
+               'overridden_qty', round(over_qty, 4), 'basis_value', round(bv, 2), 'direction', d,
+               'ledger_excess', lg, 'cost_excess', x, 'E', e, 'source', source, 'note', note)
                ORDER BY kind COLLATE "C", subject COLLATE "C"), '[]'::JSONB)
       INTO v_E, v_e_list FROM _fr_e;
 
@@ -496,7 +591,7 @@ BEGIN
           JOIN _fr_p p ON p.id = si.product_id
          WHERE o.holds AND NOT o.settled AND NOT o.booked
            AND GREATEST(COALESCE(si.quantity, 0), 0) > 0
-           AND COALESCE(o.shipping_status, '') = ANY (v_u_statuses)
+           AND (COALESCE(o.shipping_status, '') = ANY (v_u_statuses) OR o.ret_status IS NOT NULL)
            AND NOT (v_u_from IS NOT NULL AND (o.date IS NULL OR o.date < v_u_from))
     )
     SELECT l.*, floor(l.qty)::INT AS pool_units, round(l.qty - floor(l.qty), 4) AS frac,
@@ -508,7 +603,8 @@ BEGIN
     -- Unsettled holding lines the options leave out of U (no layers, no
     -- cogs_cost): listed in the summary.
     CREATE TEMP TABLE _fr_excl ON COMMIT DROP AS
-    SELECT CASE WHEN NOT (COALESCE(o.shipping_status, '') = ANY (v_u_statuses)) THEN 'by_status' ELSE 'before_u_from' END AS why,
+    SELECT CASE WHEN NOT (COALESCE(o.shipping_status, '') = ANY (v_u_statuses) OR o.ret_status IS NOT NULL)
+                THEN 'by_status' ELSE 'before_u_from' END AS why,
            o.id AS order_id, GREATEST(COALESCE(si.quantity, 0), 0) AS qty,
            GREATEST(COALESCE(si.quantity, 0), 0) * p.basis_cost AS basis_value
       FROM sale_items si
@@ -516,7 +612,7 @@ BEGIN
       JOIN _fr_p p ON p.id = si.product_id
      WHERE o.holds AND NOT o.settled AND NOT o.booked
        AND GREATEST(COALESCE(si.quantity, 0), 0) > 0
-       AND (NOT (COALESCE(o.shipping_status, '') = ANY (v_u_statuses))
+       AND (NOT (COALESCE(o.shipping_status, '') = ANY (v_u_statuses) OR o.ret_status IS NOT NULL)
             OR (v_u_from IS NOT NULL AND (o.date IS NULL OR o.date < v_u_from)));
     SELECT jsonb_object_agg(w.why, jsonb_build_object(
                'orders', (SELECT count(DISTINCT x.order_id) FROM _fr_excl x WHERE x.why = w.why),
@@ -526,6 +622,20 @@ BEGIN
                                FROM (SELECT DISTINCT x.order_id FROM _fr_excl x WHERE x.why = w.why) d)))
       INTO v_excluded
       FROM (VALUES ('by_status'), ('before_u_from')) w(why);
+
+    -- The Returned orders kept in U (ret_status), with their U lines.
+    WITH k AS (
+        SELECT o.id AS order_id, o.ret_status, round(sum(l.qty), 4) AS qty, round(sum(l.qty * p.basis_cost), 2) AS basis_value
+          FROM _fr_lines l JOIN _fr_orders o ON o.id = l.order_id JOIN _fr_p p ON p.id = l.product_id
+         WHERE o.ret_status IS NOT NULL
+         GROUP BY o.id, o.ret_status
+    )
+    SELECT jsonb_build_object(
+               'orders', count(*), 'qty', round(COALESCE(sum(qty), 0), 4), 'basis_value', round(COALESCE(sum(basis_value), 0), 2),
+               'list', COALESCE(jsonb_agg(jsonb_build_object('order_id', order_id, 'status_at_cutoff', ret_status,
+                                                             'qty', qty, 'basis_value', basis_value)
+                                          ORDER BY order_id COLLATE "C"), '[]'::JSONB))
+      INTO v_ret FROM k;
 
     -- Every row of every product, newest first.
     CREATE TEMP TABLE _fr_rows ON COMMIT DROP AS
@@ -881,7 +991,8 @@ BEGIN
         'run_date', v_date,
         'backup_table', v_bak,
         'options', jsonb_build_object('basis', COALESCE(p_basis, '{}'::JSONB), 'basis_ref', p_basis_ref,
-                                      'u_statuses', to_jsonb(v_u_statuses), 'u_from', p_u_from),
+                                      'u_statuses', to_jsonb(v_u_statuses), 'u_from', p_u_from,
+                                      'u_returned_after_basis', COALESCE(p_u_returned_after_basis, false)),
         'totals', v_totals,
         'ledger', jsonb_build_object(
             'V_in_stock', v_V_stock, 'V_unsettled', v_V_u, 'V', v_V, 'B', v_B, 'V_minus_B', v_VmB,
@@ -891,6 +1002,7 @@ BEGIN
         'settled_unshipped', v_su_list,
         'basis_sales', jsonb_build_object('basis_ref', p_basis_ref, 'cutoff', v_cutoff, 'E', v_E, 'subjects', v_e_list),
         'excluded_from_u', v_excluded,
+        'u_returned_after_basis', v_ret,
         'entry', CASE WHEN v_entry IS NULL THEN NULL ELSE jsonb_build_object(
             'reference_id', v_ref, 'entry_number', v_number, 'status', 'Draft', 'amount', v_amount,
             'debit', CASE WHEN v_reval > 0 THEN '1300' ELSE '5000' END,
@@ -916,7 +1028,8 @@ BEGIN
             p_u_statuses => ARRAY['Shipped', 'Delivered'],
             p_u_from => '2026-10-21'::DATE,
             p_run_date => NULL,
-            p_basis_ref => 'TRUEUP-20261112');
+            p_basis_ref => 'TRUEUP-20261112',
+            p_u_returned_after_basis => true);
     ELSIF p_preset = 'default' THEN
         v_res := pg_temp.fifo_rebuild_pool(p_basis => '{}'::JSONB, p_u_statuses => NULL, p_u_from => NULL, p_run_date => NULL);
     ELSE
@@ -952,10 +1065,11 @@ SELECT x.n, x.item, x.value
         (11, 'ledger', l.summary->'ledger'),
         (12, 'E orders and adjustments', l.summary->'basis_sales'),
         (13, 'excluded from U', l.summary->'excluded_from_u'),
-        (14, 'SU orders', l.summary->'settled_unshipped'),
-        (15, 'wholesale backfill', l.summary->'wholesale_backfill'),
-        (16, 'anomalies', l.summary->'anomalies'),
-        (17, 'totals', l.summary->'totals'),
-        (18, 'backup table', l.summary->'backup_table'),
-        (19, 'options', l.summary->'options')) AS x(n, item, value)
+        (14, 'Returned after the basis entry, kept in U', l.summary->'u_returned_after_basis'),
+        (15, 'SU orders', l.summary->'settled_unshipped'),
+        (16, 'wholesale backfill', l.summary->'wholesale_backfill'),
+        (17, 'anomalies', l.summary->'anomalies'),
+        (18, 'totals', l.summary->'totals'),
+        (19, 'backup table', l.summary->'backup_table'),
+        (20, 'options', l.summary->'options')) AS x(n, item, value)
  ORDER BY x.n;
