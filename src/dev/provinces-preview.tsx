@@ -6,8 +6,10 @@
 // district + commune and a hidden official district + commune, so the shared
 // address tree can be checked without logging in. Shipping points are READ
 // from the real DB through the anon key. Every store write here is a no-op
-// that only logs; do not press Save in the point editors (those write
-// custom_locations directly).
+// that only logs, and blockDbWrites refuses every non-GET request to the
+// database, so Save / Shutdown / Delete in the point editors fail with
+// "Dev preview: database writes are blocked" instead of changing live rows.
+import './blockDbWrites';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';

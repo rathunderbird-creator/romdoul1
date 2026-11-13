@@ -86,14 +86,24 @@ export async function deleteShippingPoint(id: string, table: string = SHIPPING_P
     if (!data || data.length === 0) throw new Error('Nothing was deleted — the point is already gone, or the database refused it.');
 }
 
-/** "11.5564, 104.9282", or a Google Maps link containing @lat,lng / q=lat,lng. */
+/**
+ * "11.5564, 104.9282", or a Google Maps link containing @lat,lng / q=lat,lng.
+ * Both numbers must stand on their own: a match may not start or end inside a
+ * longer number, so a swapped "104.9282, 11.5564" is rejected rather than
+ * read as 4.9282, 11.5564. Returns any valid world position — check
+ * isInCambodia before saving a typed one.
+ */
 export function parseLatLng(text: string): [number, number] | null {
-    const m = String(text || '').match(/(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/);
+    const m = String(text || '').match(/(?<![\d.])(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)(?![\d.])/);
     if (!m) return null;
     const lat = Number(m[1]), lng = Number(m[2]);
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
     return [lat, lng];
 }
+
+/** Roughly Cambodia's bounding box, with a small margin (lat 9.5–15, lng 102–108). */
+export const isInCambodia = (lat: number, lng: number): boolean =>
+    lat >= 9.5 && lat <= 15 && lng >= 102 && lng <= 108;
 
 // ─── Placing points on the address tree ───────────────────────────────────
 
