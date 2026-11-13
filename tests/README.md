@@ -117,8 +117,11 @@ the next-newest layers (oldest-shipped line first, fractional qty costed as
 shortfall), the D1 guard failing on a basis mismatch and passing with a
 `--basis` override, COGS booked for orders whose goods are still on hand
 (SU) taken off the expected 1300 (holding, ~0 and line-less orders left
-out), the orders left out of U listed by id, and pool count = stock
-afterwards. Needs nothing extra:
+out), the orders left out of U listed by id, pool count = stock
+afterwards, and E (basis-overridden products settled since the basis entry:
+12 NR-3026 sales at 9.30 against a 9.00 basis give E 3.60, the guard passes
+and the REVAL is D1 + E; a reversal, a re-costed re-settlement, an SU order
+and an unexplained 1300 credit). Needs nothing extra:
 
     node tests/fifo-rebuild-dryrun.test.mjs
 
@@ -150,6 +153,11 @@ the guard message naming the inactive product that still holds stock,
 the backup table closed to the API roles (row level security, no grants),
 the wholesale backfill marked cogs_backfill and reported apart from
 shortfall (the mark cleared once a line gives its units back),
+E (an NR-3026-style basis override with sales, a mixed order, a
+reversal and re-settlement, an SU order, a stock adjustment and a wholesale
+order booked at 9.30 after TRUEUP-20261112: guard 0, E = 0.30 a unit, the
+FIFO-REVAL books D1 + E and the FIFO check variance is 0; an unexplained
+1300 credit still fails; a missing or duplicated basis entry is refused),
 the refusals (run once, phase 1 missing, bad basis / status / preset,
 lines already costed or booked) and the file as shipped: with no preset
 picked it refuses and changes nothing; with one picked it commits and its

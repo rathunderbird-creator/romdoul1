@@ -20,11 +20,13 @@
 --   ships as 'CHOOSE_A_PRESET', which stops the run with nothing changed.
 --   Replace it with ONE of:
 --     'romdoul1_trueup_2026_11_12'  Romdoul1, matching the 2026-11-12
---         true-up: NR-3026 at the 9.00 basis the true-up booked; U only from
---         Shipped / Delivered orders (Returned left out); orders dated before
---         2026-10-21 left out of U.
+--         true-up: NR-3026 at the 9.00 basis the true-up booked, from the
+--         true-up entry (reference TRUEUP-20261112, which must exist exactly
+--         once) on; U only from Shipped / Delivered orders (Returned left
+--         out); orders dated before 2026-10-21 left out of U.
 --     'default'  any other store, after its own count and true-up: basis =
---         purchase_cost, U from Shipped / Delivered / Returned, no cutoff.
+--         purchase_cost (no override, so E = 0), U from Shipped / Delivered /
+--         Returned, no cutoff.
 --   Run the dry run with the same preset first:
 --     node src/scripts/fifo-rebuild-dryrun.cjs --store=<store> --preset=<preset> --out=<folder>
 --
@@ -34,15 +36,16 @@
 --      on Romdoul1, Test Product is zeroed (above);
 --   1. add_fifo_costing.sql, then add_session_guards.sql again (phase 1);
 --   2. the dry run above. Its summary is what this file will do (same S, U,
---      V, B, SU and D1) — read it first;
+--      V, B, SU, E, D1 and FIFO-REVAL amount) — read it first;
 --   3. THIS file, in a quiet window: the current client's manual stock edits,
 --      wholesale orders and adjustments do not keep the pool in step yet;
 --   4. the phase 3 SQL straight after, on the same store.
 --
 -- WHAT THE EDITOR SHOWS
 --   On success the last statement lists the summary, one row per item: the
---   FIFO-REVAL entry (reference, number, amount), D1, V, B, SU, the guard
---   difference, the orders left out of U, the orders whose booked COGS was
+--   FIFO-REVAL entry (reference, number, amount), its amount D1 + E, D1, E,
+--   V, B, SU, the guard difference, the orders and adjustments behind E, the
+--   orders left out of U, the orders whose booked COGS was
 --   recorded (SU), the wholesale backfill and the anomalies. The same
 --   summary is kept in public.fifo_rebuild_log. On any failure the editor
 --   shows the error and nothing is kept.
@@ -101,12 +104,45 @@
 --   D1 = over the same S+U units, layer cost - basis cost; the basis cost is
 --        products.purchase_cost unless p_basis gives the cost the ledger
 --        carries (for example the true-up's cost).
---   When |D1 - (V - SU - B)| > 1 the run RAISES with the numbers: the ledger
---   does not match the counted stock at the basis cost, and booking D1 would
---   be wrong. When it passes and D1 is not 0, ONE Draft entry is booked:
---   reference 'FIFO-REVAL-<yyyymmdd>', numbered JE-<n>-MAN-<yyyymmdd>-<nnn>,
---   Dr 1300 / Cr 5000 for a positive D1 (Dr 5000 / Cr 1300 for a negative
---   one). The owner Posts it.
+--   E  = basis-overridden products moved since the basis entry. p_basis_ref
+--        names the entry that set the basis (Romdoul1: TRUEUP-20261112; it
+--        must match exactly one entry, else the run refuses); its created_at
+--        is the cutoff. Without p_basis_ref or overrides E = 0. After the
+--        cutoff the app still books at purchase_cost (NR-3026: 9.30), so each
+--        such sale takes 0.30 a unit more out of 1300 than the basis put in;
+--        E is that excess, read from the ledger lines. A subject is a retail
+--        order (TX-<tx of the order>, ORD-<id>-COGS / -COGS-ADJ / -COGS-REV),
+--        a wholesale order (WSO-<uuid>-COGS…) or a stock adjustment (ADJ-<id>)
+--        with at least one line of an overridden product and at least one
+--        entry touching 1300 created after the cutoff. Per subject, with
+--        c_pre / c_post = net 1300 credit of its entries created up to /
+--        after the cutoff and bv = its lines at the basis cost:
+--          retail / wholesale: share = ([c_pre + c_post > 0] - [c_pre > 0])
+--            x bv: +bv when the ledger started holding its COGS after the
+--            cutoff (settled), -bv when it stopped (reversed), 0 when
+--            neither (settled and reversed after it: c_post nets to 0;
+--            held throughout: a re-settlement at a new cost is all E);
+--          a retail order in SU: share = c_post (SU counts what was booked);
+--          stock adjustment: share = -bv (lines signed, removal < 0);
+--          E_subject = c_post - share; E = their sum (E > 0 when more left
+--          1300 than the basis). Orders still in U have no COGS entry, so
+--          they add nothing. Each subject is counted once over all its
+--          entries, so a REV and a later re-settlement net out. Limit: a
+--          COGS-ADJ that only changes the quantity of an order held
+--          throughout counts in full (no line history to price it at the
+--          basis) — the guard then fails loudly, it is never absorbed.
+--        Today's purchase_cost is used only as the basis of products that
+--        are not overridden, as everywhere else in the guard.
+--   When |D1 - (V - SU - B - E)| > 1 the run RAISES with the numbers: the
+--   ledger does not match the counted stock at the basis cost, and booking
+--   would be wrong. When it passes and D1 + E is not 0, ONE Draft entry is
+--   booked: reference 'FIFO-REVAL-<yyyymmdd>', numbered
+--   JE-<n>-MAN-<yyyymmdd>-<nnn>, amount D1 + E, Dr 1300 / Cr 5000 when
+--   positive (Dr 5000 / Cr 1300 when negative). D1 restates the basis value
+--   to the layer cost; E puts back what left 1300 above the basis since the
+--   cutoff, so once it is posted 1300 = V - SU and the FIFO check variance
+--   is the guard residual (0 when the guard difference is 0). D1 + E =
+--   V - SU - B - guard difference. The owner Posts it.
 --
 -- IT REFUSES TO RUN (nothing changed) WHEN
 --   * phase 1 (add_fifo_costing.sql) is missing;
@@ -117,7 +153,9 @@
 --     already live;
 --   * the preset is not one of the two above;
 --   * the store has not exactly one 1300 and one 5000 account;
---   * a p_basis entry does not match exactly one product (by id or name).
+--   * a p_basis entry does not match exactly one product (by id or name);
+--   * p_basis_ref (the preset's basis entry) does not match exactly one
+--     journal entry.
 --
 -- AFTER THE WRITES IT CHECKS (and raises on failure): per product the
 -- in_stock count is S; every U line holds exactly floor(qty) rows and its
@@ -167,7 +205,8 @@ CREATE OR REPLACE FUNCTION pg_temp.fifo_rebuild_pool(
     p_basis JSONB DEFAULT '{}'::JSONB,
     p_u_statuses TEXT[] DEFAULT NULL,
     p_u_from DATE DEFAULT NULL,
-    p_run_date DATE DEFAULT NULL)
+    p_run_date DATE DEFAULT NULL,
+    p_basis_ref TEXT DEFAULT NULL)
 RETURNS JSONB
 LANGUAGE plpgsql
 AS $fn$
@@ -199,6 +238,10 @@ DECLARE
     v_VmB NUMERIC;
     v_SU NUMERIC;
     v_guard NUMERIC;
+    v_cutoff TIMESTAMPTZ;
+    v_E NUMERIC := 0;
+    v_e_list JSONB := '[]'::JSONB;
+    v_reval NUMERIC;
     v_number TEXT;
     v_entry UUID;
     v_amount NUMERIC;
@@ -266,7 +309,8 @@ BEGIN
     -- Plan
     -- -----------------------------------------------------------------------
     DROP TABLE IF EXISTS pg_temp._fr_basis, pg_temp._fr_p, pg_temp._fr_booked, pg_temp._fr_orders, pg_temp._fr_su,
-                         pg_temp._fr_lines, pg_temp._fr_excl, pg_temp._fr_rows, pg_temp._fr_pp, pg_temp._fr_units;
+                         pg_temp._fr_lines, pg_temp._fr_excl, pg_temp._fr_rows, pg_temp._fr_pp, pg_temp._fr_units,
+                         pg_temp._fr_e;
 
     CREATE TEMP TABLE _fr_basis (product_id TEXT PRIMARY KEY, cost NUMERIC NOT NULL) ON COMMIT DROP;
     FOR v_spec IN SELECT b.key, b.value FROM jsonb_each_text(COALESCE(p_basis, '{}'::JSONB)) b ORDER BY b.key LOOP
@@ -282,6 +326,18 @@ BEGIN
         END IF;
         INSERT INTO _fr_basis VALUES (v_txt, v_spec.value::NUMERIC);
     END LOOP;
+
+    -- The entry that set the basis (the true-up): E counts what moved after
+    -- its created_at.
+    IF p_basis_ref IS NOT NULL THEN
+        SELECT count(*), min(created_at) INTO v_n, v_cutoff FROM journal_entries WHERE reference_id = p_basis_ref;
+        IF v_n <> 1 THEN
+            RAISE EXCEPTION 'FIFO rebuild: the basis entry % matches % journal entries (expected exactly one). Nothing was changed.', p_basis_ref, v_n;
+        END IF;
+        IF v_cutoff IS NULL THEN
+            RAISE EXCEPTION 'FIFO rebuild: the basis entry % has no created_at. Nothing was changed.', p_basis_ref;
+        END IF;
+    END IF;
 
     -- Per product: S, the basis cost, the fallback cost (before any change)
     -- and the last receipt cost for fillers.
@@ -342,6 +398,90 @@ BEGIN
                                                  'payment_status', payment_status, 'booked', booked)
                               ORDER BY order_id COLLATE "C"), '[]'::JSONB)
       INTO v_SU, v_su_list FROM _fr_su;
+
+    -- E: what left 1300 since the basis entry beyond the basis cost, for the
+    -- overridden products (see LEDGER AND THE GUARD at the top). Subjects:
+    -- retail orders (TX-<tx of the order>, ORD-<id>-COGS / -COGS-ADJ /
+    -- -COGS-REV), wholesale orders (WSO-<uuid>-COGS…) and stock adjustments
+    -- (ADJ-<id>) with a line of an overridden product and an entry touching
+    -- 1300 created after the cutoff.
+    CREATE TEMP TABLE _fr_e ON COMMIT DROP AS
+    WITH ent AS (
+        SELECT e.reference_id AS ref,
+               COALESCE(e.created_at > v_cutoff, false) AS post,
+               CASE WHEN e.reference_id ~ '^ORD-.+-COGS-ADJ$' THEN 'retail'
+                    WHEN e.reference_id ~ '^ORD-.+-COGS-REV$' THEN 'retail'
+                    WHEN e.reference_id ~ '^ORD-.+-COGS$' THEN 'retail'
+                    WHEN e.reference_id ~ '^TX-.+$' THEN 'retail'
+                    WHEN e.reference_id ~ '^WSO-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}-COGS' THEN 'wholesale'
+                    WHEN e.reference_id ~ '^ADJ-.+$' THEN 'adjustment' END AS kind,
+               CASE WHEN e.reference_id ~ '^ORD-.+-COGS-ADJ$' THEN substring(e.reference_id FROM '^ORD-(.+)-COGS-ADJ$')
+                    WHEN e.reference_id ~ '^ORD-.+-COGS-REV$' THEN substring(e.reference_id FROM '^ORD-(.+)-COGS-REV$')
+                    WHEN e.reference_id ~ '^ORD-.+-COGS$' THEN substring(e.reference_id FROM '^ORD-(.+)-COGS$')
+                    WHEN e.reference_id ~ '^TX-.+$' THEN
+                        (SELECT t.order_id FROM transactions t
+                          WHERE t.order_id IS NOT NULL AND t.id::TEXT = substring(e.reference_id FROM '^TX-(.+)$'))
+                    WHEN e.reference_id ~ '^WSO-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}-COGS' THEN
+                        substring(e.reference_id FROM '^WSO-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})-COGS')
+                    WHEN e.reference_id ~ '^ADJ-.+$' THEN substring(e.reference_id FROM '^ADJ-(.+)$') END AS subject,
+               (SELECT COALESCE(sum(COALESCE(l.credit, 0) - COALESCE(l.debit, 0)), 0) FROM journal_entry_lines l
+                 WHERE l.journal_entry_id = e.id AND l.account_id = v_inv) AS inv_out
+          FROM journal_entries e
+         WHERE v_cutoff IS NOT NULL AND EXISTS (SELECT 1 FROM _fr_basis)
+           AND EXISTS (SELECT 1 FROM journal_entry_lines l WHERE l.journal_entry_id = e.id AND l.account_id = v_inv)
+    ), subj AS (
+        SELECT kind, subject,
+               COALESCE(sum(inv_out) FILTER (WHERE NOT post), 0) AS c_pre,
+               COALESCE(sum(inv_out) FILTER (WHERE post), 0) AS c_post,
+               jsonb_agg(ref ORDER BY ref COLLATE "C") FILTER (WHERE post) AS refs
+          FROM ent WHERE kind IS NOT NULL AND subject IS NOT NULL
+         GROUP BY kind, subject
+        HAVING bool_or(post)
+    ), lines AS (
+        SELECT 'retail' AS kind, si.sale_id AS subject, si.product_id, GREATEST(COALESCE(si.quantity, 0), 0) AS q
+          FROM sale_items si WHERE si.product_id IS NOT NULL
+        UNION ALL
+        SELECT 'wholesale', wi.wholesale_order_id::TEXT, wi.product_id, GREATEST(COALESCE(wi.quantity, 0), 0)
+          FROM wholesale_order_items wi WHERE wi.product_id IS NOT NULL
+        UNION ALL
+        SELECT 'adjustment', al.adjustment_id::TEXT, al.product_id, COALESCE(al.quantity, 0)
+          FROM stock_adjustment_lines al WHERE al.product_id IS NOT NULL
+    ), bv AS (
+        SELECT l.kind, l.subject, sum(l.q * p.basis_cost) AS bv,
+               sum(l.q) FILTER (WHERE b.product_id IS NOT NULL) AS over_qty
+          FROM lines l JOIN _fr_p p ON p.id = l.product_id LEFT JOIN _fr_basis b ON b.product_id = l.product_id
+         WHERE (l.kind, l.subject) IN (SELECT kind, subject FROM subj)
+         GROUP BY l.kind, l.subject
+        HAVING bool_or(b.product_id IS NOT NULL)
+    ), f AS (
+        SELECT s.*, v.bv, v.over_qty,
+               (s.kind = 'retail' AND EXISTS (SELECT 1 FROM _fr_su su WHERE su.order_id = s.subject)) AS in_su,
+               (CASE WHEN round(s.c_pre + s.c_post, 2) > 0 THEN 1 ELSE 0 END) AS held_after,
+               (CASE WHEN round(s.c_pre, 2) > 0 THEN 1 ELSE 0 END) AS held_before
+          FROM subj s JOIN bv v ON v.kind = s.kind AND v.subject = s.subject
+    ), g AS (
+        SELECT f.*,
+               CASE WHEN f.kind = 'adjustment' THEN -f.bv
+                    WHEN f.in_su THEN f.c_post
+                    ELSE (f.held_after - f.held_before) * f.bv END AS share,
+               CASE WHEN f.kind = 'adjustment' THEN 'stock adjustment after the cutoff'
+                    WHEN f.in_su THEN 'in SU (booked amount already counted)'
+                    WHEN f.held_after > f.held_before THEN 'settled after the cutoff'
+                    WHEN f.held_after < f.held_before THEN 'reversed after the cutoff'
+                    WHEN f.held_after = 1 THEN 'held before and after the cutoff'
+                    ELSE 'not held after the cutoff' END AS note
+          FROM f
+    )
+    SELECT kind, subject, refs, c_pre, c_post, bv, over_qty, share, note, round(c_post - share, 2) AS e
+      FROM g;
+    SELECT round(COALESCE(sum(e), 0), 2),
+           COALESCE(jsonb_agg(jsonb_build_object(
+               'kind', kind, 'id', subject, 'refs', refs,
+               'booked_before_cutoff', round(c_pre, 2), 'booked_after_cutoff', round(c_post, 2),
+               'overridden_qty', round(over_qty, 4), 'basis_value', round(bv, 2),
+               'basis_share', round(share, 2), 'E', e, 'note', note)
+               ORDER BY kind COLLATE "C", subject COLLATE "C"), '[]'::JSONB)
+      INTO v_E, v_e_list FROM _fr_e;
 
     -- The U lines, with where each one's units start in its product's U slice
     -- (oldest-shipped line first).
@@ -455,7 +595,12 @@ BEGIN
       FROM pv;
     v_V := round(v_V_stock + v_V_u, 2);
     v_VmB := round(v_V - v_B, 2);
-    v_guard := round(v_D1 - (v_V - v_SU - v_B), 2);
+    v_guard := round(v_D1 - (v_V - v_SU - v_B - v_E), 2);
+    -- The revaluation brings 1300 to V - SU: D1 restates the basis value to
+    -- the layer cost, E puts back what left 1300 above the basis since the
+    -- basis entry. The guard residual (at most $1) is left as the FIFO
+    -- check's variance.
+    v_reval := round(v_D1 + v_E, 2);
 
     IF abs(v_guard) > 1 THEN
         SELECT string_agg(format('%s (stock %s, %s at basis cost)', p.name, p.raw_stock,
@@ -463,8 +608,8 @@ BEGIN
           INTO v_txt
           FROM _fr_p p JOIN products pr ON pr.id = p.id
          WHERE pr.is_active = false AND p.s > 0;
-        RAISE EXCEPTION 'FIFO rebuild stopped, nothing was changed: D1 = % but V - SU - B = % (V %, SU %, B %, basis value of S+U %); |D1 - (V - SU - B)| = % is over $1, so the ledger does not hold the counted stock at the basis cost.% Run src/scripts/fifo-rebuild-dryrun.cjs with the same preset for the breakdown.',
-            v_D1, round(v_V - v_SU - v_B, 2), v_V, v_SU, v_B, v_basis_total, abs(v_guard),
+        RAISE EXCEPTION 'FIFO rebuild stopped, nothing was changed: D1 = % but V - SU - B - E = % (V %, SU %, B %, E %, basis value of S+U %); |D1 - (V - SU - B - E)| = % is over $1, so the ledger does not hold the counted stock at the basis cost.% Run src/scripts/fifo-rebuild-dryrun.cjs with the same preset for the breakdown.',
+            v_D1, round(v_V - v_SU - v_B - v_E, 2), v_V, v_SU, v_B, v_E, v_basis_total, abs(v_guard),
             CASE WHEN v_txt IS NULL THEN '' ELSE ' Inactive products still holding stock: ' || v_txt
                  || '. If one is not real stock (Romdoul1: Test Product), set its stock to 0 with no ledger entry (see BEFORE YOU RUN IT at the top of this file) and run again.' END;
     END IF;
@@ -717,37 +862,39 @@ BEGIN
     END IF;
 
     -- -----------------------------------------------------------------------
-    -- The revaluation entry (D1 only; the quantity correction is not repeated)
+    -- The revaluation entry: D1 + E (the quantity correction is not repeated)
     -- -----------------------------------------------------------------------
-    v_amount := abs(v_D1);
+    v_amount := abs(v_reval);
     IF v_amount > 0 THEN
         v_number := wp_internal.wp_next_entry_number('MAN', v_date);
         INSERT INTO journal_entries (date, description, reference_id, status, entry_number)
         VALUES (v_date, 'FIFO revaluation of on-hand and shipped-unsettled stock', v_ref, 'Draft', v_number)
         RETURNING id INTO v_entry;
         INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
-            (v_entry, v_inv, CASE WHEN v_D1 > 0 THEN v_amount ELSE 0 END, CASE WHEN v_D1 > 0 THEN 0 ELSE v_amount END,
+            (v_entry, v_inv, CASE WHEN v_reval > 0 THEN v_amount ELSE 0 END, CASE WHEN v_reval > 0 THEN 0 ELSE v_amount END,
              'Inventory restated at FIFO layer cost'),
-            (v_entry, v_cogs, CASE WHEN v_D1 > 0 THEN 0 ELSE v_amount END, CASE WHEN v_D1 > 0 THEN v_amount ELSE 0 END,
+            (v_entry, v_cogs, CASE WHEN v_reval > 0 THEN 0 ELSE v_amount END, CASE WHEN v_reval > 0 THEN v_amount ELSE 0 END,
              'Cost of goods sold — FIFO revaluation');
     END IF;
 
     RETURN jsonb_build_object(
         'run_date', v_date,
         'backup_table', v_bak,
-        'options', jsonb_build_object('basis', COALESCE(p_basis, '{}'::JSONB), 'u_statuses', to_jsonb(v_u_statuses), 'u_from', p_u_from),
+        'options', jsonb_build_object('basis', COALESCE(p_basis, '{}'::JSONB), 'basis_ref', p_basis_ref,
+                                      'u_statuses', to_jsonb(v_u_statuses), 'u_from', p_u_from),
         'totals', v_totals,
         'ledger', jsonb_build_object(
             'V_in_stock', v_V_stock, 'V_unsettled', v_V_u, 'V', v_V, 'B', v_B, 'V_minus_B', v_VmB,
-            'settled_unshipped_booked', v_SU, 'basis_value_S_plus_U', v_basis_total,
-            'expected_B', round(v_basis_total - v_SU, 2), 'D1', v_D1,
-            'guard_diff', v_guard, 'guard_pass', true),
+            'settled_unshipped_booked', v_SU, 'basis_value_S_plus_U', v_basis_total, 'E', v_E,
+            'expected_B', round(v_basis_total - v_SU - v_E, 2), 'D1', v_D1,
+            'guard_diff', v_guard, 'guard_pass', true, 'reval_amount', v_reval),
         'settled_unshipped', v_su_list,
+        'basis_sales', jsonb_build_object('basis_ref', p_basis_ref, 'cutoff', v_cutoff, 'E', v_E, 'subjects', v_e_list),
         'excluded_from_u', v_excluded,
         'entry', CASE WHEN v_entry IS NULL THEN NULL ELSE jsonb_build_object(
             'reference_id', v_ref, 'entry_number', v_number, 'status', 'Draft', 'amount', v_amount,
-            'debit', CASE WHEN v_D1 > 0 THEN '1300' ELSE '5000' END,
-            'credit', CASE WHEN v_D1 > 0 THEN '5000' ELSE '1300' END) END,
+            'debit', CASE WHEN v_reval > 0 THEN '1300' ELSE '5000' END,
+            'credit', CASE WHEN v_reval > 0 THEN '5000' ELSE '1300' END) END,
         'wholesale_backfill', v_wholesale,
         'anomalies', v_anomalies);
 END;
@@ -768,7 +915,8 @@ BEGIN
             p_basis => '{"NR-3026": 9}'::JSONB,
             p_u_statuses => ARRAY['Shipped', 'Delivered'],
             p_u_from => '2026-10-21'::DATE,
-            p_run_date => NULL);
+            p_run_date => NULL,
+            p_basis_ref => 'TRUEUP-20261112');
     ELSIF p_preset = 'default' THEN
         v_res := pg_temp.fifo_rebuild_pool(p_basis => '{}'::JSONB, p_u_statuses => NULL, p_u_from => NULL, p_run_date => NULL);
     ELSE
@@ -794,17 +942,20 @@ SELECT x.n, x.item, x.value
         (1, 'preset', l.summary->'preset'),
         (2, 'run_date', l.summary->'run_date'),
         (3, 'FIFO-REVAL entry', l.summary->'entry'),
-        (4, 'D1', l.summary->'ledger'->'D1'),
-        (5, 'V', l.summary->'ledger'->'V'),
-        (6, 'B', l.summary->'ledger'->'B'),
-        (7, 'SU (booked, goods on hand)', l.summary->'ledger'->'settled_unshipped_booked'),
-        (8, 'guard diff D1 - (V - SU - B)', l.summary->'ledger'->'guard_diff'),
-        (9, 'ledger', l.summary->'ledger'),
-        (10, 'excluded from U', l.summary->'excluded_from_u'),
-        (11, 'SU orders', l.summary->'settled_unshipped'),
-        (12, 'wholesale backfill', l.summary->'wholesale_backfill'),
-        (13, 'anomalies', l.summary->'anomalies'),
-        (14, 'totals', l.summary->'totals'),
-        (15, 'backup table', l.summary->'backup_table'),
-        (16, 'options', l.summary->'options')) AS x(n, item, value)
+        (4, 'FIFO-REVAL amount D1 + E', l.summary->'ledger'->'reval_amount'),
+        (5, 'D1', l.summary->'ledger'->'D1'),
+        (6, 'E (overridden products since the basis entry)', l.summary->'ledger'->'E'),
+        (7, 'V', l.summary->'ledger'->'V'),
+        (8, 'B', l.summary->'ledger'->'B'),
+        (9, 'SU (booked, goods on hand)', l.summary->'ledger'->'settled_unshipped_booked'),
+        (10, 'guard diff D1 - (V - SU - B - E)', l.summary->'ledger'->'guard_diff'),
+        (11, 'ledger', l.summary->'ledger'),
+        (12, 'E orders and adjustments', l.summary->'basis_sales'),
+        (13, 'excluded from U', l.summary->'excluded_from_u'),
+        (14, 'SU orders', l.summary->'settled_unshipped'),
+        (15, 'wholesale backfill', l.summary->'wholesale_backfill'),
+        (16, 'anomalies', l.summary->'anomalies'),
+        (17, 'totals', l.summary->'totals'),
+        (18, 'backup table', l.summary->'backup_table'),
+        (19, 'options', l.summary->'options')) AS x(n, item, value)
  ORDER BY x.n;

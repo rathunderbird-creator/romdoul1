@@ -23,7 +23,7 @@ import fs from 'fs';
 
 const { PGlite } = await import(process.env.PGLITE_DIST || '@electric-sql/pglite');
 const require = createRequire(import.meta.url);
-const { planStore, buildInput } = require('../src/scripts/fifo-rebuild-dryrun.cjs');
+const { planStore, buildInput, PRESETS } = require('../src/scripts/fifo-rebuild-dryrun.cjs');
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const mig = f => path.join(repo, 'migrations', f);
@@ -43,6 +43,9 @@ const rebuildFn = rebuildFile.slice(0, rebuildFile.indexOf('-- >>> RUN')).replac
 check('the file has one PRESET block, one RUN block, a COMMIT and then the summary SELECT',
     rebuildFile.split('-- >>> PRESET').length === 2 && rebuildFile.split('-- >>> RUN').length === 2 && rebuildFile.includes('-- <<< RUN')
     && /COMMIT;\s*-- The summary[\s\S]*ORDER BY x\.n;\s*$/.test(rebuildFile));
+check('the Romdoul1 preset carries the true-up as its basis entry, in the SQL and in the dry run',
+    /p_basis => '\{"NR-3026": 9\}'::JSONB,[\s\S]*?p_basis_ref => 'TRUEUP-20261112'\);/.test(rebuildFile)
+    && PRESETS.romdoul1_trueup_2026_11_12.basisRef === 'TRUEUP-20261112' && PRESETS.default.basisRef === null);
 check('the file ships with no preset picked', /set_config\('fifo_rebuild\.preset', 'CHOOSE_A_PRESET', true\)/.test(rebuildFile));
 check('the temp tables are dropped as pg_temp.*', /DROP TABLE IF EXISTS pg_temp\._fr_basis, pg_temp\._fr_p,/.test(rebuildFile)
     && !/DROP TABLE IF EXISTS _fr/.test(rebuildFile));
@@ -231,24 +234,26 @@ async function readRaw(db) {
         sales: await rows(`SELECT id, shipping_status, payment_status, ${iso('date')} AS date FROM sales`),
         saleItems: await rows(`SELECT id, sale_id, product_id, quantity FROM sale_items`),
         accounts: await rows(`SELECT id::text AS id, account_code, account_name FROM chart_of_accounts`),
-        entries: await rows(`SELECT id::text AS id, reference_id, status, date::text AS date FROM journal_entries`),
+        entries: await rows(`SELECT id::text AS id, reference_id, status, date::text AS date, ${iso('created_at')} AS created_at FROM journal_entries`),
         lines: await rows(`SELECT id::text AS id, journal_entry_id::text AS journal_entry_id, account_id::text AS account_id, debit, credit FROM journal_entry_lines`),
         txs: await rows(`SELECT id::text AS id, order_id FROM transactions WHERE order_id IS NOT NULL`),
         moves: await rows(`SELECT reference_id, type, ${iso('created_at')} AS created_at FROM stock_movements`),
         restocks: await rows(`SELECT id::text AS id, product_id, cost, ${iso('date')} AS date FROM restocks`),
         purchaseOrders: await rows(`SELECT id::text AS id, status FROM purchase_orders`),
         poItems: await rows(`SELECT id::text AS id, purchase_order_id::text AS purchase_order_id, product_id, unit_price, ${iso('created_at')} AS created_at FROM purchase_order_items`),
+        wholesaleItems: await rows(`SELECT id::text AS id, wholesale_order_id::text AS wholesale_order_id, product_id, quantity FROM wholesale_order_items`),
+        adjLines: await rows(`SELECT id::text AS id, adjustment_id::text AS adjustment_id, product_id, quantity FROM stock_adjustment_lines`),
     };
 }
 const jsPlan = async (db, opts) => {
-    const { input } = buildInput(await readRaw(db), opts.basisArgs || [], { uStatuses: opts.uStatuses ? new Set(opts.uStatuses) : undefined, uFrom: opts.uFrom });
+    const { input } = buildInput(await readRaw(db), opts.basisArgs || [], { uStatuses: opts.uStatuses ? new Set(opts.uStatuses) : undefined, uFrom: opts.uFrom, basisRef: opts.basisRef });
     return planStore(input);
 };
 const runSql = async (db, opts) => {
     await db.exec(rebuildFn);
     const basis = Object.fromEntries((opts.basisArgs || []).map(s => { const [k, v] = s.split('='); return [k, Number(v)]; }));
-    return (await db.query(`SELECT pg_temp.fifo_rebuild_pool($1::jsonb, $2::text[], $3::date, $4::date) AS j`,
-        [JSON.stringify(basis), opts.uStatuses || null, opts.uFrom || null, '2026-11-13'])).rows[0].j;
+    return (await db.query(`SELECT pg_temp.fifo_rebuild_pool($1::jsonb, $2::text[], $3::date, $4::date, $5::text) AS j`,
+        [JSON.stringify(basis), opts.uStatuses || null, opts.uFrom || null, '2026-11-13', opts.basisRef || null])).rows[0].j;
 };
 const errOf = async (fn) => { try { await fn(); return ''; } catch (e) { return String(e.message || e); } };
 
@@ -263,12 +268,17 @@ async function compare(db, tag, plan, res) {
     check(`${tag}: SQL wo_sold_not_holding = dry run`, num(R.wo_sold_not_holding) === T.wo_sold_not_holding + T.wo_sold_missing_sale);
     check(`${tag}: SQL u_frac_qty = dry run`, near(R.u_frac_qty, T.u_frac_qty));
     for (const k of ['V_in_stock', 'V_unsettled', 'V', 'B', 'V_minus_B', 'settled_unshipped_booked', 'basis_value_S_plus_U',
-                     'expected_B', 'D1', 'guard_diff']) {
+                     'E', 'expected_B', 'D1', 'guard_diff', 'reval_amount']) {
         check(`${tag}: SQL ${k} = dry run (${plan.ledger[k]})`, near(res.ledger[k], plan.ledger[k], 0.001), { sql: res.ledger[k], js: plan.ledger[k] });
     }
     const su = l => l.map(o => [o.order_id, o.shipping_status, o.payment_status, num(o.booked)]);
     check(`${tag}: SQL SU orders = dry run`, JSON.stringify(su(res.settled_unshipped)) === JSON.stringify(su(plan.settled_unshipped)),
         { sql: res.settled_unshipped, js: plan.settled_unshipped });
+    const es = l => l.map(x => [x.kind, x.id, JSON.stringify(x.refs), num(x.booked_before_cutoff), num(x.booked_after_cutoff),
+        num(x.overridden_qty), num(x.basis_value), num(x.basis_share), num(x.E), x.note]);
+    check(`${tag}: SQL E subjects = dry run (${plan.basis_sales.subjects.length})`,
+        JSON.stringify(es(res.basis_sales.subjects)) === JSON.stringify(es(plan.basis_sales.subjects)),
+        { sql: res.basis_sales.subjects, js: plan.basis_sales.subjects });
     for (const why of ['by_status', 'before_u_from']) {
         const a = res.excluded_from_u[why], b = plan.excluded_from_u[why];
         check(`${tag}: SQL excluded_from_u.${why} = dry run`, num(a.orders) === b.orders && near(a.qty, b.qty) && near(a.basis_value, b.basis_value, 0.001)
@@ -507,7 +517,7 @@ const poolEqStock = async db => (await db.query(`SELECT p.id, floor(GREATEST(p.s
     const snap = async () => JSON.stringify((await db.query(`SELECT id, status, cost_of_purchase, sale_id, consumer_kind FROM inventory_items ORDER BY id`)).rows);
     const s0 = await snap();
     const e = await errOf(() => runSql(db, {}));
-    check('guard: the SQL raises with D1, V - SU - B, V, SU and B', /FIFO rebuild stopped, nothing was changed: D1 = -?[\d.]+ but V - SU - B = -?[\d.]+ \(V [\d.]+, SU [\d.]+, B -?[\d.]+/.test(e)
+    check('guard: the SQL raises with D1, V - SU - B - E, V, SU, B and E', /FIFO rebuild stopped, nothing was changed: D1 = -?[\d.]+ but V - SU - B - E = -?[\d.]+ \(V [\d.]+, SU [\d.]+, B -?[\d.]+, E -?[\d.]+/.test(e)
         && e.includes(`D1 = ${plan.ledger.D1.toFixed(2)}`) && e.includes(`V ${plan.ledger.V.toFixed(2)}`) && e.includes('SU 9.50'), e);
     check('guard: the message names the inactive product that still holds stock, and how to zero it',
         e.includes('Inactive products still holding stock: Test Product (stock 1, 1.00 at basis cost)') && /no ledger entry/.test(e), e);
@@ -575,7 +585,8 @@ for (const [offset, ok] of [[1, true], [-1.01, false]]) {
     const item = name => (last.find(r => r.item === name) || {}).value;
     check('its LAST statement returns the summary rows: preset, entry, D1, V, B, SU, guard diff, excluded, wholesale, anomalies',
         item('preset') === 'default' && num(item('D1')) === -2 && num(item('V')) === 8 && num(item('B')) === 10
-        && num(item('SU (booked, goods on hand)')) === 0 && num(item('guard diff D1 - (V - SU - B)')) === 0
+        && num(item('SU (booked, goods on hand)')) === 0 && num(item('guard diff D1 - (V - SU - B - E)')) === 0 && num(item('E (overridden products since the basis entry)')) === 0
+        && num(item('FIFO-REVAL amount D1 + E')) === -2 && item('E orders and adjustments') && Array.isArray(item('E orders and adjustments').subjects)
         && item('FIFO-REVAL entry') && item('FIFO-REVAL entry').reference_id === `FIFO-REVAL-${ymd}`
         && /^JE-\d+-MAN-\d{8}-\d{3}$/.test(item('FIFO-REVAL entry').entry_number)
         && item('excluded from U') && item('excluded from U').by_status && item('wholesale backfill') !== undefined && Array.isArray(item('anomalies')),
@@ -599,6 +610,136 @@ for (const [offset, ok] of [[1, true], [-1.01, false]]) {
         (await db.query(`SELECT count(*) AS n FROM journal_entries WHERE reference_id LIKE 'FIFO-REVAL-%'`)).rows[0].n == 1
         && (await db.query(`SELECT count(*) AS n FROM public.fifo_rebuild_log`)).rows[0].n == 1
         && (await db.query(`SELECT count(*) AS n FROM inventory_items WHERE status = 'in_stock'`)).rows[0].n == 2);
+}
+
+// ===========================================================================
+// 5. E: an overridden basis (NR-3026 at 9.00, purchase_cost 9.30) and sales
+//    booked at 9.30 after the basis entry (TRUEUP-20261112)
+// ===========================================================================
+// Final stock: pN 3 at 9.30 (one is SU1's, restocked) + UN's unit shipped
+// unsettled; pX 2 at 4. Basis value of S+U = 4 x 9 + 2 x 4 = 44, D1 = 1.20.
+// After the cutoff, each a unit booked at 9.30 against the 9.00 basis
+// (8 units, E = 2.40): S1..S3 (one pN each), S4 (pN + pX, 13.30), R1
+// (settled, reversed, settled again), ADJ (removes one pN), WSO (two pN).
+// SU1 settled after the cutoff and restocked: in SU at its booked 9.30, so
+// it adds nothing to E. P1 settled before the cutoff: not a subject. B is
+// 44 - 9.30 (SU) - 2.40 (E) = 32.30.
+async function seedE(db, extra = []) {
+    const q = (s, p) => db.query(s, p);
+    const at = h => `2026-11-12T${String(h).padStart(2, '0')}:00:00Z`;
+    const post = m => `2026-11-13T01:${String(m).padStart(2, '0')}:00Z`;
+    await q(`INSERT INTO products (id, name, price, stock, purchase_cost, is_active) VALUES
+        ('pN', 'NR-3026', 20, 3, 9.3, true), ('pX', 'Other', 10, 2, 4, true)`);
+    await q(`INSERT INTO sales (id, total, shipping_status, payment_status, date) VALUES
+        ('S1', 20, 'Delivered', 'Paid', '${day(30)}'), ('S2', 20, 'Delivered', 'Paid', '${day(30)}'),
+        ('S3', 20, 'Delivered', 'Paid', '${day(30)}'), ('S4', 30, 'Delivered', 'Paid', '${day(30)}'),
+        ('R1', 20, 'Delivered', 'Paid', '${day(30)}'), ('SU1', 20, 'ReStock', 'Paid', '${day(30)}'),
+        ('P1', 20, 'Delivered', 'Paid', '${day(30)}'), ('UN', 20, 'Shipped', 'Unpaid', '${day(30)}')`);
+    await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES
+        ('e-s1', 'S1', 'pN', 'x', 20, 1), ('e-s2', 'S2', 'pN', 'x', 20, 1), ('e-s3', 'S3', 'pN', 'x', 20, 1),
+        ('e-s4n', 'S4', 'pN', 'x', 20, 1), ('e-s4x', 'S4', 'pX', 'x', 10, 1), ('e-r1', 'R1', 'pN', 'x', 20, 1),
+        ('e-su1', 'SU1', 'pN', 'x', 20, 1), ('e-p1', 'P1', 'pN', 'x', 20, 1), ('e-un', 'UN', 'pN', 'x', 20, 1)`);
+    for (let i = 1; i <= 4; i++) await q(`INSERT INTO inventory_items (id, product_id, cost_of_purchase, status, sale_id, received_at) VALUES ($1, 'pN', 9.3, $2, $3, $4)`,
+        [L(2000 + i), i === 1 ? 'sold' : 'in_stock', i === 1 ? 'UN' : null, day(i)]);
+    for (let i = 1; i <= 2; i++) await q(`INSERT INTO inventory_items (id, product_id, cost_of_purchase, status, received_at) VALUES ($1, 'pX', 4, 'in_stock', $2)`, [L(2100 + i), day(i)]);
+    const acc = async c => (await q(`SELECT id FROM chart_of_accounts WHERE account_code = $1`, [c])).rows[0].id;
+    const A = { inv: await acc('1300'), cogs: await acc('5000'), eq: await acc('3000') };
+    const entry = async (ref, created, lines) => {
+        const id = (await q(`INSERT INTO journal_entries (description, reference_id, status, date, created_at) VALUES ($1, $1, 'Draft', '2026-11-12', $2) RETURNING id`, [ref, created])).rows[0].id;
+        for (const [a, dr, cr] of lines) await q(`INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit) VALUES ($1, $2, $3, $4)`, [id, a, dr, cr]);
+    };
+    const cogs = (amt) => [[A.cogs, amt, 0], [A.inv, 0, amt]];
+    const txEntry = async (order, created, amt) => {
+        const tx = (await q(`INSERT INTO transactions (type, amount, order_id) VALUES ('Income', 20, $1) RETURNING id`, [order])).rows[0].id;
+        await entry(`TX-${tx}`, created, cogs(amt));
+    };
+    await txEntry('P1', at(10), 9);
+    await entry('TRUEUP-20261112', '2026-11-12T14:51:05.206569Z', [[A.inv, 129, 0], [A.eq, 0, 129]]);
+    await txEntry('S1', post(1), 9.3);
+    await txEntry('S2', post(2), 9.3);
+    await txEntry('S3', post(3), 9.3);
+    await txEntry('S4', post(4), 13.3);
+    await txEntry('R1', post(5), 9.3);
+    await entry('ORD-R1-COGS-REV', post(6), [[A.inv, 9.3, 0], [A.cogs, 0, 9.3]]);
+    await entry('ORD-R1-COGS', post(7), cogs(9.3));
+    await txEntry('SU1', post(8), 9.3);
+    const adj = (await q(`INSERT INTO stock_adjustments (reason, status) VALUES ('Loss/Damage', 'Posted') RETURNING id::text AS id`)).rows[0].id;
+    await q(`INSERT INTO stock_adjustment_lines (adjustment_id, product_id, quantity, unit_cost) VALUES ($1, 'pN', -1, 9.3)`, [adj]);
+    await entry(`ADJ-${adj}`, post(9), cogs(9.3));
+    await q(`INSERT INTO wholesale_orders (id, customer_name, status) VALUES ('${W(7)}', 'Shop 7', 'Delivered')`);
+    await q(`INSERT INTO wholesale_order_items (id, wholesale_order_id, product_id, quantity, unit_price) VALUES ('${L(2201)}', '${W(7)}', 'pN', 2, 15)`);
+    await entry(`WSO-${W(7)}-COGS`, post(10), cogs(18.6));
+    for (const [ref, amt] of extra) await entry(ref, post(20), amt > 0 ? [[A.eq, amt, 0], [A.inv, 0, amt]] : [[A.inv, -amt, 0], [A.eq, 0, -amt]]);
+    return { A, adj };
+}
+const optsE = { basisArgs: ['NR-3026=9'], basisRef: 'TRUEUP-20261112' };
+{
+    const db = await makeDb();
+    const { adj } = await seedE(db);
+    const plan = await jsPlan(db, optsE);
+    const L5 = plan.ledger;
+    check('E: dry run D1 1.20, SU 9.30, B 32.30, E 2.40 = 0.30 x 8 units, guard 0, REVAL D1 + E = 3.60',
+        near(L5.D1, 1.2, 1e-6) && near(L5.settled_unshipped_booked, 9.3, 1e-6) && near(L5.B, 32.3, 1e-6) && near(L5.E, 2.4, 1e-6)
+        && near(L5.guard_diff, 0, 1e-6) && L5.guard_pass && near(L5.reval_amount, 3.6, 1e-6) && near(L5.expected_B, 32.3, 1e-6), L5);
+    const sub = new Map(plan.basis_sales.subjects.map(x => [x.id, x]));
+    check('E: one subject per order / adjustment with an overridden line and a post-cutoff 1300 entry (P1 and UN are not)',
+        JSON.stringify(plan.basis_sales.subjects.map(x => x.kind + ':' + x.id))
+        === JSON.stringify(['adjustment:' + adj, 'retail:R1', 'retail:S1', 'retail:S2', 'retail:S3', 'retail:S4', 'retail:SU1', 'wholesale:' + W(7)]),
+        plan.basis_sales.subjects);
+    check('E: S1 9.30 booked - 9.00 basis = 0.30; S4 mixes pX: 13.30 - 13.00 = 0.30',
+        near(sub.get('S1').E, 0.3, 1e-6) && near(sub.get('S4').E, 0.3, 1e-6) && near(sub.get('S4').basis_share, 13, 1e-6));
+    check('E: R1 settled, reversed and settled again after the cutoff counts once (0.30)',
+        near(sub.get('R1').booked_after_cutoff, 9.3, 1e-6) && near(sub.get('R1').E, 0.3, 1e-6) && sub.get('R1').refs.length === 3);
+    check('E: SU1 (in SU at its booked 9.30) adds 0', near(sub.get('SU1').E, 0, 1e-6) && /SU/.test(sub.get('SU1').note));
+    check('E: the stock adjustment removing one unit at 9.30 adds 0.30, the wholesale order of two 0.60',
+        near(sub.get(adj).E, 0.3, 1e-6) && near(sub.get(W(7)).E, 0.6, 1e-6));
+    check('E: the residual breakdown names E and leaves nothing unexplained',
+        near(plan.residual.basis_sales_E, 2.4, 1e-6) && near(plan.residual.unexplained, 0, 1e-6), plan.residual);
+    const plain = await jsPlan(db, { basisArgs: ['NR-3026=9'] });
+    check('E: without the basis entry the same store fails the guard by -2.40 (the old behaviour)',
+        near(plain.ledger.E, 0) && near(plain.ledger.guard_diff, -2.4, 1e-6) && !plain.ledger.guard_pass, plain.ledger);
+    const res = await runSql(db, optsE);
+    await compare(db, 'E', plan, res);
+    check('E: SQL E 2.40, guard 0, REVAL amount 3.60 in the summary and the cutoff from TRUEUP-20261112',
+        near(res.ledger.E, 2.4) && near(res.ledger.guard_diff, 0) && near(res.ledger.reval_amount, 3.6)
+        && res.basis_sales.basis_ref === 'TRUEUP-20261112' && /^2026-11-12T14:51:05\.206569/.test(String(res.basis_sales.cutoff)), res);
+    check('E: the FIFO-REVAL entry books D1 + E = 3.60 Dr 1300 / Cr 5000',
+        res.entry && near(res.entry.amount, 3.6) && res.entry.debit === '1300' && res.entry.credit === '5000', res.entry);
+    const chk = (await db.query(`SELECT wp_internal.fifo_inventory_check() AS j`)).rows[0].j;
+    check('E: after the rebuild fifo_inventory_check variance 0 (1300 = V - SU)', near(chk.variance, 0, 1e-6) && chk.product_mismatches === 0, chk);
+}
+{
+    // An unexplained 2.00 taken out of 1300 after the cutoff still fails.
+    const db = await makeDb();
+    await seedE(db, [['MANUAL-WRITEOFF', 2]]);
+    const plan = await jsPlan(db, optsE);
+    check('E negative: the dry run fails the guard by -2.00 with E still 2.40',
+        !plan.ledger.guard_pass && near(plan.ledger.guard_diff, -2, 1e-6) && near(plan.ledger.E, 2.4, 1e-6), plan.ledger);
+    const e = await errOf(() => runSql(db, optsE));
+    check('E negative: the SQL raises, naming E', /stopped, nothing was changed/.test(e) && e.includes('E 2.40') && e.includes('B 30.30'), e);
+    check('E negative: nothing booked', (await db.query(`SELECT count(*) AS n FROM journal_entries WHERE reference_id LIKE 'FIFO-REVAL-%'`)).rows[0].n == 0);
+}
+{
+    // The Romdoul1 preset runner passes the true-up as the basis entry.
+    const db = await makeDb();
+    await seedE(db);
+    await db.exec(rebuildFn);
+    const r = (await db.query(`SELECT pg_temp.fifo_rebuild_run('romdoul1_trueup_2026_11_12') AS j`)).rows[0].j;
+    check('E: the romdoul1_trueup_2026_11_12 preset finds TRUEUP-20261112, E 2.40, guard 0, REVAL 3.60',
+        r.preset === 'romdoul1_trueup_2026_11_12' && r.basis_sales.basis_ref === 'TRUEUP-20261112' && near(r.ledger.E, 2.4)
+        && near(r.ledger.guard_diff, 0) && near(r.entry.amount, 3.6) && r.options.basis_ref === 'TRUEUP-20261112', r.ledger);
+}
+{
+    // The basis entry must exist exactly once.
+    const db = await makeDb();
+    await seedE(db);
+    const e0 = await errOf(() => runSql(db, { ...optsE, basisRef: 'TRUEUP-NOPE' }));
+    check('E: a basis entry that is not there is refused', /the basis entry TRUEUP-NOPE matches 0 journal entries/.test(e0), e0);
+    await db.query(`INSERT INTO journal_entries (description, reference_id, status, date) VALUES ('dup', 'TRUEUP-20261112', 'Draft', '2026-11-12')`);
+    const e2 = await errOf(() => runSql(db, optsE));
+    check('E: a basis entry that is there twice is refused', /the basis entry TRUEUP-20261112 matches 2 journal entries/.test(e2), e2);
+    const j2 = await errOf(() => jsPlan(db, optsE));
+    check('E: ...and the dry run refuses it too', /matches 2 journal entries/.test(j2), j2);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
