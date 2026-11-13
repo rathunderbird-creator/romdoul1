@@ -764,6 +764,12 @@ DECLARE
     v_phone TEXT;
     v_tx_id UUID := NULLIF(u->>'tx_id', '')::UUID;
     v_account_id UUID := NULLIF(u->>'deposit_account_id', '')::UUID;
+    -- The "Deposited into" account's name. It is only a fallback for the
+    -- payment row's Method (pay_by): the Method says HOW the customer paid
+    -- (Bank / Cash / QR, from Settings), the account is WHERE it was booked,
+    -- and that lives on the ledger entry (v_account_id). Storing the account
+    -- name as the Method showed one bank as two ("Bank" and "Bank Account
+    -- (ABA)") in Retail Payment, Income & Expense and the exports.
     v_account_name TEXT := NULLIF(u->>'deposit_account_name', '');
     v_post BOOLEAN := COALESCE((u->>'post_to_ledger')::BOOLEAN, false);
     v_amount_received NUMERIC;
@@ -882,7 +888,7 @@ BEGIN
                         ELSE COALESCE(NULLIF(s.amount_received, 0), s.total, 0) END;
         v_to_record := GREATEST(0, round(v_gross - v_deposit_paid, 2));
         v_date := COALESCE(wp_internal.op_norm_ts(COALESCE(v_settle, NULLIF(s.settle_date::TEXT, ''))), now());
-        v_pay_by := COALESCE(v_account_name, NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''));
+        v_pay_by := COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name);
         IF v_to_record > 0 THEN
             v_txs := v_txs || jsonb_build_array(wp_internal.op_insert_income(
                 v_tx_id, v_date, 'លក់រាយ', v_to_record, v_name, v_added_by, v_shipping_co, v_pay_by,
@@ -913,7 +919,7 @@ BEGIN
                 u := u || jsonb_build_object('amount_received', v_booked);
             ELSE
                 v_date := COALESCE(wp_internal.op_norm_ts(v_settle), now());
-                v_pay_by := COALESCE(v_account_name, NULLIF(u->>'payment_method', ''));
+                v_pay_by := COALESCE(NULLIF(u->>'payment_method', ''), v_account_name);
                 v_txs := v_txs || jsonb_build_array(wp_internal.op_insert_income(
                     v_tx_id, v_date, 'ថ្លៃដឹក', v_fee, v_name, v_added_by, v_shipping_co, v_pay_by,
                     NULL, NULL, p_order_id, v_phone));
@@ -939,7 +945,7 @@ BEGIN
             -- honors the passed date.
             v_dep_date_raw := CASE WHEN v_prev_dep > 0 THEN NULL ELSE NULLIF(u->>'deposit_date', '') END;
             v_dep_ts := COALESCE(wp_internal.op_norm_ts(v_dep_date_raw), now());
-            v_pay_by := COALESCE(v_account_name, NULLIF(u->>'deposit_method', ''), 'Bank');
+            v_pay_by := COALESCE(NULLIF(u->>'deposit_method', ''), v_account_name, 'Bank');
             v_txs := v_txs || jsonb_build_array(wp_internal.op_insert_income(
                 v_tx_id, v_dep_ts, 'កក់ប្រាក់', v_delta, v_name || ' #DEP-' || left(p_order_id, 8),
                 v_added_by, NULLIF(s.shipping_company, ''), v_pay_by, NULL, NULL, p_order_id, v_phone));
@@ -988,7 +994,7 @@ BEGIN
                 -- settle-day change, and never for a deposit-covered order.
                 v_txs := v_txs || jsonb_build_array(wp_internal.op_insert_income(
                     v_tx_id, wp_internal.op_norm_ts(v_settle), 'លក់រាយ', v_to_record, v_name, v_added_by,
-                    v_shipping_co, COALESCE(v_account_name, NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, '')),
+                    v_shipping_co, COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name),
                     NULL, NULL, p_order_id, v_phone));
             END IF;
         END IF;
