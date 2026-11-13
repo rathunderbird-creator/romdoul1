@@ -259,6 +259,8 @@ export interface StoreContextType {
     removeDistrictEntry: (code: string, isCustom: boolean) => Promise<void>;
     addCustomCommune: (districtCode: string, name: string) => Promise<void>;
     removeCommuneEntry: (code: string, isCustom: boolean) => Promise<void>;
+    restoreDistrictEntry: (code: string) => Promise<void>;
+    restoreCommuneEntry: (code: string) => Promise<void>;
 
     // Payment Methods
     paymentMethods: string[];

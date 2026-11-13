@@ -6,8 +6,12 @@ import { useHeader } from '../context/HeaderContext';
 import { useToast } from '../context/ToastContext';
 import { CambodiaMap } from '../components/CambodiaMap';
 import { supabase } from '../lib/supabase';
-import { fetchAll } from '../utils/fetchAll';
 import { getShippingCoColor } from '../utils/orderUtils';
+import { useLocationTree } from '../hooks/useLocationTree';
+import { findByName, locLabel, pickerOptions, pickerOptionsByCode, visibleOnly } from '../utils/locationTree';
+import {
+    fetchShippingPoints, saveShippingPoint, setShippingPointShutdown, deleteShippingPoint, type ShippingPoint,
+} from '../utils/shippingPoints';
 
 
 
@@ -15,20 +19,7 @@ import { getShippingCoColor } from '../utils/orderUtils';
 const MAX_SEARCH_RESULTS = 50;
 
 // A pinned shipping point, as stored in the custom-locations table.
-interface CustomLocation {
-    id: string;
-    pcode: string;
-    name: string;
-    lat: number;
-    lng: number;
-    courier?: string | null;
-    province?: string | null;
-    district?: string | null;
-    commune?: string | null;
-    phone?: string | null;
-    contact_name?: string | null;
-    is_shutdown?: boolean;
-}
+type CustomLocation = ShippingPoint;
 
 // Supabase/thrown errors arrive as `unknown`; pull a readable message off them.
 const errorMessage = (e: unknown) =>
@@ -43,34 +34,6 @@ const normalizeSearchText = (s: string): string =>
     s.toLowerCase().replace(/\u200B|\u200C|\u200D|\uFEFF/g, '').replace(/\s+/g, ' ').trim();
 
 const digitsOf = (s: string): string => s.replace(/\D/g, '');
-
-// Define the data types based on the JSON structure
-interface Village {
-    code: string;
-    khmer: string;
-    latin: string;
-}
-
-interface Commune {
-    code: string;
-    khmer: string;
-    latin: string;
-    villages?: Village[];
-}
-
-interface District {
-    code: string;
-    khmer: string;
-    latin: string;
-    communes?: Commune[];
-}
-
-interface Province {
-    code: string;
-    khmer: string;
-    latin: string;
-    districts?: District[];
-}
 
 interface ShippingPointContentProps {
     mode?: 'page' | 'selector';
@@ -112,8 +75,11 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
     const { showToast } = useToast();
 
     // States
-    const [data, setData] = useState<Province[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    // Gazetteer + Sales Setup's custom / hidden districts and communes
+    // (hidden ones stay in the tree, flagged, so existing pins still resolve;
+    // the pickers below list only visible ones).
+    const { tree: data, loaded: gazetteerLoaded } = useLocationTree();
+    const isLoading = !gazetteerLoaded;
 
     const [globalSearchTerm, setGlobalSearchTerm] = useState(''); // New global search
     const [isGlobalSearchFocused, setIsGlobalSearchFocused] = useState(false);
@@ -175,32 +141,12 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
     // on first mount.
     const loadCustomLocations = useCallback(async () => {
         try {
-            // Chunk-fetched: a bare select('*') is silently capped by PostgREST
-            // around 1000 rows, and the pin list is already past 500 — without
-            // this, pins beyond the cap would one day just vanish from the map.
-            const rows = await fetchAll<CustomLocation>((from, to) =>
-                supabase.from(tableName).select('*').order('id', { ascending: true }).range(from, to)
-            );
-            setCustomLocations(rows);
+            // Chunk-fetched (see fetchShippingPoints) — the pin list is past 500.
+            setCustomLocations(await fetchShippingPoints(tableName));
         } catch (e) {
             console.error("Failed to fetch custom locations", e);
         }
     }, [tableName]);
-
-    // Fetch data dynamically so it doesn't block the main JS bundle
-    useEffect(() => {
-        setIsLoading(true);
-        import('../data/cambodia.json')
-            .then((module) => {
-                setData(module.default as Province[]);
-            })
-            .catch((error) => {
-                console.error("Failed to load gazetteer data:", error);
-            })
-            .finally(() => {
-                setIsLoading(false);
-            });
-    }, []);
 
     useEffect(() => {
         loadCustomLocations();
@@ -299,12 +245,12 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                 results.push({ type: 'province', name: p.khmer, path: 'រាជធានី/ខេត្ត', pcode: p.code, dcode: '', ccode: '', vcode: '' });
                 if (results.length >= MAX_SEARCH_RESULTS) break search;
             }
-            for (const d of p.districts || []) {
+            for (const d of visibleOnly(p.districts)) {
                 if (isMatch(d.khmer, d.latin)) {
                     results.push({ type: 'district', name: d.khmer, path: `${p.khmer}`, pcode: p.code, dcode: d.code, ccode: '', vcode: '' });
                     if (results.length >= MAX_SEARCH_RESULTS) break search;
                 }
-                for (const c of d.communes || []) {
+                for (const c of visibleOnly(d.communes)) {
                     if (isMatch(c.khmer, c.latin)) {
                         results.push({ type: 'commune', name: c.khmer, path: `${p.khmer} > ${d.khmer}`, pcode: p.code, dcode: d.code, ccode: c.code, vcode: '' });
                         if (results.length >= MAX_SEARCH_RESULTS) break search;
@@ -347,7 +293,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         const getProvinceInfo = (loc: typeof customLocations[0]) => {
             // If the pin explicitly saved a province name, try to map it back to a code
             if (loc.province) {
-                const province = data.find(p => p.khmer === loc.province || p.latin === loc.province);
+                const province = findByName(data, loc.province);
                 if (province) return { name: province.khmer, code: province.code };
                 return { name: loc.province, code: '' }; // Fallback to raw string if code not found
             }
@@ -371,15 +317,15 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             } else {
                 // Custom locations map by name matching from data structure
                 if (loc.province) {
-                    const province = data.find(p => p.khmer === loc.province || p.latin === loc.province);
+                    const province = findByName(data, loc.province);
                     if (province) {
                         pCode = province.code;
                         if (loc.district && province.districts) {
-                            const district = province.districts.find(d => d.khmer === loc.district || d.latin === loc.district);
+                            const district = findByName(province.districts, loc.district);
                             if (district) {
                                 dCode = district.code;
                                 if (loc.commune && district.communes) {
-                                    const commune = district.communes.find(c => c.khmer === loc.commune || c.latin === loc.commune);
+                                    const commune = findByName(district.communes, loc.commune);
                                     if (commune) {
                                         cCode = commune.code;
                                     }
@@ -565,18 +511,15 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             setActiveCustomLocation(loc);
             let pCode = '', dCode = '', cCode = '';
             if (loc.province) {
-                const searchProv = String(loc.province).trim();
-                const p = data.find(x => x.khmer === searchProv || x.latin === searchProv);
+                const p = findByName(data, loc.province);
                 if (p) {
                     pCode = p.code;
                     if (loc.district && p.districts) {
-                        const searchDist = String(loc.district).trim();
-                        const d = p.districts.find(x => x.khmer === searchDist || x.latin === searchDist);
+                        const d = findByName(p.districts, loc.district);
                         if (d) {
                             dCode = d.code;
                             if (loc.commune && d.communes) {
-                                const searchComm = String(loc.commune).trim();
-                                const c = d.communes.find(x => x.khmer === searchComm || x.latin === searchComm);
+                                const c = findByName(d.communes, loc.commune);
                                 if (c) cCode = c.code;
                             }
                         }
@@ -594,12 +537,19 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
     };
 
     const modalActiveDistricts = useMemo(() =>
-        data.find(p => p.khmer === modalData.province)?.districts || [], [data, modalData.province]
+        findByName(data, modalData.province)?.districts || [], [data, modalData.province]
     );
 
     const modalActiveCommunes = useMemo(() =>
-        modalActiveDistricts.find(d => d.khmer === modalData.district)?.communes || [], [modalActiveDistricts, modalData.district]
+        findByName(modalActiveDistricts, modalData.district)?.communes || [], [modalActiveDistricts, modalData.district]
     );
+
+    // Visible entries plus the pin's current value, so editing a pin whose
+    // district/commune was since hidden (or saved under a variant spelling)
+    // shows what it holds instead of a blank select.
+    const modalProvincePicker = pickerOptions(data, modalData.province);
+    const modalDistrictPicker = pickerOptions(modalActiveDistricts, modalData.district);
+    const modalCommunePicker = pickerOptions(modalActiveCommunes, modalData.commune);
 
     const handleSaveLocationClick = () => {
         if (!editMarkerLatLng) return;
@@ -663,51 +613,13 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             return;
         }
 
-        const targetPcode = 'CUSTOM_' + Date.now().toString();
-
         setIsSavingLocation(true);
         try {
-            if (editingLocationId) {
-                const { error: updateError } = await supabase.from(tableName).update({
-                    name: modalData.name.trim(),
-                    lat: editMarkerLatLng[0],
-                    lng: editMarkerLatLng[1],
-                    courier: modalData.courier || null,
-                    province: modalData.province || null,
-                    district: modalData.district || null,
-                    commune: modalData.commune || null,
-                    phone: modalData.phone || null,
-                    contact_name: modalData.contactName || null,
-                    is_shutdown: modalData.isShutdown || false,
-                    updated_at: new Date().toISOString()
-                }).eq('id', editingLocationId);
-
-                if (updateError) {
-                    console.error("Supabase Update Error:", updateError);
-                    throw updateError;
-                }
-            } else {
-                const { error: insertError } = await supabase.from(tableName).insert({
-                    pcode: targetPcode,
-                    name: modalData.name.trim(),
-                    lat: editMarkerLatLng[0],
-                    lng: editMarkerLatLng[1],
-                    type: 'custom',
-                    courier: modalData.courier || null,
-                    province: modalData.province || null,
-                    district: modalData.district || null,
-                    commune: modalData.commune || null,
-                    phone: modalData.phone || null,
-                    contact_name: modalData.contactName || null,
-                    is_shutdown: modalData.isShutdown || false,
-                    updated_at: new Date().toISOString()
-                });
-
-                if (insertError) {
-                    console.error("Supabase Insert Error:", insertError);
-                    throw insertError;
-                }
-            }
+            await saveShippingPoint({
+                ...modalData,
+                lat: editMarkerLatLng[0],
+                lng: editMarkerLatLng[1],
+            }, editingLocationId, tableName);
 
             setIsEditing(false);
             setEditMarkerLatLng(null);
@@ -727,12 +639,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         const newStatus = !loc.is_shutdown;
         setIsSavingLocation(true);
         try {
-            const { error } = await supabase.from(tableName).update({
-                is_shutdown: newStatus,
-                updated_at: new Date().toISOString()
-            }).eq('id', loc.id);
-
-            if (error) throw error;
+            await setShippingPointShutdown(loc.id, newStatus, tableName);
             await loadCustomLocations();
             showToast(`Location "${loc.name}" is now ${newStatus ? 'Temporarily Shutdown' : 'Reactivated'}`, 'success');
         } catch (e: unknown) {
@@ -748,8 +655,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
 
         setIsSavingLocation(true);
         try {
-            const { error } = await supabase.from(tableName).delete().eq('id', id);
-            if (error) throw error;
+            await deleteShippingPoint(id, tableName);
             setIsConfirmingDelete(false);
             setEditMarkerLatLng(null);
             await loadCustomLocations();
@@ -844,7 +750,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                     resolvedProvinceLatin = p.latin;
                 }
             } else if (resolvedProvince) {
-                const p = data.find(x => x.khmer === resolvedProvince || x.latin === resolvedProvince);
+                const p = findByName(data, resolvedProvince);
                 if (p) resolvedProvinceLatin = p.latin;
             }
 
@@ -1133,7 +1039,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                         <option value="">-- បង្ហាញរាជធានី និងខេត្ត --</option>
                                         {data.map(province => (
                                             <option key={province.code} value={province.code}>
-                                                {province.khmer} ({province.latin})
+                                                {locLabel(province)}
                                             </option>
                                         ))}
                                     </select>
@@ -1159,9 +1065,9 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                         }}
                                     >
                                         <option value="">-- ជ្រើសរើសស្រុក --</option>
-                                        {activeDistricts.map(district => (
+                                        {pickerOptionsByCode(activeDistricts, selectedDistrictCode).map(district => (
                                             <option key={district.code} value={district.code}>
-                                                {district.khmer} ({district.latin})
+                                                {locLabel(district)}
                                             </option>
                                         ))}
                                     </select>
@@ -1187,9 +1093,9 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                         }}
                                     >
                                         <option value="">-- ជ្រើសរើសឃុំ --</option>
-                                        {activeCommunes.map(commune => (
+                                        {pickerOptionsByCode(activeCommunes, selectedCommuneCode).map(commune => (
                                             <option key={commune.code} value={commune.code}>
-                                                {commune.khmer} ({commune.latin})
+                                                {locLabel(commune)}
                                             </option>
                                         ))}
                                     </select>
@@ -1333,7 +1239,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                                                             resolvedProvinceLatin = p.latin;
                                                                                         }
                                                                                     } else if (resolvedProvince) {
-                                                                                        const p = data.find(x => x.khmer === resolvedProvince || x.latin === resolvedProvince);
+                                                                                        const p = findByName(data, resolvedProvince);
                                                                                         if (p) resolvedProvinceLatin = p.latin;
                                                                                     }
                                                                                     onSelect({
@@ -1717,25 +1623,25 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     <div>
                                         <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Province / ខេត្ត</label>
-                                        <select value={modalData.province} onChange={(e) => setModalData({ ...modalData, province: e.target.value, district: '', commune: '' })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
+                                        <select value={modalProvincePicker.value} onChange={(e) => setModalData({ ...modalData, province: e.target.value, district: '', commune: '' })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
                                             <option value="">Select Province</option>
-                                            {data.map(p => <option key={p.code} value={p.khmer}>{p.khmer}</option>)}
+                                            {modalProvincePicker.options.map(p => <option key={p.code} value={p.khmer}>{locLabel(p)}</option>)}
                                         </select>
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>District / ស្រុក</label>
-                                        <select value={modalData.district} onChange={(e) => setModalData({ ...modalData, district: e.target.value, commune: '' })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
+                                        <select value={modalDistrictPicker.value} onChange={(e) => setModalData({ ...modalData, district: e.target.value, commune: '' })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
                                             <option value="">Select District</option>
-                                            {modalActiveDistricts.map(d => <option key={d.code} value={d.khmer}>{d.khmer}</option>)}
+                                            {modalDistrictPicker.options.map(d => <option key={d.code} value={d.khmer}>{locLabel(d)}</option>)}
                                         </select>
                                     </div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     <div>
                                         <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Commune / ឃុំ</label>
-                                        <select value={modalData.commune} onChange={(e) => setModalData({ ...modalData, commune: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
+                                        <select value={modalCommunePicker.value} onChange={(e) => setModalData({ ...modalData, commune: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
                                             <option value="">Select Commune</option>
-                                            {modalActiveCommunes.map(c => <option key={c.code} value={c.khmer}>{c.khmer}</option>)}
+                                            {modalCommunePicker.options.map(c => <option key={c.code} value={c.khmer}>{locLabel(c)}</option>)}
                                         </select>
                                     </div>
                                     <div>
