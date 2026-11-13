@@ -356,6 +356,12 @@ const wsErr = await errOf(() => q(`SELECT public.create_wholesale_order(p_order 
     [JSON.stringify({ customer_name: 'Shop B', status: 'Open', warehouse_id: wh }), JSON.stringify([{ product_id: 'PSPK', product_name: 'Speaker', quantity: 2, unit_price: 18 }])]));
 check('wholesale order out of the warehouse', wsErr === '', wsErr);
 await balanced('wholesale order');
+// A decimal typed in the quantity box: int4 stock would round it while FIFO
+// costs the fraction, so the pack refuses it and nothing moves.
+const wsFrac = await errOf(() => q(`SELECT public.create_wholesale_order(p_order => $1::jsonb, p_items => $2::jsonb, p_created_by => 'owner', p_today => '${DAY}')`,
+    [JSON.stringify({ customer_name: 'Shop B', status: 'Open', warehouse_id: wh }), JSON.stringify([{ product_id: 'PSPK', product_name: 'Speaker', quantity: 2.6, unit_price: 18 }])]));
+check('a wholesale quantity of 2.6 is refused (whole numbers only)', /Quantities must be whole numbers/.test(wsFrac), wsFrac);
+await balanced('fractional wholesale refused');
 const poErr = await errOf(() => q(`SELECT public.receive_purchase_order(p_po_id => $1::uuid, p_today => '${DAY}')`, [poOpen]));
 check('receive the ordered PO', poErr === '', poErr);
 await balanced('PO received');

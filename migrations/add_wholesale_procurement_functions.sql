@@ -482,9 +482,14 @@ BEGIN
          ORDER BY created_at, id
     LOOP
         PERFORM 1 FROM products WHERE id = r.product_id FOR NO KEY UPDATE;
-        UPDATE products SET stock = GREATEST(0, COALESCE(stock, 0) + p_sign * r.quantity) WHERE id = r.product_id;
+        -- Whole units only (trunc): FIFO moves floor(quantity) layers, and
+        -- the INTEGER stock columns would round a fraction instead. New
+        -- lines are whole (wp_check_order_stock); this keeps a fractional
+        -- line from before that rule from parting pool and stock when it
+        -- is given back.
+        UPDATE products SET stock = GREATEST(0, COALESCE(stock, 0) + p_sign * trunc(r.quantity)) WHERE id = r.product_id;
         IF NULLIF(p_warehouse, '') IS NOT NULL THEN
-            UPDATE warehouse_stock SET quantity = GREATEST(0, COALESCE(quantity, 0) + p_sign * r.quantity)
+            UPDATE warehouse_stock SET quantity = GREATEST(0, COALESCE(quantity, 0) + p_sign * trunc(r.quantity))
              WHERE warehouse_id::TEXT = p_warehouse AND product_id = r.product_id;
         END IF;
         IF p_sign < 0 THEN
@@ -696,6 +701,13 @@ DECLARE
 BEGIN
     IF EXISTS (SELECT 1 FROM wp_internal.wp_items(p_items) WHERE product_id IS NOT NULL AND quantity < 0) THEN
         RAISE EXCEPTION 'Quantities must be above zero.';
+    END IF;
+    -- products.stock, warehouse_stock.quantity and stock_movements.quantity
+    -- are INTEGER on live (wholesale_order_items.quantity is NUMERIC): a
+    -- fractional line would be rounded there while FIFO costs the fraction,
+    -- so pool and stock would part. Same rule as stock adjustments.
+    IF EXISTS (SELECT 1 FROM wp_internal.wp_items(p_items) WHERE product_id IS NOT NULL AND quantity <> trunc(quantity)) THEN
+        RAISE EXCEPTION 'Quantities must be whole numbers.';
     END IF;
     PERFORM 1 FROM products
      WHERE id IN (SELECT product_id FROM wp_internal.wp_items(p_items)

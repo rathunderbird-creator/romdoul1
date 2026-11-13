@@ -199,6 +199,7 @@ const WholesaleOrdersPage: React.FC = () => {
         if (!customerName.trim()) { showToast('Enter the customer name', 'error'); return; }
         const validLines = lines.filter(l => l.product_id && (Number(l.quantity) || 0) > 0);
         if (validLines.length === 0) { showToast('Add at least one product line', 'error'); return; }
+        if (validLines.some(l => !Number.isInteger(Number(l.quantity)))) { showToast('Quantities must be whole numbers.', 'error'); return; }
         if (savingRef.current) return;
 
         savingRef.current = true;
@@ -933,7 +934,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                                         </select>
                                                     </td>
                                                     <td style={{ padding: '10px 12px' }}>
-                                                        <input type="number" style={{ ...fieldInput, padding: '8px 10px', fontSize: '13px', textAlign: 'right' }} min="0" value={l.quantity ?? ''} onChange={e => setLine(idx, { quantity: Number(e.target.value) })} />
+                                                        <input type="number" style={{ ...fieldInput, padding: '8px 10px', fontSize: '13px', textAlign: 'right' }} min="0" step="1" value={l.quantity ?? ''} onChange={e => setLine(idx, { quantity: Number(e.target.value) })} />
                                                     </td>
                                                     <td style={{ padding: '10px 12px' }}>
                                                         <input type="number" style={{ ...fieldInput, padding: '8px 10px', fontSize: '13px', textAlign: 'right' }} min="0" step="0.01" value={l.unit_price ?? ''} onChange={e => setLine(idx, { unit_price: Number(e.target.value) })} />
