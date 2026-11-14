@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Lead, Interaction, Quotation } from '../types';
 import { useToast } from '../context/ToastContext';
+import { tNow } from '../i18n/translate';
 
 // CRM data access — same shape as useProcurement / useWholesale.
 export const useCrm = () => {
@@ -43,10 +44,10 @@ export const useCrm = () => {
                 const { error } = await supabase.from('leads').insert([payload]);
                 if (error) throw error;
             }
-            showToast(lead.id ? 'Lead updated' : 'Lead added', 'success');
+            showToast(lead.id ? tNow('ui.store.crm.leadUpdated') : tNow('ui.store.crm.leadAdded'), 'success');
             await fetchLeads(true);
         } catch (error: any) {
-            showToast('Failed to save lead: ' + error.message, 'error');
+            showToast(tNow('ui.store.crm.saveLeadFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchLeads]);
@@ -55,10 +56,10 @@ export const useCrm = () => {
         try {
             const { error } = await supabase.from('leads').delete().eq('id', id);
             if (error) throw error;
-            showToast('Lead deleted', 'success');
+            showToast(tNow('ui.store.crm.leadDeleted'), 'success');
             await fetchLeads(true);
         } catch (error: any) {
-            showToast('Failed to delete lead: ' + error.message, 'error');
+            showToast(tNow('ui.store.crm.deleteLeadFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchLeads]);
@@ -94,10 +95,10 @@ export const useCrm = () => {
                 const { error } = await supabase.from('interactions').insert([payload]);
                 if (error) throw error;
             }
-            showToast(it.id ? 'Interaction updated' : 'Interaction logged', 'success');
+            showToast(it.id ? tNow('ui.store.crm.interactionUpdated') : tNow('ui.store.crm.interactionLogged'), 'success');
             await fetchInteractions(true);
         } catch (error: any) {
-            showToast('Failed to save interaction: ' + error.message, 'error');
+            showToast(tNow('ui.store.crm.saveInteractionFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchInteractions]);
@@ -106,10 +107,10 @@ export const useCrm = () => {
         try {
             const { error } = await supabase.from('interactions').delete().eq('id', id);
             if (error) throw error;
-            showToast('Interaction deleted', 'success');
+            showToast(tNow('ui.store.crm.interactionDeleted'), 'success');
             await fetchInteractions(true);
         } catch (error: any) {
-            showToast('Failed to delete interaction: ' + error.message, 'error');
+            showToast(tNow('ui.store.crm.deleteInteractionFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchInteractions]);
@@ -146,10 +147,10 @@ export const useCrm = () => {
                 const { error } = await supabase.from('quotations').insert([payload]);
                 if (error) throw error;
             }
-            showToast(q.id ? 'Quotation updated' : 'Quotation created', 'success');
+            showToast(q.id ? tNow('ui.store.crm.quotationUpdated') : tNow('ui.store.crm.quotationCreated'), 'success');
             await fetchQuotations(true);
         } catch (error: any) {
-            showToast('Failed to save quotation: ' + error.message, 'error');
+            showToast(tNow('ui.store.crm.saveQuotationFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchQuotations]);
@@ -158,10 +159,10 @@ export const useCrm = () => {
         try {
             const { error } = await supabase.from('quotations').update({ status }).eq('id', id);
             if (error) throw error;
-            showToast(`Quotation marked ${status}`, 'success');
+            showToast(tNow('ui.store.crm.quotationMarked', { status }), 'success');
             await fetchQuotations(true);
         } catch (error: any) {
-            showToast('Failed to update quotation: ' + error.message, 'error');
+            showToast(tNow('ui.store.crm.updateQuotationFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchQuotations]);
@@ -170,10 +171,10 @@ export const useCrm = () => {
         try {
             const { error } = await supabase.from('quotations').delete().eq('id', id);
             if (error) throw error;
-            showToast('Quotation deleted', 'success');
+            showToast(tNow('ui.store.crm.quotationDeleted'), 'success');
             await fetchQuotations(true);
         } catch (error: any) {
-            showToast('Failed to delete quotation: ' + error.message, 'error');
+            showToast(tNow('ui.store.crm.deleteQuotationFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchQuotations]);

@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Sale } from '../types';
 import { detectCarrier, canAutoTrack, isRecentlyChecked, type ShipmentTrackingRow } from '../utils/tracking';
+import { tNow } from '../i18n/translate';
 
 // Carrier status for orders: cached rows live in `shipment_tracking` (one per
 // tracking number); fresh lookups go through the /api/track-shipments
@@ -92,8 +93,8 @@ export const useShipmentTracking = () => {
             });
             if (!res.ok) {
                 summary.error = res.status === 404
-                    ? 'Tracking service not available here (it runs on the deployed site)'
-                    : `Tracking service error ${res.status}`;
+                    ? tNow('ui.store.tracking.unavailable')
+                    : tNow('ui.store.tracking.serviceError', { status: res.status });
                 setLastRun(summary);
                 return summary;
             }

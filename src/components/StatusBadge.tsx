@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 import { usePortalPosition } from '../hooks/usePortalPosition';
-import { orderStatusLabel } from '../utils/orderStatusRules';
+import { useTx, orderStatusDisplay } from './useTx';
 
 interface StatusBadgeProps {
     status: string;
@@ -17,6 +17,9 @@ interface StatusBadgeProps {
 
 const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [], bold = true, unrestricted = false }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const tx = useTx();
+    // Display label only: the stored status values stay English.
+    const label = (s: string) => orderStatusDisplay(tx, s);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
     // In the zoomed body's coordinates, flipped above when there's no room below.
@@ -94,7 +97,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
     return (
         <div style={{ position: 'relative', display: 'inline-block', width: '100%' }} ref={dropdownRef}>
             <div className="status-badge" style={badgeStyle} onClick={handleToggle}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{orderStatusLabel(status)}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{label(status)}</span>
                 {!readOnly && <ChevronDown size={14} style={{ marginLeft: '4px', opacity: 0.7, flexShrink: 0 }} />}
             </div>
 
@@ -150,7 +153,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, onChange, readOnly = 
                                     if (!isDisabled) e.currentTarget.style.backgroundColor = opt === status ? 'var(--color-surface-hover)' : 'white';
                                 }}
                             >
-                                {orderStatusLabel(opt)}
+                                {label(opt)}
                             </div>
                         );
                     })}

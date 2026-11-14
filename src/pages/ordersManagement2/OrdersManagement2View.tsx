@@ -9,6 +9,7 @@ import { EmptyState, ErrorInline, Skeleton } from '../dashboard2/ui';
 import { ReceiptModal, BulkEditModal } from '../../components';
 import { statusSegments, noTrackingCount, summarizeMoney, sortOrders, isMissingTracking, type Order, type SortState } from './metrics';
 import { filterChips, DEFAULT_FILTERS } from './urlFilters';
+import { useOM2Lang } from './ui2';
 import type { OM2ViewProps, DrawerState } from './types';
 import CommandBar from './components/CommandBar';
 import SummaryStrip from './components/SummaryStrip';
@@ -20,6 +21,7 @@ import MobileOrderList2 from './components/MobileOrderList2';
 
 const OM2View: React.FC<OM2ViewProps> = ({ filters, data, loading, refreshing, salesError, actions, t, isMobile, salesmen, shippingCompanies, pageSources, customerCare, paymentMethods, columnLabels, visibleColumns, onVisibleColumnsChange }) => {
     const { orders, rangeOrders, totalCount } = data;
+    const { tx } = useOM2Lang();
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [drawer, setDrawer] = useState<DrawerState>({ order: null, isOpen: false });
     const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
@@ -32,7 +34,9 @@ const OM2View: React.FC<OM2ViewProps> = ({ filters, data, loading, refreshing, s
     const segments = useMemo(() => statusSegments(rangeOrders), [rangeOrders]);
     const noTracking = useMemo(() => noTrackingCount(rangeOrders), [rangeOrders]);
     const sortedOrders = useMemo(() => sortOrders(orders, filters.sort), [orders, filters.sort]);
-    const chips = useMemo(() => filterChips(filters), [filters]);
+    // tx changes with the language, so the chip texts follow a language switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const chips = useMemo(() => filterChips(filters), [filters, tx]);
 
     const selectedOrders = useMemo(() => orders.filter(o => selectedIds.has(o.id)), [orders, selectedIds]);
     const isEmpty = !loading && !salesError && totalCount === 0;
@@ -80,7 +84,7 @@ const OM2View: React.FC<OM2ViewProps> = ({ filters, data, loading, refreshing, s
                         onClick={() => actions.onFiltersChange(prev => ({ ...DEFAULT_FILTERS, dateStart: '', dateEnd: '', pageSize: prev.pageSize }))}
                         style={{ background: 'none', border: 'none', color: D2.red, fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: '4px 6px' }}
                     >
-                        Clear all
+                        {tx('om2.clearAll', 'Clear all')}
                     </button>
                 </div>
             )}
@@ -92,13 +96,13 @@ const OM2View: React.FC<OM2ViewProps> = ({ filters, data, loading, refreshing, s
                     {Array.from({ length: 10 }, (_, i) => <Skeleton key={i} height={40} style={{ borderRadius: 8, marginBottom: 4 }} />)}
                 </div>
             ) : salesError ? (
-                <ErrorInline message={`Couldn't load orders. ${salesError.message}`} onRetry={salesError.retry} retryLabel="Retry" />
+                <ErrorInline message={`${tx('om2.loadError', "Couldn't load orders.")} ${salesError.message}`} onRetry={salesError.retry} retryLabel={tx('om2.retry', 'Retry')} />
             ) : isEmpty ? (
                 <EmptyState
                     icon={<ShoppingBag size={40} />}
-                    title="No orders match these filters"
-                    hint={filterChips(filters).length > 0 ? `Active filters: ${filterChips(filters).map(c => c.label).join(', ')}` : 'No orders yet.'}
-                    actionLabel="New order"
+                    title={tx('om2.emptyTitle', 'No orders match these filters')}
+                    hint={filterChips(filters).length > 0 ? `${tx('om2.activeFilters', 'Active filters:')} ${filterChips(filters).map(c => c.label).join(', ')}` : tx('om2.noOrdersYet', 'No orders yet.')}
+                    actionLabel={tx('om2.newOrder', 'New order')}
                     onAction={actions.onNewOrder}
                 />
             ) : (

@@ -10,6 +10,7 @@ import {
     sendTelegramReminder,
     type ReminderTodo,
 } from '../utils/todoReminders';
+import { txNow } from './useTx';
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -75,7 +76,7 @@ const TodoReminderService: React.FC = () => {
                 toastRef.current(`⏰ ${todo.title}`, delivered ? 'success' : 'error');
                 if ('Notification' in window && Notification.permission === 'granted') {
                     new Notification(todo.title, {
-                        body: todo.due_date ? `Due ${todo.due_date}` : 'Task reminder',
+                        body: todo.due_date ? txNow('ui.components.todoReminder.due', 'Due {date}', { date: todo.due_date }) : txNow('ui.components.todoReminder.taskReminder', 'Task reminder'),
                         tag: `todo-${todo.id}`,
                     });
                 }

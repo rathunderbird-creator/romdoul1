@@ -10,6 +10,8 @@ import { Modal } from '../../components';
 import { useToast } from '../../context/ToastContext';
 import type { PurchaseOrder } from '../../types';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import MoneyInput from '../../components/MoneyInput';
 import CashBankOptions from '../../components/CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
@@ -42,6 +44,7 @@ const AccountsPayablePage: React.FC = () => {
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const navigate = useNavigate();
     const { currentUser, khrExchangeRate } = useStore();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, recordSupplierPayment } = useProcurement();
@@ -80,13 +83,13 @@ const AccountsPayablePage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Accounts Payable</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Money you owe suppliers on credit purchase orders.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.accountsPayable')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('ui.accounting.ap.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchPurchaseOrders();
@@ -111,7 +114,7 @@ const AccountsPayablePage: React.FC = () => {
             .filter(po => po.outstanding > 0.005);
     }, [purchaseOrders]);
 
-    const supplierName = (id: string) => suppliers.find(s => s.id === id)?.name || 'Unknown supplier';
+    const supplierName = (id: string) => suppliers.find(s => s.id === id)?.name || t('ui.accounting.ap.unknownSupplier');
 
     // Build the unified payables list — one row per open purchase order, newest first.
     const payables = useMemo<Payable[]>(() => {
@@ -189,15 +192,15 @@ const AccountsPayablePage: React.FC = () => {
         // would expense an unreceived purchase — the receive would then book
         // the full cost again.
         if (payPO.status !== 'Received') {
-            showToast('This purchase order has not been received yet — receive the goods first, then record the payment.', 'error');
+            showToast(t('ui.accounting.ap.toast.notReceived'), 'error');
             return;
         }
         // Riel within 3 cents of the whole balance pays exactly the balance.
         const rate = Number(payField.rate) > 0 ? Number(payField.rate) : payField.shopRate;
         const amount = payField.currency === 'KHR' && Math.abs(khrToUsd(payField.typed, rate) - payBalance) <= 0.03 ? payBalance : payField.usd;
-        if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
-        if (payField.rateInvalid) { showToast('Enter a riel rate above 0', 'error'); return; }
-        if (paymentAccounts.length > 0 && !payAccountId) { showToast('Choose the account this payment is paid from', 'error'); return; }
+        if (!amount || amount <= 0) { showToast(t('ui.accounting.common.toast.enterValidAmount'), 'error'); return; }
+        if (payField.rateInvalid) { showToast(t('ui.accounting.common.toast.rielRate'), 'error'); return; }
+        if (paymentAccounts.length > 0 && !payAccountId) { showToast(t('ui.accounting.common.toast.choosePaidFrom'), 'error'); return; }
         if (!payField.confirmIfSuspicious()) return;
         setSaving(true);
         try {
@@ -215,17 +218,17 @@ const AccountsPayablePage: React.FC = () => {
         <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
             {/* Summary — same flat cards as the financial statements */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
-                <SummaryCard color="#EF4444" label="Total Payable" value={fmt(totals.totalPayable)} />
-                <SummaryCard color="#D97706" label="Overdue" value={fmt(totals.overdue)} />
-                <SummaryCard color="#3B82F6" label="Open Items" value={String(totals.count)} />
+                <SummaryCard color="#EF4444" label={t('ui.accounting.ap.totalPayable')} value={fmt(totals.totalPayable)} />
+                <SummaryCard color="#D97706" label={t('ui.accounting.ap.overdue')} value={fmt(totals.overdue)} />
+                <SummaryCard color="#3B82F6" label={t('ui.accounting.ap.openItems')} value={String(totals.count)} />
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
                 <button className="secondary-button" onClick={() => { fetchPurchaseOrders(); fetchSuppliers(); }}>
-                    <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> Refresh
+                    <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> {t('ui.accounting.common.refresh')}
                 </button>
                 <button className="secondary-button" onClick={() => navigate('/procurement/purchase-orders')}>
-                    <FileCheck size={18} /> New Purchase Order
+                    <FileCheck size={18} /> {t('ui.accounting.ap.newPurchaseOrder')}
                 </button>
             </div>
 
@@ -233,24 +236,24 @@ const AccountsPayablePage: React.FC = () => {
             <div style={{ ...cardStyle, padding: '14px 16px', marginBottom: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ position: 'relative', flex: '1 1 220px', minWidth: '180px' }}>
                     <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                    <input className="search-input d2-khmer" style={{ width: '100%', paddingLeft: '32px' }} placeholder="Search supplier, invoice…" value={search} onChange={e => setSearch(e.target.value)} />
+                    <input className="search-input d2-khmer" style={{ width: '100%', paddingLeft: '32px' }} placeholder={t('ui.accounting.ap.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
                 <select className="search-input d2-khmer" style={{ width: 'auto', maxWidth: '220px' }} value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)}>
-                    <option value="all">All Suppliers</option>
+                    <option value="all">{t('ui.accounting.ap.allSuppliers')}</option>
                     {payableSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <select className="search-input" style={{ width: 'auto' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'all' | 'overdue')}>
-                    <option value="all">All Items</option>
-                    <option value="overdue">Overdue Only</option>
+                    <option value="all">{t('ui.accounting.ap.allItems')}</option>
+                    <option value="overdue">{t('ui.accounting.ap.overdueOnly')}</option>
                 </select>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <input type="date" className="search-input" style={{ width: 'auto' }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>to</span>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>{t('ui.accounting.common.to')}</span>
                     <input type="date" className="search-input" style={{ width: 'auto' }} value={dateTo} onChange={e => setDateTo(e.target.value)} />
                 </div>
                 {hasActiveFilters && (
                     <button className="secondary-button" style={{ padding: '7px 12px', fontSize: '12px' }} onClick={clearFilters}>
-                        <FilterX size={14} /> Clear
+                        <FilterX size={14} /> {t('ui.accounting.common.clear')}
                     </button>
                 )}
             </div>
@@ -258,14 +261,14 @@ const AccountsPayablePage: React.FC = () => {
             {payables.length === 0 ? (
                 <div style={{ ...cardStyle, padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <DollarSign size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
-                    <p>No outstanding payables. All purchase orders are paid. 🎉</p>
+                    <p>{t('ui.accounting.ap.emptyAll')}</p>
                 </div>
             ) : filteredPayables.length === 0 ? (
                 <div style={{ ...cardStyle, padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Search size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
-                    <p>No payables match your filters.</p>
+                    <p>{t('ui.accounting.ap.emptyFiltered')}</p>
                     <button className="secondary-button" style={{ marginTop: '12px' }} onClick={clearFilters}>
-                        <FilterX size={14} /> Clear filters
+                        <FilterX size={14} /> {t('ui.accounting.common.clearFilters')}
                     </button>
                 </div>
             ) : isMobile ? (
@@ -281,14 +284,14 @@ const AccountsPayablePage: React.FC = () => {
                                 </div>
                                 <div className="d2-khmer" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--color-text-main)', margin: '6px 0 2px' }}>{p.party}</div>
                                 <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                    {p.due_date ? <>Due {new Date(p.due_date).toLocaleDateString()}</> : 'No due date'}
-                                    {od !== null && od > 0 && <span style={{ marginLeft: '6px', color: '#DC2626', fontWeight: 600 }}>{od}d late</span>}
+                                    {p.due_date ? fill(t('ui.accounting.ap.dueOn'), { date: new Date(p.due_date).toLocaleDateString() }) : t('ui.accounting.ap.noDueDate')}
+                                    {od !== null && od > 0 && <span style={{ marginLeft: '6px', color: '#DC2626', fontWeight: 600 }}>{fill(t('ui.accounting.ap.daysLate'), { n: od })}</span>}
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', gap: '10px' }}>
                                     <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
                                         {fmt(p.total)} − {fmt(p.paid)} = <span style={{ fontWeight: 700, color: '#EF4444' }}>{fmt(p.balance)}</span>
                                     </span>
-                                    <button className="primary-button" style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }} onClick={() => openPay(p.po)}>Record Payment</button>
+                                    <button className="primary-button" style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }} onClick={() => openPay(p.po)}>{t('ui.accounting.ap.recordPayment')}</button>
                                 </div>
                             </div>
                         );
@@ -299,13 +302,13 @@ const AccountsPayablePage: React.FC = () => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '780px' }}>
                         <thead>
                             <tr style={{ background: 'var(--color-bg)' }}>
-                                <th style={thStyle}>Date</th>
-                                <th style={thStyle}>Supplier</th>
-                                <th style={thStyle}>Invoice / PO</th>
-                                <th style={thStyle}>Due</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Paid</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Balance</th>
+                                <th style={thStyle}>{t('ui.accounting.common.date')}</th>
+                                <th style={thStyle}>{t('ui.accounting.ap.supplier')}</th>
+                                <th style={thStyle}>{t('ui.accounting.ap.invoicePo')}</th>
+                                <th style={thStyle}>{t('ui.accounting.ap.due')}</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>{t('common.total')}</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>{t('status.paid')}</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>{t('ui.accounting.common.balance')}</th>
                                 <th style={{ ...thStyle, textAlign: 'right' }}></th>
                             </tr>
                         </thead>
@@ -319,14 +322,14 @@ const AccountsPayablePage: React.FC = () => {
                                         <td style={tdStyle}>{p.desc}</td>
                                         <td style={tdStyle}>
                                             {p.due_date ? new Date(p.due_date).toLocaleDateString() : '—'}
-                                            {od !== null && od > 0 && <span style={{ marginLeft: '6px', fontSize: '11px', color: '#DC2626', fontWeight: 600 }}>{od}d late</span>}
+                                            {od !== null && od > 0 && <span style={{ marginLeft: '6px', fontSize: '11px', color: '#DC2626', fontWeight: 600 }}>{fill(t('ui.accounting.ap.daysLate'), { n: od })}</span>}
                                         </td>
                                         <td style={{ ...tdStyle, textAlign: 'right' }}>{fmt(p.total)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right', color: 'var(--color-text-secondary)' }}>{fmt(p.paid)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#EF4444' }}>{fmt(p.balance)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right' }}>
                                             <button className="primary-button" style={{ padding: '5px 10px', fontSize: '12px' }} onClick={() => openPay(p.po)}>
-                                                Record Payment
+                                                {t('ui.accounting.ap.recordPayment')}
                                             </button>
                                         </td>
                                     </tr>
@@ -337,46 +340,46 @@ const AccountsPayablePage: React.FC = () => {
                 </div>
             )}
 
-            <Modal isOpen={!!payPO} onClose={() => setPayPO(null)} title="Record Supplier Payment">
+            <Modal isOpen={!!payPO} onClose={() => setPayPO(null)} title={t('ui.accounting.ap.recordSupplierPayment')}>
                 {payPO && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                             {supplierName(payPO.supplier_id)} · {payPO.invoice_number || `PO-${payPO.id.slice(0, 8)}`}
-                            <div style={{ marginTop: '4px', color: '#EF4444', fontWeight: 600 }}>Balance: {fmt((payPO.total_amount || 0) - (payPO.amount_paid || 0))}</div>
+                            <div style={{ marginTop: '4px', color: '#EF4444', fontWeight: 600 }}>{t('ui.accounting.common.balance')}: {fmt((payPO.total_amount || 0) - (payPO.amount_paid || 0))}</div>
                         </div>
                         <MoneyInput
                             field={payField}
-                            label="Amount"
+                            label={t('common.amount')}
                             allowKhr
                             onToggleCurrency={payCoupling.onToggleCurrency}
                             khrUnavailableReason={payCoupling.khrUnavailableReason}
                             labelStyle={labelStyle}
                         />
                         <div>
-                            <label style={labelStyle}>Payment Method</label>
+                            <label style={labelStyle}>{t('ui.accounting.common.paymentMethod')}</label>
                             <select className="search-input" style={{ width: '100%' }} value={payMethod} onChange={e => setPayMethod(e.target.value)}>
-                                <option>Cash</option><option>Bank Transfer</option><option>Credit Card</option><option>Cheque</option>
+                                <option value="Cash">{t('ui.accounting.common.method.cash')}</option><option value="Bank Transfer">{t('ui.accounting.common.method.bankTransfer')}</option><option value="Credit Card">{t('ui.accounting.common.method.creditCard')}</option><option value="Cheque">{t('ui.accounting.common.method.cheque')}</option>
                             </select>
                         </div>
                         <div>
-                            <label style={labelStyle}>Paid from *</label>
+                            <label style={labelStyle}>{t('ui.accounting.common.paidFrom')} *</label>
                             <select className="search-input d2-khmer" style={{ width: '100%' }} value={payAccountId} onChange={e => payCoupling.onAccountChange(e.target.value)}>
-                                <option value="">Bank or cash account…</option>
+                                <option value="">{t('ui.accounting.common.bankOrCashAccount')}</option>
                                 <CashBankOptions accounts={paymentAccounts} />
                             </select>
                             {paymentAccounts.length === 0 && (
                                 <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                                    No cash or bank accounts in the Chart of Accounts yet — the payment saves without one.
+                                    {t('ui.accounting.common.noCashBankAccounts')}
                                 </div>
                             )}
                         </div>
                         <div>
-                            <label style={labelStyle}>Note (optional)</label>
+                            <label style={labelStyle}>{t('ui.accounting.common.noteOptional')}</label>
                             <input type="text" className="search-input" style={{ width: '100%' }} value={payNote} onChange={e => setPayNote(e.target.value)} />
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                            <button className="secondary-button" onClick={() => setPayPO(null)}>Cancel</button>
-                            <button className="primary-button" disabled={saving} onClick={submitPayment}>{saving ? 'Saving…' : 'Record Payment'}</button>
+                            <button className="secondary-button" onClick={() => setPayPO(null)}>{t('common.cancel')}</button>
+                            <button className="primary-button" disabled={saving} onClick={submitPayment}>{saving ? t('ui.accounting.common.saving') : t('ui.accounting.ap.recordPayment')}</button>
                         </div>
                     </div>
                 )}

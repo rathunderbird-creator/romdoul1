@@ -4,6 +4,7 @@ import type { WholesaleOrder } from '../types';
 // the invoice's font stack reaches Battambang just for Khmer glyphs.
 import battambangKhmer400 from '../assets/fonts/battambang-khmer-400.woff2?url';
 import battambangKhmer700 from '../assets/fonts/battambang-khmer-700.woff2?url';
+import { tNow } from '../i18n/translate';
 
 export interface InvoiceStoreInfo {
     storeName: string;
@@ -145,7 +146,7 @@ export const printWholesaleInvoice = (order: WholesaleOrder, store: InvoiceStore
 
     const w = window.open('', '_blank', 'width=900,height=1000');
     if (!w) {
-        alert('Popup blocked — please allow popups to print the invoice.');
+        alert(tNow('ui.store.print.popupBlocked'));
         return;
     }
     w.document.write(html);

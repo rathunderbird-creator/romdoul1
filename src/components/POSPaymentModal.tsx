@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calculator, Banknote, CreditCard, QrCode } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useTx } from './useTx';
 
 interface POSPaymentModalProps {
     total: number;
@@ -10,6 +11,7 @@ interface POSPaymentModalProps {
 
 const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ total, onClose, onConfirm }) => {
     const { showToast } = useToast();
+    const tx = useTx();
     const [amountReceived, setAmountReceived] = useState<string>('');
     const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Card' | 'QR' | 'Bank Transfer'>('Cash');
     const [change, setChange] = useState<number>(0);
@@ -22,7 +24,7 @@ const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ total, onClose, onCon
     const handleConfirm = () => {
         const received = parseFloat(amountReceived) || 0;
         if (received < total && paymentMethod === 'Cash') {
-            showToast('Amount received is less than total', 'error');
+            showToast(tx('ui.components.posPayment.lessThanTotal', 'Amount received is less than total'), 'error');
             return;
         }
         onConfirm(paymentMethod, received);
@@ -41,7 +43,7 @@ const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ total, onClose, onCon
             <div className="glass-panel" style={{ width: '450px', padding: '32px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h2 style={{ fontSize: '24px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <Calculator size={24} /> Payment
+                        <Calculator size={24} /> {tx('ui.components.posPayment.title', 'Payment')}
                     </h2>
                     <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>
                         <X size={24} />
@@ -49,12 +51,12 @@ const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ total, onClose, onCon
                 </div>
 
                 <div style={{ textAlign: 'center', padding: '24px', background: 'var(--color-bg)', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
-                    <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Total Amount</div>
+                    <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>{tx('ui.components.posPayment.totalAmount', 'Total Amount')}</div>
                     <div style={{ fontSize: '48px', fontWeight: 'bold', color: 'var(--color-primary)' }}>${total.toFixed(2)}</div>
                 </div>
 
                 <div>
-                    <label style={{ display: 'block', marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>Payment Method</label>
+                    <label style={{ display: 'block', marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{tx('ui.components.posPayment.paymentMethod', 'Payment Method')}</label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                         <button
                             onClick={() => setPaymentMethod('Cash')}
@@ -66,7 +68,7 @@ const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ total, onClose, onCon
                             }}
                         >
                             <Banknote size={24} />
-                            <span style={{ fontSize: '13px', fontWeight: 500 }}>Cash</span>
+                            <span style={{ fontSize: '13px', fontWeight: 500 }}>{tx('ui.components.posPayment.cash', 'Cash')}</span>
                         </button>
                         <button
                             onClick={() => setPaymentMethod('QR')}
@@ -78,7 +80,7 @@ const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ total, onClose, onCon
                             }}
                         >
                             <QrCode size={24} />
-                            <span style={{ fontSize: '13px', fontWeight: 500 }}>QR Code</span>
+                            <span style={{ fontSize: '13px', fontWeight: 500 }}>{tx('ui.components.posPayment.qrCode', 'QR Code')}</span>
                         </button>
                         <button
                             onClick={() => setPaymentMethod('Card')}
@@ -90,13 +92,13 @@ const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ total, onClose, onCon
                             }}
                         >
                             <CreditCard size={24} />
-                            <span style={{ fontSize: '13px', fontWeight: 500 }}>Card</span>
+                            <span style={{ fontSize: '13px', fontWeight: 500 }}>{tx('ui.components.posPayment.card', 'Card')}</span>
                         </button>
                     </div>
                 </div>
 
                 <div>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>Amount Received ($)</label>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>{tx('ui.components.posPayment.amountReceived', 'Amount Received ($)')}</label>
                     <input
                         type="number"
                         value={amountReceived}
@@ -127,7 +129,7 @@ const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ total, onClose, onCon
                                     background: 'var(--color-surface)', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap'
                                 }}
                             >
-                                Exact
+                                {tx('ui.components.posPayment.exact', 'Exact')}
                             </button>
                         </div>
                     )}
@@ -135,7 +137,7 @@ const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ total, onClose, onCon
 
                 {paymentMethod === 'Cash' && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: change < 0 ? '#FEE2E2' : '#D1FAE5', borderRadius: '8px', color: change < 0 ? '#DC2626' : '#059669' }}>
-                        <span style={{ fontWeight: 600 }}>Change</span>
+                        <span style={{ fontWeight: 600 }}>{tx('ui.components.posPayment.change', 'Change')}</span>
                         <span style={{ fontSize: '20px', fontWeight: 'bold' }}>${Math.max(0, change).toFixed(2)}</span>
                     </div>
                 )}
@@ -146,7 +148,7 @@ const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ total, onClose, onCon
                     style={{ width: '100%', padding: '16px', fontSize: '18px', display: 'flex', justifyContent: 'center', gap: '12px' }}
                 >
                     <Banknote size={20} />
-                    Confirm Payment
+                    {tx('ui.components.posPayment.confirm', 'Confirm Payment')}
                 </button>
             </div>
         </div>

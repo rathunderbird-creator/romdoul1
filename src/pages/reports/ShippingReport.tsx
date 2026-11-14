@@ -6,6 +6,8 @@ import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import type { Sale } from '../../types';
 import { orderStatusLabel } from '../../utils/orderStatusRules';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 
 const COLORS = ['#8B5CF6', '#EC4899', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#6B7280'];
@@ -15,6 +17,14 @@ const ShippingReport: React.FC = () => {
     const { reportSales } = useOutletContext<any>();
     const { shippingCompanies, shippingRates, updateShippingRate, updateShippingRates } = useStore();
     const { showToast } = useToast();
+    const { t, language } = useLanguage();
+    // Order-status chip label: the app's English label, or status.* in Khmer.
+    const stLabel = (s: string) => {
+        if (language !== 'km') return orderStatusLabel(s);
+        const key = `status.${s === 'Drafted' ? 'ordered' : s.toLowerCase()}`;
+        const v = t(key);
+        return v === key ? orderStatusLabel(s) : v;
+    };
 
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
     const [showRatesPanel, setShowRatesPanel] = useState(false);
@@ -50,10 +60,10 @@ const ShippingReport: React.FC = () => {
         });
         try {
             if (Object.keys(rates).length > 0) await updateShippingRates(rates);
-            showToast('All shipping rates saved successfully!', 'success');
+            showToast(t('ui.people.reports.ship.allSaved'), 'success');
             setShowRatesPanel(false);
         } catch (e) {
-            showToast(e instanceof Error ? e.message : 'Failed to save shipping rates', 'error');
+            showToast(e instanceof Error ? e.message : t('ui.people.reports.ship.saveFailed'), 'error');
         }
     };
 
@@ -63,9 +73,9 @@ const ShippingReport: React.FC = () => {
             try {
                 // Same scoped write as Save All — never replays a stale config blob.
                 await updateShippingRate(company, val);
-                showToast(`Rate for ${company} set to $${val.toFixed(2)}`, 'success');
+                showToast(fill(t('ui.people.reports.ship.rateSet'), { company, rate: `$${val.toFixed(2)}` }), 'success');
             } catch (e) {
-                showToast(e instanceof Error ? e.message : `Failed to save the rate for ${company}`, 'error');
+                showToast(e instanceof Error ? e.message : fill(t('ui.people.reports.ship.rateFailed'), { company }), 'error');
             }
         }
     };
@@ -109,7 +119,7 @@ const ShippingReport: React.FC = () => {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Shipping Companies Analytics</h2>
+                <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>{t('ui.people.reports.ship.title')}</h2>
                 <button
                     onClick={openRatesPanel}
                     style={{
@@ -121,7 +131,7 @@ const ShippingReport: React.FC = () => {
                     }}
                 >
                     <Settings size={14} />
-                    Set Shipping Rates
+                    {t('ui.people.reports.ship.setRates')}
                 </button>
             </div>
 
@@ -132,10 +142,10 @@ const ShippingReport: React.FC = () => {
                         <div>
                             <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <DollarSign size={16} style={{ color: '#F59E0B' }} />
-                                Shipping Rates (Cost per Item)
+                                {t('ui.people.reports.ship.ratesTitle')}
                             </h3>
                             <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '4px 0 0 0' }}>
-                                Set once — rates are saved and applied automatically to all reports. No need to re-enter daily.
+                                {t('ui.people.reports.ship.ratesHint')}
                             </p>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -147,7 +157,7 @@ const ShippingReport: React.FC = () => {
                                     background: 'transparent', color: 'var(--color-text-secondary)'
                                 }}
                             >
-                                Cancel
+                                {t('common.cancel')}
                             </button>
                             <button
                                 onClick={saveAllRates}
@@ -157,7 +167,7 @@ const ShippingReport: React.FC = () => {
                                     background: 'var(--color-primary)', color: 'white'
                                 }}
                             >
-                                Save All
+                                {t('ui.people.reports.ship.saveAll')}
                             </button>
                         </div>
                     </div>
@@ -172,7 +182,7 @@ const ShippingReport: React.FC = () => {
                                     <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{company}</label>
                                     {shippingRates[company] !== undefined && shippingRates[company] > 0 && (
                                         <span style={{ fontSize: '10px', color: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                            Saved ✓
+                                            {t('ui.people.reports.ship.saved')} ✓
                                         </span>
                                     )}
                                 </div>
@@ -205,28 +215,28 @@ const ShippingReport: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(59,130,246,0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(59,130,246,0.2)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Total Orders</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.totalOrders')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}><Truck size={18} /></div>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 800 }}>{totalOrders}</div>
                 </div>
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(16,185,129,0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(16,185,129,0.2)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Total Delivered</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.ship.totalDelivered')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', color: '#10B981' }}><PackageCheck size={18} /></div>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 800 }}>{totalDelivered}</div>
                 </div>
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(139,92,246,0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(139,92,246,0.2)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Top Company</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.ship.topCompany')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(139,92,246,0.15)', color: '#8B5CF6' }}><Package size={18} /></div>
                     </div>
-                    <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px' }}>{topCompany ? topCompany.name : 'N/A'}</div>
+                    <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px' }}>{topCompany ? topCompany.name : t('ui.people.common.na')}</div>
                 </div>
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.1), rgba(239,68,68,0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(239,68,68,0.2)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Total Shipping Expense</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.ship.totalExpense')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(239,68,68,0.15)', color: '#EF4444' }}><DollarSign size={18} /></div>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 800, color: '#EF4444' }}>${totalShippingCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -236,23 +246,23 @@ const ShippingReport: React.FC = () => {
             {/* Charts */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
                 <div className="glass-panel hover-lift" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', height: '400px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>Volume by Company</h3>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>{t('ui.people.reports.ship.volume')}</h3>
                     {shippingData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={shippingData} layout="vertical" margin={{ top: 10, right: 10, left: 20, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--color-border)" />
                                 <XAxis type="number" stroke="var(--color-text-secondary)" fontSize={12} tickLine={false} axisLine={false} />
                                 <YAxis dataKey="name" type="category" width={100} stroke="var(--color-text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
-                                <Tooltip cursor={{ fill: 'rgba(59,130,246,0.05)' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} formatter={(v: any) => [`${v}`, 'Total Orders']} />
+                                <Tooltip cursor={{ fill: 'rgba(59,130,246,0.05)' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} formatter={(v: any) => [`${v}`, t('ui.people.reports.totalOrders')]} />
                                 <Bar dataKey="totalOrders" fill="#3B82F6" radius={[0, 4, 4, 0]} barSize={24}>
                                     {shippingData.map((_, i) => <Cell key={`c-${i}`} fill={COLORS[i % COLORS.length]} />)}
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
-                    ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>No shipping data available.</div>}
+                    ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.people.reports.ship.noData')}</div>}
                 </div>
                 <div className="glass-panel hover-lift" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', height: '400px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>Delivery Status Breakdown</h3>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>{t('ui.people.reports.ship.statusBreakdown')}</h3>
                     {shippingData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={shippingData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
@@ -261,25 +271,25 @@ const ShippingReport: React.FC = () => {
                                 <YAxis stroke="var(--color-text-secondary)" fontSize={11} tickLine={false} axisLine={false} />
                                 <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
                                 <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                                <Bar dataKey="delivered" name="Delivered" stackId="a" fill="#10B981" barSize={32} />
-                                <Bar dataKey="shipped" name="Shipped" stackId="a" fill="#3B82F6" />
-                                <Bar dataKey="pending" name="Pending" stackId="a" fill="#F59E0B" />
-                                <Bar dataKey="returned" name="Returning" stackId="a" fill="#EF4444" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="delivered" name={t('status.delivered')} stackId="a" fill="#10B981" barSize={32} />
+                                <Bar dataKey="shipped" name={t('status.shipped')} stackId="a" fill="#3B82F6" />
+                                <Bar dataKey="pending" name={t('status.pending')} stackId="a" fill="#F59E0B" />
+                                <Bar dataKey="returned" name={t('status.returned')} stackId="a" fill="#EF4444" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
-                    ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>No shipping data available.</div>}
+                    ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.people.reports.ship.noData')}</div>}
                 </div>
             </div>
 
             {/* Company Breakdowns Table */}
             <div className="glass-panel" style={{ padding: '24px', overflow: 'hidden' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>Company Breakdowns</h3>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>{t('ui.people.reports.ship.breakdowns')}</h3>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginRight: '4px' }}>Status:</span>
-                        <button onClick={() => setStatusFilter(new Set())} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', border: '1px solid var(--color-border)', background: statusFilter.size === 0 ? 'var(--color-primary)' : 'transparent', color: statusFilter.size === 0 ? 'white' : 'var(--color-text-secondary)', transition: 'all 0.2s' }}>All</button>
+                        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginRight: '4px' }}>{t('ui.people.hr.status.label')}:</span>
+                        <button onClick={() => setStatusFilter(new Set())} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', border: '1px solid var(--color-border)', background: statusFilter.size === 0 ? 'var(--color-primary)' : 'transparent', color: statusFilter.size === 0 ? 'white' : 'var(--color-text-secondary)', transition: 'all 0.2s' }}>{t('common.all')}</button>
                         {STATUS_OPTIONS.map(s => (
-                            <button key={s} onClick={() => toggleStatus(s)} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', border: '1px solid var(--color-border)', background: statusFilter.has(s) ? (s === 'Delivered' ? '#10B981' : s === 'Shipped' ? '#3B82F6' : s === 'Returned' || s === 'Cancelled' ? '#EF4444' : '#F59E0B') : 'transparent', color: statusFilter.has(s) ? 'white' : 'var(--color-text-secondary)', transition: 'all 0.2s' }}>{orderStatusLabel(s)}</button>
+                            <button key={s} onClick={() => toggleStatus(s)} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', border: '1px solid var(--color-border)', background: statusFilter.has(s) ? (s === 'Delivered' ? '#10B981' : s === 'Shipped' ? '#3B82F6' : s === 'Returned' || s === 'Cancelled' ? '#EF4444' : '#F59E0B') : 'transparent', color: statusFilter.has(s) ? 'white' : 'var(--color-text-secondary)', transition: 'all 0.2s' }}>{stLabel(s)}</button>
                         ))}
                     </div>
                 </div>
@@ -287,14 +297,14 @@ const ShippingReport: React.FC = () => {
                     <table className="spreadsheet-table">
                         <thead>
                             <tr>
-                                <th>Company</th>
-                                <th style={{ textAlign: 'right' }}>Orders</th>
-                                <th style={{ textAlign: 'right' }}>Value Moved</th>
-                                <th style={{ textAlign: 'right' }}>Cost/Item</th>
-                                <th style={{ textAlign: 'right' }}>Total Cost</th>
-                                <th style={{ textAlign: 'center' }}>Delivered</th>
-                                <th style={{ textAlign: 'center' }}>Shipped</th>
-                                <th style={{ textAlign: 'center' }}>Returning</th>
+                                <th>{t('ui.people.crm.company')}</th>
+                                <th style={{ textAlign: 'right' }}>{t('ui.people.reports.orders')}</th>
+                                <th style={{ textAlign: 'right' }}>{t('ui.people.reports.ship.valueMoved')}</th>
+                                <th style={{ textAlign: 'right' }}>{t('ui.people.reports.ship.costItem')}</th>
+                                <th style={{ textAlign: 'right' }}>{t('ui.people.reports.ship.totalCost')}</th>
+                                <th style={{ textAlign: 'center' }}>{t('status.delivered')}</th>
+                                <th style={{ textAlign: 'center' }}>{t('status.shipped')}</th>
+                                <th style={{ textAlign: 'center' }}>{t('status.returned')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -309,7 +319,7 @@ const ShippingReport: React.FC = () => {
                                             <span
                                                 onClick={openRatesPanel}
                                                 style={{ fontSize: '10px', color: 'var(--color-text-muted)', cursor: 'pointer', marginLeft: '4px', textDecoration: 'underline' }}
-                                            >set</span>
+                                            >{t('ui.people.reports.ship.set')}</span>
                                         )}
                                     </td>
                                     <td style={{ textAlign: 'right', fontWeight: 700, color: '#EF4444' }}>${(co.totalOrders * co.costPerItem).toFixed(2)}</td>
@@ -318,11 +328,11 @@ const ShippingReport: React.FC = () => {
                                     <td style={{ textAlign: 'center', color: 'var(--color-red)' }}>{co.returned}</td>
                                 </tr>
                             ))}
-                            {shippingData.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)' }}>No data</td></tr>}
+                            {shippingData.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)' }}>{t('ui.people.common.noData')}</td></tr>}
                         </tbody>
                         <tfoot>
                             <tr style={{ fontWeight: 700, background: 'var(--color-surface-hover)' }}>
-                                <td>Total</td>
+                                <td>{t('common.total')}</td>
                                 <td style={{ textAlign: 'right' }}>{shippingData.reduce((s, c) => s + c.totalOrders, 0)}</td>
                                 <td style={{ textAlign: 'right' }}>${shippingData.reduce((s, c) => s + c.totalValue, 0).toFixed(2)}</td>
                                 <td style={{ textAlign: 'right', color: '#F59E0B' }}>—</td>
@@ -335,7 +345,7 @@ const ShippingReport: React.FC = () => {
                     </table>
                 </div>
                 <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '8px' }}>
-                    💡 Rates are saved permanently. Click "Set Shipping Rates" to adjust. Total Cost = Orders × Cost/Item.
+                    💡 {t('ui.people.reports.ship.note')}
                 </p>
             </div>
         </div>

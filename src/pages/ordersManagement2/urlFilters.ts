@@ -3,6 +3,22 @@
 // dependency, so it's easy to unit-test and reuse from the page container.
 import { SORT_KEYS } from './metrics';
 import type { SortState, SortKey } from './metrics';
+import { tNow, fill } from '../../i18n/translate';
+
+// Chip text in the chosen language (keys under ui.orderFlow); the English text
+// is the fallback when the key is missing.
+const txNow = (key: string, en: string, vars?: Record<string, string | number>): string => {
+    const k = `ui.orderFlow.${key}`;
+    const v = tNow(k, vars);
+    return v !== k ? v : fill(en, vars);
+};
+const labelNow = (prefix: string, s: string): string => {
+    const isKm = (() => { try { return localStorage.getItem('pos_language') === 'km'; } catch { return false; } })();
+    if (!isKm) return s;
+    const k = `${prefix}.${s}`;
+    const v = tNow(k);
+    return v !== k ? v : s;
+};
 
 export interface OM2Filters {
     search: string;
@@ -115,16 +131,16 @@ export interface FilterChip { key: string; label: string; onRemove: (f: OM2Filte
 
 export const filterChips = (f: OM2Filters): FilterChip[] => {
     const chips: FilterChip[] = [];
-    if (f.search) chips.push({ key: 'search', label: `Search: ${f.search}`, onRemove: prev => ({ ...prev, search: '', page: 1 }) });
+    if (f.search) chips.push({ key: 'search', label: txNow('om2.chip.search', 'Search: {v}', { v: f.search }), onRemove: prev => ({ ...prev, search: '', page: 1 }) });
     if (f.dateStart || f.dateEnd) {
         const label = f.dateStart && f.dateEnd && f.dateStart !== f.dateEnd ? `${f.dateStart} – ${f.dateEnd}` : (f.dateStart || f.dateEnd);
-        chips.push({ key: 'date', label: `Date: ${label}`, onRemove: prev => ({ ...prev, dateStart: '', dateEnd: '', page: 1 }) });
+        chips.push({ key: 'date', label: txNow('om2.chip.date', 'Date: {v}', { v: label }), onRemove: prev => ({ ...prev, dateStart: '', dateEnd: '', page: 1 }) });
     }
-    if (f.salesman) chips.push({ key: 'salesman', label: `Salesman: ${f.salesman}`, onRemove: prev => ({ ...prev, salesman: '', page: 1 }) });
-    if (f.noTrackingOnly) chips.push({ key: 'no_tracking', label: 'No tracking', onRemove: prev => ({ ...prev, noTrackingOnly: false, page: 1 }) });
-    f.statuses.forEach(s => chips.push({ key: `status:${s}`, label: `Status: ${s}`, onRemove: prev => ({ ...prev, statuses: prev.statuses.filter(x => x !== s), page: 1 }) }));
-    f.payStatuses.forEach(s => chips.push({ key: `pay:${s}`, label: `Payment: ${s}`, onRemove: prev => ({ ...prev, payStatuses: prev.payStatuses.filter(x => x !== s), page: 1 }) }));
-    f.shippingCos.forEach(s => chips.push({ key: `courier:${s}`, label: `Courier: ${s}`, onRemove: prev => ({ ...prev, shippingCos: prev.shippingCos.filter(x => x !== s), page: 1 }) }));
-    f.pages.forEach(s => chips.push({ key: `page:${s}`, label: `Page: ${s}`, onRemove: prev => ({ ...prev, pages: prev.pages.filter(x => x !== s), page: 1 }) }));
+    if (f.salesman) chips.push({ key: 'salesman', label: txNow('om2.chip.salesman', 'Salesman: {v}', { v: f.salesman }), onRemove: prev => ({ ...prev, salesman: '', page: 1 }) });
+    if (f.noTrackingOnly) chips.push({ key: 'no_tracking', label: txNow('om2.chip.noTracking', 'No tracking'), onRemove: prev => ({ ...prev, noTrackingOnly: false, page: 1 }) });
+    f.statuses.forEach(s => chips.push({ key: `status:${s}`, label: txNow('om2.chip.status', 'Status: {v}', { v: labelNow('dashboard2.status', s) }), onRemove: prev => ({ ...prev, statuses: prev.statuses.filter(x => x !== s), page: 1 }) }));
+    f.payStatuses.forEach(s => chips.push({ key: `pay:${s}`, label: txNow('om2.chip.payment', 'Payment: {v}', { v: labelNow('dashboard2.pay', s) }), onRemove: prev => ({ ...prev, payStatuses: prev.payStatuses.filter(x => x !== s), page: 1 }) }));
+    f.shippingCos.forEach(s => chips.push({ key: `courier:${s}`, label: txNow('om2.chip.courier', 'Courier: {v}', { v: s }), onRemove: prev => ({ ...prev, shippingCos: prev.shippingCos.filter(x => x !== s), page: 1 }) }));
+    f.pages.forEach(s => chips.push({ key: `page:${s}`, label: txNow('om2.chip.page', 'Page: {v}', { v: s }), onRemove: prev => ({ ...prev, pages: prev.pages.filter(x => x !== s), page: 1 }) }));
     return chips;
 };

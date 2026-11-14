@@ -12,7 +12,7 @@ const SecuritySettings: React.FC = () => {
             title: (
                 <div>
                     <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>{t('settings.security')}</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '14px' }}>Manage security settings</p>
+                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '14px' }}>{t('ui.admin.settings.securitySubtitle')}</p>
                 </div>
             )
         });

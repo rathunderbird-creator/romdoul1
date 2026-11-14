@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Printer, Download, RefreshCw, BookText, Trash2 } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useAccounting } from '../../hooks/useAccounting';
@@ -37,6 +39,7 @@ const GeneralLedgerPage = () => {
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const { accounts, journalEntries, isLoading, fetchAccounts, fetchJournalEntries } = useAccounting();
 
     // A deep link (e.g. from Chart of Accounts or a Financial Report line) can
@@ -58,13 +61,13 @@ const GeneralLedgerPage = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>General Ledger</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', margin: 0 }}>Every posted line behind an account balance</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.generalLedger')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', margin: 0 }}>{t('ui.accounting.gl.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchAccounts();
@@ -76,17 +79,17 @@ const GeneralLedgerPage = () => {
     // instead. One entry's lines can span several accounts, so this removes
     // it from every account it posted to, not just the one being viewed.
     const deleteEntry = async (entryId: string) => {
-        if (!confirm('Delete this draft entry? Its lines are removed too.')) return;
+        if (!confirm(t('ui.accounting.common.confirmDeleteDraft'))) return;
         try {
             const { error: lErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId);
             if (lErr) throw lErr;
             const { error } = await supabase.from('journal_entries').delete().eq('id', entryId);
             if (error) throw error;
-            showToast('Draft deleted', 'success');
+            showToast(t('ui.accounting.common.toast.draftDeleted'), 'success');
             fetchJournalEntries();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to delete draft: ' + msg, 'error');
+            showToast(t('ui.accounting.common.toast.deleteDraftFailed') + ': ' + msg, 'error');
         }
     };
 
@@ -240,10 +243,10 @@ const GeneralLedgerPage = () => {
                 <span className="d2-khmer" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {g.account.account_code} {g.account.account_name}
                 </span>
-                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{g.account.account_type}</span>
+                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{t('ui.accounting.common.accountType.' + g.account.account_type)}</span>
             </div>
             <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
-                Closing balance: <strong style={{ color: g.closing < 0 ? '#DC2626' : 'var(--color-text-main)' }}>{fmt(g.closing)}</strong>
+                {t('ui.accounting.common.closingBalance')}: <strong style={{ color: g.closing < 0 ? '#DC2626' : 'var(--color-text-main)' }}>{fmt(g.closing)}</strong>
             </span>
         </div>
     );
@@ -254,42 +257,42 @@ const GeneralLedgerPage = () => {
                 {/* Filters */}
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', marginBottom: '14px', flexWrap: 'wrap' }}>
                     <div>
-                        <label style={labelStyle}>Date</label>
+                        <label style={labelStyle}>{t('ui.accounting.common.date')}</label>
                         <DateRangePicker value={{ start: dateFrom, end: dateTo }} onChange={(r) => setGlDateRange({ start: r.start, end: r.end })} />
                     </div>
                     <div>
-                        <label style={labelStyle}>Account</label>
+                        <label style={labelStyle}>{t('ui.accounting.common.account')}</label>
                         <select
                             className="d2-khmer"
                             value={accountFilter}
                             onChange={e => setAccountFilter(e.target.value)}
                             style={{ ...inputStyle, maxWidth: '260px', cursor: 'pointer' }}
                         >
-                            <option value="all">All accounts</option>
+                            <option value="all">{t('ui.accounting.common.allAccounts')}</option>
                             {[...accounts].sort((a, b) => a.account_code.localeCompare(b.account_code)).map(a => (
                                 <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>
                             ))}
                         </select>
                     </div>
-                    <label title="Drafts aren't in the books yet — turn this on to preview balances as if they were posted"
+                    <label title={t('ui.accounting.gl.includeDraftsHint')}
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
                         <input type="checkbox" checked={includeDrafts} onChange={e => setIncludeDrafts(e.target.checked)} style={{ cursor: 'pointer' }} />
-                        Include drafts
+                        {t('ui.accounting.gl.includeDrafts')}
                     </label>
-                    <button onClick={reload} title="Reload the ledger" style={{ ...btnStyle, padding: '9px 10px' }}>
+                    <button onClick={reload} title={t('ui.accounting.common.reloadLedger')} style={{ ...btnStyle, padding: '9px 10px' }}>
                         <RefreshCw size={14} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
                     </button>
-                    <button onClick={printList} disabled={isLoading} style={{ ...btnStyle, opacity: isLoading ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
-                    <button onClick={exportCsv} disabled={isLoading} style={{ ...btnStyle, opacity: isLoading ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
+                    <button onClick={printList} disabled={isLoading} style={{ ...btnStyle, opacity: isLoading ? 0.5 : 1 }}><Printer size={14} /> {t('ui.accounting.common.printList')}</button>
+                    <button onClick={exportCsv} disabled={isLoading} style={{ ...btnStyle, opacity: isLoading ? 0.5 : 1 }}><Download size={14} /> {t('ui.accounting.common.exportCsv')}</button>
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>All figures are in USD.</div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>{t('ui.accounting.common.allUsd')}</div>
 
                 {isLoading ? (
-                    <div style={{ ...cardStyle, padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading ledger…</div>
+                    <div style={{ ...cardStyle, padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.accounting.gl.loading')}</div>
                 ) : ledgerGroups.length === 0 ? (
                     <div style={{ ...cardStyle, padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
                         <BookText size={28} style={{ opacity: 0.35, marginBottom: '8px' }} />
-                        <div>No postings match these filters.</div>
+                        <div>{t('ui.accounting.gl.empty')}</div>
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }} key={refreshKey}>
@@ -299,7 +302,7 @@ const GeneralLedgerPage = () => {
                                 {isMobile ? (
                                     <>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 16px', fontSize: '12px', fontStyle: 'italic', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)' }}>
-                                            <span>Opening balance</span>
+                                            <span>{t('ui.accounting.common.openingBalance')}</span>
                                             <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(g.opening)}</span>
                                         </div>
                                         {g.rows.map(row => (
@@ -312,19 +315,19 @@ const GeneralLedgerPage = () => {
                                                 </div>
                                                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                                     <div style={{ fontSize: '12.5px', fontVariantNumeric: 'tabular-nums', color: row.debit > 0 ? '#059669' : row.credit > 0 ? '#DC2626' : 'var(--color-text-muted)' }}>
-                                                        {row.debit > 0 ? `Dr ${fmt(row.debit)}` : `Cr ${fmt(row.credit)}`}
+                                                        {row.debit > 0 ? fill(t('ui.accounting.common.drAmount'), { amount: fmt(row.debit) }) : fill(t('ui.accounting.common.crAmount'), { amount: fmt(row.credit) })}
                                                     </div>
                                                     <div style={{ fontSize: '11px', color: row.balance < 0 ? '#DC2626' : 'var(--color-text-muted)', fontVariantNumeric: 'tabular-nums', marginTop: '2px' }}>{fmt(row.balance)}</div>
                                                 </div>
                                                 {row.status === 'Draft' && (
-                                                    <button onClick={() => deleteEntry(row.entryId)} title="Delete this draft entry" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px', flexShrink: 0 }}>
+                                                    <button onClick={() => deleteEntry(row.entryId)} title={t('ui.accounting.common.deleteDraftEntry')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px', flexShrink: 0 }}>
                                                         <Trash2 size={14} />
                                                     </button>
                                                 )}
                                             </div>
                                         ))}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', fontSize: '12.5px', fontWeight: 700, background: 'var(--color-bg)' }}>
-                                            <span>Closing balance</span>
+                                            <span>{t('ui.accounting.common.closingBalance')}</span>
                                             <span style={{ fontVariantNumeric: 'tabular-nums', color: g.closing < 0 ? '#DC2626' : 'var(--color-text-main)' }}>{fmt(g.closing)}</span>
                                         </div>
                                     </>
@@ -333,19 +336,19 @@ const GeneralLedgerPage = () => {
                                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                             <thead>
                                                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Date</th>
-                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Reference</th>
-                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Description</th>
-                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Contra Account</th>
-                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Debit</th>
-                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Credit</th>
-                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Balance</th>
+                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.accounting.common.date')}</th>
+                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.accounting.common.reference')}</th>
+                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.accounting.common.description')}</th>
+                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.accounting.common.contraAccount')}</th>
+                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.accounting.common.debit')}</th>
+                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.accounting.common.credit')}</th>
+                                                    <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.accounting.common.balance')}</th>
                                                     <th style={{ padding: '10px 20px', width: '40px' }}></th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                                    <td style={{ padding: '10px 20px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>Opening balance</td>
+                                                    <td style={{ padding: '10px 20px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>{t('ui.accounting.common.openingBalance')}</td>
                                                     <td></td><td></td><td></td><td></td><td></td>
                                                     <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: g.opening < 0 ? '#DC2626' : 'var(--color-text-secondary)' }}>{fmt(g.opening)}</td>
                                                     <td></td>
@@ -357,7 +360,7 @@ const GeneralLedgerPage = () => {
                                                         <td className="d2-khmer" style={{ padding: '10px 20px', color: 'var(--color-text-main)' }}>{row.description}</td>
                                                         <td className="d2-khmer" style={{ padding: '10px 20px', color: 'var(--color-text-secondary)' }}>
                                                             {row.contraIds.length === 1 ? (
-                                                                <span className="hover-highlight" onClick={() => setAccountFilter(row.contraIds[0])} title="View this account's ledger" style={{ cursor: 'pointer' }}>{row.contraName}</span>
+                                                                <span className="hover-highlight" onClick={() => setAccountFilter(row.contraIds[0])} title={t('ui.accounting.common.viewAccountLedger')} style={{ cursor: 'pointer' }}>{row.contraName}</span>
                                                             ) : row.contraName}
                                                         </td>
                                                         <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.debit > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{row.debit > 0 ? fmt(row.debit) : '—'}</td>
@@ -365,7 +368,7 @@ const GeneralLedgerPage = () => {
                                                         <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: row.balance < 0 ? '#DC2626' : 'var(--color-text-main)' }}>{fmt(row.balance)}</td>
                                                         <td style={{ padding: '10px 20px', textAlign: 'center' }}>
                                                             {row.status === 'Draft' && (
-                                                                <button onClick={() => deleteEntry(row.entryId)} title="Delete this draft entry" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }}>
+                                                                <button onClick={() => deleteEntry(row.entryId)} title={t('ui.accounting.common.deleteDraftEntry')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }}>
                                                                     <Trash2 size={14} />
                                                                 </button>
                                                             )}
@@ -373,7 +376,7 @@ const GeneralLedgerPage = () => {
                                                     </tr>
                                                 ))}
                                                 <tr style={{ background: 'var(--color-bg)' }}>
-                                                    <td style={{ padding: '10px 20px', fontWeight: 700, color: 'var(--color-text-main)' }}>Closing balance</td>
+                                                    <td style={{ padding: '10px 20px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.accounting.common.closingBalance')}</td>
                                                     <td></td><td></td><td></td>
                                                     <td style={{ padding: '10px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmt(g.debits)}</td>
                                                     <td style={{ padding: '10px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmt(g.credits)}</td>

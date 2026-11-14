@@ -5,6 +5,7 @@
 // reload instead of letting that happen silently.
 import React, { useEffect, useState, useCallback } from 'react';
 import { RefreshCw, X } from 'lucide-react';
+import { useTx } from './useTx';
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -14,6 +15,7 @@ const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const isCommitSha = (id: string) => /^[0-9a-f]{40}$/i.test(id);
 
 const UpdateBanner: React.FC = () => {
+    const tx = useTx();
     // The newest buildId seen on the server (null = none detected yet), and
     // the buildId the user has already dismissed a notice for — dismissing
     // only silences *this* detected version, a later one still notifies.
@@ -51,8 +53,8 @@ const UpdateBanner: React.FC = () => {
     if (!latestBuildId || latestBuildId === dismissedBuildId) return null;
 
     const message = isCommitSha(latestBuildId)
-        ? `Romdoul ERP System Solution has a new version (${latestBuildId.slice(0, 7)}).`
-        : 'Romdoul ERP System Solution has a new version.';
+        ? tx('ui.components.updateBanner.newVersionId', 'Romdoul ERP System Solution has a new version ({id}).', { id: latestBuildId.slice(0, 7) })
+        : tx('ui.components.updateBanner.newVersion', 'Romdoul ERP System Solution has a new version.');
 
     return (
         <>
@@ -101,12 +103,12 @@ const UpdateBanner: React.FC = () => {
                         whiteSpace: 'nowrap'
                     }}
                 >
-                    <RefreshCw size={14} /> Update
+                    <RefreshCw size={14} /> {tx('ui.components.updateBanner.update', 'Update')}
                 </button>
                 <button
                     onClick={() => setDismissedBuildId(latestBuildId)}
-                    title="Dismiss"
-                    aria-label="Dismiss update notice"
+                    title={tx('ui.components.updateBanner.dismiss', 'Dismiss')}
+                    aria-label={tx('ui.components.updateBanner.dismissAria', 'Dismiss update notice')}
                     style={{
                         display: 'flex',
                         alignItems: 'center',

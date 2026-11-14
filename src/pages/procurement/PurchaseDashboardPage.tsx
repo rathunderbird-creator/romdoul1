@@ -16,6 +16,8 @@ import { useProcurement } from '../../hooks/useProcurement';
 import { useAccounting } from '../../hooks/useAccounting';
 import { dayKeyFromDate, daysBetween, addDays } from '../../utils/dateRange';
 import type { PurchaseOrder } from '../../types';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 const fmt = (n: number) => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const todayYmd = () => dayKeyFromDate(new Date());
@@ -63,18 +65,20 @@ const PurchaseDashboardPage: React.FC = () => {
     const navigate = useNavigate();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers } = useProcurement();
     const { journalEntries, fetchJournalEntries } = useAccounting();
+    const { t } = useLanguage();
+    const tp = useCallback((k: string) => t('ui.purchase.' + k), [t]);
 
     useEffect(() => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Purchase Dashboard</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>What you spend and with whom, where prices are rising, how suppliers deliver, and what is waiting to be approved, chased or paid.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{tp('dashboard.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{tp('dashboard.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, tp]);
 
     useEffect(() => {
         fetchPurchaseOrders();
@@ -254,31 +258,31 @@ const PurchaseDashboardPage: React.FC = () => {
             {/* Filter */}
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
                 <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Ending month</label>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>{tp('dashboard.endingMonth')}</label>
                     <input type="month" value={endingMonth} max={monthKeyOf(today)} onChange={e => setEndingMonth(e.target.value || monthKeyOf(today))} style={inputStyle} />
                 </div>
-                <button onClick={() => { fetchPurchaseOrders(); fetchJournalEntries(); }} title="Refresh" style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
+                <button onClick={() => { fetchPurchaseOrders(); fetchJournalEntries(); }} title={tp('common.refresh')} style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
                 </button>
             </div>
             <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                {monthLabel(startMonth)} – {monthLabel(endingMonth)} · Amounts in USD, before VAT, net of supplier returns
+                {monthLabel(startMonth)} – {monthLabel(endingMonth)} · {tp('dashboard.rangeNote')}
             </div>
 
             {/* KPI row 1 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                <KpiCard label="Spend · 12 months" value={fmt(spend12mo)} sub={spendPriorYear > 0 ? `${spend12mo >= spendPriorYear ? '+' : ''}${fmt(spend12mo - spendPriorYear)} vs the year before` : 'Nothing bought the year before'} loading={isLoading} />
-                <KpiCard label="This month" value={fmt(spendThisMonth)} sub={monthLabel(endingMonth)} loading={isLoading} />
-                <KpiCard label="Committed" value={fmt(committed)} sub={`${openOrders.length} open order${openOrders.length === 1 ? '' : 's'}`} color={BLUE} loading={isLoading} />
-                <KpiCard label="Awaiting approval" value={0} sub="Requests and payment requests" loading={isLoading} />
+                <KpiCard label={tp('dashboard.spend12')} value={fmt(spend12mo)} sub={spendPriorYear > 0 ? fill(tp('dashboard.vsYearBefore'), { amount: `${spend12mo >= spendPriorYear ? '+' : ''}${fmt(spend12mo - spendPriorYear)}` }) : tp('dashboard.nothingYearBefore')} loading={isLoading} />
+                <KpiCard label={tp('dashboard.thisMonth')} value={fmt(spendThisMonth)} sub={monthLabel(endingMonth)} loading={isLoading} />
+                <KpiCard label={tp('dashboard.committed')} value={fmt(committed)} sub={fill(tp(openOrders.length === 1 ? 'dashboard.openOrders1' : 'dashboard.openOrdersN'), { n: openOrders.length })} color={BLUE} loading={isLoading} />
+                <KpiCard label={tp('dashboard.awaitingApproval')} value={0} sub={tp('dashboard.requestsAndPayReq')} loading={isLoading} />
             </div>
 
             {/* KPI row 2 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                <KpiCard label="Overdue to pay" value={fmt(payable.overdue)} sub={dpo === null ? 'No purchase history yet' : `Paying in ${Math.round(dpo)} days on average`} color={payable.overdue > 0 ? RED : undefined} loading={isLoading} />
-                <KpiCard label="Due in 7 days" value={fmt(payable.within7)} sub={`${fmt(payable.within30)} within 30 days`} color={AMBER} loading={isLoading} />
-                <KpiCard label="On-time delivery" value={onTime.pct === null ? '—' : `${onTime.pct}%`} sub={fillRatePct === null ? 'No deliveries yet' : `Fill rate ${fillRatePct}%`} color={GREEN} loading={isLoading} />
-                <KpiCard label="Price rises · 90 days" value={fmt(priceRises.impact)} sub={`${priceRises.count} product${priceRises.count === 1 ? '' : 's'} dearer`} color={priceRises.count > 0 ? RED : undefined} loading={isLoading} />
+                <KpiCard label={tp('dashboard.overdueToPay')} value={fmt(payable.overdue)} sub={dpo === null ? tp('dashboard.noHistory') : fill(tp('dashboard.payingInDays'), { n: Math.round(dpo) })} color={payable.overdue > 0 ? RED : undefined} loading={isLoading} />
+                <KpiCard label={tp('dashboard.due7')} value={fmt(payable.within7)} sub={fill(tp('dashboard.within30'), { amount: fmt(payable.within30) })} color={AMBER} loading={isLoading} />
+                <KpiCard label={tp('dashboard.onTime')} value={onTime.pct === null ? '—' : `${onTime.pct}%`} sub={fillRatePct === null ? tp('dashboard.noDeliveries') : fill(tp('dashboard.fillRate'), { n: fillRatePct })} color={GREEN} loading={isLoading} />
+                <KpiCard label={tp('dashboard.priceRises')} value={fmt(priceRises.impact)} sub={fill(tp(priceRises.count === 1 ? 'dashboard.dearer1' : 'dashboard.dearerN'), { n: priceRises.count })} color={priceRises.count > 0 ? RED : undefined} loading={isLoading} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
@@ -286,27 +290,27 @@ const PurchaseDashboardPage: React.FC = () => {
                 <div style={{ ...cardStyle, padding: '18px 20px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
                         <Truck size={16} color={BLUE} />
-                        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Purchasing pipeline</span>
+                        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{tp('dashboard.pipeline')}</span>
                     </div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '10px' }}>What is waiting on someone today. Values in USD.</div>
-                    <PipelineRow label="Requests awaiting approval" count={0} amount={null} />
-                    <PipelineRow label="Approved, not yet ordered" count={0} amount={null} />
-                    <PipelineRow label="Orders not sent" count={draftOrders.length} amount={draftOrders.length ? draftOrders.reduce((s, po) => s + (po.total_amount || 0), 0) : null} />
-                    <PipelineRow label="Open orders (still to come)" count={openOrders.length} amount={openOrders.length ? committed : null} />
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '10px' }}>{tp('dashboard.pipelineNote')}</div>
+                    <PipelineRow label={tp('dashboard.reqAwaiting')} count={0} amount={null} />
+                    <PipelineRow label={tp('dashboard.approvedNotOrdered')} count={0} amount={null} />
+                    <PipelineRow label={tp('dashboard.ordersNotSent')} count={draftOrders.length} amount={draftOrders.length ? draftOrders.reduce((s, po) => s + (po.total_amount || 0), 0) : null} />
+                    <PipelineRow label={tp('dashboard.openOrdersStill')} count={openOrders.length} amount={openOrders.length ? committed : null} />
                     <div style={{ padding: '8px 0', borderBottom: '1px solid var(--color-border)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>Received, not billed</span>
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>{tp('dashboard.receivedNotBilled')}</span>
                             <span style={{ textAlign: 'right' }}>
                                 <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--color-text-main)' }}>{receivedNotBilled.length}</div>
                                 <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{receivedNotBilled.length ? fmt(receivedNotBilled.reduce((s, po) => s + (po.total_amount || 0), 0)) : '—'}</div>
                             </span>
                         </div>
-                        {oldestWaitingDays !== null && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>Oldest waiting {oldestWaitingDays} day{oldestWaitingDays === 1 ? '' : 's'}</div>}
+                        {oldestWaitingDays !== null && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{fill(tp(oldestWaitingDays === 1 ? 'dashboard.oldestWaiting1' : 'dashboard.oldestWaitingN'), { n: oldestWaitingDays })}</div>}
                     </div>
-                    <PipelineRow label="Draft bills" count={draftBills.length} amount={draftBills.length ? draftBills.reduce((s, po) => s + (po.total_amount || 0), 0) : null} />
+                    <PipelineRow label={tp('dashboard.draftBills')} count={draftBills.length} amount={draftBills.length ? draftBills.reduce((s, po) => s + (po.total_amount || 0), 0) : null} />
                     <div style={{ padding: '8px 0' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>Payment requests awaiting approval</span>
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>{tp('dashboard.payReqAwaiting')}</span>
                             <span style={{ textAlign: 'right' }}>
                                 <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--color-text-main)' }}>0</div>
                                 <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>—</div>
@@ -315,17 +319,17 @@ const PurchaseDashboardPage: React.FC = () => {
                     </div>
                     <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--color-border)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)' }}>LATE DELIVERIES</span>
-                            <button onClick={() => navigate('/procurement/purchase-orders')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Open report →</button>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)' }}>{tp('dashboard.lateDeliveries')}</span>
+                            <button onClick={() => navigate('/procurement/purchase-orders')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>{tp('dashboard.openReport')}</button>
                         </div>
                         {lateDeliveries.length === 0 ? (
-                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '6px' }}>No deliveries are late.</div>
+                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '6px' }}>{tp('dashboard.noLate')}</div>
                         ) : (
                             <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 {lateDeliveries.slice(0, 5).map(po => (
                                     <div key={po.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                                         <span className="d2-khmer" style={{ color: 'var(--color-text-main)' }}>{po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—'}</span>
-                                        <span style={{ color: RED, fontVariantNumeric: 'tabular-nums' }}>{Math.max(0, daysBetween(po.expected_delivery_date || today, today))}d late</span>
+                                        <span style={{ color: RED, fontVariantNumeric: 'tabular-nums' }}>{fill(tp('dashboard.daysLate'), { n: Math.max(0, daysBetween(po.expected_delivery_date || today, today)) })}</span>
                                     </div>
                                 ))}
                             </div>
@@ -337,47 +341,47 @@ const PurchaseDashboardPage: React.FC = () => {
                 <div style={{ ...cardStyle, padding: '18px 20px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
                         <Wallet size={16} color={AMBER} />
-                        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Payables</span>
+                        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{tp('dashboard.payables')}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
-                        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Owed to suppliers as of today. Each currency stays in its own; the tiles above convert to base.</span>
-                        <button onClick={() => navigate('/accounting/payable')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>Open report →</button>
+                        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{tp('dashboard.payablesNote')}</span>
+                        <button onClick={() => navigate('/accounting/payable')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>{tp('dashboard.openReport')}</button>
                     </div>
                     <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                        <PayableTile label="Overdue" value={payable.overdue} color={RED} />
-                        <PayableTile label="Due in 7 days" value={payable.within7} color={AMBER} />
-                        <PayableTile label="Due in 30 days" value={payable.within30} color={BLUE} />
+                        <PayableTile label={tp('dashboard.overdue')} value={payable.overdue} color={RED} />
+                        <PayableTile label={tp('dashboard.due7')} value={payable.within7} color={AMBER} />
+                        <PayableTile label={tp('dashboard.due30')} value={payable.within30} color={BLUE} />
                     </div>
                     {/* Scrolls sideways once a column is dragged wider (the card clips overflow). */}
                     <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                <th style={{ textAlign: 'left', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Currency</th>
-                                <th style={{ textAlign: 'right', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>USD<div style={{ fontWeight: 400, textTransform: 'none' }}>{payable.billCount} bill{payable.billCount === 1 ? '' : 's'}</div></th>
+                                <th style={{ textAlign: 'left', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{tp('dashboard.currency')}</th>
+                                <th style={{ textAlign: 'right', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>USD<div style={{ fontWeight: 400, textTransform: 'none' }}>{fill(tp(payable.billCount === 1 ? 'dashboard.bills1' : 'dashboard.billsN'), { n: payable.billCount })}</div></th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td style={{ padding: '6px 0', color: 'var(--color-text-main)' }}>Overdue</td><td style={{ padding: '6px 0', textAlign: 'right' }}>{fmt(payable.overdue)}</td></tr>
-                            <tr><td style={{ padding: '6px 0', color: 'var(--color-text-main)' }}>Due in 7 days</td><td style={{ padding: '6px 0', textAlign: 'right' }}>{fmt(payable.within7)}</td></tr>
-                            <tr><td style={{ padding: '6px 0', color: 'var(--color-text-main)' }}>Due in 30 days</td><td style={{ padding: '6px 0', textAlign: 'right' }}>{fmt(payable.within30)}</td></tr>
-                            <tr style={{ borderTop: '1px solid var(--color-border)', fontWeight: 700 }}><td style={{ padding: '8px 0', color: 'var(--color-text-main)' }}>Outstanding</td><td style={{ padding: '8px 0', textAlign: 'right' }}>{fmt(payable.outstanding)}</td></tr>
+                            <tr><td style={{ padding: '6px 0', color: 'var(--color-text-main)' }}>{tp('dashboard.overdue')}</td><td style={{ padding: '6px 0', textAlign: 'right' }}>{fmt(payable.overdue)}</td></tr>
+                            <tr><td style={{ padding: '6px 0', color: 'var(--color-text-main)' }}>{tp('dashboard.due7')}</td><td style={{ padding: '6px 0', textAlign: 'right' }}>{fmt(payable.within7)}</td></tr>
+                            <tr><td style={{ padding: '6px 0', color: 'var(--color-text-main)' }}>{tp('dashboard.due30')}</td><td style={{ padding: '6px 0', textAlign: 'right' }}>{fmt(payable.within30)}</td></tr>
+                            <tr style={{ borderTop: '1px solid var(--color-border)', fontWeight: 700 }}><td style={{ padding: '8px 0', color: 'var(--color-text-main)' }}>{tp('dashboard.outstanding')}</td><td style={{ padding: '8px 0', textAlign: 'right' }}>{fmt(payable.outstanding)}</td></tr>
                         </tbody>
                     </table>
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '10px' }}>
-                        Days payable outstanding: {dpo === null ? '—' : `${Math.round(dpo)} days`} — what you owe, in days of buying.
+                        {fill(tp('dashboard.dpo'), { value: dpo === null ? '—' : fill(tp('dashboard.nDays'), { n: Math.round(dpo) }) })}
                     </div>
                 </div>
             </div>
 
             {/* Spend by month */}
             <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Spend by month</div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Posted supplier bills less supplier returns, before VAT, in USD.</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{tp('dashboard.spendByMonth')}</div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>{tp('dashboard.spendByMonthNote')}</div>
                 <div style={{ height: '260px' }}>
                     {isLoading ? (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading…</div>
+                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{tp('common.loadingEllipsis')}</div>
                     ) : (
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={spendByMonth} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -387,7 +391,7 @@ const PurchaseDashboardPage: React.FC = () => {
                                 <Tooltip
                                     contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
                                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    formatter={((value: any) => [fmt(Number(value)), 'Spend']) as any}
+                                    formatter={((value: any) => [fmt(Number(value)), tp('dashboard.spend')]) as any}
                                 />
                                 <Bar dataKey="spend" fill={BLUE} radius={[4, 4, 0, 0]} maxBarSize={36} />
                             </BarChart>

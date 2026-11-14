@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { rpcWithSession } from '../utils/dbFunctions';
 import type { StockAdjustment, StockAdjustmentReason } from '../types';
+import { tNow } from '../i18n/translate';
 
 // Reasons that correct the books rather than record a real-world loss: an
 // opening balance, a recount, or something that doesn't fit the others.
@@ -48,7 +49,7 @@ export function useStockAdjustments() {
                 setAdjustments([]);
             } else {
                 console.error('Failed to fetch stock adjustments:', error);
-                showToast('Failed to fetch stock adjustments: ' + message, 'error');
+                showToast(tNow('ui.store.stockAdj.fetchFailed', { error: message }), 'error');
             }
         } finally {
             if (!silent) setIsLoading(false);
@@ -108,7 +109,7 @@ export function useStockAdjustments() {
     // other ledger-backed record in this app. The delete only matches a
     // Draft, so a stale page can't delete one that was just posted.
     const deleteAdjustment = useCallback(async (id: string, status: string) => {
-        if (status !== 'Draft') throw new Error('Posted adjustments cannot be deleted — make a correcting adjustment instead.');
+        if (status !== 'Draft') throw new Error(tNow('ui.store.stockAdj.postedNoDelete'));
         const { data: deleted, error } = await supabase.from('stock_adjustments').delete().eq('id', id).eq('status', 'Draft').select('id');
         if (error) throw new Error(errorMessage(error));
         await fetchAdjustments(true);
@@ -116,7 +117,7 @@ export function useStockAdjustments() {
             // Nothing deleted: either it was posted meanwhile, or another tab
             // already deleted it (then the draft is gone, which is what was asked).
             const { data: still } = await supabase.from('stock_adjustments').select('status').eq('id', id).maybeSingle();
-            if (still) throw new Error('This adjustment has been posted, so it was not deleted.');
+            if (still) throw new Error(tNow('ui.store.stockAdj.postedNotDeleted'));
         }
     }, [fetchAdjustments]);
 
@@ -128,14 +129,16 @@ export function useStockAdjustments() {
     // or user) waits and is then refused. Removing more than is on hand is
     // refused rather than clamped.
     const postAdjustment = useCallback(async (adjustment: StockAdjustment, createdBy?: string) => {
-        if (adjustment.status !== 'Draft') throw new Error('This adjustment has already been posted.');
+        if (adjustment.status !== 'Draft') throw new Error(tNow('ui.store.stockAdj.alreadyPosted'));
         const { data, error } = await rpcWithSession('post_stock_adjustment', { p_id: adjustment.id, p_created_by: createdBy || null });
         await fetchAdjustments(true);
         if (error) throw new Error(rpcMessage(error));
         const ledger = (data as { ledger?: string } | null)?.ledger;
         if (ledger === 'no_accounts') {
             const corrective = CORRECTIVE_REASONS.has(adjustment.reason);
-            showToast(`Adjustment posted, but no Inventory or ${corrective ? 'Equity' : 'Expense'} account exists in the Chart of Accounts — no ledger entry was posted.`, 'info');
+            showToast(corrective
+                ? tNow('ui.store.stockAdj.postedNoEquityAccount')
+                : tNow('ui.store.stockAdj.postedNoExpenseAccount'), 'info');
         }
     }, [fetchAdjustments, showToast]);
 
@@ -147,7 +150,7 @@ export function useStockAdjustments() {
 const rpcMessage = (error: unknown): string => {
     const message = errorMessage(error);
     if (/stock_adjustment/i.test(message) && /could not find the function|schema cache|does not exist/i.test(message)) {
-        return 'Adjust Stock needs a one-time database update before it can post or edit: run migrations/add_stock_adjustment_posting.sql in this store\'s Supabase SQL editor.';
+        return tNow('ui.store.stockAdj.needsUpdate');
     }
     return message;
 };
@@ -160,10 +163,10 @@ const rpcMessage = (error: unknown): string => {
 export function checkLines(lines: { product_id?: string | null; quantity: number; unit_cost: number }[]): string | null {
     const seen = new Set<string>();
     for (const l of lines) {
-        if (!l.product_id) return 'Every line needs a product.';
-        if (!Number.isFinite(l.quantity) || !Number.isInteger(l.quantity) || l.quantity === 0) return 'Quantities must be whole numbers other than zero.';
-        if (!Number.isFinite(l.unit_cost) || l.unit_cost < 0) return 'Unit cost can’t be negative.';
-        if (seen.has(l.product_id)) return 'A product is on more than one line. Combine them into one line.';
+        if (!l.product_id) return tNow('ui.store.stockAdj.lineNeedsProduct');
+        if (!Number.isFinite(l.quantity) || !Number.isInteger(l.quantity) || l.quantity === 0) return tNow('ui.store.stockAdj.wholeQty');
+        if (!Number.isFinite(l.unit_cost) || l.unit_cost < 0) return tNow('ui.store.stockAdj.negativeCost');
+        if (seen.has(l.product_id)) return tNow('ui.store.stockAdj.duplicateProduct');
         seen.add(l.product_id);
     }
     return null;

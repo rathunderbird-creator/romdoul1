@@ -3,6 +3,7 @@ import { useStore, isRpcMissingError } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { supabase } from '../lib/supabase';
 import { Lock, X } from 'lucide-react';
+import { useTx } from './useTx';
 
 interface PinPromptProps {
     isOpen: boolean;
@@ -16,9 +17,10 @@ const PinPrompt: React.FC<PinPromptProps> = ({
     isOpen,
     onClose,
     onSuccess,
-    title = "Enter Password",
-    description = "Please enter your password to continue"
+    title,
+    description
 }) => {
+    const tx = useTx();
     const { currentUser } = useStore();
     const { showToast } = useToast();
     const [pin, setPin] = useState('');
@@ -42,7 +44,7 @@ const PinPrompt: React.FC<PinPromptProps> = ({
 
         const entered = pin.trim();
         if (!entered || !currentUser) {
-            showToast('Please enter your password', 'error');
+            showToast(tx('ui.components.pin.pleaseEnter', 'Please enter your password'), 'error');
             return;
         }
 
@@ -66,14 +68,14 @@ const PinPrompt: React.FC<PinPromptProps> = ({
             } else {
                 // Network/server failure — never report it as a wrong password.
                 console.error('check_pin failed:', error);
-                showToast('Could not verify password — check the connection and try again', 'error');
+                showToast(tx('ui.components.pin.couldNotVerify', 'Could not verify password — check the connection and try again'), 'error');
                 return;
             }
             if (ok) {
                 onSuccess();
                 onClose();
             } else {
-                showToast('Incorrect password', 'error');
+                showToast(tx('ui.components.pin.incorrect', 'Incorrect password'), 'error');
                 setPin('');
                 inputRef.current?.focus();
             }
@@ -141,10 +143,10 @@ const PinPrompt: React.FC<PinPromptProps> = ({
                         <Lock size={24} />
                     </div>
                     <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px', color: 'var(--color-text)' }}>
-                        {title}
+                        {title ?? tx('ui.components.pin.enterPassword', 'Enter Password')}
                     </h3>
                     <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)', textAlign: 'center' }}>
-                        {description}
+                        {description ?? tx('ui.components.pin.description', 'Please enter your password to continue')}
                     </p>
                 </div>
 
@@ -155,7 +157,7 @@ const PinPrompt: React.FC<PinPromptProps> = ({
                         value={pin}
                         onChange={(e) => setPin(e.target.value)}
                         className="search-input"
-                        placeholder="Enter Password"
+                        placeholder={tx('ui.components.pin.enterPassword', 'Enter Password')}
                         style={{
                             width: '100%',
                             padding: '16px',
@@ -179,7 +181,7 @@ const PinPrompt: React.FC<PinPromptProps> = ({
                                 cursor: 'pointer'
                             }}
                         >
-                            Cancel
+                            {tx('common.cancel', 'Cancel')}
                         </button>
                         <button
                             type="submit"
@@ -193,7 +195,7 @@ const PinPrompt: React.FC<PinPromptProps> = ({
                                 cursor: 'pointer'
                             }}
                         >
-                            Unlock
+                            {tx('ui.components.pin.unlock', 'Unlock')}
                         </button>
                     </div>
                 </form>

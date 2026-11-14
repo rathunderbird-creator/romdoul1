@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { txNow } from './useTx';
 
 interface Props {
     children?: ReactNode;
@@ -69,9 +70,9 @@ class ErrorBoundary extends Component<Props, State> {
                             padding: '14px 16px 14px 20px'
                         }}>
                             <div style={{ minWidth: 0 }}>
-                                <p style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>A new version is available.</p>
+                                <p style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>{txNow('ui.components.errorBoundary.newVersion', 'A new version is available.')}</p>
                                 <p style={{ fontSize: '12.5px', color: '#6B7280', margin: '2px 0 0' }}>
-                                    This page was loaded before the latest update. Reload to get it.
+                                    {txNow('ui.components.errorBoundary.loadedBefore', 'This page was loaded before the latest update. Reload to get it.')}
                                 </p>
                             </div>
                             <button
@@ -89,7 +90,7 @@ class ErrorBoundary extends Component<Props, State> {
                                     flexShrink: 0
                                 }}
                             >
-                                Reload
+                                {txNow('ui.components.errorBoundary.reload', 'Reload')}
                             </button>
                         </div>
                     </div>
@@ -115,8 +116,8 @@ class ErrorBoundary extends Component<Props, State> {
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)'
                     }}>
-                        <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' }}>Something went wrong</h1>
-                        <p style={{ color: '#9CA3AF', marginBottom: '8px' }}>The application encountered an error and crashed.</p>
+                        <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' }}>{txNow('ui.components.errorBoundary.wentWrong', 'Something went wrong')}</h1>
+                        <p style={{ color: '#9CA3AF', marginBottom: '8px' }}>{txNow('ui.components.errorBoundary.crashed', 'The application encountered an error and crashed.')}</p>
                         <div style={{
                             marginTop: '20px',
                             padding: '16px',
@@ -144,7 +145,7 @@ class ErrorBoundary extends Component<Props, State> {
                                 fontWeight: 500
                             }}
                         >
-                            Reload Page
+                            {txNow('ui.components.errorBoundary.reloadPage', 'Reload Page')}
                         </button>
                     </div>
                 </div>

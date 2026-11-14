@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useLocationTree } from '../../hooks/useLocationTree';
 import { getShippingCoColor } from '../../utils/orderUtils';
 import {
@@ -52,7 +54,9 @@ const countChip = (n: number, title: string) => n > 0 ? (
 const PointRow: React.FC<{
     point: ShippingPoint; note?: string; busy: boolean;
     onEdit: () => void; onToggle: () => void; onDelete: () => void;
-}> = ({ point, note, busy, onEdit, onToggle, onDelete }) => (
+}> = ({ point, note, busy, onEdit, onToggle, onDelete }) => {
+    const { t } = useLanguage();
+    return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '6px 10px', borderRadius: '8px', background: 'var(--color-bg)', opacity: point.is_shutdown ? 0.65 : 1 }}>
         <MapPin size={13} style={{ marginTop: '3px', flexShrink: 0, color: getShippingCoColor(point.courier || '') }} />
         <div style={{ flex: 1, minWidth: 0, fontSize: '12px', lineHeight: 1.4 }}>
@@ -60,7 +64,7 @@ const PointRow: React.FC<{
                 {point.courier && <span style={{ fontWeight: 800, color: getShippingCoColor(point.courier) }}>{point.courier}</span>}
                 <span style={{ fontWeight: 600, color: 'var(--color-text-main)', wordBreak: 'break-word' }}>{point.name}</span>
                 {point.is_shutdown && (
-                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#b91c1c', background: '#fee2e2', padding: '1px 6px', borderRadius: '999px' }}>បិទបណ្តោះអាសន្ន · Shutdown</span>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#b91c1c', background: '#fee2e2', padding: '1px 6px', borderRadius: '999px' }}>{t('ui.admin.provinces.shutdownBadge')}</span>
                 )}
             </div>
             {(point.phone || point.contact_name) && (
@@ -68,12 +72,13 @@ const PointRow: React.FC<{
             )}
             {note && <div style={{ color: '#b45309', display: 'flex', alignItems: 'center', gap: '4px' }}><AlertTriangle size={11} />{note}</div>}
         </div>
-        <button onClick={onToggle} disabled={busy} title={point.is_shutdown ? 'Reactivate' : 'Temporarily shut down'} aria-label={point.is_shutdown ? `Reactivate ${point.name}` : `Shut down ${point.name}`}
+        <button onClick={onToggle} disabled={busy} title={point.is_shutdown ? t('ui.admin.provinces.reactivate') : t('ui.admin.provinces.tempShutDown')} aria-label={fill(point.is_shutdown ? t('ui.admin.provinces.reactivateName') : t('ui.admin.provinces.shutDownName'), { name: point.name })}
             style={{ ...smallBtn, color: point.is_shutdown ? '#16a34a' : '#d97706' }}><Power size={13} /></button>
-        <button onClick={onEdit} disabled={busy} title="Edit" aria-label={`Edit ${point.name}`} style={{ ...smallBtn, color: 'var(--color-text-secondary)' }}><Edit2 size={13} /></button>
-        <button onClick={onDelete} disabled={busy} title="Delete" aria-label={`Delete ${point.name}`} style={{ ...smallBtn, color: '#ef4444' }}><Trash2 size={13} /></button>
+        <button onClick={onEdit} disabled={busy} title={t('common.edit')} aria-label={fill(t('ui.admin.provinces.editName'), { name: point.name })} style={{ ...smallBtn, color: 'var(--color-text-secondary)' }}><Edit2 size={13} /></button>
+        <button onClick={onDelete} disabled={busy} title={t('common.delete')} aria-label={fill(t('ui.admin.provinces.deleteName'), { name: point.name })} style={{ ...smallBtn, color: '#ef4444' }}><Trash2 size={13} /></button>
     </div>
-);
+    );
+};
 
 // ─── Add / edit a shipping point ───────────────────────────────────────────
 
@@ -93,6 +98,7 @@ const PointEditor: React.FC<{
     onChange: (s: EditorState) => void; onCancel: () => void; onSaved: () => void;
 }> = ({ state, tree, couriers, onChange, onCancel, onSaved }) => {
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const f = state.fields;
@@ -108,24 +114,24 @@ const PointEditor: React.FC<{
     const submit = async () => {
         setError(null);
         const ll = parseLatLng(state.latLng);
-        if (!f.name.trim()) { setError('សូមបញ្ចូលឈ្មោះទីតាំង (Enter a name)'); return; }
+        if (!f.name.trim()) { setError(t('ui.admin.provinces.enterName')); return; }
         if (!ll) {
             setError(/^\s*-?\d{3}\.\d+\s*,\s*-?\d{1,2}\.\d+\s*$/.test(state.latLng)
-                ? 'Latitude and longitude look swapped. Enter latitude first (about 10–14.7), then longitude (about 102–108), e.g. 11.5564, 104.9282.'
-                : 'Enter the position as "latitude, longitude" (e.g. 11.5564, 104.9282) or paste a Google Maps link.');
+                ? t('ui.admin.provinces.swapped')
+                : t('ui.admin.provinces.enterPosition'));
             return;
         }
         const unchanged = state.id !== null && state.latLng.trim() === (state.originalLatLng || '').trim();
         if (!isInCambodia(ll[0], ll[1]) && !unchanged) {
             setError(isInCambodia(ll[1], ll[0])
-                ? `${ll[0]}, ${ll[1]} is outside Cambodia — latitude and longitude look swapped. Enter latitude first (about 10–14.7), then longitude (about 102–108).`
-                : `${ll[0]}, ${ll[1]} is outside Cambodia. Latitude is about 10–14.7 and longitude about 102–108.`);
+                ? fill(t('ui.admin.provinces.outsideSwapped'), { pos: `${ll[0]}, ${ll[1]}` })
+                : fill(t('ui.admin.provinces.outside'), { pos: `${ll[0]}, ${ll[1]}` }));
             return;
         }
         setSaving(true);
         try {
             await saveShippingPoint({ ...f, lat: ll[0], lng: ll[1] }, state.id);
-            showToast(`Shipping point saved: ${f.name.trim()}`, 'success');
+            showToast(fill(t('ui.admin.provinces.saved'), { name: f.name.trim() }), 'success');
             onSaved();
         } catch (e) {
             setError(errText(e));
@@ -135,20 +141,20 @@ const PointEditor: React.FC<{
     };
 
     return (
-        <div role="dialog" aria-modal="true" aria-label={state.id ? 'Edit shipping point' : 'Add shipping point'}
+        <div role="dialog" aria-modal="true" aria-label={state.id ? t('ui.admin.provinces.editPoint') : t('ui.admin.provinces.addPoint')}
             style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
             <div style={{ ...cardStyle, width: '100%', maxWidth: '520px', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-text-main)' }}>{state.id ? 'Edit shipping point' : 'Add shipping point'}</div>
-                    <button onClick={onCancel} aria-label="Close" style={{ ...smallBtn, color: 'var(--color-text-secondary)' }}><X size={18} /></button>
+                    <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-text-main)' }}>{state.id ? t('ui.admin.provinces.editPoint') : t('ui.admin.provinces.addPoint')}</div>
+                    <button onClick={onCancel} aria-label={t('common.close')} style={{ ...smallBtn, color: 'var(--color-text-secondary)' }}><X size={18} /></button>
                 </div>
                 {error && <div style={{ padding: '8px 10px', borderRadius: '8px', background: '#fee2e2', color: '#b91c1c', fontSize: '12.5px' }}>{error}</div>}
                 <div>
-                    <label style={fieldLabel}>Name / ឈ្មោះទីតាំង *</label>
+                    <label style={fieldLabel}>{t('ui.admin.provinces.fName')}</label>
                     <input className="search-input" style={fieldStyle} value={f.name} onChange={e => set({ name: e.target.value })} />
                 </div>
                 <div>
-                    <label style={fieldLabel}>Courier / សេវាដឹកជញ្ជូន</label>
+                    <label style={fieldLabel}>{t('ui.admin.provinces.fCourier')}</label>
                     <select style={{ ...fieldStyle, color: f.courier ? getShippingCoColor(f.courier) : 'var(--color-text-main)' }} value={f.courier} onChange={e => set({ courier: e.target.value })}>
                         <option value="">—</option>
                         {courierOptions.map(c => <option key={c} value={c} style={{ color: getShippingCoColor(c) }}>{c}</option>)}
@@ -156,21 +162,21 @@ const PointEditor: React.FC<{
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
                     <div>
-                        <label style={fieldLabel}>Province / ខេត្ត</label>
+                        <label style={fieldLabel}>{t('ui.admin.provinces.fProvince')}</label>
                         <select style={fieldStyle} value={pp.value} onChange={e => set({ province: e.target.value, district: '', commune: '' })}>
                             <option value="">—</option>
                             {pp.options.map(o => <option key={o.code} value={o.khmer}>{locLabel(o)}</option>)}
                         </select>
                     </div>
                     <div>
-                        <label style={fieldLabel}>District / ស្រុក</label>
+                        <label style={fieldLabel}>{t('ui.admin.provinces.fDistrict')}</label>
                         <select style={fieldStyle} value={dp.value} onChange={e => set({ district: e.target.value, commune: '' })} disabled={!f.province}>
                             <option value="">—</option>
                             {dp.options.map(o => <option key={o.code} value={o.khmer}>{locLabel(o)}</option>)}
                         </select>
                     </div>
                     <div>
-                        <label style={fieldLabel}>Commune / ឃុំ</label>
+                        <label style={fieldLabel}>{t('ui.admin.provinces.fCommune')}</label>
                         <select style={fieldStyle} value={cp.value} onChange={e => set({ commune: e.target.value })} disabled={!f.district}>
                             <option value="">—</option>
                             {cp.options.map(o => <option key={o.code} value={o.khmer}>{locLabel(o)}</option>)}
@@ -179,33 +185,33 @@ const PointEditor: React.FC<{
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
                     <div>
-                        <label style={fieldLabel}>Phone / លេខទូរស័ព្ទ</label>
+                        <label style={fieldLabel}>{t('ui.admin.provinces.fPhone')}</label>
                         <input className="search-input" style={fieldStyle} value={f.phone} onChange={e => set({ phone: e.target.value })} />
                     </div>
                     <div>
-                        <label style={fieldLabel}>Contact name / ឈ្មោះអ្នកទទួល</label>
+                        <label style={fieldLabel}>{t('ui.admin.provinces.fContact')}</label>
                         <input className="search-input" style={fieldStyle} value={f.contactName} onChange={e => set({ contactName: e.target.value })} />
                     </div>
                 </div>
                 <div>
-                    <label style={fieldLabel}>Position (latitude, longitude) *</label>
-                    <input className="search-input" style={fieldStyle} value={state.latLng} placeholder="11.5564, 104.9282 — or paste a Google Maps link"
+                    <label style={fieldLabel}>{t('ui.admin.provinces.fPosition')}</label>
+                    <input className="search-input" style={fieldStyle} value={state.latLng} placeholder={t('ui.admin.provinces.positionPlaceholder')}
                         onChange={e => onChange({ ...state, latLng: e.target.value })} />
                     {state.suggestion && !parseLatLng(state.latLng) && (
                         <button onClick={() => onChange({ ...state, latLng: `${state.suggestion!.lat.toFixed(6)}, ${state.suggestion!.lng.toFixed(6)}` })}
                             style={{ marginTop: '6px', background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}>
-                            Use the average of the {state.suggestion.count} point{state.suggestion.count === 1 ? '' : 's'} in {state.suggestion.where} (approximate)
+                            {fill(state.suggestion.count === 1 ? t('ui.admin.provinces.useAverageOne') : t('ui.admin.provinces.useAverageMany'), { n: state.suggestion.count, where: state.suggestion.where })}
                         </button>
                     )}
-                    <div style={helpStyle}>For an exact pin, drop it on the map on the Shipping Points page.</div>
+                    <div style={helpStyle}>{t('ui.admin.provinces.exactPinHelp')}</div>
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer' }}>
                     <input type="checkbox" checked={f.isShutdown} onChange={e => set({ isShutdown: e.target.checked })} style={{ width: '15px', height: '15px', accentColor: 'var(--color-primary)' }} />
-                    បិទទីតាំងនេះជាបណ្តោះអាសន្ន (Temporarily shut down)
+                    {t('ui.admin.provinces.shutdownCheckbox')}
                 </label>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                    <button onClick={onCancel} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
-                    <button onClick={submit} disabled={saving} className="primary-button" style={{ padding: '8px 16px', fontSize: '13px', cursor: saving ? 'wait' : 'pointer' }}>{saving ? 'Saving…' : 'Save'}</button>
+                    <button onClick={onCancel} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer', fontSize: '13px' }}>{t('common.cancel')}</button>
+                    <button onClick={submit} disabled={saving} className="primary-button" style={{ padding: '8px 16px', fontSize: '13px', cursor: saving ? 'wait' : 'pointer' }}>{saving ? t('ui.admin.telegram.saving') : t('common.save')}</button>
                 </div>
             </div>
         </div>
@@ -224,6 +230,7 @@ const ProvincesSection: React.FC = () => {
         restoreDistrictEntry, restoreCommuneEntry, shippingCompanies,
     } = useStore();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const { tree, loaded } = useLocationTree();
 
     const [points, setPoints] = useState<ShippingPoint[] | null>(null);
@@ -250,7 +257,7 @@ const ProvincesSection: React.FC = () => {
     }, []);
     useEffect(() => { loadPoints(); }, [loadPoints]);
 
-    const reportError = (err: unknown) => showToast('Failed to save: ' + errText(err), 'error');
+    const reportError = (err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: errText(err) }), 'error');
 
     const toggle = (set: Set<string>, setSet: (s: Set<string>) => void, code: string) => {
         const next = new Set(set);
@@ -320,20 +327,20 @@ const ProvincesSection: React.FC = () => {
         Promise.resolve(addCustomCommune(districtCode, name)).catch(reportError);
         setCommuneDrafts(prev => ({ ...prev, [districtCode]: '' }));
     };
-    const pointsNote = (n: number) => n > 0 ? `\n\n${n} shipping point${n === 1 ? '' : 's'} there will move up a level (nothing is deleted).` : '';
+    const pointsNote = (n: number) => n > 0 ? '\n\n' + fill(n === 1 ? t('ui.admin.provinces.movesUpOne') : t('ui.admin.provinces.movesUpMany'), { n }) : '';
     const handleRemoveDistrict = (d: LocDistrict) => {
         const n = placement.districtCounts.get(d.code) || 0;
         const msg = d.isCustom
-            ? `Delete the custom district "${d.khmer}" and its custom communes?${pointsNote(n)}`
-            : `Hide the district "${locLabel(d)}" from the address pickers?\nYou can restore it later from "Hidden".${pointsNote(n)}`;
+            ? fill(t('ui.admin.provinces.confirmDeleteDistrict'), { name: d.khmer }) + pointsNote(n)
+            : fill(t('ui.admin.provinces.confirmHideDistrict'), { name: locLabel(d) }) + pointsNote(n);
         if (!window.confirm(msg)) return;
         Promise.resolve(removeDistrictEntry(d.code, !!d.isCustom)).catch(reportError);
     };
     const handleRemoveCommune = (c: LocCommune) => {
         const n = placement.byCommune.get(c.code)?.length || 0;
         const msg = c.isCustom
-            ? `Delete the custom commune "${c.khmer}"?${pointsNote(n)}`
-            : `Hide the commune "${locLabel(c)}" from the address pickers?\nYou can restore it later from "Hidden".${pointsNote(n)}`;
+            ? fill(t('ui.admin.provinces.confirmDeleteCommune'), { name: c.khmer }) + pointsNote(n)
+            : fill(t('ui.admin.provinces.confirmHideCommune'), { name: locLabel(c) }) + pointsNote(n);
         if (!window.confirm(msg)) return;
         Promise.resolve(removeCommuneEntry(c.code, !!c.isCustom)).catch(reportError);
     };
@@ -380,16 +387,16 @@ const ProvincesSection: React.FC = () => {
         try {
             await setShippingPointShutdown(pt.id, !pt.is_shutdown);
             await loadPoints();
-            showToast(`"${pt.name}" is now ${pt.is_shutdown ? 'reactivated' : 'temporarily shut down'}`, 'success');
+            showToast(fill(pt.is_shutdown ? t('ui.admin.provinces.nowReactivated') : t('ui.admin.provinces.nowShutDown'), { name: pt.name }), 'success');
         } catch (e) { reportError(e); } finally { setBusyPoint(null); }
     };
     const removePoint = async (pt: ShippingPoint) => {
-        if (!window.confirm(`តើអ្នកពិតជាចង់លុបទីតាំង "${pt.name}" មែនទេ?\nDelete this shipping point permanently?`)) return;
+        if (!window.confirm(fill(t('ui.admin.provinces.confirmDeletePoint'), { name: pt.name }))) return;
         setBusyPoint(pt.id);
         try {
             await deleteShippingPoint(pt.id);
             await loadPoints();
-            showToast(`Shipping point removed: ${pt.name}`, 'success');
+            showToast(fill(t('ui.admin.provinces.removed'), { name: pt.name }), 'success');
         } catch (e) { reportError(e); } finally { setBusyPoint(null); }
     };
     const renderPoints = (list: ShippingPoint[], indent: string) => list.length > 0 && (
@@ -411,27 +418,26 @@ const ProvincesSection: React.FC = () => {
     return (
         <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '760px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
-                <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>Provinces</div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{t('ui.admin.salesSetup.sections.provinces')}</div>
                 <div style={{ ...helpStyle, marginTop: '4px' }}>
-                    The address list the checkout form and the Shipping Points page use. Provinces are fixed; add a district or commune of your own, or hide one that doesn't apply.
-                    Each commune lists the shipping points in it — add, edit or remove them here, or pin them on the map on the Shipping Points page.
+                    {t('ui.admin.provinces.intro')}
                 </div>
             </div>
             <div style={{ position: 'relative' }}>
                 <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
                 <input
-                    type="text" value={query} placeholder="Search province, district, commune or shipping point..." className="search-input"
-                    onChange={e => setQuery(e.target.value)} aria-label="Search provinces and shipping points"
+                    type="text" value={query} placeholder={t('ui.admin.provinces.searchPlaceholder')} className="search-input"
+                    onChange={e => setQuery(e.target.value)} aria-label={t('ui.admin.provinces.searchAria')}
                     style={{ width: '100%', padding: '9px 12px 9px 34px', boxSizing: 'border-box' }}
                 />
             </div>
             <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                {points === null && !pointsError && <span>Loading shipping points…</span>}
-                {points !== null && <span>{totalPoints} shipping points · {totalPoints - placement.unplaced.length} placed in the tree</span>}
-                {pointsError && <span style={{ color: '#b91c1c' }}>Couldn't load shipping points: {pointsError} <button onClick={loadPoints} style={{ ...smallBtn, display: 'inline', color: 'var(--color-primary)', fontWeight: 600 }}>Retry</button></span>}
+                {points === null && !pointsError && <span>{t('ui.admin.provinces.loadingPoints')}</span>}
+                {points !== null && <span>{fill(t('ui.admin.provinces.pointsSummary'), { n: totalPoints, placed: totalPoints - placement.unplaced.length })}</span>}
+                {pointsError && <span style={{ color: '#b91c1c' }}>{fill(t('ui.admin.provinces.loadFailed'), { error: pointsError })} <button onClick={loadPoints} style={{ ...smallBtn, display: 'inline', color: 'var(--color-primary)', fontWeight: 600 }}>{t('ui.admin.provinces.retry')}</button></span>}
             </div>
             {!loaded ? (
-                <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Loading…</div>
+                <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.provinces.loading')}</div>
             ) : (
                 <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', maxHeight: '620px', overflowY: 'auto' }}>
                     {/* Points whose province matches nothing — never dropped. */}
@@ -441,15 +447,15 @@ const ProvincesSection: React.FC = () => {
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: '13px', fontWeight: 700, color: '#b45309' }}>
                                 {(q || unplacedOpen) ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                                 <AlertTriangle size={14} />
-                                <span>Unplaced points</span>
-                                <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>no matching province — edit one to place it</span>
-                                <span style={{ marginLeft: 'auto' }}>{countChip(unplaced.length, 'Unplaced shipping points')}</span>
+                                <span>{t('ui.admin.provinces.unplaced')}</span>
+                                <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{t('ui.admin.provinces.unplacedHelp')}</span>
+                                <span style={{ marginLeft: 'auto' }}>{countChip(unplaced.length, t('ui.admin.provinces.unplacedChip'))}</span>
                             </button>
                             {(q || unplacedOpen) && renderPoints(unplaced, '22px')}
                         </div>
                     )}
                     {view.length === 0 && unplaced.length === 0 && (
-                        <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>No match for "{q}".</div>
+                        <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{fill(t('ui.admin.provinces.noMatch'), { q })}</div>
                     )}
                     {view.map(({ node: p, districts, points: pPoints }) => {
                         const isOpen = q ? true : openProvinces.has(p.code);
@@ -463,15 +469,15 @@ const ProvincesSection: React.FC = () => {
                                         {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                                         <span>{p.khmer} ({p.latin})</span>
                                         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)', flexShrink: 0 }}>
-                                            {visibleOnly(p.districts).length} districts
-                                            {countChip(placement.provinceCounts.get(p.code) || 0, 'Shipping points in this province')}
+                                            {fill(t('ui.admin.provinces.nDistricts'), { n: visibleOnly(p.districts).length })}
+                                            {countChip(placement.provinceCounts.get(p.code) || 0, t('ui.admin.provinces.chipProvince'))}
                                         </span>
                                     </button>
-                                    <div style={{ marginRight: '10px' }}>{addPointBtn(`Add a shipping point in ${p.latin}`, () => openAdd(p))}</div>
+                                    <div style={{ marginRight: '10px' }}>{addPointBtn(fill(t('ui.admin.provinces.addPointIn'), { name: p.latin }), () => openAdd(p))}</div>
                                 </div>
                                 {isOpen && pPoints.length > 0 && (
                                     <div style={{ padding: '0 0 4px 22px' }}>
-                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', padding: '2px 12px' }}>No district set</div>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', padding: '2px 12px' }}>{t('ui.admin.provinces.noDistrict')}</div>
                                         {renderPoints(pPoints, '12px')}
                                     </div>
                                 )}
@@ -486,14 +492,14 @@ const ProvincesSection: React.FC = () => {
                                                 >
                                                     {dOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                                                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{locLabel(d)}</span>
-                                                    {d.isCustom && <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '1px 6px', borderRadius: '999px' }}>Custom</span>}
+                                                    {d.isCustom && <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '1px 6px', borderRadius: '999px' }}>{t('ui.admin.provinces.custom')}</span>}
                                                     <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--color-text-secondary)', flexShrink: 0 }}>
-                                                        {visibleOnly(d.communes).length} communes
-                                                        {countChip(placement.districtCounts.get(d.code) || 0, 'Shipping points in this district')}
+                                                        {fill(t('ui.admin.provinces.nCommunes'), { n: visibleOnly(d.communes).length })}
+                                                        {countChip(placement.districtCounts.get(d.code) || 0, t('ui.admin.provinces.chipDistrict'))}
                                                     </span>
                                                 </button>
-                                                {addPointBtn(`Add a shipping point in ${d.latin}`, () => openAdd(p, d))}
-                                                <button onClick={() => handleRemoveDistrict(d)} title={d.isCustom ? `Delete ${d.latin}` : `Hide ${d.latin}`} aria-label={d.isCustom ? `Delete ${d.latin}` : `Hide ${d.latin}`} style={{ ...smallBtn, color: '#ef4444', marginRight: '8px' }}>
+                                                {addPointBtn(fill(t('ui.admin.provinces.addPointIn'), { name: d.latin }), () => openAdd(p, d))}
+                                                <button onClick={() => handleRemoveDistrict(d)} title={fill(d.isCustom ? t('ui.admin.provinces.deleteName') : t('ui.admin.provinces.hideName'), { name: d.latin })} aria-label={fill(d.isCustom ? t('ui.admin.provinces.deleteName') : t('ui.admin.provinces.hideName'), { name: d.latin })} style={{ ...smallBtn, color: '#ef4444', marginRight: '8px' }}>
                                                     {d.isCustom ? <Trash2 size={14} /> : <EyeOff size={14} />}
                                                 </button>
                                             </div>
@@ -501,7 +507,7 @@ const ProvincesSection: React.FC = () => {
                                                 <>
                                                     {dPoints.length > 0 && (
                                                         <div>
-                                                            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', padding: '2px 12px 2px 28px' }}>No commune set</div>
+                                                            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', padding: '2px 12px 2px 28px' }}>{t('ui.admin.provinces.noCommune')}</div>
                                                             {renderPoints(dPoints, '28px')}
                                                         </div>
                                                     )}
@@ -516,11 +522,11 @@ const ProvincesSection: React.FC = () => {
                                                                             style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0, padding: '4px 6px', background: 'transparent', border: 'none', cursor: total > 0 ? 'pointer' : 'default', textAlign: 'left', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                                                             {total > 0 ? (cOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />) : <span style={{ width: 12, flexShrink: 0 }} />}
                                                                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{locLabel(c)}</span>
-                                                                            {c.isCustom && <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--color-primary)', flexShrink: 0 }}>•custom</span>}
-                                                                            <span style={{ marginLeft: 'auto' }}>{countChip(total, 'Shipping points in this commune')}</span>
+                                                                            {c.isCustom && <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--color-primary)', flexShrink: 0 }}>{t('ui.admin.provinces.customDot')}</span>}
+                                                                            <span style={{ marginLeft: 'auto' }}>{countChip(total, t('ui.admin.provinces.chipCommune'))}</span>
                                                                         </button>
-                                                                        {addPointBtn(`Add a shipping point in ${c.latin}`, () => openAdd(p, d, c))}
-                                                                        <button onClick={() => handleRemoveCommune(c)} title={c.isCustom ? `Delete ${c.latin}` : `Hide ${c.latin}`} aria-label={c.isCustom ? `Delete ${c.latin}` : `Hide ${c.latin}`} style={{ ...smallBtn, color: '#ef4444', marginRight: '8px', flexShrink: 0 }}>
+                                                                        {addPointBtn(fill(t('ui.admin.provinces.addPointIn'), { name: c.latin }), () => openAdd(p, d, c))}
+                                                                        <button onClick={() => handleRemoveCommune(c)} title={fill(c.isCustom ? t('ui.admin.provinces.deleteName') : t('ui.admin.provinces.hideName'), { name: c.latin })} aria-label={fill(c.isCustom ? t('ui.admin.provinces.deleteName') : t('ui.admin.provinces.hideName'), { name: c.latin })} style={{ ...smallBtn, color: '#ef4444', marginRight: '8px', flexShrink: 0 }}>
                                                                             {c.isCustom ? <Trash2 size={12} /> : <EyeOff size={12} />}
                                                                         </button>
                                                                     </div>
@@ -531,12 +537,12 @@ const ProvincesSection: React.FC = () => {
                                                     </div>
                                                     <div style={{ display: 'flex', gap: '6px', padding: '0 12px 10px 28px' }}>
                                                         <input
-                                                            type="text" value={communeDrafts[d.code] || ''} placeholder="Add a commune..." className="search-input"
+                                                            type="text" value={communeDrafts[d.code] || ''} placeholder={t('ui.admin.provinces.addCommunePlaceholder')} className="search-input"
                                                             onChange={e => setCommuneDrafts(prev => ({ ...prev, [d.code]: e.target.value }))}
                                                             onKeyDown={e => { if (e.key === 'Enter') handleAddCommune(d.code); }}
                                                             style={{ flex: 1, minWidth: 0, padding: '6px 10px', fontSize: '12px' }}
                                                         />
-                                                        <button onClick={() => handleAddCommune(d.code)} disabled={!(communeDrafts[d.code] || '').trim()} className="primary-button" aria-label="Add commune"
+                                                        <button onClick={() => handleAddCommune(d.code)} disabled={!(communeDrafts[d.code] || '').trim()} className="primary-button" aria-label={t('ui.admin.provinces.addCommune')}
                                                             style={{ padding: '0 10px', cursor: (communeDrafts[d.code] || '').trim() ? 'pointer' : 'not-allowed', opacity: (communeDrafts[d.code] || '').trim() ? 1 : 0.6 }}>
                                                             <Plus size={14} />
                                                         </button>
@@ -549,12 +555,12 @@ const ProvincesSection: React.FC = () => {
                                 {isOpen && (
                                     <div style={{ display: 'flex', gap: '6px', padding: '0 12px 10px 22px' }}>
                                         <input
-                                            type="text" value={districtDrafts[p.code] || ''} placeholder="Add a district..." className="search-input"
+                                            type="text" value={districtDrafts[p.code] || ''} placeholder={t('ui.admin.provinces.addDistrictPlaceholder')} className="search-input"
                                             onChange={e => setDistrictDrafts(prev => ({ ...prev, [p.code]: e.target.value }))}
                                             onKeyDown={e => { if (e.key === 'Enter') handleAddDistrict(p.code); }}
                                             style={{ flex: 1, minWidth: 0, padding: '7px 10px', fontSize: '12.5px' }}
                                         />
-                                        <button onClick={() => handleAddDistrict(p.code)} disabled={!(districtDrafts[p.code] || '').trim()} className="primary-button" aria-label="Add district"
+                                        <button onClick={() => handleAddDistrict(p.code)} disabled={!(districtDrafts[p.code] || '').trim()} className="primary-button" aria-label={t('ui.admin.provinces.addDistrict')}
                                             style={{ padding: '0 10px', cursor: (districtDrafts[p.code] || '').trim() ? 'pointer' : 'not-allowed', opacity: (districtDrafts[p.code] || '').trim() ? 1 : 0.6 }}>
                                             <Plus size={14} />
                                         </button>
@@ -572,22 +578,22 @@ const ProvincesSection: React.FC = () => {
                     <button onClick={() => setHiddenOpen(o => !o)} aria-expanded={hiddenOpen}
                         style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>
                         {hiddenOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                        <EyeOff size={14} /> Hidden ({hiddenCount}) – restore
+                        <EyeOff size={14} /> {fill(t('ui.admin.provinces.hiddenRestore'), { n: hiddenCount })}
                     </button>
                     {hiddenOpen && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 12px 10px 34px' }}>
                             {hiddenEntries.districts.map(({ province, district }) => (
                                 <div key={district.code} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--color-text-main)' }}>
-                                    <span style={{ flex: 1, minWidth: 0 }}>District · {province.khmer} › {district.khmer} ({district.latin})</span>
+                                    <span style={{ flex: 1, minWidth: 0 }}>{t('ui.admin.provinces.districtLabel')} · {province.khmer} › {district.khmer} ({district.latin})</span>
                                     <button onClick={() => Promise.resolve(restoreDistrictEntry(district.code)).catch(reportError)}
-                                        style={{ ...smallBtn, gap: '4px', color: 'var(--color-primary)', fontSize: '12px', fontWeight: 600 }}><RotateCcw size={12} />Restore</button>
+                                        style={{ ...smallBtn, gap: '4px', color: 'var(--color-primary)', fontSize: '12px', fontWeight: 600 }}><RotateCcw size={12} />{t('ui.admin.provinces.restore')}</button>
                                 </div>
                             ))}
                             {hiddenEntries.communes.map(({ province, district, commune }) => (
                                 <div key={commune.code} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--color-text-main)' }}>
-                                    <span style={{ flex: 1, minWidth: 0 }}>Commune · {province.khmer} › {district.khmer} › {commune.khmer} ({commune.latin})</span>
+                                    <span style={{ flex: 1, minWidth: 0 }}>{t('ui.admin.provinces.communeLabel')} · {province.khmer} › {district.khmer} › {commune.khmer} ({commune.latin})</span>
                                     <button onClick={() => Promise.resolve(restoreCommuneEntry(commune.code)).catch(reportError)}
-                                        style={{ ...smallBtn, gap: '4px', color: 'var(--color-primary)', fontSize: '12px', fontWeight: 600 }}><RotateCcw size={12} />Restore</button>
+                                        style={{ ...smallBtn, gap: '4px', color: 'var(--color-primary)', fontSize: '12px', fontWeight: 600 }}><RotateCcw size={12} />{t('ui.admin.provinces.restore')}</button>
                                 </div>
                             ))}
                         </div>

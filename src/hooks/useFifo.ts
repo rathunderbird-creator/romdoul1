@@ -6,8 +6,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { isRpcMissingError } from '../context/StoreContext';
 import { rpcWithSession } from '../utils/dbFunctions';
+import { tNow } from '../i18n/translate';
 
 export const FIFO_MISSING_MESSAGE = 'FIFO costing is not set up on this store yet: it needs migrations/add_fifo_costing.sql, the pool rebuild (migrations/fifo_rebuild_pool.sql), the four stock packs and migrations/add_session_guards.sql, run in this store\'s Supabase SQL editor.';
+// The same text in the language the app is in now (ui.store.fifo.missing).
+export const fifoMissingMessage = (): string => tNow('ui.store.fifo.missing');
 
 const errorMessage = (e: unknown): string => {
     if (e && typeof e === 'object' && 'message' in e) return String((e as { message?: unknown }).message || '');
@@ -75,8 +78,8 @@ export function fifoMismatchCount(rows: Map<string, FifoValuationRow>, productId
 export async function fetchFifoValuation(): Promise<{ status: Exclude<FifoStatus, 'loading'>; rows: Map<string, FifoValuationRow>; message: string | null }> {
     const { data, error } = await rpcWithSession('fifo_inventory_valuation', {});
     if (error) {
-        if (isFifoMissingError(error)) return { status: 'missing', rows: new Map(), message: FIFO_MISSING_MESSAGE };
-        return { status: 'error', rows: new Map(), message: `Could not read the FIFO valuation: ${error.message || 'unknown error'}` };
+        if (isFifoMissingError(error)) return { status: 'missing', rows: new Map(), message: fifoMissingMessage() };
+        return { status: 'error', rows: new Map(), message: tNow('ui.store.fifo.valuationFailed', { error: error.message || tNow('ui.store.unknownErrorLower') }) };
     }
     const rows = new Map<string, FifoValuationRow>();
     for (const r of (Array.isArray(data) ? data : []) as Record<string, unknown>[]) {
@@ -107,7 +110,7 @@ export function useFifoValuation(enabled = true, reloadKey?: unknown): FifoValua
         let cancelled = false;
         fetchFifoValuation()
             .then(res => { if (!cancelled) setState(res); })
-            .catch(e => { if (!cancelled) setState({ status: 'error', rows: new Map(), message: `Could not read the FIFO valuation: ${errorMessage(e) || 'unknown error'}` }); });
+            .catch(e => { if (!cancelled) setState({ status: 'error', rows: new Map(), message: tNow('ui.store.fifo.valuationFailed', { error: errorMessage(e) || tNow('ui.store.unknownErrorLower') }) }); });
         return () => { cancelled = true; };
     }, [enabled, reloadKey, tick]);
     return { ...state, reload };
@@ -137,8 +140,8 @@ export interface FifoCheck {
 export async function fetchFifoCheck(): Promise<{ status: Exclude<FifoStatus, 'loading'>; data: FifoCheck | null; message: string | null }> {
     const { data, error } = await rpcWithSession('fifo_inventory_check', {});
     if (error) {
-        if (isFifoMissingError(error)) return { status: 'missing', data: null, message: FIFO_MISSING_MESSAGE };
-        return { status: 'error', data: null, message: `Could not run the FIFO check: ${error.message || 'unknown error'}` };
+        if (isFifoMissingError(error)) return { status: 'missing', data: null, message: fifoMissingMessage() };
+        return { status: 'error', data: null, message: tNow('ui.store.fifo.checkFailed', { error: error.message || tNow('ui.store.unknownErrorLower') }) };
     }
     const d = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
     const s = (d.shortfall && typeof d.shortfall === 'object' ? d.shortfall : {}) as Record<string, unknown>;
@@ -191,7 +194,7 @@ export type FifoPeekResult = { ok: true; data: FifoPeek } | { ok: false; missing
 export async function fetchFifoPeek(productId: string, qty: number): Promise<FifoPeekResult> {
     const { data, error } = await rpcWithSession('fifo_peek', { p_product_id: productId, p_qty: qty });
     if (error) {
-        if (isFifoMissingError(error)) return { ok: false, missing: true, message: FIFO_MISSING_MESSAGE };
+        if (isFifoMissingError(error)) return { ok: false, missing: true, message: fifoMissingMessage() };
         return { ok: false, missing: false, message: error.message || 'unknown error' };
     }
     const d = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;

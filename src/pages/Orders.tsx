@@ -41,6 +41,23 @@ import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
 import * as XLSX from 'xlsx';
 import type { Sale, CartItem } from '../types';
 import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../utils/liveColumnResize';
+import { useLanguage } from '../context/LanguageContext';
+import { tNow, fill } from '../i18n/translate';
+
+// Display text for a stored order / payment status (the stored value itself
+// never changes). Read at render time; the page re-renders on a language switch.
+const statusText = (s: string): string => {
+    const k = `ui.orders.status.${s}`;
+    const v = tNow(k);
+    return v !== k ? v : orderStatusLabel(s);
+};
+const payText = (s: string): string => {
+    for (const k of [`dashboard2.pay.${s}`, `ui.orders.pay.${s.replace(/\s/g, '')}`]) {
+        const v = tNow(k);
+        if (v !== k) return v;
+    }
+    return s;
+};
 
 type SortConfig = {
     key: string;
@@ -75,8 +92,9 @@ const localDayBound = (dateStr: string, edge: 'start' | 'end'): Date => {
 // Restock only acts on orders that are Returned right now; say what was skipped.
 const restockResultMessage = (restocked: number, requested: number) => {
     const skipped = requested - restocked;
-    if (restocked === 0) return `Nothing restocked: only Returning orders can be restocked (${requested} selected).`;
-    return `Restocked ${restocked} order${restocked === 1 ? '' : 's'}` + (skipped > 0 ? `. ${skipped} skipped because they are not Returning.` : '');
+    if (restocked === 0) return tNow('ui.orders.restock.none', { n: requested });
+    return (restocked === 1 ? tNow('ui.orders.restock.doneOne') : tNow('ui.orders.restock.doneMany', { n: restocked }))
+        + (skipped > 0 ? tNow('ui.orders.restock.skipped', { n: skipped }) : '');
 };
 
 const getStatusBorderColor = (s: string) => {
@@ -101,6 +119,7 @@ const ShippingModalComponent: React.FC<{
 }> = ({ isOpen, onClose, order, targetStatus = 'Shipped' }) => {
     const { shippingCompanies, customerCare, products, updateOrder, updateOrderStatus, khrExchangeRate } = useStore();
     const { showToast } = useToast();
+    const { t } = useLanguage();
 
     const [selectedCompany, setSelectedCompany] = useState<string>('');
     const [shippingRemark, setShippingRemark] = useState<string>('');
@@ -202,17 +221,17 @@ const ShippingModalComponent: React.FC<{
     const removeItem = (idx: number) => { itemsEdited(); setItems(prev => prev.filter((_, i) => i !== idx)); };
     const addItem = () => {
         const p = activeProducts[0];
-        if (!p) { showToast('No active products to add', 'error'); return; }
+        if (!p) { showToast(t('ui.orders.ship.noActiveProducts'), 'error'); return; }
         itemsEdited();
         setItems(prev => [...prev, { ...p, quantity: 1 }]);
     };
 
     return (
         <>
-        <Modal isOpen={isOpen} onClose={onClose} title="Select Shipping Company">
+        <Modal isOpen={isOpen} onClose={onClose} title={t('ui.orders.ship.title')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                    Please select the shipping company for this order before changing its status to {targetStatus}.
+                    {fill(t('ui.orders.ship.intro'), { status: statusText(targetStatus) })}
                 </p>
                 {/* Who the parcel goes to */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '10px', background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
@@ -228,13 +247,13 @@ const ShippingModalComponent: React.FC<{
                                 <Phone size={12} /> {order.customer.phone}
                             </a>
                         ) : (
-                            <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>No phone number</span>
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{t('ui.orders.ship.noPhone')}</span>
                         )}
                     </div>
                     <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>#{order.id.slice(-6)}</span>
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Shipping Company <span style={{ color: 'red' }}>*</span></label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{t('ui.orders.ship.company')} <span style={{ color: 'red' }}>*</span></label>
                     <select
                         value={selectedCompany}
                         onChange={(e) => setSelectedCompany(e.target.value)}
@@ -244,7 +263,7 @@ const ShippingModalComponent: React.FC<{
                             outline: 'none'
                         }}
                     >
-                        <option value="" disabled>Select a company</option>
+                        <option value="" disabled>{t('ui.orders.ship.selectCompany')}</option>
                         <option value="អ្នកដឹក" style={{ color: getShippingCoColor('អ្នកដឹក') }}>អ្នកដឹក</option>
                         {shippingCompanies.map(company => (
                             <option key={company} value={company} style={{ color: getShippingCoColor(company) }}>{company}</option>
@@ -252,10 +271,10 @@ const ShippingModalComponent: React.FC<{
                     </select>
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Remark</label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{t('orders.remark')}</label>
                     <input
                         type="text"
-                        placeholder="Add an optional remark..."
+                        placeholder={t('ui.orders.ship.remarkPlaceholder')}
                         value={shippingRemark}
                         onChange={(e) => setShippingRemark(e.target.value)}
                         style={{
@@ -267,7 +286,7 @@ const ShippingModalComponent: React.FC<{
                 </div>
                 <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}>Address</label>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}>{t('orders.address')}</label>
                         <button 
                             onClick={() => setIsShippingPointSelectorOpen(true)}
                             style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)' }}
@@ -277,7 +296,7 @@ const ShippingModalComponent: React.FC<{
                     </div>
                     <input
                         type="text"
-                        placeholder="Shipping address..."
+                        placeholder={t('ui.orders.ship.addressPlaceholder')}
                         value={shippingAddress}
                         onChange={(e) => setShippingAddress(e.target.value)}
                         style={{
@@ -288,7 +307,7 @@ const ShippingModalComponent: React.FC<{
                     />
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Customer Care</label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{t('orders.customerCare')}</label>
                     <select
                         value={shippingCustomerCare}
                         onChange={(e) => setShippingCustomerCare(e.target.value)}
@@ -298,7 +317,7 @@ const ShippingModalComponent: React.FC<{
                             outline: 'none'
                         }}
                     >
-                        <option value="" disabled>Select Customer Care</option>
+                        <option value="" disabled>{t('ui.orders.ship.selectCc')}</option>
                         {(customerCare || []).map((cc: string) => (
                             <option key={cc} value={cc}>{cc}</option>
                         ))}
@@ -309,9 +328,9 @@ const ShippingModalComponent: React.FC<{
                     <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse', marginBottom: '10px' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                <th style={{ textAlign: 'left', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Item</th>
-                                <th style={{ textAlign: 'center', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)', width: '56px' }}>Qty</th>
-                                <th style={{ textAlign: 'right', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)', width: '80px' }}>Price</th>
+                                <th style={{ textAlign: 'left', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{t('ui.orders.items.item')}</th>
+                                <th style={{ textAlign: 'center', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)', width: '56px' }}>{t('ui.orders.items.qty')}</th>
+                                <th style={{ textAlign: 'right', padding: '4px 0', fontWeight: 600, color: 'var(--color-text-secondary)', width: '80px' }}>{t('ui.orders.items.price')}</th>
                                 <th style={{ width: '24px' }}></th>
                             </tr>
                         </thead>
@@ -356,7 +375,7 @@ const ShippingModalComponent: React.FC<{
                                         />
                                     </td>
                                     <td style={{ padding: '4px', textAlign: 'center' }}>
-                                        <button onClick={() => removeItem(idx)} title="Remove item" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', padding: '2px', display: 'flex' }}>
+                                        <button onClick={() => removeItem(idx)} title={t('ui.orders.items.remove')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', padding: '2px', display: 'flex' }}>
                                             <X size={14} />
                                         </button>
                                     </td>
@@ -368,30 +387,30 @@ const ShippingModalComponent: React.FC<{
                         onClick={addItem}
                         style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px dashed var(--color-border)', background: 'transparent', color: 'var(--color-primary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', marginBottom: '10px' }}
                     >
-                        + Add Item
+                        {t('ui.orders.items.add')}
                     </button>
                     {Math.abs(discount) > 0.005 && (
                         <>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', borderTop: '2px solid var(--color-text-main)', paddingTop: '8px' }}>
-                                <span>Subtotal</span>
+                                <span>{t('ui.orders.ship.subtotal')}</span>
                                 <span>${itemsTotal.toFixed(2)}</span>
                             </div>
                             <div data-shipping-discount style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px', marginBottom: '6px', color: discount > 0 ? '#059669' : '#B45309' }}>
-                                <span>{discount > 0 ? 'Discount' : 'Extra charge'}</span>
+                                <span>{discount > 0 ? t('ui.orders.ship.discount') : t('ui.orders.ship.extraCharge')}</span>
                                 <span>{discount > 0 ? '−' : '+'}${Math.abs(discount).toFixed(2)}</span>
                             </div>
                         </>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', borderTop: Math.abs(discount) > 0.005 ? '1px dashed var(--color-border)' : '2px solid var(--color-text-main)', paddingTop: '8px' }}>
-                        <span>TOTAL</span>
+                        <span>{t('ui.orders.ship.totalCaps')}</span>
                         <span>${computedTotal.toFixed(2)}</span>
                     </div>
                     <div style={{ marginTop: '8px', fontSize: '13px' }}>
                         <MoneyInput
                             field={depositField}
-                            label="Deposit"
+                            label={t('dashboard2.pay.Deposit')}
                             allowKhr
-                            placeholder={depositField.currency === 'KHR' ? 'e.g. 8000' : 'e.g. 2.00'}
+                            placeholder={depositField.currency === 'KHR' ? t('ui.orders.ship.egKhr') : t('ui.orders.ship.egUsd')}
                             onToggleCurrency={depositCoupling.onToggleCurrency}
                             khrUnavailableReason={depositCoupling.khrUnavailableReason}
                             labelStyle={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}
@@ -400,23 +419,23 @@ const ShippingModalComponent: React.FC<{
                     </div>
                     {depositBooks && paymentAccounts.length > 0 && (
                         <div style={{ marginTop: '8px', fontSize: '13px' }}>
-                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}>Deposited into *</label>
+                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}>{t('ui.orders.ship.depositedInto')} *</label>
                             <select
                                 value={depositAccountId}
                                 onChange={e => depositCoupling.onAccountChange(e.target.value)}
                                 style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', fontSize: '13px', border: `1px solid ${!depositAccountId ? '#DC2626' : 'var(--color-border)'}`, background: 'var(--color-surface)', color: 'var(--color-text-main)', outline: 'none' }}
                             >
-                                <option value="">Bank or cash account…</option>
+                                <option value="">{t('ui.orders.ship.bankOrCash')}</option>
                                 <CashBankOptions accounts={paymentAccounts} />
                             </select>
                         </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginTop: '6px', borderTop: '1px dashed var(--color-border)', paddingTop: '6px' }}>
-                        <span>REMAINING USD($)</span>
+                        <span>{t('ui.orders.ship.remainingUsd')}</span>
                         <span data-remaining-usd>${remainingAmount.toFixed(2)}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: '13px', marginTop: '6px' }}>
-                        <span>{depositNum > 0 ? 'REMAINING KH(៛)' : 'TOTAL KH(៛)'}</span>
+                        <span>{depositNum > 0 ? t('ui.orders.ship.remainingKhr') : t('ui.orders.ship.totalKhr')}</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <input
                                 type="number"
@@ -438,16 +457,16 @@ const ShippingModalComponent: React.FC<{
                             fontSize: '14px', fontWeight: 500
                         }}
                     >
-                        Cancel
+                        {t('common.cancel')}
                     </button>
                     <button
                         onClick={async () => {
                             if (!selectedCompany) {
-                                showToast('Please select a shipping company', 'error');
+                                showToast(t('ui.orders.ship.pickCompany'), 'error');
                                 return;
                             }
                             if (items.length === 0) {
-                                showToast('The order needs at least one item', 'error');
+                                showToast(t('ui.orders.ship.needItem'), 'error');
                                 return;
                             }
                             // One save at a time: a second click while the first is still
@@ -455,7 +474,7 @@ const ShippingModalComponent: React.FC<{
                             // disables the button).
                             if (savingRef.current) return;
                             if (depositBooks && paymentAccounts.length > 0 && !depositAccountId) {
-                                showToast('Choose the account the deposit went into', 'error');
+                                showToast(t('ui.orders.ship.pickDepositAccount'), 'error');
                                 return;
                             }
                             // Only a changed deposit is checked (an old one was already accepted).
@@ -463,9 +482,13 @@ const ShippingModalComponent: React.FC<{
                             // A riel figure far from the items (a typo like 4100 for
                             // 41000) would rewrite the total: ask first.
                             if (khrSetsMoney && totalChanged && Math.abs(discount) > Math.max(0.5, itemsTotal * 0.1)
-                                && !window.confirm(`${depositNum > 0 ? 'Remaining' : 'Total'} ៛${Math.round(typedKhr).toLocaleString()} @ ${rate.toLocaleString()} = $${remainingAmount.toFixed(2)}.\n`
-                                    + `The order total changes from $${(Number(order.total) || 0).toFixed(2)} to $${computedTotal.toFixed(2)} `
-                                    + `(${discount > 0 ? 'discount' : 'extra charge'} $${Math.abs(discount).toFixed(2)} on items of $${itemsTotal.toFixed(2)}).\n\nOK saves it. Cancel to fix it.`)) return;
+                                && !window.confirm(fill(t('ui.orders.ship.confirmKhr'), {
+                                    label: depositNum > 0 ? t('ui.orders.ship.remaining') : t('ui.orders.ship.total'),
+                                    khr: Math.round(typedKhr).toLocaleString(), rate: rate.toLocaleString(), usd: remainingAmount.toFixed(2),
+                                    from: (Number(order.total) || 0).toFixed(2), to: computedTotal.toFixed(2),
+                                    kind: discount > 0 ? t('ui.orders.ship.discountLower') : t('ui.orders.ship.extraChargeLower'),
+                                    diff: Math.abs(discount).toFixed(2), items: itemsTotal.toFixed(2),
+                                }))) return;
                             savingRef.current = true;
                             setSaving(true);
                             try {
@@ -528,10 +551,10 @@ const ShippingModalComponent: React.FC<{
                                 // order has moved on since (shipped from another device), the
                                 // change is refused instead of being applied on top of it.
                                 const moved = await updateOrderStatus(order.id, targetStatus, order.shipping?.trackingNumber, selectedCompany, { shownStatus: order.shipping?.status || 'Pending' });
-                                if (moved) showToast(targetStatus === 'Shipped' ? 'Order marked as shipped' : 'Order marked as confirmed', 'success');
+                                if (moved) showToast(targetStatus === 'Shipped' ? t('ui.orders.ship.markedShipped') : t('ui.orders.ship.markedConfirmed'), 'success');
                             } catch (e: any) {
                                 console.error('Failed to update shipping status:', e);
-                                showToast('Update failed. Please try again.', 'error');
+                                showToast(t('ui.orders.toast.updateFailed'), 'error');
                             } finally {
                                 savingRef.current = false;
                                 setSaving(false);
@@ -547,7 +570,7 @@ const ShippingModalComponent: React.FC<{
                             fontSize: '14px', fontWeight: 600
                         }}
                     >
-                        {saving ? 'Saving…' : 'Save'}
+                        {saving ? t('ui.orders.saving') : t('common.save')}
                     </button>
                 </div>
             </div>
@@ -569,6 +592,7 @@ const PendingRemarkModalComponent: React.FC<{
 }> = ({ isOpen, onClose, order }) => {
     const { updateOrder, updateOrderStatus } = useStore();
     const { showToast } = useToast();
+    const { t } = useLanguage();
 
     const [remark, setRemark] = useState<string>('');
     // Same in-flight guard as the ship popup: one save at a time.
@@ -584,16 +608,16 @@ const PendingRemarkModalComponent: React.FC<{
     if (!order) return null;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Update Pending Remark">
+        <Modal isOpen={isOpen} onClose={onClose} title={t('ui.orders.pendingRemark.title')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                    Add or update the remark for this pending order before confirming.
+                    {t('ui.orders.pendingRemark.intro')}
                 </p>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Remark</label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{t('orders.remark')}</label>
                     <input
                         type="text"
-                        placeholder="Add remark..."
+                        placeholder={t('ui.orders.pendingRemark.placeholder')}
                         value={remark}
                         onChange={(e) => setRemark(e.target.value)}
                         style={{
@@ -612,7 +636,7 @@ const PendingRemarkModalComponent: React.FC<{
                             fontSize: '14px', fontWeight: 500
                         }}
                     >
-                        Cancel
+                        {t('common.cancel')}
                     </button>
                     <button
                         onClick={async () => {
@@ -625,10 +649,10 @@ const PendingRemarkModalComponent: React.FC<{
                                 }
                                 // false: refused or changed elsewhere (already explained).
                                 const moved = await updateOrderStatus(order.id, 'Pending', undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' });
-                                if (moved) showToast('Order marked as Pending', 'success');
+                                if (moved) showToast(t('ui.orders.pendingRemark.marked'), 'success');
                             } catch (e: any) {
                                 console.error('Failed to update pending status:', e);
-                                showToast('Update failed. Please try again.', 'error');
+                                showToast(t('ui.orders.toast.updateFailed'), 'error');
                             } finally {
                                 savingRef.current = false;
                                 setSaving(false);
@@ -644,7 +668,7 @@ const PendingRemarkModalComponent: React.FC<{
                             fontSize: '14px', fontWeight: 500
                         }}
                     >
-                        Confirm
+                        {t('common.confirm')}
                     </button>
                 </div>
             </div>
@@ -680,7 +704,7 @@ const canEnterPostDispatch = (order: Sale, target?: string) => {
 };
 
 // Always-visible chip group for the mobile filter drawer (no hidden dropdowns).
-const DrawerChipGroup: React.FC<{ title: string; options: string[]; selected: string[]; onToggle: (v: string) => void }> = ({ title, options, selected, onToggle }) => (
+const DrawerChipGroup: React.FC<{ title: string; options: string[]; selected: string[]; onToggle: (v: string) => void; optionLabel?: (v: string) => string }> = ({ title, options, selected, onToggle, optionLabel = orderStatusLabel }) => (
     <div>
         <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{title}</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -692,7 +716,7 @@ const DrawerChipGroup: React.FC<{ title: string; options: string[]; selected: st
                         onClick={() => onToggle(opt)}
                         style={{ padding: '6px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
                     >
-                        {orderStatusLabel(opt)}
+                        {optionLabel(opt)}
                     </button>
                 );
             })}
@@ -712,6 +736,7 @@ const ColumnFilterPopover: React.FC<{
     onClear: () => void;
     onClose: () => void;
 }> = ({ anchor, label, isDate, value, onApply, onClear, onClose }) => {
+    const { t: tr } = useLanguage();
     const [draft, setDraft] = useState(value);
     const ref = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
@@ -777,11 +802,11 @@ const ColumnFilterPopover: React.FC<{
             {isDate ? (
                 <>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', width: '38px', color: 'var(--color-text-secondary)' }}>From</span>
+                        <span style={{ fontSize: '12px', width: '38px', color: 'var(--color-text-secondary)' }}>{tr('ui.orders.filter.from')}</span>
                         <input type="date" value={start} onChange={(e) => setRange(e.target.value, end)} className="search-input" style={inputStyle} />
                     </div>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', width: '38px', color: 'var(--color-text-secondary)' }}>To</span>
+                        <span style={{ fontSize: '12px', width: '38px', color: 'var(--color-text-secondary)' }}>{tr('ui.orders.filter.to')}</span>
                         <input type="date" value={end} onChange={(e) => setRange(start, e.target.value)} className="search-input" style={inputStyle} />
                     </div>
                 </>
@@ -789,7 +814,7 @@ const ColumnFilterPopover: React.FC<{
                 <input
                     type="text"
                     autoFocus
-                    placeholder={`Filter ${label}...`}
+                    placeholder={fill(tr('ui.orders.filter.placeholder'), { label })}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
@@ -802,13 +827,13 @@ const ColumnFilterPopover: React.FC<{
                     onClick={() => { onClear(); onClose(); }}
                     style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', background: '#6B7280', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 500 }}
                 >
-                    <X size={14} /> Clear
+                    <X size={14} /> {tr('ui.orders.filter.clear')}
                 </button>
                 <button
                     onClick={commit}
                     style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 500 }}
                 >
-                    <Check size={14} /> Apply
+                    <Check size={14} /> {tr('common.apply')}
                 </button>
             </div>
         </div>,
@@ -818,8 +843,8 @@ const ColumnFilterPopover: React.FC<{
 
 const postDispatchMessage = (current: string, target: string) =>
     ['Delivered', 'Returned'].includes(current)
-        ? `This order is already ${current}. ${current} orders cannot be changed to ${target}.`
-        : `Mark the order Shipped before ${target} — set it back to Drafted and follow Confirmed → Shipped.`;
+        ? tNow('ui.orders.msg.alreadyPostDispatch', { current: statusText(current), target: statusText(target) })
+        : tNow('ui.orders.msg.shipFirst', { target: statusText(target) });
 
 // orderBalance / REVENUE_STATUSES / isRevenueOrder / orderRevenue /
 // orderCollected / orderRevenuePieces now live in ../utils/orderMoney — the
@@ -848,13 +873,13 @@ const pageOrFilter = (pages: string[]): string => {
 const LOCKED_ORDER_STATUSES = ['Cancelled', 'Returned'];
 const isOrderLocked = (order: Sale) => LOCKED_ORDER_STATUSES.includes(order.shipping?.status || '');
 const lockedOrderMessage = (order: Sale) =>
-    `This order is ${orderStatusLabel(order.shipping?.status || '')} and can no longer be edited. ` +
-    `Change its status from the order list first if you need to reopen it.`;
+    tNow('ui.orders.msg.locked', { status: statusText(order.shipping?.status || '') });
 
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
     const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates } = useStore();
+    const { t } = useLanguage();
     // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
     const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
     // The fetched page of orders (declared early: the header effect below lists
@@ -896,17 +921,18 @@ const Orders: React.FC = () => {
 
     // What the gray Pay Status says on hover.
     const claimTooltip = (c: NonNullable<Sale['paymentClaim']>) =>
-        `Not confirmed yet: ${c.status} $${Number(c.amount || 0).toFixed(2)}`
+        fill(t('ui.orders.claim.tipHead'), { status: payText(c.status), amount: Number(c.amount || 0).toFixed(2) })
         + (c.currency === 'KHR' && c.original_amount ? ` (៛${Math.round(c.original_amount).toLocaleString()})` : '')
-        + `${c.method ? ` by ${c.method}` : ''}, entered by ${c.by || 'a Salesman'}${c.date ? ` on ${c.date}` : ''}.`
-        + ` Admin, Customer Care or Accountant: pick ${c.status} to confirm it was received (that books it), or Unpaid to remove it.`;
+        + `${c.method ? fill(t('ui.orders.claim.tipBy'), { method: c.method }) : ''}${fill(t('ui.orders.claim.tipEntered'), { by: c.by || t('ui.orders.claim.aSalesman') })}${c.date ? fill(t('ui.orders.claim.tipOn'), { date: c.date }) : ''}`
+        + fill(t('ui.orders.claim.tipTail'), { status: payText(c.status) });
 
     // Picking Unpaid on an order with an unconfirmed payment removes the claim
     // (nothing was booked, so nothing else changes). True = handled here.
     const rejectClaimIfUnpaid = (order: Sale, newStatus: string): boolean => {
         if (!claimOpen(order) || newStatus !== 'Unpaid') return false;
         const c = order.paymentClaim!;
-        if (window.confirm(`Remove the unconfirmed ${c.status.toLowerCase()} of $${Number(c.amount || 0).toFixed(2)} entered by ${c.by || 'the Salesman'}? The order stays Unpaid.`)) {
+        const claimStatus = payText(c.status) === c.status ? c.status.toLowerCase() : payText(c.status);
+        if (window.confirm(fill(t('ui.orders.claim.confirmRemove'), { status: claimStatus, amount: Number(c.amount || 0).toFixed(2), by: c.by || t('ui.orders.claim.theSalesman') }))) {
             updateOrder(order.id, { paymentClaim: null });
         }
         return true;
@@ -938,8 +964,8 @@ const Orders: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Orders Management</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage and track all customer orders</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('orders.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('orders.subtitle')}</p>
                 </div>
             ),
             // Hidden on mobile: Order List / POS / Shipping Points tabs are desktop-only
@@ -956,7 +982,7 @@ const Orders: React.FC = () => {
                                 fontWeight: 500, cursor: 'pointer', border: 'none'
                             }}
                         >
-                            <List size={18} /> Order List
+                            <List size={18} /> {t('orders.orderList')}
                         </button>
                     )}
                     {hasPermission('create_orders') && (
@@ -982,7 +1008,7 @@ const Orders: React.FC = () => {
                                 fontWeight: 500, cursor: 'pointer', border: 'none'
                             }}
                         >
-                            <MapPin size={18} /> Shipping Points
+                            <MapPin size={18} /> {t('ui.orders.header.shippingPoints')}
                         </button>
                     )}
                     {isAdmin && !isMobile && (
@@ -999,7 +1025,7 @@ const Orders: React.FC = () => {
                             onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.3)'; }}
                         >
-                            <Wallet size={18} /> Check Income
+                            <Wallet size={18} /> {t('ui.orders.header.checkIncome')}
                         </button>
                     )}
                     {isAdmin && !isMobile && (
@@ -1016,7 +1042,7 @@ const Orders: React.FC = () => {
                             onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.4)'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.3)'; }}
                         >
-                            <Table2 size={18} /> Show Movement
+                            <Table2 size={18} /> {t('ui.orders.header.showMovement')}
                         </button>
                     )}
                     {/* Carrier tracking: check the shipped rows on screen with a
@@ -1027,10 +1053,10 @@ const Orders: React.FC = () => {
                             onClick={async () => {
                                 const result = await trackOrders(serverOrders, { maxAgeMinutes: 15 });
                                 if (result.error) showToast(result.error, 'error');
-                                else if (result.checked === 0) showToast('Nothing to check — all shipped parcels were checked recently or are delivered', 'info');
-                                else showToast(`Checked ${result.checked} parcel(s): ${result.delivered} delivered${result.failed ? `, ${result.failed} could not be checked` : ''}`, result.failed && !result.updated ? 'error' : 'success');
+                                else if (result.checked === 0) showToast(t('ui.orders.track.nothing'), 'info');
+                                else showToast(fill(t('ui.orders.track.checked'), { n: result.checked, delivered: result.delivered }) + (result.failed ? fill(t('ui.orders.track.failed'), { n: result.failed }) : ''), result.failed && !result.updated ? 'error' : 'success');
                             }}
-                            title="Look up the carrier status of the shipped orders on this page"
+                            title={t('ui.orders.track.tooltip')}
                             style={{
                                 padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center',
                                 background: isTracking ? '#9CA3AF' : 'linear-gradient(135deg, #059669, #047857)',
@@ -1038,7 +1064,7 @@ const Orders: React.FC = () => {
                                 boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)', transition: 'all 0.2s ease',
                             }}
                         >
-                            <Truck size={18} /> {isTracking ? 'Checking…' : 'Track Shipped'}
+                            <Truck size={18} /> {isTracking ? t('ui.orders.track.checking') : t('ui.orders.track.button')}
                         </button>
                     )}
 
@@ -1050,7 +1076,7 @@ const Orders: React.FC = () => {
     // serverOrders/isTracking/trackOrders/showToast feed the Track Shipped
     // button rendered inside this header — without them the button would act on
     // a stale page of orders and never show its busy state.
-    }, [setHeaderContent, activeTab, hasPermission, isMobile, isAdmin, canManage, navigate, serverOrders, isTracking, trackOrders, showToast]); // Added dependencies
+    }, [setHeaderContent, activeTab, hasPermission, isMobile, isAdmin, canManage, navigate, serverOrders, isTracking, trackOrders, showToast, t]); // Added dependencies
 
     // Filters with Persistence
     const [statusFilter, setStatusFilter] = useState<string[]>(() => {
@@ -1151,11 +1177,11 @@ const Orders: React.FC = () => {
         try {
             await importOrders(data);
             setIsImportModalOpen(false);
-            showToast('Orders imported successfully', 'success');
+            showToast(t('ui.orders.toast.imported'), 'success');
             await fetchOrders();
         } catch (error: any) {
             console.error("Import failed:", error);
-            showToast(`Failed to import orders: ${error.message || error}`, 'error');
+            showToast(fill(t('ui.orders.toast.importFailed'), { error: error.message || error }), 'error');
         }
     };
     const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -1226,15 +1252,15 @@ const Orders: React.FC = () => {
             e.preventDefault();
             e.stopPropagation();
         }
-        if (confirm(`Are you sure you want to delete ${selectedIds.size} orders ? `)) {
+        if (confirm(fill(t('ui.orders.bulk.confirmDelete'), { n: selectedIds.size }))) {
             try {
                 await deleteOrders(Array.from(selectedIds));
                 setSelectedIds(new Set());
-                showToast('Orders deleted successfully', 'success');
+                showToast(t('ui.orders.toast.deleted'), 'success');
                 await fetchOrders();
             } catch (error: any) {
                 console.error('Failed to delete orders:', error);
-                showToast('Failed to delete orders: ' + (error.message || 'Unknown error'), 'error');
+                showToast(t('ui.orders.toast.deleteFailed') + (error.message || t('ui.orders.toast.unknownError')), 'error');
             }
         }
     };
@@ -1245,10 +1271,10 @@ const Orders: React.FC = () => {
             e.stopPropagation();
         }
         if (!canRestock) {
-            showToast('You do not have permission to restock orders.', 'error');
+            showToast(t('ui.orders.toast.noRestockPermission'), 'error');
             return;
         }
-        if (confirm(`Are you sure you want to restock ${selectedIds.size} orders ? `)) {
+        if (confirm(fill(t('ui.orders.bulk.confirmRestock'), { n: selectedIds.size }))) {
             try {
                 const requested = selectedIds.size;
                 const restocked = await bulkRestockOrders(Array.from(selectedIds));
@@ -1257,7 +1283,7 @@ const Orders: React.FC = () => {
                 await fetchOrders();
             } catch (error: any) {
                 console.error('Failed to restock orders:', error);
-                showToast('Failed to restock orders: ' + (error.message || 'Unknown error'), 'error');
+                showToast(t('ui.orders.toast.restockFailed') + (error.message || t('ui.orders.toast.unknownError')), 'error');
             }
         }
     };
@@ -1265,26 +1291,26 @@ const Orders: React.FC = () => {
     // Column Visibility and Pinning
     const [showColumnMenu, setShowColumnMenu] = useState(false);
     const allColumnsDef = [
-        { id: 'actions', label: 'Actions' },
-        { id: 'date', label: 'Date' },
-        { id: 'customer', label: 'Customer' },
-        { id: 'phone', label: 'Phone' },
-        { id: 'address', label: 'Address' },
-        { id: 'page', label: 'Page Name' },
-        { id: 'salesman', label: 'Salesman' },
-        { id: 'customerCare', label: 'Customer Care' },
-        { id: 'items', label: 'Products' },
-        { id: 'total', label: 'Total' },
-        { id: 'payBy', label: 'Pay By' },
-        { id: 'balance', label: 'Pending Balance' },
-        { id: 'status', label: 'Order Status' },
-        { id: 'received', label: 'Received' },
-        { id: 'payStatus', label: 'Pay Status' },
-        { id: 'shippingCo', label: 'Shipping Co' },
-        { id: 'remark', label: 'Remark' },
-        { id: 'tracking', label: 'Tracking ID' },
-        { id: 'settleDate', label: 'Settled/Paid Date' },
-        { id: 'lastEdit', label: 'Last Edit' },
+        { id: 'actions', label: t('orders.actions') },
+        { id: 'date', label: t('orders.date') },
+        { id: 'customer', label: t('orders.customer') },
+        { id: 'phone', label: t('orders.phone') },
+        { id: 'address', label: t('orders.address') },
+        { id: 'page', label: t('orders.pageName') },
+        { id: 'salesman', label: t('orders.salesman') },
+        { id: 'customerCare', label: t('orders.customerCare') },
+        { id: 'items', label: t('orders.products') },
+        { id: 'total', label: t('orders.total') },
+        { id: 'payBy', label: t('orders.payBy') },
+        { id: 'balance', label: t('ui.orders.columns.pendingBalance') },
+        { id: 'status', label: t('orders.orderStatus') },
+        { id: 'received', label: t('orders.received') },
+        { id: 'payStatus', label: t('orders.payStatus') },
+        { id: 'shippingCo', label: t('orders.shippingCo') },
+        { id: 'remark', label: t('orders.remark') },
+        { id: 'tracking', label: t('orders.trackingId') },
+        { id: 'settleDate', label: t('orders.settledPaidDate') },
+        { id: 'lastEdit', label: t('orders.lastEdit') },
     ];
 
     // Default visible columns
@@ -1320,7 +1346,9 @@ const Orders: React.FC = () => {
             if (indexB !== -1) return 1;
             return 0; // Maintain original order for unpinned
         });
-    }, [pinnedOrderColumns]);
+        // t: the labels follow a language switch.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pinnedOrderColumns, t]);
 
 
     // Resizing State
@@ -1763,7 +1791,7 @@ const Orders: React.FC = () => {
                             const matchingSaleIds = Array.from(ids).slice(0, SEARCH_ID_CAP);
                             if (truncated && truncationNoticeRef.current !== searchTerm) {
                                 truncationNoticeRef.current = searchTerm;
-                                showToast(`The search matches more than ${SEARCH_ID_CAP} orders by product — showing the newest ${SEARCH_ID_CAP}. Narrow the date range to see them all.`, 'info');
+                                showToast(tNow('ui.orders.toast.searchTruncated', { n: SEARCH_ID_CAP }), 'info');
                             }
                             searchOr = parentOr + (matchingSaleIds.length > 0 ? `,id.in.(${matchingSaleIds.join(',')})` : '');
                         }
@@ -1918,7 +1946,7 @@ const Orders: React.FC = () => {
                         const matchingColIds = Array.from(colIds).slice(0, SEARCH_ID_CAP);
                         if (colTruncated && truncationNoticeRef.current !== `items-filter:${v}`) {
                             truncationNoticeRef.current = `items-filter:${v}`;
-                            showToast(`The Items filter matches more than ${SEARCH_ID_CAP} orders — showing the newest ${SEARCH_ID_CAP}. Narrow the date range to see them all.`, 'info');
+                            showToast(tNow('ui.orders.toast.itemsFilterTruncated', { n: SEARCH_ID_CAP }), 'info');
                         }
                         if (matchingColIds.length > 0) {
                             query = query.in('id', matchingColIds);
@@ -2007,7 +2035,7 @@ const Orders: React.FC = () => {
                             // stays EXACT where a capped in() would silently truncate.
                             query = query.not('id', 'in', `(${rest.join(',')})`);
                         } else {
-                            showToast(`Balance filter matches ${match.length} orders — showing only the newest ${IN_CAP}.`, 'info');
+                            showToast(tNow('ui.orders.toast.balanceFilterTruncated', { n: match.length, cap: IN_CAP }), 'info');
                             query = query.in('id', match.slice(0, IN_CAP));
                         }
                         break;
@@ -2418,7 +2446,7 @@ const Orders: React.FC = () => {
         const selectedOrders = filteredOrders.filter(order => selectedIds.has(order.id));
 
         if (selectedOrders.length === 0) {
-            showToast('No orders selected to export', 'error');
+            showToast(t('ui.orders.toast.noneToExport'), 'error');
             return;
         }
 
@@ -2482,21 +2510,21 @@ const Orders: React.FC = () => {
         const dateStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
         XLSX.writeFile(wb, `Selected_Orders_Export_${dateStr}.xlsx`);
 
-        showToast(`Exported ${selectedOrders.length} orders to Excel`, 'success');
+        showToast(fill(t('ui.orders.toast.exported'), { n: selectedOrders.length }), 'success');
     };
 
     const handleDelete = async () => {
         if (selectedIds.size === 0) return;
 
-        if (window.confirm(`Are you sure you want to delete ${selectedIds.size} orders? \n\nIMPORTANT: The items in these orders will be returned to the product stock.`)) {
+        if (window.confirm(fill(t('ui.orders.bulk.confirmDeleteStock'), { n: selectedIds.size }))) {
             try {
                 await deleteOrders(Array.from(selectedIds));
                 setSelectedIds(new Set());
-                showToast('Orders deleted and stock restored', 'success');
+                showToast(t('ui.orders.toast.deletedStockRestored'), 'success');
                 await fetchOrders();
             } catch (error: any) {
                 console.error('Failed to delete orders:', error);
-                showToast('Failed to delete orders: ' + (error.message || 'Unknown error'), 'error');
+                showToast(t('ui.orders.toast.deleteFailed') + (error.message || t('ui.orders.toast.unknownError')), 'error');
             }
         }
     };
@@ -2531,7 +2559,7 @@ const Orders: React.FC = () => {
                     // Cancel). Only orders that are Returned right now are restocked.
                     // ORD-9: same permission the single-row badge requires.
                     if (!canRestock) {
-                        showToast('You do not have permission to restock orders.', 'error');
+                        showToast(t('ui.orders.toast.noRestockPermission'), 'error');
                         return;
                     }
                     const restocked = await bulkRestockOrders(ids);
@@ -2581,7 +2609,7 @@ const Orders: React.FC = () => {
                 // A Salesman books no money (the store refuses it order by
                 // order); say so once instead of once per selected order.
                 if (isSalesmanUser && ['Deposit', 'Paid', 'Settled', 'PdFee'].includes(value)) {
-                    alert('Only Admin, Customer Care or an Accountant can record money as received.\n\nEnter the deposit or payment on the order form instead: it waits there (gray on the Orders page) for them to confirm.');
+                    alert(t('ui.orders.bulk.salesmanNoMoney'));
                     return;
                 }
                 const now = new Date().toISOString();
@@ -2634,17 +2662,17 @@ const Orders: React.FC = () => {
             }
 
             if (notSaved > 0) {
-                showToast(`Updated ${ids.length - notSaved} of ${ids.length} orders; ${notSaved} not saved${lastReason ? ': ' + lastReason : ''}`, 'error');
+                showToast(fill(t('ui.orders.bulk.partlyUpdated'), { done: ids.length - notSaved, n: ids.length, failed: notSaved }) + (lastReason ? ': ' + lastReason : ''), 'error');
                 setSelectedIds(new Set());
                 await fetchOrders();
                 return;
             }
-            showToast(`Updated ${ids.length} orders`, 'success');
+            showToast(fill(t('ui.orders.bulk.updated'), { n: ids.length }), 'success');
             setSelectedIds(new Set()); // Clear selection
             await fetchOrders();
         } catch (error) {
             console.error('Bulk edit failed:', error);
-            showToast('Failed to update orders', 'error');
+            showToast(t('ui.orders.bulk.updateFailed'), 'error');
         }
     };
 
@@ -2669,11 +2697,11 @@ const Orders: React.FC = () => {
     // Legacy helper for Modal (can eventually reuse above logic properly)
     const getStatusBadge = (status: string) => {
         switch (status) {
-            case 'Pending': return <span style={{ background: '#FEF3C7', color: '#D97706', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={12} /> Pending</span>;
-            case 'Shipped': return <span style={{ background: '#DBEAFE', color: '#2563EB', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><Truck size={12} /> Shipped</span>;
-            case 'Delivered': return <span style={{ background: '#D1FAE5', color: '#059669', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={12} /> Delivered</span>;
-            case 'Cancelled': return <span style={{ background: '#FEE2E2', color: '#DC2626', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><X size={12} /> Cancelled</span>;
-            default: return <span>{orderStatusLabel(status)}</span>;
+            case 'Pending': return <span style={{ background: '#FEF3C7', color: '#D97706', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={12} /> {statusText('Pending')}</span>;
+            case 'Shipped': return <span style={{ background: '#DBEAFE', color: '#2563EB', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><Truck size={12} /> {statusText('Shipped')}</span>;
+            case 'Delivered': return <span style={{ background: '#D1FAE5', color: '#059669', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={12} /> {statusText('Delivered')}</span>;
+            case 'Cancelled': return <span style={{ background: '#FEE2E2', color: '#DC2626', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}><X size={12} /> {statusText('Cancelled')}</span>;
+            default: return <span>{statusText(status)}</span>;
         }
     };
 
@@ -2689,7 +2717,7 @@ const Orders: React.FC = () => {
 
         const originals = filteredOrders.filter(o => selectedIds.has(o.id));
         if (originals.length === 0) return;
-        if (!confirm(`Duplicate ${originals.length} order${originals.length > 1 ? 's' : ''} as new Drafted order${originals.length > 1 ? 's' : ''}?`)) return;
+        if (!confirm(originals.length > 1 ? fill(t('ui.orders.dup.confirmMany'), { n: originals.length }) : t('ui.orders.dup.confirmOne'))) return;
 
         setIsDuplicating(true);
         let created = 0;
@@ -2728,12 +2756,12 @@ const Orders: React.FC = () => {
             }
 
             setSelectedIds(new Set());
-            showToast(`Created ${created} new Drafted order${created > 1 ? 's' : ''}`, 'success');
+            showToast(fill(created > 1 ? t('ui.orders.dup.createdMany') : t('ui.orders.dup.createdOne'), { n: created }), 'success');
         } catch (error) {
             console.error('Failed to duplicate orders:', error);
             showToast(
-                `Duplicated ${created} of ${originals.length} before failing: ` +
-                (error instanceof Error ? error.message : 'unknown error'),
+                fill(t('ui.orders.dup.failed'), { done: created, n: originals.length }) +
+                (error instanceof Error ? error.message : t('ui.orders.dup.unknownError')),
                 'error'
             );
         } finally {
@@ -2746,7 +2774,7 @@ const Orders: React.FC = () => {
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text)
-                .then(() => showToast('Order details copied to clipboard', 'success'))
+                .then(() => showToast(t('ui.orders.toast.copied'), 'success'))
                 .catch((err) => {
                     console.error('Clipboard write failed:', err);
                     fallbackCopyTextToClipboard(text);
@@ -2792,13 +2820,13 @@ const Orders: React.FC = () => {
         try {
             const successful = document.execCommand('copy');
             if (successful) {
-                showToast('Order details copied to clipboard', 'success');
+                showToast(t('ui.orders.toast.copied'), 'success');
             } else {
-                showToast('Copy failed. Please copy manually.', 'error');
+                showToast(t('ui.orders.toast.copyFailed'), 'error');
             }
         } catch (err) {
             console.error('Fallback copy failed:', err);
-            showToast('Copy error', 'error');
+            showToast(t('ui.orders.toast.copyError'), 'error');
         }
 
         document.body.removeChild(textArea);
@@ -2828,25 +2856,25 @@ const Orders: React.FC = () => {
     const emptyStateContent = isLoadingOrders ? (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontSize: '14px' }}>
             <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-            Searching orders…
+            {t('ui.orders.empty.searching')}
         </div>
     ) : hasFilters ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
             <Filter size={32} style={{ opacity: 0.25 }} />
-            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>No orders match your filters</div>
-            <div style={{ fontSize: '13px' }}>Try widening the date range or removing a filter.</div>
+            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>{t('ui.orders.empty.noMatch')}</div>
+            <div style={{ fontSize: '13px' }}>{t('ui.orders.empty.noMatchHint')}</div>
             <button
                 onClick={clearAllFilters}
                 style={{ marginTop: '4px', padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#EF4444', color: 'white', fontSize: '13px', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-                <Filter size={14} /> Clear Filters
+                <Filter size={14} /> {t('ui.orders.toolbar.clearFilters')}
             </button>
         </div>
     ) : (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
             <Package size={32} style={{ opacity: 0.25 }} />
-            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>No orders yet</div>
-            <div style={{ fontSize: '13px' }}>New orders will appear here once they’re created.</div>
+            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>{t('ui.orders.empty.none')}</div>
+            <div style={{ fontSize: '13px' }}>{t('ui.orders.empty.noneHint')}</div>
         </div>
     );
 
@@ -2867,7 +2895,7 @@ const Orders: React.FC = () => {
                                 <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                                 <input
                                     type="text"
-                                    placeholder="Search orders..."
+                                    placeholder={t('orders.search')}
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '14px', background: 'var(--color-surface)', color: 'var(--color-text)' }}
@@ -2907,7 +2935,7 @@ const Orders: React.FC = () => {
                                 <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                                 <input
                                     type="text"
-                                    placeholder="Search (space/comma separated)..."
+                                    placeholder={t('ui.orders.toolbar.searchPlaceholder')}
                                     value={searchTerm}
                                     onChange={e => setSearchTerm(e.target.value)}
                                     // Handle pasted multiline text gracefully by splitting it with spaces
@@ -2944,10 +2972,10 @@ const Orders: React.FC = () => {
                                         height: '40px',
                                         whiteSpace: 'nowrap'
                                     }}
-                                    title="Bulk Edit Selected Orders"
+                                    title={t('ui.orders.toolbar.bulkEditTitle')}
                                 >
                                     <Edit size={18} />
-                                    Bulk Edit {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+                                    {t('ui.orders.toolbar.bulkEdit')} {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
                                 </button>
                             )}
                             {canEdit && selectedIds.size > 0 && (
@@ -2968,10 +2996,10 @@ const Orders: React.FC = () => {
                                         height: '40px',
                                         whiteSpace: 'nowrap'
                                     }}
-                                    title="Duplicate selected orders as new Drafted orders"
+                                    title={t('ui.orders.toolbar.duplicateTitle')}
                                 >
                                     <Copy size={18} />
-                                    {isDuplicating ? 'Duplicating…' : `Duplicate (${selectedIds.size})`}
+                                    {isDuplicating ? t('ui.orders.toolbar.duplicating') : fill(t('ui.orders.toolbar.duplicate'), { n: selectedIds.size })}
                                 </button>
                             )}
                             <div style={{ width: 'auto' }}>
@@ -2996,7 +3024,7 @@ const Orders: React.FC = () => {
                                         alignItems: 'center',
                                         justifyContent: 'center'
                                     }}
-                                    title="Toggle Filters"
+                                    title={t('ui.orders.toolbar.toggleFilters')}
                                 >
                                     <Filter size={18} />
                                 </button>
@@ -3011,7 +3039,7 @@ const Orders: React.FC = () => {
                                         fetchOrders()
                                     ]).finally(() => {
                                         if (btn) btn.style.animation = 'none';
-                                        showToast('Data refreshed', 'success');
+                                        showToast(t('ui.orders.toast.refreshed'), 'success');
                                     });
                                 }}
                                 style={{
@@ -3025,7 +3053,7 @@ const Orders: React.FC = () => {
                                     alignItems: 'center',
                                     justifyContent: 'center'
                                 }}
-                                title="Refresh Orders"
+                                title={t('ui.orders.toolbar.refresh')}
                             >
                                 <RefreshCw id="orders-refresh-btn" size={18} />
                             </button>
@@ -3061,7 +3089,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <User size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: salesmanFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen') : salesmanFilter}
+                                                {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : t('ui.orders.toolbar.salesmen')) : salesmanFilter}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -3095,7 +3123,7 @@ const Orders: React.FC = () => {
                                                 }}
                                                     onClick={() => { setSalesmanFilter('All'); setIsSalesmanOpen(false); }}
                                                 >
-                                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen'}</span>
+                                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : t('ui.orders.toolbar.salesmen')}</span>
                                                 </label>
                                                 {currentUser?.roleId !== 'salesman' && users.filter(u => u.roleId !== 'admin').map(s => (
                                                     <label key={s.id} style={{
@@ -3141,7 +3169,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <Package size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: statusFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {statusFilter.length === 0 ? 'Order Status' : `${statusFilter.length} Selected`}
+                                                {statusFilter.length === 0 ? t('orders.orderStatus') : fill(t('ui.orders.toolbar.nSelected'), { n: statusFilter.length })}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -3185,7 +3213,7 @@ const Orders: React.FC = () => {
                                                         }}
                                                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                     />
-                                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>{t('ui.orders.toolbar.selectAll')}</span>
                                                 </label>
                                                 {['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock'].map(status => (
                                                     <label key={status} style={{
@@ -3207,7 +3235,7 @@ const Orders: React.FC = () => {
                                                             }}
                                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                         />
-                                                        <span style={{ fontSize: '13px' }}>{orderStatusLabel(status)}</span>
+                                                        <span style={{ fontSize: '13px' }}>{statusText(status)}</span>
                                                     </label>
                                                 ))}
                                             </div>
@@ -3239,7 +3267,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <Truck size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', fontWeight: 500, color: shippingCoFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {shippingCoFilter.length === 0 ? 'Shipping Co' : `Shipping (${shippingCoFilter.length})`}
+                                                {shippingCoFilter.length === 0 ? t('orders.shippingCo') : fill(t('ui.orders.toolbar.shippingN'), { n: shippingCoFilter.length })}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -3273,7 +3301,7 @@ const Orders: React.FC = () => {
                                                             }}
                                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                         />
-                                                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>{t('ui.orders.toolbar.selectAll')}</span>
                                                     </label>
                                                 )}
                                                 {filterShippingCompanies.map(co => (
@@ -3298,7 +3326,7 @@ const Orders: React.FC = () => {
                                                         <span style={{ fontSize: "13px", color: getShippingCoColor(co) }}>{co}</span>
                                                     </label>
                                                 ))}
-                                                {filterShippingCompanies.length === 0 && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px' }}>No shipping companies found.</div>}
+                                                {filterShippingCompanies.length === 0 && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px' }}>{t('ui.orders.toolbar.noShippingCos')}</div>}
                                             </div>
                                         </>
                                     )}
@@ -3327,7 +3355,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <CreditCard size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: payStatusFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {payStatusFilter.length === 0 ? 'Pay Status' : `${payStatusFilter.length} Selected`}
+                                                {payStatusFilter.length === 0 ? t('orders.payStatus') : fill(t('ui.orders.toolbar.nSelected'), { n: payStatusFilter.length })}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -3371,7 +3399,7 @@ const Orders: React.FC = () => {
                                                         }}
                                                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                     />
-                                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>{t('ui.orders.toolbar.selectAll')}</span>
                                                 </label>
                                                 {PAY_STATUS_FILTER_OPTIONS.map(status => (
                                                     <label key={status} style={{
@@ -3393,7 +3421,7 @@ const Orders: React.FC = () => {
                                                             }}
                                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                         />
-                                                        <span style={{ fontSize: '13px' }}>{status}</span>
+                                                        <span style={{ fontSize: '13px' }}>{payText(status)}</span>
                                                     </label>
                                                 ))}
                                             </div>
@@ -3422,7 +3450,7 @@ const Orders: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <Store size={16} color="var(--color-primary)" />
                                             <span style={{ fontSize: '13px', color: pageFilter.length === 0 ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                                {pageFilter.length === 0 ? 'Pages' : `${pageFilter.length} Selected`}
+                                                {pageFilter.length === 0 ? t('ui.orders.toolbar.pages') : fill(t('ui.orders.toolbar.nSelected'), { n: pageFilter.length })}
                                             </span>
                                         </div>
                                         <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -3466,7 +3494,7 @@ const Orders: React.FC = () => {
                                                             }}
                                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                                         />
-                                                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>{t('ui.orders.toolbar.selectAll')}</span>
                                                     </label>
                                                 )}
                                                 {pages.map(page => (
@@ -3492,7 +3520,7 @@ const Orders: React.FC = () => {
                                                         <span style={{ fontSize: '13px', color: '#000000' }}>{page}</span>
                                                     </label>
                                                 ))}
-                                                {pages.length === 0 && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px' }}>No pages found.</div>}
+                                                {pages.length === 0 && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px' }}>{t('ui.orders.toolbar.noPages')}</div>}
                                             </div>
                                         </>
                                     )}
@@ -3515,9 +3543,9 @@ const Orders: React.FC = () => {
                                         height: '40px',
                                         boxShadow: hasFilters ? '0 2px 4px rgba(239, 68, 68, 0.3)' : 'none'
                                     }}
-                                    title="Clear All Filters"
+                                    title={t('ui.orders.toolbar.clearAllFilters')}
                                 >
-                                    <Filter size={16} /> Clear Filters
+                                    <Filter size={16} /> {t('ui.orders.toolbar.clearFilters')}
                                 </button>
 
                                 
@@ -3526,7 +3554,7 @@ const Orders: React.FC = () => {
                                 {
                                     hasPermission('create_orders') && !isMobile && (
                                         <button onClick={handleOpenAdd} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
-                                            <Plus size={18} /> New Order
+                                            <Plus size={18} /> {t('dashboard2.newOrder')}
                                         </button>
                                     )
                                 }
@@ -3543,7 +3571,7 @@ const Orders: React.FC = () => {
                                                 height: '40px', width: '40px',
                                                 transition: 'all 0.2s'
                                             }}
-                                            title="Tools"
+                                            title={t('ui.orders.toolbar.tools')}
                                         >
                                             <Settings size={18} />
                                         </button>
@@ -3568,7 +3596,7 @@ const Orders: React.FC = () => {
                                                         }}
                                                     >
                                                         <List size={16} color="var(--color-primary)" />
-                                                        <span style={{ flex: 1, textAlign: 'left' }}>Columns</span>
+                                                        <span style={{ flex: 1, textAlign: 'left' }}>{t('ui.orders.toolbar.columns')}</span>
                                                         <ChevronRight size={14} color="var(--color-text-secondary)" />
                                                     </button>
                                                     {showColumnMenu && (
@@ -3577,7 +3605,7 @@ const Orders: React.FC = () => {
                                                             display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--color-surface)',
                                                             boxShadow: '-4px 4px 20px rgba(0,0,0,0.1)'
                                                         }}>
-                                                            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
+                                                            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>{t('ui.orders.toolbar.toggleColumns')}</h4>
                                                             {allColumnsDef.map(col => (
                                                                 <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
                                                                     <input
@@ -3612,7 +3640,7 @@ const Orders: React.FC = () => {
                                                     }}
                                                 >
                                                     <Upload size={16} color={selectedIds.size > 0 ? '#10B981' : "var(--color-text-secondary)"} style={{ transform: 'rotate(180deg)' }} />
-                                                    Export {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+                                                    {t('common.export')} {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
                                                 </button>
 
                                                 {canEdit && (
@@ -3628,7 +3656,7 @@ const Orders: React.FC = () => {
                                                         }}
                                                     >
                                                         <Upload size={16} color="var(--color-primary)" />
-                                                        Import
+                                                        {t('common.import')}
                                                     </button>
                                                 )}
 
@@ -3645,7 +3673,7 @@ const Orders: React.FC = () => {
                                                         }}
                                                     >
                                                         <Trash2 size={16} color="#DC2626" />
-                                                        Delete {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+                                                        {t('common.delete')} {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
                                                     </button>
                                                 )}
                                             </div>
@@ -3671,7 +3699,7 @@ const Orders: React.FC = () => {
                         }}>
                             {/* Header */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Filter</h3>
+                                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>{t('common.filter')}</h3>
                                 <button onClick={() => setIsFilterDrawerOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <X size={18} />
                                 </button>
@@ -3682,7 +3710,7 @@ const Orders: React.FC = () => {
                                 <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                                 <input
                                     type="text"
-                                    placeholder="Search orders..."
+                                    placeholder={t('orders.search')}
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '14px', background: 'var(--color-bg)', color: 'var(--color-text)' }}
@@ -3696,7 +3724,7 @@ const Orders: React.FC = () => {
                                 </div>
                                 <button
                                     onClick={() => refreshData(true)}
-                                    title="Refresh"
+                                    title={t('dashboard2.refresh')}
                                     style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                                 >
                                     <RefreshCw size={17} />
@@ -3705,31 +3733,33 @@ const Orders: React.FC = () => {
 
                             {/* Expanded filter groups */}
                             <DrawerChipGroup
-                                title="Order Status"
+                                title={t('orders.orderStatus')}
+                                optionLabel={statusText}
                                 options={['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled']}
                                 selected={statusFilter}
                                 onToggle={(v) => setStatusFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
                             />
                             <DrawerChipGroup
-                                title="Pay Status"
+                                title={t('orders.payStatus')}
+                                optionLabel={payText}
                                 options={PAY_STATUS_FILTER_OPTIONS}
                                 selected={payStatusFilter}
                                 onToggle={(v) => setPayStatusFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
                             />
                             <DrawerChipGroup
-                                title="Salesman"
+                                title={t('orders.salesman')}
                                 options={users.map(u => u.name)}
                                 selected={salesmanFilter === 'All' ? [] : [salesmanFilter]}
                                 onToggle={(v) => setSalesmanFilter(salesmanFilter === v ? 'All' : v)}
                             />
                             <DrawerChipGroup
-                                title="Shipping Co"
+                                title={t('orders.shippingCo')}
                                 options={shippingCompanies}
                                 selected={shippingCoFilter}
                                 onToggle={(v) => setShippingCoFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
                             />
                             <DrawerChipGroup
-                                title="Page"
+                                title={t('dashboard2.page')}
                                 options={pages}
                                 selected={pageFilter}
                                 onToggle={(v) => setPageFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])}
@@ -3749,14 +3779,14 @@ const Orders: React.FC = () => {
                                     }}
                                     style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}
                                 >
-                                    Clear
+                                    {t('ui.orders.filter.clear')}
                                 </button>
                                 <button
                                     onClick={() => setIsFilterDrawerOpen(false)}
                                     className="primary-button"
                                     style={{ flex: 1, padding: '12px', borderRadius: '12px', fontWeight: 600, fontSize: '14px' }}
                                 >
-                                    Filter
+                                    {t('common.filter')}
                                 </button>
                             </div>
                         </div>
@@ -3780,7 +3810,7 @@ const Orders: React.FC = () => {
                                 )}
                                 {paginatedOrders.length === 0 && isLoadingOrders && (
                                     <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                        <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> Loading orders…
+                                        <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> {t('ui.orders.mobile.loading')}
                                     </div>
                                 )}
                                 {paginatedOrders.map(order => (
@@ -3800,7 +3830,7 @@ const Orders: React.FC = () => {
                                             const row = trackingMap[order.shipping?.trackingNumber || ''];
                                             if (!row) return null;
                                             return row.error
-                                                ? { status: 'Check failed', ago: timeAgo(row.checked_at), delivered: false }
+                                                ? { status: t('ui.orders.track.checkFailed'), ago: timeAgo(row.checked_at), delivered: false }
                                                 : { status: `${row.is_delivered ? '✓ ' : ''}${row.last_status || '—'}`, ago: timeAgo(row.checked_at), delivered: !!row.is_delivered };
                                         })()}
                                         onUpdateStatus={(id, status) => {
@@ -3813,7 +3843,7 @@ const Orders: React.FC = () => {
                                                 return;
                                             }
                                             if (status === 'ReStock' && !canRestock) {
-                                                showToast('You do not have permission to restock orders.', 'error');
+                                                showToast(t('ui.orders.toast.noRestockPermission'), 'error');
                                                 return;
                                             }
                                             if (order.shipping?.status === 'ReStock' && status === 'Drafted') {
@@ -3822,7 +3852,7 @@ const Orders: React.FC = () => {
                                                 // first call wrote, and nothing follows a refused change.
                                                 updateOrderStatus(id, 'Drafted', undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' })
                                                     .then(moved => { if (moved) return updateOrder(id, { paymentStatus: 'Unpaid', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: 'Drafted' } as any }); })
-                                                    .catch(e => { console.error('Status change failed:', e); showToast('Failed to update order status', 'error'); });
+                                                    .catch(e => { console.error('Status change failed:', e); showToast(t('ui.orders.toast.statusFailed'), 'error'); });
                                                 return;
                                             }
                                             // Shipped -> Delivered is a plain status change: no payment
@@ -3853,7 +3883,7 @@ const Orders: React.FC = () => {
                                                     }
                                                 } catch (e) {
                                                     console.error('Status change failed:', e);
-                                                    showToast('Failed to update order status', 'error');
+                                                    showToast(t('ui.orders.toast.statusFailed'), 'error');
                                                 }
                                             })();
                                         }}
@@ -3901,17 +3931,17 @@ const Orders: React.FC = () => {
                                     <div ref={loadMoreSentinelRef} style={{ padding: '18px 0 6px', textAlign: 'center' }}>
                                         {isLoadingOrders ? (
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#9CA3AF', fontSize: '13px', fontWeight: 500 }}>
-                                                <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Loading more…
+                                                <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> {t('ui.orders.mobile.loadingMore')}
                                             </div>
                                         ) : hasMoreMobile && paginatedOrders.length < totalCount ? (
                                             <button
                                                 onClick={() => setCurrentPage(p => p + 1)}
                                                 style={{ padding: '10px 22px', borderRadius: '20px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                                             >
-                                                Load older orders
+                                                {t('ui.orders.mobile.loadOlder')}
                                             </button>
                                         ) : (
-                                            <div style={{ color: '#9CA3AF', fontSize: '12px' }}>All {totalCount} orders loaded</div>
+                                            <div style={{ color: '#9CA3AF', fontSize: '12px' }}>{fill(t('ui.orders.mobile.allLoaded'), { n: totalCount })}</div>
                                         )}
                                     </div>
                                 )}
@@ -3921,7 +3951,7 @@ const Orders: React.FC = () => {
                                     <button
                                         className="mobile-fab"
                                         onClick={handleOpenAdd}
-                                        aria-label="New Order"
+                                        aria-label={t('dashboard2.newOrder')}
                                     >
                                         <Plus size={26} />
                                     </button>
@@ -3945,15 +3975,15 @@ const Orders: React.FC = () => {
                                     boxShadow: '0 -2px 10px rgba(0, 0, 0, 0.06)'
                                 }}>
                                     <div>
-                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Orders</div>
+                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('dashboard2.orders')}</div>
                                         <div style={{ fontSize: '18px', fontWeight: '800', color: '#111827' }}>{totalCount}</div>
                                     </div>
                                     <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Loaded</div>
+                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('ui.orders.mobile.loaded')}</div>
                                         <div style={{ fontSize: '14px', fontWeight: '700', color: '#374151' }}>{filteredOrders.length}/{totalCount}</div>
                                     </div>
                                     <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total</div>
+                                        <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('orders.total')}</div>
                                         <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--color-primary)' }}>
                                             ${(revenueTotal ?? filteredOrders.reduce((sum, order) => sum + orderRevenue(order), 0)).toFixed(2)}
                                         </div>
@@ -4004,7 +4034,7 @@ const Orders: React.FC = () => {
                                                         cursor: 'col-resize', background: 'transparent', zIndex: 25, transform: 'translateX(50%)'
                                                     }}
                                                     className="resize-handle"
-                                                    title="Double click to auto-fit all columns"
+                                                    title={t('ui.orders.table.autoFitAll')}
                                                 />
                                             </th>
                                             {allColumns.filter(col => visibleColumns.includes(col.id)).map((col) => {
@@ -4061,7 +4091,7 @@ const Orders: React.FC = () => {
                                                                             borderRadius: '4px',
                                                                             display: 'flex', alignItems: 'center', justifyContent: 'center'
                                                                         }}
-                                                                        title="Filter Column"
+                                                                        title={t('ui.orders.table.filterColumn')}
                                                                     >
                                                                         <Filter size={14} />
                                                                     </button>
@@ -4139,7 +4169,7 @@ const Orders: React.FC = () => {
                                                                             <button
                                                                                 onClick={(e) => { e.stopPropagation(); setReceiptSale(order); }}
                                                                                 className="icon-button"
-                                                                                title={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print Receipt" : "Print disabled (Status must be Confirmed, Shipped, or Delivered)"}
+                                                                                title={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? t('ui.orders.row.printReceipt') : t('ui.orders.row.printDisabled')}
                                                                                 disabled={!['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '')}
                                                                                 style={{
                                                                                     padding: '4px',
@@ -4152,11 +4182,11 @@ const Orders: React.FC = () => {
                                                                                 <Printer size={16} color={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
                                                                             </button>
                                                                             {hasPermission('manage_orders') && (
-                                                                                <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" disabled={isOrderLocked(order)} title={isOrderLocked(order) ? `${orderStatusLabel(order.shipping?.status || '')} orders cannot be edited` : 'Edit Order'} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: isOrderLocked(order) ? 'not-allowed' : 'pointer', opacity: isOrderLocked(order) ? 0.35 : 1 }}>
+                                                                                <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" disabled={isOrderLocked(order)} title={isOrderLocked(order) ? fill(t('ui.orders.row.lockedEdit'), { status: statusText(order.shipping?.status || '') }) : t('ui.orders.row.editOrder')} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: isOrderLocked(order) ? 'not-allowed' : 'pointer', opacity: isOrderLocked(order) ? 0.35 : 1 }}>
                                                                                     <Edit size={16} color="var(--color-text-secondary)" />
                                                                                 </button>
                                                                             )}
-                                                                            <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title="Copy Order Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                                            <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title={t('ui.orders.row.copyDetails')} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                                                 <Copy size={16} color="var(--color-text-secondary)" />
                                                                             </button>
                                                                         </div>
@@ -4166,7 +4196,7 @@ const Orders: React.FC = () => {
                                                                 <td
                                                                     key={colId}
                                                                     style={{ ...cellStyle, cursor: 'pointer', color: 'var(--color-primary)' }}
-                                                                    title="View Details"
+                                                                    title={t('ui.orders.row.viewDetails')}
                                                                     onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setIsViewModalOpen(true); }}
                                                                 >
                                                                     {new Date(order.date).toLocaleDateString()}
@@ -4324,7 +4354,7 @@ const Orders: React.FC = () => {
                                                                                     return;
                                                                                 }
                                                                                 if (newStatus === 'ReStock' && !canRestock) {
-                                                                                    showToast('You do not have permission to restock orders.', 'error');
+                                                                                    showToast(t('ui.orders.toast.noRestockPermission'), 'error');
                                                                                     return;
                                                                                 }
                                                                                 if (order.shipping?.status === 'ReStock' && newStatus === 'Drafted') {
@@ -4335,7 +4365,7 @@ const Orders: React.FC = () => {
                                                                                     // first call wrote, and nothing follows a refused change.
                                                                                     updateOrderStatus(order.id, 'Drafted', undefined, undefined, { shownStatus: order.shipping?.status || 'Pending' })
                                                                                         .then(moved => { if (moved) return updateOrder(order.id, { paymentStatus: 'Unpaid', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: 'Drafted' } as any }); })
-                                                                                        .catch(e => { console.error('Status change failed:', e); showToast('Failed to update order status', 'error'); });
+                                                                                        .catch(e => { console.error('Status change failed:', e); showToast(t('ui.orders.toast.statusFailed'), 'error'); });
                                                                                     return;
                                                                                 }
                                                                                 if (newStatus === 'Shipped') {
@@ -4377,7 +4407,7 @@ const Orders: React.FC = () => {
                                                                                         }
                                                                                     } catch (e) {
                                                                                         console.error('Status change failed:', e);
-                                                                                        showToast('Failed to update order status', 'error');
+                                                                                        showToast(t('ui.orders.toast.statusFailed'), 'error');
                                                                                     }
                                                                                 })();
                                                                             }}
@@ -4393,7 +4423,7 @@ const Orders: React.FC = () => {
                                                                             readOnly={!canEdit}
                                                                             className="search-input"
                                                                             defaultValue={order.shipping?.trackingNumber || ''}
-                                                                            placeholder="Add ID"
+                                                                            placeholder={t('ui.orders.row.addId')}
                                                                             style={{
                                                                                 width: '100%',
                                                                                 padding: '4px 8px',
@@ -4442,15 +4472,15 @@ const Orders: React.FC = () => {
                                                                             return (
                                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px 2px', fontSize: '10px', lineHeight: 1.3, minWidth: 0, visibility: hasContent ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
                                                                                     <span
-                                                                                        title={row?.error ? `Last check failed: ${row.error}` : (eventsTip || row?.last_status || '')}
+                                                                                        title={row?.error ? fill(t('ui.orders.track.lastCheckFailed'), { error: row.error }) : (eventsTip || row?.last_status || '')}
                                                                                         style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: row?.error ? '#B45309' : (row?.is_delivered ? '#059669' : 'var(--color-text-secondary)') }}
                                                                                     >
-                                                                                        {row ? (row.error ? '⚠ check failed' : `${row.is_delivered ? '✓ ' : ''}${row.last_status || '—'}`) : ' '}
+                                                                                        {row ? (row.error ? t('ui.orders.track.checkFailedShort') : `${row.is_delivered ? '✓ ' : ''}${row.last_status || '—'}`) : ' '}
                                                                                         {row && <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}> · {timeAgo(row.checked_at)}</span>}
                                                                                     </span>
                                                                                     {url && (
-                                                                                        <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ marginLeft: 'auto', color: 'var(--color-primary)', whiteSpace: 'nowrap', textDecoration: 'none' }}>
-                                                                                            Track ↗
+                                                                                        <a href={url} target="_blank" rel="noopener noreferrer" title={t('ui.orders.track.openCarrier')} style={{ marginLeft: 'auto', color: 'var(--color-primary)', whiteSpace: 'nowrap', textDecoration: 'none' }}>
+                                                                                            {t('ui.orders.track.link')}
                                                                                         </a>
                                                                                     )}
                                                                                 </div>
@@ -4477,7 +4507,7 @@ const Orders: React.FC = () => {
                                                                             readOnly={!canEdit}
                                                                             className="search-input"
                                                                             defaultValue={order.remark || ''}
-                                                                            placeholder="Add Remark"
+                                                                            placeholder={t('ui.orders.row.addRemark')}
                                                                             style={{
                                                                                 width: '100%',
                                                                                 padding: '4px 8px',
@@ -4578,12 +4608,12 @@ const Orders: React.FC = () => {
                                                 };
 
                                                 if (colId === 'actions') {
-                                                    return <td key={colId} style={{ ...commonStyle, minWidth: '100px' }}>Total: {stats.totalOrders}</td>;
+                                                    return <td key={colId} style={{ ...commonStyle, minWidth: '100px' }}>{fill(t('ui.orders.footer.totalN'), { n: stats.totalOrders })}</td>;
                                                 }
                                                 if (colId === 'total') return <td key={colId} style={{ ...commonStyle, textAlign: 'right' }}>${stats.totalRevenue.toFixed(2)}</td>;
                                                 if (colId === 'received') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: '#2563EB' }}>${stats.totalReceived.toFixed(2)}</td>;
                                                 if (colId === 'balance') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: 'var(--color-red)' }}>${stats.totalOutstanding.toFixed(2)}</td>;
-                                                if (colId === 'items') return <td key={colId} style={{ ...commonStyle }}>{stats.totalProducts} pcs</td>;
+                                                if (colId === 'items') return <td key={colId} style={{ ...commonStyle }}>{stats.totalProducts} {t('dashboard2.pieces')}</td>;
 
                                                 return <td key={colId} style={commonStyle}></td>;
                                             })}
@@ -4600,7 +4630,7 @@ const Orders: React.FC = () => {
                     {
                         selectedIds.size > 0 && canUseCheckbox && (
                             <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
-                                <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
+                                <span style={{ fontWeight: 600 }}>{fill(t('ui.orders.bulk.nSelected'), { n: selectedIds.size })}</span>
                                 <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
                                 {canManage && (Array.from(selectedIds).some(id => {
                                     const order = filteredOrders.find(o => o.id === id);
@@ -4621,19 +4651,19 @@ const Orders: React.FC = () => {
                                             }
                                         });
                                         removeBlockedCustomers(phonesToUnblock);
-                                        showToast(`Unblocked ${phonesToUnblock.length} customer(s)`, 'success');
+                                        showToast(fill(t('ui.orders.scammer.unblockedN'), { n: phonesToUnblock.length }), 'success');
                                         setSelectedIds(new Set());
                                     }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#ECFCCB', color: '#65A30D', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
-                                        <ShieldCheck size={18} /> Unblock
+                                        <ShieldCheck size={18} /> {t('ui.orders.scammer.unblock')}
                                     </button>
                                 ) : (
                                     <button type="button" onClick={(e) => { e.preventDefault(); setScammerTargetOrder(null); setIsScammerModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEF2F2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
-                                        <ShieldOff size={18} /> Mark as Scammer
+                                        <ShieldOff size={18} /> {t('ui.orders.scammer.mark')}
                                     </button>
                                 ))}
                                 {isAdmin && (
                                     <button type="button" onClick={handleBulkDelete} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
-                                        <Trash2 size={18} /> Delete
+                                        <Trash2 size={18} /> {t('common.delete')}
                                     </button>
                                 )}
                                 { (() => {
@@ -4656,7 +4686,7 @@ const Orders: React.FC = () => {
                                                 cursor: 'pointer', 
                                                 fontWeight: 500 
                                             }}>
-                                            <RefreshCw size={18} /> Restock
+                                            <RefreshCw size={18} /> {t('ui.orders.bulk.restock')}
                                         </button>
                                     );
                                 })() }
@@ -4680,7 +4710,7 @@ const Orders: React.FC = () => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                             <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                                Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredOrders.length)} to {Math.min(currentPage * itemsPerPage, filteredOrders.length)} of {filteredOrders.length} entries
+                                {fill(t('ui.orders.footer.showing'), { from: Math.min((currentPage - 1) * itemsPerPage + 1, filteredOrders.length), to: Math.min(currentPage * itemsPerPage, filteredOrders.length), n: filteredOrders.length })}
                             </div>
                             <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
                                 {(() => {
@@ -4715,7 +4745,7 @@ const Orders: React.FC = () => {
                                                 alignItems: 'center',
                                                 gap: '2px'
                                             }}>
-                                                {orderStatusLabel(status)}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                                {statusText(status)}: <strong style={{ fontSize: '11px' }}>{count}</strong>
                                             </span>
                                         );
                                     });
@@ -4758,7 +4788,7 @@ const Orders: React.FC = () => {
                                                         alignItems: 'center',
                                                         gap: '2px'
                                                     }}>
-                                                        {status}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                                        {payText(status)}: <strong style={{ fontSize: '11px' }}>{count}</strong>
                                                     </span>
                                                 );
                                             });
@@ -4774,7 +4804,7 @@ const Orders: React.FC = () => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                                <span>Rows per page:</span>
+                                <span>{t('ui.orders.footer.rowsPerPage')}</span>
                                 <select
                                     value={itemsPerPage}
                                     onChange={(e) => setItemsPerPage(Number(e.target.value))}
@@ -4796,7 +4826,7 @@ const Orders: React.FC = () => {
                                     <option value={1000}>1000</option>
                                     <option value={3000}>3000</option>
                                     <option value={5000}>5000</option>
-                                    <option value={999999}>All Rows</option>
+                                    <option value={999999}>{t('ui.orders.footer.allRows')}</option>
                                 </select>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -4814,7 +4844,7 @@ const Orders: React.FC = () => {
                                     <ChevronLeft size={16} />
                                 </button>
                                 <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                                    Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.max(1, Math.ceil(totalCount / itemsPerPage))}
+                                    {t('ui.orders.footer.page')} <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> {fill(t('ui.orders.footer.ofN'), { n: Math.max(1, Math.ceil(totalCount / itemsPerPage)) })}
                                 </span>
                                 <button
                                     onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalCount / itemsPerPage), p + 1))}
@@ -4849,7 +4879,7 @@ const Orders: React.FC = () => {
                                             opacity: isLoadingMore ? 0.7 : 1
                                         }}
                                     >
-                                        {isLoadingMore ? 'Loading...' : 'Load Older Records'}
+                                        {isLoadingMore ? t('common.loading') : t('ui.orders.footer.loadOlder')}
                                     </button>
                                 )}
                             </div>
@@ -4864,44 +4894,44 @@ const Orders: React.FC = () => {
                     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
                         <div className="glass-panel" style={{ width: '600px', padding: '32px', maxHeight: '90vh', overflowY: 'auto' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>Order Details</h2>
+                                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>{t('ui.orders.view.title')}</h2>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <button
                                         onClick={() => {
                                             const textToCopy = generateOrderCopyText(selectedOrder, sales);
                                             navigator.clipboard.writeText(textToCopy);
-                                            showToast('Order info copied!', 'success');
+                                            showToast(t('ui.orders.view.copied'), 'success');
                                         }}
                                         style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
-                                        title="Copy Order Info"
+                                        title={t('ui.orders.view.copyInfo')}
                                     >
-                                        <Copy size={16} /> Copy
+                                        <Copy size={16} /> {t('ui.orders.view.copy')}
                                     </button>
                                     <button
                                         onClick={() => window.open(`/orders/${selectedOrder.id}`, '_blank')}
                                         style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
-                                        title="Open Details Page"
+                                        title={t('ui.orders.view.openPage')}
                                     >
-                                        <ExternalLink size={16} /> Open
+                                        <ExternalLink size={16} /> {t('ui.orders.view.open')}
                                     </button>
                                     {selectedOrder.customer?.phone && blockedCustomers.some(bc => normalizePhone(bc.phone) === normalizePhone(selectedOrder.customer!.phone)) ? (
                                         <button
                                             onClick={() => {
                                                 removeBlockedCustomer(String(selectedOrder.customer!.phone || '').trim());
-                                                showToast('Customer unblocked', 'success');
+                                                showToast(t('ui.orders.scammer.unblocked'), 'success');
                                             }}
                                             style={{ background: 'none', border: '1px solid #ECFCCB', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: '#65A30D', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
-                                            title="Unblock Scammer"
+                                            title={t('ui.orders.scammer.unblockTitle')}
                                         >
-                                            <ShieldCheck size={16} /> Unblock
+                                            <ShieldCheck size={16} /> {t('ui.orders.scammer.unblock')}
                                         </button>
                                     ) : (
                                         <button
                                             onClick={() => { setScammerTargetOrder(selectedOrder); setIsScammerModalOpen(true); setIsViewModalOpen(false); }}
                                             style={{ background: 'none', border: '1px solid #FEE2E2', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: '#DC2626', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
-                                            title="Mark as Scammer"
+                                            title={t('ui.orders.scammer.mark')}
                                         >
-                                            <ShieldOff size={16} /> Block
+                                            <ShieldOff size={16} /> {t('ui.orders.scammer.block')}
                                         </button>
                                     )}
                                     <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
@@ -4909,27 +4939,27 @@ const Orders: React.FC = () => {
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '12px' }}>
                                 <div>
-                                    <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Customer</h4>
+                                    <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('orders.customer')}</h4>
                                     <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{selectedOrder.customer?.name}</div>
                                     <div style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{selectedOrder.customer?.phone}</div>
                                     <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>{selectedOrder.customer?.address}</div>
                                 </div>
                                 <div>
-                                    <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Order Info</h4>
-                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>Date: {new Date(selectedOrder.date).toLocaleString()}</div>
-                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>Status: {getStatusBadge(selectedOrder.shipping?.status || 'Pending')}</div>
-                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>Platform: {selectedOrder.customer?.platform} ({selectedOrder.customer?.page})</div>
+                                    <h4 style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('ui.orders.view.orderInfo')}</h4>
+                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>{t('ui.orders.view.date')} {new Date(selectedOrder.date).toLocaleString()}</div>
+                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>{t('ui.orders.view.status')} {getStatusBadge(selectedOrder.shipping?.status || 'Pending')}</div>
+                                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>{t('ui.orders.view.platform')} {selectedOrder.customer?.platform} ({selectedOrder.customer?.page})</div>
                                     <div style={{ fontSize: '14px', marginTop: '8px', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                         <ExternalLink size={14} style={{ color: 'var(--color-primary)' }} />
                                         <a href={`/orders/${selectedOrder.id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
-                                            Open Order Page
+                                            {t('ui.orders.view.openOrderPage')}
                                         </a>
                                     </div>
                                 </div>
                             </div>
 
                             <div style={{ background: 'rgba(0,0,0,0.03)', borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
-                                <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>Items</h4>
+                                <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>{t('ui.orders.view.items')}</h4>
                                 {selectedOrder.items.map((item, i) => (
                                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
                                         <span>{item.name} <span style={{ color: 'var(--color-text-secondary)' }}>x{item.quantity}</span></span>
@@ -4937,14 +4967,14 @@ const Orders: React.FC = () => {
                                     </div>
                                 ))}
                                 <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '12px', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px' }}>
-                                    <span>Total</span>
+                                    <span>{t('orders.total')}</span>
                                     <span>${selectedOrder.total.toFixed(2)}</span>
                                 </div>
                             </div>
 
                             <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', display: 'grid', gap: '8px' }}>
                                 <div style={{ color: getShippingCoColor(selectedOrder.shipping?.company || '') }}>
-                                    <strong>Shipping:</strong> {selectedOrder.shipping?.company} (${selectedOrder.shipping?.cost}) - {selectedOrder.shipping?.trackingNumber || 'No ID'}
+                                    <strong>{t('ui.orders.view.shipping')}</strong> {selectedOrder.shipping?.company} (${selectedOrder.shipping?.cost}) - {selectedOrder.shipping?.trackingNumber || t('ui.orders.view.noId')}
                                     {(() => {
                                         const url = buildTrackingUrl(selectedOrder.shipping?.company, selectedOrder.shipping?.trackingNumber, trackingUrlTemplates);
                                         const row = trackingMap[selectedOrder.shipping?.trackingNumber || ''];
@@ -4952,20 +4982,20 @@ const Orders: React.FC = () => {
                                             <>
                                                 {url && (
                                                     <a href={url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '8px', color: 'var(--color-primary)', fontWeight: 600, textDecoration: 'none' }}>
-                                                        Track ↗
+                                                        {t('ui.orders.track.link')}
                                                     </a>
                                                 )}
                                                 {row && !row.error && (
                                                     <div style={{ marginTop: '4px', fontSize: '12px', color: row.is_delivered ? '#059669' : 'var(--color-text-secondary)' }}>
-                                                        Carrier: {row.is_delivered ? '✓ ' : ''}{row.last_status || '—'}{row.last_event_at ? ` (${row.last_event_at})` : ''} · checked {timeAgo(row.checked_at)}
+                                                        {t('ui.orders.view.carrier')} {row.is_delivered ? '✓ ' : ''}{row.last_status || '—'}{row.last_event_at ? ` (${row.last_event_at})` : ''} · {t('ui.orders.view.checked')} {timeAgo(row.checked_at)}
                                                     </div>
                                                 )}
                                             </>
                                         );
                                     })()}
                                 </div>
-                                <div><strong>Salesman:</strong> {selectedOrder.salesman}</div>
-                                <div><strong>Remark:</strong> {selectedOrder.remark || '-'}</div>
+                                <div><strong>{t('ui.orders.view.salesman')}</strong> {selectedOrder.salesman}</div>
+                                <div><strong>{t('ui.orders.view.remark')}</strong> {selectedOrder.remark || '-'}</div>
                             </div>
                         </div>
                     </div>
@@ -5011,7 +5041,12 @@ const Orders: React.FC = () => {
                         ? { rate: paymentMethodTargetOrder.paymentClaim.exchange_rate }
                         : undefined}
                     description={paymentMethodTargetOrder.paymentClaim
-                        ? `Confirming the ${paymentMethodTargetOrder.paymentClaim.status === 'Paid' ? 'payment' : 'deposit'} ${paymentMethodTargetOrder.paymentClaim.by || 'the Salesman'} entered ($${Number(paymentMethodTargetOrder.paymentClaim.amount || 0).toFixed(2)}${paymentMethodTargetOrder.paymentClaim.currency === 'KHR' && paymentMethodTargetOrder.paymentClaim.original_amount ? ` = ៛${Math.round(paymentMethodTargetOrder.paymentClaim.original_amount).toLocaleString()}` : ''}). Check it arrived, then confirm: that books it.`
+                        ? fill(t('ui.orders.claim.confirmingDesc'), {
+                            kind: paymentMethodTargetOrder.paymentClaim.status === 'Paid' ? t('ui.orders.claim.payment') : t('ui.orders.claim.deposit'),
+                            by: paymentMethodTargetOrder.paymentClaim.by || t('ui.orders.claim.theSalesman'),
+                            amount: Number(paymentMethodTargetOrder.paymentClaim.amount || 0).toFixed(2),
+                            khr: paymentMethodTargetOrder.paymentClaim.currency === 'KHR' && paymentMethodTargetOrder.paymentClaim.original_amount ? ` = ៛${Math.round(paymentMethodTargetOrder.paymentClaim.original_amount).toLocaleString()}` : '',
+                        })
                         : undefined}
                     onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, money }) => {
                         // Payment only — the order/shipping status is left untouched.
@@ -5124,32 +5159,32 @@ const Orders: React.FC = () => {
             <Modal
                 isOpen={isScammerModalOpen}
                 onClose={() => { setIsScammerModalOpen(false); setScammerTargetOrder(null); setScammerReason(''); }}
-                title={scammerTargetOrder ? "Mark Customer as Scammer" : "Mark Customers as Scammers"}
+                title={scammerTargetOrder ? t('ui.orders.scammer.titleOne') : t('ui.orders.scammer.titleMany')}
                 width="400px"
             >
                 <div style={{ padding: '20px' }}>
                     <div style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
                         {scammerTargetOrder ? (
-                            <>Are you sure you want to block <strong>{scammerTargetOrder.customer?.name}</strong> ({scammerTargetOrder.customer?.phone})?</>
+                            <>{t('ui.orders.scammer.confirmOnePre')} <strong>{scammerTargetOrder.customer?.name}</strong> ({scammerTargetOrder.customer?.phone}){t('ui.orders.scammer.confirmOnePost')}</>
                         ) : (
-                            <>Are you sure you want to block <strong>{selectedIds.size}</strong> selected customer(s)?</>
+                            <>{t('ui.orders.scammer.confirmOnePre')} <strong>{selectedIds.size}</strong> {t('ui.orders.scammer.confirmManyPost')}</>
                         )}
-                        <br />They will be prevented from placing future orders.
+                        <br />{t('ui.orders.scammer.prevented')}
                     </div>
                     <div style={{ marginBottom: '24px' }}>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--color-text-main)' }}>Reason (Optional)</label>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: 'var(--color-text-main)' }}>{t('ui.orders.scammer.reason')}</label>
                         <input
                             type="text"
                             value={scammerReason}
                             onChange={(e) => setScammerReason(e.target.value)}
                             className="form-input"
-                            placeholder="e.g. Fake order, refused delivery"
+                            placeholder={t('ui.orders.scammer.reasonPlaceholder')}
                             autoFocus
                         />
                     </div>
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                         <button onClick={() => { setIsScammerModalOpen(false); setScammerTargetOrder(null); setScammerReason(''); }} className="secondary-button" style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '14px' }}>
-                            Cancel
+                            {t('common.cancel')}
                         </button>
                         <button
                             onClick={async () => {
@@ -5162,7 +5197,7 @@ const Orders: React.FC = () => {
                                             blockedAt: new Date().toISOString(),
                                             blockedBy: currentUser?.name
                                         });
-                                        showToast('Customer marked as scammer', 'success');
+                                        showToast(t('ui.orders.scammer.markedOne'), 'success');
                                     }
                                 } else {
                                     const customersToBlock: any[] = [];
@@ -5185,9 +5220,9 @@ const Orders: React.FC = () => {
                                     });
                                     if (customersToBlock.length > 0) {
                                         await addBlockedCustomers(customersToBlock);
-                                        showToast(`${customersToBlock.length} customer(s) marked as scammers`, 'success');
+                                        showToast(fill(t('ui.orders.scammer.markedMany'), { n: customersToBlock.length }), 'success');
                                     } else {
-                                        showToast('No customer phone found on the selected orders — nobody was blocked', 'error');
+                                        showToast(t('ui.orders.scammer.noPhone'), 'error');
                                     }
                                 }
                                 setIsScammerModalOpen(false);
@@ -5198,7 +5233,7 @@ const Orders: React.FC = () => {
                             className="primary-button"
                             style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '14px', background: '#EF4444', border: 'none', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)' }}
                         >
-                            Confirm Block
+                            {t('ui.orders.scammer.confirmBlock')}
                         </button>
                     </div>
                 </div>
@@ -5207,7 +5242,7 @@ const Orders: React.FC = () => {
             <Modal
                 isOpen={isShippingPointModalOpen}
                 onClose={() => setIsShippingPointModalOpen(false)}
-                title="Shipping Points"
+                title={t('ui.orders.header.shippingPoints')}
                 fullScreen
                 bodyPadding="0"
                 bodyOverflowY="auto"
@@ -5225,7 +5260,7 @@ const Orders: React.FC = () => {
             <Modal
                 isOpen={isIncomeModalOpen}
                 onClose={() => setIsIncomeModalOpen(false)}
-                title="Income & Expense"
+                title={t('ui.orders.modal.incomeExpense')}
                 width="1200px"
                 height="90vh"
                 bodyPadding="0"
@@ -5238,7 +5273,7 @@ const Orders: React.FC = () => {
             <Modal
                 isOpen={isDeletedModalOpen}
                 onClose={() => setIsDeletedModalOpen(false)}
-                title="Deleted Orders"
+                title={t('ui.orders.modal.deletedOrders')}
                 width="1200px"
                 height="90vh"
                 bodyPadding="0"

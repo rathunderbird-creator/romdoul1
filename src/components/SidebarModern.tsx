@@ -7,6 +7,7 @@ import { X, ChevronDown, Pin, PinOff } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useNavItems, type NavItem, type NavSubItem } from './useNavItems';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useTx } from './useTx';
 
 interface SidebarProps {
     isCollapsed: boolean;
@@ -18,6 +19,7 @@ interface SidebarProps {
 }
 
 const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile, isPinned = false, canPin = true, onTogglePin }) => {
+    const tx = useTx();
     const { logo } = useStore();
     const location = useLocation();
     const navItems = useNavItems();
@@ -139,7 +141,7 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
             )}
 
             <aside
-                aria-label="Main navigation"
+                aria-label={tx('ui.components.sidebar.mainNav', 'Main navigation')}
                 onMouseEnter={() => setIsHovering(true)}
                 onMouseLeave={() => setIsHovering(false)}
                 style={{
@@ -167,7 +169,7 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         color: 'white', fontWeight: 800, fontSize: '14px',
                     }}>
-                        {logo ? <img src={logo} alt="Store Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : 'ERP'}
+                        {logo ? <img src={logo} alt={tx('ui.components.sidebar.storeLogo', 'Store Logo')} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : 'ERP'}
                     </div>
                     {!visualCollapsed && (
                         <div style={{ minWidth: 0, flex: 1 }}>
@@ -182,8 +184,8 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                             type="button"
                             onClick={onTogglePin}
                             disabled={!isPinned && !canPin}
-                            title={isPinned ? 'Unpin sidebar (collapse to icons)' : (canPin ? 'Pin sidebar (keep it open)' : 'Pin sidebar (needs a wider window)')}
-                            aria-label="Pin sidebar"
+                            title={isPinned ? tx('ui.components.sidebar.unpin', 'Unpin sidebar (collapse to icons)') : (canPin ? tx('ui.components.sidebar.pinKeepOpen', 'Pin sidebar (keep it open)') : tx('ui.components.sidebar.pinNeedsWider', 'Pin sidebar (needs a wider window)'))}
+                            aria-label={tx('ui.components.sidebar.pin', 'Pin sidebar')}
                             aria-pressed={isPinned}
                             className="msidebar-item"
                             style={{ background: 'transparent', border: '1px solid var(--modern-sidebar-border)', padding: '5px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (!isPinned && !canPin) ? 0.5 : 1, cursor: (!isPinned && !canPin) ? 'not-allowed' : 'pointer', flexShrink: 0 }}
@@ -192,7 +194,7 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                         </button>
                     )}
                     {isMobile && !isCollapsed && (
-                        <button onClick={toggleSidebar} aria-label="Close menu" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--modern-sidebar-text-muted)', cursor: 'pointer', display: 'flex', padding: '4px' }}>
+                        <button onClick={toggleSidebar} aria-label={tx('ui.components.sidebar.closeMenu', 'Close menu')} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--modern-sidebar-text-muted)', cursor: 'pointer', display: 'flex', padding: '4px' }}>
                             <X size={20} />
                         </button>
                     )}
@@ -203,8 +205,8 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                         type="button"
                         onClick={onTogglePin}
                         disabled={!canPin}
-                        title={canPin ? 'Pin sidebar (keep it open)' : 'Pin sidebar (needs a wider window)'}
-                        aria-label="Pin sidebar"
+                        title={canPin ? tx('ui.components.sidebar.pinKeepOpen', 'Pin sidebar (keep it open)') : tx('ui.components.sidebar.pinNeedsWider', 'Pin sidebar (needs a wider window)')}
+                        aria-label={tx('ui.components.sidebar.pin', 'Pin sidebar')}
                         aria-pressed={isPinned}
                         className="msidebar-item"
                         style={{ background: 'transparent', border: '1px solid var(--modern-sidebar-border)', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px', opacity: canPin ? 1 : 0.5, cursor: canPin ? 'pointer' : 'not-allowed' }}
@@ -213,7 +215,7 @@ const SidebarModern: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isM
                     </button>
                 )}
 
-                <nav aria-label="Pages" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto', overflowX: 'hidden', paddingRight: '2px' }}>
+                <nav aria-label={tx('ui.components.sidebar.pages', 'Pages')} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto', overflowX: 'hidden', paddingRight: '2px' }}>
                     {navItems.map(item => (item.subItems && item.subItems.length > 0) ? renderGroup(item) : renderFlatItem(item))}
                 </nav>
 

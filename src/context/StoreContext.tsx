@@ -15,7 +15,8 @@ import { isFifoReadMissingError } from '../utils/supabaseErrors';
 import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../utils/configOps';
 import { BACKUP_TABLES, buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
 import { ALL_PERMISSIONS } from '../types';
-import { orderStatusLabel } from '../utils/orderStatusRules';
+import { orderStatusText } from '../utils/orderStatusRules';
+import { tNow } from '../i18n/translate';
 import type {
     Product,
     CartItem,
@@ -531,7 +532,7 @@ export async function postOrFinalizeTransactionReceipt({
     if (findErr) throw findErr;
     // Never rewrite a finalized entry; a missing status counts as Posted, same as the page.
     if (existing && (existing as { status?: string }).status !== 'Draft') {
-        throw new Error('This payment is already posted to the ledger.');
+        throw new Error(tNow('ui.store.ledger.alreadyPosted'));
     }
 
     if (existing) {
@@ -540,7 +541,7 @@ export async function postOrFinalizeTransactionReceipt({
         // untouched rather than deleted with nothing to replace them.
         const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency);
         if (!revenueAcc || !cashAccId) {
-            throw new Error('Could not resolve a Sales Revenue account and a cash/bank account in the Chart of Accounts.');
+            throw new Error(tNow('ui.store.ledger.noAccounts'));
         }
         // select('*') so each line's description rides along where that column
         // exists, without failing where it doesn't.
@@ -604,7 +605,7 @@ export async function postOrFinalizeTransactionReceipt({
     } else {
         const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId, payBy, currency });
         if (!ok) {
-            throw new Error('Could not create a Posted journal entry — check that the Chart of Accounts has an active Sales Revenue account and a cash/bank account.');
+            throw new Error(tNow('ui.store.ledger.postFailed'));
         }
     }
 
@@ -621,7 +622,7 @@ export async function postOrFinalizeTransactionReceipt({
                 await postRetailCogsOnlyEntry(orderId, date, `${description} · cost of goods sold`, 'Posted');
             }
         } catch (e) {
-            if (e instanceof CogsReadError) throw new Error(`The deposit was posted, but its cost of goods was not booked. ${e.message}`);
+            if (e instanceof CogsReadError) throw new Error(tNow('ui.store.ledger.depositCogsFailed', { error: e.message }));
             console.error('Could not check whether the deposit covered the order:', e);
         }
     }
@@ -656,14 +657,14 @@ const isStockConsumed = (status: string) => ['Shipped', 'Delivered'].includes(st
 // Same rule as order_status_holds_stock in the migration.
 const holdsOrderStock = (status: string) => isStockConsumed(status) || status === 'Returned';
 
-const ORDER_FUNCTIONS_MISSING_MESSAGE = 'Orders need a one-time database update before an order\'s shipping status can change, a returned order can be restocked, or the items of a shipped order can be edited: run migrations/add_order_status_function.sql in this store\'s Supabase SQL editor. Nothing was saved.';
+const ORDER_FUNCTIONS_MISSING_MESSAGE = () => tNow('ui.store.order.statusFunctionsMissing');
 
 // On a store without set_product_stock (FIFO costing not set up yet: its
 // count, true-up and pool rebuild come first) the Adjust Stock page still
 // saves and posts adjustments, so the message sends the user there.
-const SET_STOCK_MISSING_MESSAGE = 'Stock can\'t be changed here on this store yet: until FIFO costing is set up (a stock count, true-up and pool rebuild), change stock on the Stock Adjustments page instead (menu Inventory › Adjust Stock: create an adjustment and post it). Nothing was changed.';
+const SET_STOCK_MISSING_MESSAGE = () => tNow('ui.store.product.setStockMissing');
 
-const ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE = 'Orders need a one-time database update before an order can be created, its payment saved, orders deleted or a restock\'s payment cancelled: run migrations/add_order_payment_functions.sql in this store\'s Supabase SQL editor. Nothing was saved.';
+const ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE = () => tNow('ui.store.order.paymentFunctionsMissing');
 
 // Statuses that only make sense once the goods have physically left: you cannot deliver
 // or receive a return for something that was never shipped.
@@ -685,21 +686,13 @@ const canEnterPostDispatch = (currentStatus: string, targetStatus?: string) =>
     (targetStatus === 'Delivered' && currentStatus === 'Returned');
 
 const POST_DISPATCH_BLOCKED_MESSAGE = (currentStatus: string, targetStatus: string) =>
-    `This order is "${orderStatusLabel(currentStatus)}" and cannot be marked ${orderStatusLabel(targetStatus)} directly.\n\n` +
-    `Stock is counted out when an order is Shipped, so skipping that step would leave ` +
-    `inventory unchanged — and deleting the order later would add stock back that was ` +
-    `never taken.\n\n` +
-    `Set the order back to Drafted, then move it through Confirmed → Shipped.`;
+    tNow('ui.store.order.postDispatchBlocked', { current: orderStatusText(currentStatus), target: orderStatusText(targetStatus) });
 
 // Admins may force a transition the rule above rejects — but with eyes open: the
 // confirm spells out that a forced jump is a status-only change, so any stock the
 // skipped Shipped step would have counted out stays untouched.
 const ADMIN_FORCE_STATUS_MESSAGE = (currentStatus: string, targetStatus: string) =>
-    `Admin override — this order is "${orderStatusLabel(currentStatus)}", which normally cannot be marked ` +
-    `${orderStatusLabel(targetStatus)} directly (stock is counted out at the Shipped step).\n\n` +
-    `Stock follows the new status: if the goods are still in stock, they are counted ` +
-    `out now, as if the order had shipped.\n\n` +
-    `Change it to ${orderStatusLabel(targetStatus)} anyway?`;
+    tNow('ui.store.order.adminForceStatus', { current: orderStatusText(currentStatus), target: orderStatusText(targetStatus) });
 
 // Exported (not just the hook) so a dev-only preview harness can supply a
 // mock value directly via <StoreContext.Provider> without pulling in the
@@ -896,7 +889,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Real failure (network blip, server error) — see the matching
             // branch below. Never reported as a wrong password.
             console.error('login_with_pin failed:', mintError);
-            throw new Error('Could not verify password — check the connection and try again');
+            throw new Error(tNow('ui.store.auth.verifyFailed'));
         }
 
         // add_auth_guards.sql not applied yet: fall back to check_pin (no
@@ -934,7 +927,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // A real failure (network blip, server error) — never report it as a
             // wrong password. The Login page's catch shows its own message.
             console.error('check_pin failed:', rpcError);
-            throw new Error('Could not verify password — check the connection and try again');
+            throw new Error(tNow('ui.store.auth.verifyFailed'));
         }
 
         if (user) return finishLogin(user, sessionToken);
@@ -1712,7 +1705,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 // is a fresh store, so the defaults are its config.
                 configLoadedRef.current = true;
             } else {
-                throw new Error('Settings have not loaded from the database yet and could not be re-read, so this change was NOT saved — otherwise it could overwrite the store\'s real settings with defaults. Check the connection and try again.');
+                throw new Error(tNow('ui.store.config.notLoadedReread'));
             }
         }
         let ops: ConfigOps;
@@ -1726,7 +1719,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 // The payload was computed from a screen showing factory
                 // defaults; the real settings are on screen NOW, so retrying
                 // is safe.
-                throw new Error('Settings had not loaded from the database when this change was made, so it was NOT saved. They are loaded now — please redo the change.');
+                throw new Error(tNow('ui.store.config.notLoadedRedo'));
             }
         }
         assertValidConfigOps(ops);
@@ -1792,7 +1785,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     return;
                 }
                 if (!isRpcMissingError(error)) {
-                    throw new Error('Failed to update configuration: ' + error.message);
+                    throw new Error(tNow('ui.store.config.updateFailed', { error: error.message }));
                 }
                 // add_config_functions.sql not run in this store yet — no
                 // refusal (config edits are routine): legacy path below.
@@ -1818,7 +1811,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
             const merged = applyConfigOpsLocally(base, ops);
             const { error: writeErr } = await supabase.from('app_config').upsert({ id: 1, data: merged });
-            if (writeErr) throw new Error('Failed to update configuration: ' + writeErr.message);
+            if (writeErr) throw new Error(tNow('ui.store.config.updateFailed', { error: writeErr.message }));
             absorbMerged(merged);
         } catch (e) {
             console.error('Failed to update config in Supabase:', e);
@@ -1987,7 +1980,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         try {
             await updateConfigOps({ blockedCustomers: { op: 'append', items: [customer], idKey: 'phone', norm: 'phone' } });
         } catch (error: any) {
-            alert("Failed to mark scammer: " + error.message);
+            alert(tNow('ui.store.blocked.markFailed', { error: error.message }));
         }
     };
 
@@ -2005,19 +1998,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         try {
             await updateConfigOps({ blockedCustomers: { op: 'append', items: newCustomers, idKey: 'phone', norm: 'phone' } });
         } catch (error: any) {
-            alert("Failed to mark scammers: " + error.message);
+            alert(tNow('ui.store.blocked.markManyFailed', { error: error.message }));
         }
     };
 
     const removeBlockedCustomer = (phone: string) => {
         updateConfigOps({ blockedCustomers: { op: 'removeItems', values: [phone], idKey: 'phone', norm: 'phone' } })
-            .catch((error: Error) => alert('Failed to unblock customer: ' + error.message));
+            .catch((error: Error) => alert(tNow('ui.store.blocked.unblockFailed', { error: error.message })));
     };
 
     // Batched unblock in ONE config write.
     const removeBlockedCustomers = (phones: string[]) => {
         updateConfigOps({ blockedCustomers: { op: 'removeItems', values: phones, idKey: 'phone', norm: 'phone' } })
-            .catch((error: Error) => alert('Failed to unblock customers: ' + error.message));
+            .catch((error: Error) => alert(tNow('ui.store.blocked.unblockManyFailed', { error: error.message })));
     };
 
     // The phone is the entry's identity: updates may change name/reason/etc.,
@@ -2030,7 +2023,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const entry = (cfg.blockedCustomers || []).find(c => normalizePhone(c.phone) === key);
             if (!entry) return null;
             return { blockedCustomers: { op: 'updateItems', items: [{ ...entry, ...updates, phone: entry.phone }], idKey: 'phone', norm: 'phone' } };
-        }).catch((error: Error) => alert('Failed to update blocked customer: ' + error.message));
+        }).catch((error: Error) => alert(tNow('ui.store.blocked.updateFailed', { error: error.message })));
     };
 
     // Builder: whether this click pins or UNpins is decided against the
@@ -2041,7 +2034,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return pinned.includes(productId)
                 ? { pinnedProducts: { op: 'removeItems', values: [productId] } }
                 : { pinnedProducts: { op: 'append', items: [productId] } };
-        }).catch((error: Error) => alert('Failed to save pin: ' + error.message));
+        }).catch((error: Error) => alert(tNow('ui.store.product.pinFailed', { error: error.message })));
     };
 
     // Load pinned columns from localStorage on user change
@@ -2074,7 +2067,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // blocklist or roles any more.
     const updateProductOrder = (order: string[]) => {
         updateConfigOps({ productOrder: { op: 'set', value: order } })
-            .catch((error: Error) => alert('Failed to save product order: ' + error.message));
+            .catch((error: Error) => alert(tNow('ui.store.product.orderFailed', { error: error.message })));
     };
 
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -2309,7 +2302,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const { error: itemsError } = await supabase.from('sale_items').insert(itemsPayload);
         if (itemsError) {
             console.error('Failed to insert items:', itemsError);
-            throw new Error('Failed to insert items: ' + itemsError.message);
+            throw new Error(tNow('ui.store.order.insertItemsFailed', { error: itemsError.message }));
         }
 
         // 3. Update Stock - REMOVED (As requested by user, skip POS auto deduct)
@@ -2370,7 +2363,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const { error } = await supabase.from('products').insert(dbProduct);
         if (error) {
             console.error('Error adding product:', error);
-            alert(`Failed to add product: ${error.message}\nPlease check database permissions (RLS) or connection.`);
+            alert(tNow('ui.store.product.addFailed', { error: error.message }));
             // Rollback local state
             setProducts(prev => prev.filter(p => p.id !== newProduct.id));
             return null;
@@ -2380,7 +2373,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 await addStock(newProduct.id, openingStock, newProduct.purchaseCost || 0, 'Opening stock');
                 newProduct.stock = openingStock;
             } catch (e) {
-                alert(`Product "${newProduct.name}" was added with stock 0: its opening stock of ${openingStock} was not added (${e instanceof Error ? e.message : String(e)}). Add it with Add Stock.`);
+                alert(tNow('ui.store.product.openingStockFailed', { name: newProduct.name, qty: openingStock, error: e instanceof Error ? e.message : String(e) }));
             }
         }
         setProductsUpdatedAt(Date.now());
@@ -2419,7 +2412,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const { error } = await supabase.from('products').update({ is_active: false }).eq('id', id);
         if (error) {
             console.error('Error soft-deleting product:', error);
-            alert(`Failed to delete product: ${error.message}`);
+            alert(tNow('ui.store.product.deleteFailed', { error: error.message }));
             // Re-fetch to sync state?
             const { data } = await supabase.from('products').select('*').eq('id', id).single();
             if (data) setProducts(prev => [...prev, data]);
@@ -2435,7 +2428,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const { error } = await supabase.from('products').update({ is_active: false }).in('id', ids);
         if (error) {
             console.error('Error soft-deleting products:', error);
-            alert(`Failed to delete products: ${error.message}`);
+            alert(tNow('ui.store.product.deleteManyFailed', { error: error.message }));
         } else {
             setProducts(prev => prev.filter(p => !ids.includes(p.id)));
             setProductsUpdatedAt(Date.now());
@@ -2473,7 +2466,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 p_created_by: currentUser?.id || null,
                 p_today: getLocalYYYYMMDD(),
                 p_restock_id: restockId,
-            }, 'Adding stock');
+            }, tNow('ui.store.area.addingStock'));
             addStockKeys.release(signature);
 
             // Update local state (functional form — loops must compose)
@@ -2503,7 +2496,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             p_created_by: currentUser?.id || null,
             p_today: getLocalYYYYMMDD(),
             p_reopen_cancelled: !!opts?.reopenCancelled,
-        }, 'Receiving purchase orders');
+        }, tNow('ui.store.area.receivingPurchaseOrders'));
         const stock = result?.stock || {};
         if (Object.keys(stock).length > 0) {
             setProducts(prev => prev.map(p => p.id in stock ? { ...p, stock: Number(stock[p.id]) || 0 } : p));
@@ -2531,9 +2524,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (error) {
             console.error('Error adjusting stock:', error);
             if (isRpcMissingError(error) || (/set_product_stock|sa_post_adjustment/i.test(error.message || '') && /schema cache|does not exist/i.test(error.message || ''))) {
-                throw new Error(SET_STOCK_MISSING_MESSAGE);
+                throw new Error(SET_STOCK_MISSING_MESSAGE());
             }
-            throw new Error(error.message || 'Unknown error');
+            throw new Error(error.message || tNow('ui.store.unknownError'));
         }
         const res = (data || {}) as { stock?: number; ledger?: string };
         const stock = Number(res.stock);
@@ -2626,7 +2619,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // let the next try mint a fresh id instead of re-sending this one.
             if (/already exists|duplicate key/i.test(error.message || '')) pendingOrderIds.delete(signature);
             console.error('Error creating online order:', error);
-            throw new Error('Failed to create order: ' + orderPaymentRpcMessage(error));
+            throw new Error(tNow('ui.store.order.createFailed', { error: orderPaymentRpcMessage(error) }));
         }
         pendingOrderIds.delete(signature);
         paymentTxKeys.release('create:' + newSale.id);
@@ -2636,7 +2629,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const { error: claimErr } = await supabase.from('sales').update({ payment_claim: newSale.paymentClaim }).eq('id', newSale.id);
             if (claimErr) {
                 console.error('Order created, but the unconfirmed payment could not be saved:', claimErr);
-                alert(`The order was created, but the ${newSale.paymentClaim.status === 'Paid' ? 'payment' : 'deposit'} of $${newSale.paymentClaim.amount.toFixed(2)} could not be attached for confirmation. Tell Admin, Customer Care or an Accountant to record it on the Orders page.`);
+                alert(newSale.paymentClaim.status === 'Paid'
+                    ? tNow('ui.store.order.claimPaymentNotAttached', { amount: newSale.paymentClaim.amount.toFixed(2) })
+                    : tNow('ui.store.order.claimDepositNotAttached', { amount: newSale.paymentClaim.amount.toFixed(2) }));
                 newSale.paymentClaim = undefined;
             }
         }
@@ -2673,12 +2668,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const e = error as { code?: string; message?: string } | null;
         const message = String(e?.message || error || '');
         if (isRpcMissingError(e) || (/set_order_shipping_status|restock_returned_orders|edit_order_items/i.test(message) && /schema cache|does not exist/i.test(message))) {
-            return ORDER_FUNCTIONS_MISSING_MESSAGE;
+            return ORDER_FUNCTIONS_MISSING_MESSAGE();
         }
         if (/sale_items_product_id_fkey/i.test(message)) {
-            return 'A product on this order no longer exists. Remove it from the order and save again.';
+            return tNow('ui.store.order.productGone');
         }
-        return message || 'Unknown error';
+        return message || tNow('ui.store.unknownError');
     };
 
     // Same, for the order-payment functions, which arrive with
@@ -2687,12 +2682,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const e = error as { code?: string; message?: string } | null;
         const message = String(e?.message || error || '');
         if (isRpcMissingError(e) || (/create_retail_order|set_order_payment|delete_retail_orders|apply_restock_payment_side|order_payment_functions_ready/i.test(message) && /schema cache|does not exist/i.test(message))) {
-            return ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE;
+            return ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE();
         }
         if (/sale_items_product_id_fkey/i.test(message)) {
-            return 'A product on this order no longer exists. Remove it from the order and save again.';
+            return tNow('ui.store.order.productGone');
         }
-        return message || 'Unknown error';
+        return message || tNow('ui.store.unknownError');
     };
 
     // Whether this store has run migrations/add_order_status_function.sql, asked
@@ -2728,7 +2723,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // it came from (Bulk Edit, Payment Tracking, Orders Management 2, the
     // order form). Their deposit/payment goes on the order form, where it waits
     // as a claim for Admin, Customer Care or an Accountant to confirm.
-    const SALESMAN_NO_BOOKING_MESSAGE = 'Only Admin, Customer Care or an Accountant can record money as received.\n\nEnter the deposit or payment on the order form instead: it waits there (gray on the Orders page) for them to confirm.';
+    const SALESMAN_NO_BOOKING_MESSAGE = () => tNow('ui.store.order.salesmanNoBooking');
     // PdFee books the delivery fee as income, so it counts too.
     const BOOKING_STATUSES = ['Deposit', 'Paid', 'Settled', 'Paid/Settled', 'PdFee'];
     const salesmanBooksMoney = (u: Partial<Sale>, ex?: Sale): boolean => {
@@ -2794,7 +2789,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // reset, and the payment goes to Cancel (a PdFee order keeps PdFee —
         // the delivery fee was collected and stays booked).
         const { data, error } = await rpcWithSession('apply_restock_payment_side', { p_ids: orderIds, p_fields: { today: getLocalYYYYMMDD() } });
-        if (error) throw new Error('The goods were restocked, but the payment could not be set to Cancel: ' + orderPaymentRpcMessage(error));
+        if (error) throw new Error(tNow('ui.store.order.restockPaymentFailed', { error: orderPaymentRpcMessage(error) }));
         const res = (data || {}) as { cancelled?: string[]; paid_reset?: string[]; transactions_removed?: string[]; notices?: string[] };
 
         const removedTxnIds = res.transactions_removed || [];
@@ -2876,7 +2871,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             .single();
         if (freshOrderErr || !freshOrderRow) {
             console.error('Could not read current status before changing it:', freshOrderErr?.message);
-            return refuse('Could not verify this order’s current status. Please refresh and try again.');
+            return refuse(tNow('ui.store.order.statusVerifyFailed'));
         }
         const freshStatus: string = freshOrderRow.shipping_status || 'Pending';
         const status = (opts?.shownStatus !== undefined && requestedStatus === opts.shownStatus && freshStatus !== requestedStatus
@@ -2893,7 +2888,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // status someone else set. Same message as the database's own check.
         if (status !== freshStatus && expectedStatus !== freshStatus) {
             setSalesUpdatedAt(Date.now());
-            return refuse(`This order is now "${orderStatusLabel(freshStatus)}": it was changed somewhere else, so your change was not saved. Refresh and check it before trying again.`);
+            return refuse(tNow('ui.store.order.changedElsewhere', { status: orderStatusText(freshStatus) }));
         }
 
         // Already at the target status: no transition and no alert (bulk selections
@@ -2912,15 +2907,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // needs the Restock permission, and only a Returned order can be restocked.
         const restocking = status === 'ReStock' && freshStatus !== 'ReStock';
         if (restocking && freshStatus !== 'Returned') {
-            return refuse(`Only a Returning order can be restocked. This order is "${orderStatusLabel(freshStatus)}".`);
+            return refuse(tNow('ui.store.order.onlyReturningRestock', { status: orderStatusText(freshStatus) }));
         }
         if (restocking && !hasPermission('restock_orders')) {
-            return refuse('You do not have permission to restock orders.');
+            return refuse(tNow('ui.store.order.noRestockPermission'));
         }
         // The payment side of a restock (income cleanup, payment Cancel) needs
         // the payment functions; refuse before any stock moves.
         if (restocking && !(await paymentFunctionsReady())) {
-            return refuse(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE);
+            return refuse(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE());
         }
 
         const now = new Date().toISOString();
@@ -2957,7 +2952,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (plainErr) {
                     console.error('Failed to save the shipping details:', plainErr);
                     setSalesUpdatedAt(Date.now());
-                    return refuse(`Failed to save the shipping details: ${plainErr.message}`);
+                    return refuse(tNow('ui.store.order.shippingSaveFailed', { error: plainErr.message }));
                 }
             }
         } else {
@@ -3073,7 +3068,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const res = (data || {}) as { stock?: Record<string, number>; missing?: string[] };
         applyStockMap(res.stock);
         if (res.missing && res.missing.length > 0) {
-            alert(`The order was saved, but stock could not be updated for: ${res.missing.join(', ')}. Check these products' stock in Inventory.`);
+            alert(tNow('ui.store.order.stockNotUpdated', { products: res.missing.join(', ') }));
         }
     };
 
@@ -3093,7 +3088,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
 
         if (currentUser?.roleId === 'salesman' && salesmanBooksMoney(updates, existingOrder) && await paymentClaimsReady()) {
-            alert(SALESMAN_NO_BOOKING_MESSAGE);
+            alert(SALESMAN_NO_BOOKING_MESSAGE());
             setSalesUpdatedAt(Date.now());
             return false;
         }
@@ -3113,7 +3108,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.shipping?.status || (updates.items && updates.items.length > 0) || movesShipping) {
             const { data: freshStatusRow, error: freshStatusErr } = await supabase.from('sales').select('shipping_status').eq('id', id).single();
             if (freshStatusErr || !freshStatusRow) {
-                alert("Couldn't confirm this order's current status, so nothing was saved. Check your connection and try again.");
+                alert(tNow('ui.store.order.statusUnconfirmed'));
                 return false;
             }
             shippingStatusBeforeUpdate = freshStatusRow.shipping_status || 'Pending';
@@ -3166,7 +3161,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.paymentStatus !== undefined) {
             const { data: freshRow, error: freshErr } = await supabase.from('sales').select(paymentColumns).eq('id', id).single();
             if (freshErr || !freshRow) {
-                alert("Couldn't confirm this order's current payment status, so nothing was saved. Check your connection and try again.");
+                alert(tNow('ui.store.order.paymentUnconfirmed'));
                 return false;
             }
             paymentRow = freshRow as PaymentRow;
@@ -3181,7 +3176,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (shownStatus !== undefined && updates.paymentStatus !== shownStatus && !PAID_STATUSES.includes(shownStatus) && PAID_STATUSES.includes(currentStatus) && !PAID_STATUSES.includes(updates.paymentStatus)) {
                 setSales(prev => prev.map(s => s.id === id ? { ...s, ...freshPayment } : s));
                 setSalesUpdatedAt(Date.now());
-                alert(`This order was just marked ${currentStatus} by someone else, so your change wasn't saved. The list has been refreshed. Please check the order and try again.`);
+                alert(tNow('ui.store.order.justMarked', { status: orderStatusText(currentStatus) }));
                 return false;
             }
 
@@ -3265,7 +3260,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // refused rather than applied on top of the status someone else set.
         if (shippingPlan.to && !shippingPlan.forced && expectedShippingStatus !== undefined && (expectedShippingStatus || 'Pending') !== shippingStatusBeforeUpdate) {
             setSalesUpdatedAt(Date.now());
-            alert(`This order is now "${shippingStatusBeforeUpdate}": it was changed somewhere else, so your change was not saved. Refresh and check it before trying again.`);
+            alert(tNow('ui.store.order.changedElsewhere', { status: orderStatusText(shippingStatusBeforeUpdate || 'Pending') }));
             return false;
         }
         // A status change, or an item edit on an order whose goods are out of
@@ -3273,7 +3268,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // migration refuses the whole save here.
         const holdsStockForItems = holdsOrderStock(shippingPlan.to || shippingStatusBeforeUpdate || 'Pending');
         if ((shippingPlan.to || (updates.items && updates.items.length > 0 && holdsStockForItems)) && !(await orderFunctionsReady())) {
-            alert(ORDER_FUNCTIONS_MISSING_MESSAGE);
+            alert(ORDER_FUNCTIONS_MISSING_MESSAGE());
             return false;
         }
 
@@ -3288,7 +3283,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             || updates.depositMethod !== undefined || updates.depositAccountId !== undefined
             || updates.depositAccountName !== undefined || updates.postToLedger !== undefined;
         if (hasPaymentFields() && !(await paymentFunctionsReady())) {
-            alert(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE);
+            alert(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE());
             return false;
         }
 
@@ -3605,7 +3600,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return true;
         } catch (error: any) {
             console.error('Error updating order:', error);
-            alert(`Failed to update order: ${error.message}`);
+            alert(tNow('ui.store.order.updateFailed', { error: error.message }));
             setSalesUpdatedAt(Date.now());
             return false;
         }
@@ -3613,7 +3608,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const updateOrders = async (ids: string[], updates: Partial<Sale>): Promise<void> => {
         if (currentUser?.roleId === 'salesman' && salesmanBooksMoney(updates) && await paymentClaimsReady()) {
-            alert(SALESMAN_NO_BOOKING_MESSAGE);
+            alert(SALESMAN_NO_BOOKING_MESSAGE());
             return;
         }
         try {
@@ -3734,7 +3729,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 if (holdsOrderStock(st)) heldStatus.set(o.id, st);
             }
             if (heldStatus.size > 0 && !(await orderFunctionsReady())) {
-                throw new Error(ORDER_FUNCTIONS_MISSING_MESSAGE);
+                throw new Error(ORDER_FUNCTIONS_MISSING_MESSAGE());
             }
 
             // Remove deleted_at before inserting back to sales
@@ -3783,7 +3778,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setSalesUpdatedAt(Date.now());
             dispatchActivity({ action: 'order_restored', description: `${ids.length} order(s) restored`, userId: currentUser?.id, userName: currentUser?.name, metadata: { count: ids.length } });
             if (notShipped.length > 0) {
-                throw new Error(`Orders restored, but these are still Pending (their stock was not taken): ${notShipped.join('; ')}. Set their status from the Orders page.`);
+                throw new Error(tNow('ui.store.order.restoredStillPending', { orders: notShipped.join('; ') }));
             }
         } catch (error) {
             console.error('Error restoring orders:', error);
@@ -3846,7 +3841,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         if (error) {
             console.error('Error importing products:', error);
-            throw new Error('Failed to import products: ' + error.message);
+            throw new Error(tNow('ui.store.product.importFailed', { error: error.message }));
         }
 
         if (data) {
@@ -3997,7 +3992,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         if (salesError) {
             console.error('Error importing orders:', salesError);
-            throw new Error('Failed to import orders: ' + salesError.message);
+            throw new Error(tNow('ui.store.order.importFailed', { error: salesError.message }));
         }
 
         // 2. Insert Sale Items (if any)
@@ -4010,7 +4005,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (itemsError) {
                 console.error('Error importing sale items:', itemsError);
                 // Note: Sales were already upserted.
-                throw new Error('Failed to import order items: ' + itemsError.message);
+                throw new Error(tNow('ui.store.order.importItemsFailed', { error: itemsError.message }));
             }
         }
 
@@ -4057,7 +4052,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // The payment side below needs the payment functions; refuse
             // before any stock moves.
             if (!(await paymentFunctionsReady())) {
-                throw new Error(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE);
+                throw new Error(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE());
             }
             const { data, error } = await rpcWithSession('restock_returned_orders', {
                 p_ids: requestedIds,
@@ -4132,7 +4127,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // in-memory copy.
         const { data: cfgRow, error: cfgErr } = await supabase.from('app_config').select('data').eq('id', 1).single();
         if (cfgErr && cfgErr.code !== 'PGRST116') {
-            throw new Error('Backup failed reading app_config: ' + cfgErr.message);
+            throw new Error(tNow('ui.store.backup.readConfigFailed', { error: cfgErr.message }));
         }
         const appConfig = (cfgRow?.data && typeof cfgRow.data === 'object') ? cfgRow.data as Record<string, unknown> : null;
 
@@ -4164,7 +4159,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // message as a toast. Only reloads on success.
     const restoreData = async (jsonData: any) => {
         if (!jsonData || jsonData.format !== BACKUP_FORMAT || !jsonData.tables || typeof jsonData.tables !== 'object') {
-            throw new Error('This file is not a backup made by the current Backup Database button (old backup files held only a fraction of the data and cannot be restored). Make a fresh backup to use here.');
+            throw new Error(tNow('ui.store.backup.notBackupFile'));
         }
         // A v2 file has no chart_of_accounts, but its journal_entry_lines carry
         // the SOURCE store's account UUIDs, which cannot exist here — the
@@ -4172,7 +4167,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const backupLines = jsonData.tables['journal_entry_lines'];
         const backupAccounts = jsonData.tables['chart_of_accounts'];
         if (Array.isArray(backupLines) && backupLines.length > 0 && (!Array.isArray(backupAccounts) || backupAccounts.length === 0)) {
-            throw new Error('This backup file was made by an older build and is missing the chart of accounts its journal entries depend on. Make a fresh backup with the current Backup Database button.');
+            throw new Error(tNow('ui.store.backup.oldBackup'));
         }
         setIsLoading(true);
         try {
@@ -4188,20 +4183,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const rows = jsonData.tables[table];
                 const hasRows = Array.isArray(rows) && rows.length > 0;
                 const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true });
-                if (error) throw new Error(`Restore aborted: could not check the "${table}" table (${error.message}). Nothing was changed.`);
+                if (error) throw new Error(tNow('ui.store.backup.checkTableFailed', { table, error: error.message }));
                 if ((count || 0) > 0) {
                     if (RESTORE_SKIP_IF_OCCUPIED.has(table)) { if (hasRows) skipped.push(table); }
-                    else occupied.push(`${table}: ${count} rows`);
+                    else occupied.push(tNow('ui.store.backup.rowsCount', { table, n: count ?? 0 }));
                 } else if (hasRows) {
                     toRestore.push({ table, rows });
                 }
             }
             if (occupied.length > 0) {
-                throw new Error(
-                    `Restore refused: this store already contains data (${occupied.join(', ')}). ` +
-                    'Restoring a backup over live data is not supported — it could silently mix two stores\' records. ' +
-                    'Nothing was changed. Contact your administrator or support to restore onto a fresh database.'
-                );
+                throw new Error(tNow('ui.store.backup.occupied', { tables: occupied.join(', ') }));
             }
 
             // chart_of_accounts: the target is pre-seeded with its OWN random
@@ -4218,7 +4209,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 accountIdMap = idMap;
                 if (toInsert.length > 0) {
                     const { error } = await supabase.from('chart_of_accounts').insert(toInsert);
-                    if (error) throw new Error(`Restore aborted: could not add the backup's custom accounts to the chart of accounts (${error.message}). Nothing else was changed.`);
+                    if (error) throw new Error(tNow('ui.store.backup.accountsFailed', { error: error.message }));
                 }
             }
 
@@ -4240,8 +4231,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             tableRows = stripColumn(tableRows, missing);
                             continue;
                         }
-                        throw new Error(`Restore failed while writing "${table}": ${error.message}. ` +
-                            'The store may be PARTIALLY restored — contact support before retrying.');
+                        throw new Error(tNow('ui.store.backup.writeFailed', { table, error: error.message }));
                     }
                 }
             }
@@ -4264,23 +4254,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     const { error: rpcError } = await rpcWithSession('update_app_config', { p_ops: restoreOps });
                     if (rpcError) {
                         if (!isRpcMissingError(rpcError)) {
-                            throw new Error('Restore failed while writing the settings (app_config): ' + rpcError.message);
+                            throw new Error(tNow('ui.store.backup.settingsFailed', { error: rpcError.message }));
                         }
                         const { error } = await supabase.from('app_config').upsert({ id: 1, data: restoredConfig });
-                        if (error) throw new Error('Restore failed while writing the settings (app_config): ' + error.message);
+                        if (error) throw new Error(tNow('ui.store.backup.settingsFailed', { error: error.message }));
                     }
                 }
             }
 
             const skippedNote = skipped.length > 0
-                ? ` (${skipped.join(' and ')} kept — this store already has its own)`
+                ? tNow('ui.store.backup.skippedNote', { tables: skipped.join(tNow('ui.store.backup.and')) })
                 : '';
             const backupProducts = jsonData.tables['products'];
             const noLayersNote = !Array.isArray(jsonData.tables['inventory_items'])
                 && Array.isArray(backupProducts) && backupProducts.some((p: { stock?: unknown }) => Number(p?.stock) > 0)
-                ? ' This backup was made before inventory layers were backed up, so the restored stock has no FIFO cost layers: run migrations/fifo_rebuild_pool.sql on this store before using it.'
+                ? tNow('ui.store.backup.noLayersNote')
                 : '';
-            alert(`Restore completed${skippedNote}.${noLayersNote} User accounts are never restored from a backup (the file holds them for reference only, without PINs) — this store keeps its own. Page will reload.`);
+            alert(tNow('ui.store.backup.completed', { skipped: skippedNote, noLayers: noLayersNote }));
             window.location.reload();
         } finally {
             setIsLoading(false);
@@ -4305,18 +4295,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const target = targetId ? users.find(u => u.id === targetId) : null;
         if (target?.roleId === 'admin') {
             if (action === 'delete') {
-                throw new Error('Only an administrator can delete an admin account.');
+                throw new Error(tNow('ui.store.users.onlyAdminDelete'));
             }
             // Identity and credentials of an admin account are admin-only.
             // Payroll/target-only updates stay allowed: setting the owner's
             // base salary or sales targets (Payroll, Staff Performance) is a
             // manage_payroll flow, not an escalation.
             if (['name', 'email', 'pin', 'roleId'].some(k => (updates as Record<string, unknown>)[k] !== undefined)) {
-                throw new Error('Only an administrator can edit an admin account.');
+                throw new Error(tNow('ui.store.users.onlyAdminEdit'));
             }
         }
         if (updates.roleId === 'admin' && target?.roleId !== 'admin') {
-            throw new Error('Only an administrator can assign the Administrator role.');
+            throw new Error(tNow('ui.store.users.onlyAdminAssign'));
         }
         // SEC-3 (review): "cannot grant permissions your own role lacks" must
         // also hold for role ASSIGNMENT, not just the role editor — otherwise
@@ -4326,13 +4316,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.roleId !== undefined && updates.roleId !== target?.roleId) {
             const beyond = permsOf(updates.roleId).filter(p => !ownPerms.includes(p));
             if (beyond.length > 0) {
-                throw new Error(`You cannot assign a role that has permissions your own role does not have: ${beyond.join(', ')}. Ask an administrator.`);
+                throw new Error(tNow('ui.store.users.roleBeyond', { perms: beyond.join(', ') }));
             }
         }
         if (updates.pin !== undefined && target && target.id !== currentUser?.id) {
             const beyond = permsOf(target.roleId).filter(p => !ownPerms.includes(p));
             if (beyond.length > 0) {
-                throw new Error('You cannot change the password of an account whose role has permissions your own role does not have. Ask an administrator.');
+                throw new Error(tNow('ui.store.users.pinBeyond'));
             }
         }
         // Parity with save_user's generic outranks rule (SEC-1 review): the
@@ -4345,8 +4335,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const beyond = permsOf(target.roleId).filter(p => !ownPerms.includes(p));
             if (beyond.length > 0) {
                 throw new Error(action === 'delete'
-                    ? 'You cannot delete an account whose role has permissions your own role does not have. Ask an administrator.'
-                    : 'You cannot edit an account whose role has permissions your own role does not have. Ask an administrator.');
+                    ? tNow('ui.store.users.deleteBeyond')
+                    : tNow('ui.store.users.editBeyond'));
             }
         }
     };
@@ -4381,7 +4371,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (rpcError) {
             if (!isUsersRpcMissing(rpcError)) {
                 console.error('Failed to add user to database:', rpcError);
-                throw new Error('Failed to add user: ' + rpcError.message);
+                throw new Error(tNow('ui.store.users.addFailed', { error: rpcError.message }));
             }
             // Store not migrated yet (add_session_guards.sql): legacy direct
             // insert. No .select(): it would request RETURNING * — and once
@@ -4390,7 +4380,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const { error } = await supabase.from('users').insert(row);
             if (error) {
                 console.error('Failed to add user to database:', error);
-                throw new Error('Failed to add user: ' + error.message);
+                throw new Error(tNow('ui.store.users.addFailed', { error: error.message }));
             }
         }
 
@@ -4404,7 +4394,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // the store with no admin at all. Another admin does it instead.
         const targetNow = users.find(u => u.id === id);
         if (id === currentUser?.id && updates.roleId && updates.roleId !== (targetNow?.roleId ?? currentUser.roleId)) {
-            throw new Error('You cannot change your own role. Ask another administrator to do it.');
+            throw new Error(tNow('ui.store.users.ownRole'));
         }
         const dbUpdates: any = {};
         if (updates.name) dbUpdates.name = updates.name;
@@ -4433,13 +4423,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (rpcError) {
             if (!isUsersRpcMissing(rpcError)) {
                 console.error('Failed to update user:', rpcError);
-                throw new Error('Failed to update user: ' + rpcError.message);
+                throw new Error(tNow('ui.store.users.updateFailed', { error: rpcError.message }));
             }
             // Store not migrated yet: legacy direct update.
             const { error } = await supabase.from('users').update(dbUpdates).eq('id', id);
             if (error) {
                 console.error('Failed to update user:', error);
-                throw new Error('Failed to update user: ' + error.message);
+                throw new Error(tNow('ui.store.users.updateFailed', { error: error.message }));
             }
         }
 
@@ -4452,13 +4442,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (rpcError) {
             if (!isUsersRpcMissing(rpcError)) {
                 console.error('Failed to delete user:', rpcError);
-                throw new Error('Failed to delete user: ' + rpcError.message);
+                throw new Error(tNow('ui.store.users.deleteFailed', { error: rpcError.message }));
             }
             // Store not migrated yet: legacy direct delete.
             const { error } = await supabase.from('users').delete().eq('id', id);
             if (error) {
                 console.error('Failed to delete user:', error);
-                throw new Error('Failed to delete user: ' + error.message);
+                throw new Error(tNow('ui.store.users.deleteFailed', { error: error.message }));
             }
         }
 
@@ -4503,7 +4493,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             currentUser?.roleId !== 'admin' &&
             !updates.permissions.includes('manage_users')
         ) {
-            throw new Error('You cannot remove "Manage Users" from your own role — you would lock yourself out of this page.');
+            throw new Error(tNow('ui.store.roles.removeManageUsers'));
         }
         // Builder (APP-2): `current` — the base the update is spread onto —
         // and the SEC-3 guards below resolve against the re-read config when
@@ -4520,30 +4510,30 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const added = updates.permissions.filter(p => !(targetRole?.permissions || []).includes(p));
                 if (added.length > 0) {
                     if (id === currentUser.roleId) {
-                        throw new Error('You cannot add permissions to your own role. Ask an administrator.');
+                        throw new Error(tNow('ui.store.roles.addOwn'));
                     }
                     const ownPerms = (cfg.roles || []).find(r => r.id === currentUser.roleId)?.permissions || [];
                     const beyondOwn = added.filter(p => !ownPerms.includes(p));
                     if (beyondOwn.length > 0) {
-                        throw new Error(`You cannot grant permissions your own role does not have: ${beyondOwn.join(', ')}. Ask an administrator.`);
+                        throw new Error(tNow('ui.store.roles.grantBeyond', { perms: beyondOwn.join(', ') }));
                     }
                 }
             }
             const current = (cfg.roles || []).find(r => r.id === id);
-            if (!current) throw new Error('This role no longer exists — refresh and try again.');
+            if (!current) throw new Error(tNow('ui.store.roles.gone'));
             return { roles: { op: 'updateItems', items: [{ ...current, ...updates }], idKey: 'id' } };
         });
     };
 
     const deleteRole = async (id: string) => {
         if (id === 'admin') {
-            throw new Error('The Admin role is protected and cannot be deleted.');
+            throw new Error(tNow('ui.store.roles.adminProtected'));
         }
         if (users.some(u => u.roleId === id)) {
-            throw new Error('This role is still assigned to one or more users. Reassign them before deleting it.');
+            throw new Error(tNow('ui.store.roles.stillAssigned'));
         }
         if (currentUser?.roleId === id) {
-            throw new Error('You cannot delete the role you are currently signed in with.');
+            throw new Error(tNow('ui.store.roles.signedIn'));
         }
         await updateConfigOps({ roles: { op: 'removeItems', values: [id], idKey: 'id' } });
     };
@@ -4591,7 +4581,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
         if (error) {
             console.error("Error upserting telegram config:", error);
-            throw new Error("Database error saving telegram config: " + error.message);
+            throw new Error(tNow('ui.store.telegram.saveFailed', { error: error.message }));
         }
         setConfig(prev => {
             const list = prev.telegramConfigs || [];
@@ -4604,7 +4594,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const { error } = await supabase.from('telegram_notifications').delete().eq('id', id);
         if (error) {
             console.error("Error deleting telegram config:", error);
-            throw new Error("Database error removing telegram group: " + error.message);
+            throw new Error(tNow('ui.store.telegram.removeFailed', { error: error.message }));
         }
         setConfig(prev => ({ ...prev, telegramConfigs: (prev.telegramConfigs || []).filter(c => c.id !== id) }));
     };

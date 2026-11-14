@@ -3,6 +3,7 @@ import { Edit2, Trash2, AlertTriangle, ChevronDown, Truck, Eye } from 'lucide-re
 import type { Product } from '../types';
 import './MobileInventoryCard.css';
 import LazyAvatar from './LazyAvatar';
+import { useOptionalLanguage } from '../context/LanguageContext';
 
 interface MobileInventoryCardProps {
     product: Product;
@@ -36,6 +37,8 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
     showCosts = false,
     fifoAvgCost
 }) => {
+    const lang = useOptionalLanguage();
+    const tx = (k: string, en: string) => { const v = lang?.t(k); return v && v !== k ? v : en; };
     const isLowStock = product.stock < (product.lowStockThreshold || 5);
 
     let cardClass = 'mobile-inventory-card';
@@ -69,9 +72,9 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                         <span>{product.model}</span>
                     </div>
                     <div className="mic-meta-row" style={{ marginTop: '2px' }}>
-                        <span style={{ color: isLowStock ? '#EF4444' : 'inherit', fontWeight: 500 }}>{product.stock} in Stock</span>
+                        <span style={{ color: isLowStock ? '#EF4444' : 'inherit', fontWeight: 500 }}>{tx('ui.inventory.card.nInStock', '{n} in Stock').replace('{n}', String(product.stock))}</span>
                         <span>•</span>
-                        <span>Val: ${(product.stock * product.price).toLocaleString()}</span>
+                        <span>{tx('ui.inventory.card.val', 'Val:')} ${(product.stock * product.price).toLocaleString()}</span>
                     </div>
                 </div>
 
@@ -87,19 +90,19 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                     {/* Stats Grid */}
                     <div className="mic-stats-container">
                         <div className="mic-stat-item">
-                            <span className="mic-stat-label">Stock Level</span>
+                            <span className="mic-stat-label">{tx('ui.inventory.card.stockLevel', 'Stock Level')}</span>
                             <span className="mic-stat-value" style={{ color: isLowStock ? '#EF4444' : 'inherit', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 {isLowStock && <AlertTriangle size={12} />}
-                                {product.stock} Units
+                                {tx('ui.inventory.card.nUnits', '{n} Units').replace('{n}', String(product.stock))}
                             </span>
                         </div>
                         <div className="mic-stat-item">
-                            <span className="mic-stat-label">Total Value</span>
+                            <span className="mic-stat-label">{tx('ui.inventory.stats.totalValue', 'Total Value')}</span>
                             <span className="mic-stat-value">${(product.stock * product.price).toLocaleString()}</span>
                         </div>
                         {showCosts && (
                             <div className="mic-stat-item">
-                                <span className="mic-stat-label">Last Cost</span>
+                                <span className="mic-stat-label">{tx('ui.inventory.card.lastCost', 'Last Cost')}</span>
                                 <span className="mic-stat-value">${(product.purchaseCost || 0).toFixed(2)}</span>
                             </div>
                         )}
@@ -110,19 +113,19 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                             </div>
                         )}
                         <div className="mic-stat-item">
-                            <span className="mic-stat-label">Category</span>
+                            <span className="mic-stat-label">{tx('inventory.category', 'Category')}</span>
                             <span className="mic-stat-value">{product.category}</span>
                         </div>
                         <div className="mic-stat-item">
-                            <span className="mic-stat-label">Model</span>
+                            <span className="mic-stat-label">{tx('inventory.model', 'Model')}</span>
                             <span className="mic-stat-value">{product.model || '—'}</span>
                         </div>
                         <div className="mic-stat-item">
-                            <span className="mic-stat-label">Invoice Number</span>
+                            <span className="mic-stat-label">{tx('ui.inventory.invoiceNumber', 'Invoice Number')}</span>
                             <span className="mic-stat-value">{product.invoiceNumber || '—'}</span>
                         </div>
                         <div className="mic-stat-item">
-                            <span className="mic-stat-label">Supplier</span>
+                            <span className="mic-stat-label">{tx('ui.inventory.col.supplier', 'Supplier')}</span>
                             <span className="mic-stat-value">{product.supplier || '—'}</span>
                         </div>
                     </div>
@@ -156,8 +159,8 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                         {onView && (
                             <button
                                 className="mic-action-btn"
-                                title="View Details"
-                                aria-label={`View details of ${product.name}`}
+                                title={tx('ui.inventory.viewDetails', 'View Details')}
+                                aria-label={tx('ui.inventory.viewDetailsOf', 'View details of {name}').replace('{name}', product.name)}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onView(product);

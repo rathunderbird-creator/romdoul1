@@ -5,6 +5,7 @@ import type { ChartOfAccount, JournalEntry, JournalEntryLine } from '../types';
 import { useToast } from '../context/ToastContext';
 import { fetchJournalLinesByEntry } from '../utils/journalLines';
 import { CURRENCY_KEYS, isMissingCurrencyColumnError } from '../utils/currency';
+import { tNow } from '../i18n/translate';
 
 export const useAccounting = () => {
     const { showToast } = useToast();
@@ -24,7 +25,7 @@ export const useAccounting = () => {
             setAccounts(data || []);
         } catch (error: any) {
             console.error('Failed to fetch accounts:', error);
-            showToast('Failed to fetch accounts: ' + error.message, 'error');
+            showToast(tNow('ui.store.accounting.fetchAccountsFailed', { error: error.message }), 'error');
         } finally {
             setIsLoading(false);
         }
@@ -50,14 +51,14 @@ export const useAccounting = () => {
                 const withoutSubType: Record<string, unknown> = { ...payload };
                 delete withoutSubType.sub_type;
                 ({ error } = await write(withoutSubType));
-                if (!error) showToast('Saved without the sub-category — run migrations/add_account_subtype.sql to enable it', 'info');
+                if (!error) showToast(tNow('ui.store.accounting.savedNoSubtype'), 'info');
             }
             if (error) throw error;
-            showToast(account.id ? 'Account updated successfully' : 'Account created successfully', 'success');
+            showToast(account.id ? tNow('ui.store.accounting.accountUpdated') : tNow('ui.store.accounting.accountCreated'), 'success');
             await fetchAccounts();
         } catch (error: any) {
             console.error('Failed to save account:', error);
-            showToast('Failed to save account: ' + error.message, 'error');
+            showToast(tNow('ui.store.accounting.saveAccountFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchAccounts]);
@@ -66,11 +67,11 @@ export const useAccounting = () => {
         try {
             const { error } = await supabase.from('chart_of_accounts').delete().eq('id', id);
             if (error) throw error;
-            showToast('Account deleted successfully', 'success');
+            showToast(tNow('ui.store.accounting.accountDeleted'), 'success');
             await fetchAccounts();
         } catch (error: any) {
             console.error('Failed to delete account:', error);
-            showToast('Failed to delete account: ' + error.message, 'error');
+            showToast(tNow('ui.store.accounting.deleteAccountFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchAccounts]);
@@ -111,7 +112,7 @@ export const useAccounting = () => {
             })));
         } catch (error: any) {
             console.error('Failed to fetch journal entries:', error);
-            showToast('Failed to fetch journal entries: ' + error.message, 'error');
+            showToast(tNow('ui.store.accounting.fetchEntriesFailed', { error: error.message }), 'error');
         } finally {
             setIsLoading(false);
         }
@@ -170,10 +171,10 @@ export const useAccounting = () => {
                 if (!stripped) break;
             }
             if (!entryError && !('status' in attemptPayload) && entryPayload.status !== undefined) {
-                showToast('Saved as Posted — run migrations/add_entry_status.sql to enable drafts', 'info');
+                showToast(tNow('ui.store.accounting.savedAsPosted'), 'info');
             }
 
-            if (entryError || !insertedEntry) throw entryError || new Error('Failed to create journal entry');
+            if (entryError || !insertedEntry) throw entryError || new Error(tNow('ui.store.accounting.createEntryFailed'));
 
             const linesToInsert = lines.map(line => ({
                 journal_entry_id: insertedEntry.id,
@@ -193,7 +194,7 @@ export const useAccounting = () => {
                 ({ error: linesError } = await supabase
                     .from('journal_entry_lines')
                     .insert(linesToInsert.map(l => { const copy: Record<string, unknown> = { ...l }; delete copy.description; return copy; })));
-                if (!linesError) showToast('Saved without the line descriptions — run migrations/add_journal_entry_line_description.sql to store them', 'info');
+                if (!linesError) showToast(tNow('ui.store.accounting.savedNoLineDesc'), 'info');
             }
 
             if (linesError) {
@@ -202,11 +203,11 @@ export const useAccounting = () => {
                 throw linesError;
             }
 
-            showToast('Journal entry created successfully', 'success');
+            showToast(tNow('ui.store.accounting.entryCreated'), 'success');
             await fetchJournalEntries();
         } catch (error: any) {
             console.error('Failed to save journal entry:', error);
-            showToast('Failed to save journal entry: ' + error.message, 'error');
+            showToast(tNow('ui.store.accounting.saveEntryFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchJournalEntries]);

@@ -180,7 +180,7 @@ const Dashboard: React.FC = () => {
                             onClick={() => navigate('/orders', { state: { createNew: true } })}
                         >
                             <Plus size={18} />
-                            New Order
+                            {t('ui.people.dashboard.newOrder')}
                         </button>
                         <button
                             disabled={isLoadingSales}
@@ -204,7 +204,7 @@ const Dashboard: React.FC = () => {
                                 height: '42px', // Match date picker height roughly
                                 aspectRatio: '1/1'
                             }}
-                            title="Refresh Data"
+                            title={t('ui.people.dashboard.refreshData')}
                         >
                             <RefreshCw id="dashboard-refresh-btn" size={20} />
                         </button>

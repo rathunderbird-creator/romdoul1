@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { txNow } from './useTx';
 
 // OVERRIDE: Prevent "We is not defined" global crash in Vite production builds.
 // By loading the pre-minified worker from the CDN, Vite cannot mangle the internal `global` references.
@@ -455,7 +456,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                     ${loc.phone ? `<div style="font-size: 13px; color: var(--color-text-secondary); margin-top:2px;"><strong>លេខទូរស័ព្ទ:</strong> ${loc.phone}</div>` : ''}
                     <button class="copy-pin-btn" data-address="${encodeURIComponent([loc.name, loc.commune, loc.district, loc.province].filter(Boolean).join(', '))}" style="margin-top: 8px; width: 100%; padding: 6px; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 6px; cursor: pointer; color: var(--color-text-secondary); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; transition: all 0.2s;">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                        Copy Location
+                        ${txNow('ui.components.map.copyLocation', 'Copy Location')}
                     </button>
                 </div>
             `;
@@ -488,7 +489,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                         navigator.clipboard.writeText(address);
 
                         const ogHtml = copyBtn.innerHTML;
-                        copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+                        copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> ' + txNow('ui.components.map.copied', 'Copied!');
                         copyBtn.setAttribute('style', 'margin-top: 8px; width: 100%; padding: 6px; background: var(--color-success); border: 1px solid var(--color-success); border-radius: 6px; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; transition: all 0.2s;');
 
                         setTimeout(() => {

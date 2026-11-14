@@ -5,6 +5,7 @@ import { Modal } from '../../components';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
 import MoneyInput from '../../components/MoneyInput';
 import { useMoneyField } from '../../hooks/useMoneyField';
 import { formatMoneyLine, isKhrRow } from '../../utils/currency';
@@ -14,6 +15,7 @@ const PaymentsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { transactions, addTransaction, deleteTransaction, refreshData, khrExchangeRate } = useStore();
     const { showToast } = useToast();
+    const { t } = useLanguage();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     
@@ -31,13 +33,13 @@ const PaymentsPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Payments</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Record and track outgoing payments.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.payments')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('ui.accounting.payments.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     // Only show Expense type transactions as outgoing "Payments"
     const paymentsList = useMemo(() => {
@@ -48,7 +50,7 @@ const PaymentsPage: React.FC = () => {
 
     const handleSave = async () => {
         if (!(field.usd > 0) || field.rateInvalid) {
-            showToast('Please enter a valid amount', 'error');
+            showToast(t('ui.accounting.payments.toast.invalidAmount'), 'error');
             return;
         }
         if (!field.confirmIfSuspicious()) return;
@@ -65,20 +67,20 @@ const PaymentsPage: React.FC = () => {
             };
 
             await addTransaction(newPayment);
-            showToast('Payment recorded successfully', 'success');
+            showToast(t('ui.accounting.payments.toast.recorded'), 'success');
             setIsModalOpen(false);
         } catch (error: any) {
-            showToast(error.message || 'Failed to record payment', 'error');
+            showToast(error.message || t('ui.accounting.payments.toast.recordFailed'), 'error');
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (confirm('Are you sure you want to delete this payment?')) {
+        if (confirm(t('ui.accounting.payments.confirmDelete'))) {
             try {
                 await deleteTransaction(id);
-                showToast('Payment deleted successfully', 'success');
+                showToast(t('ui.accounting.payments.toast.deleted'), 'success');
             } catch (error: any) {
-                showToast(error.message || 'Failed to delete payment', 'error');
+                showToast(error.message || t('ui.accounting.payments.toast.deleteFailed'), 'error');
             }
         }
     };
@@ -88,13 +90,13 @@ const PaymentsPage: React.FC = () => {
             {/* Summary — same flat cards as the financial statements */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
                 <div style={{ ...cardStyle, padding: '16px 20px' }}>
-                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Total Payments</div>
+                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.accounting.payments.totalPayments')}</div>
                     <div style={{ fontSize: '26px', fontWeight: 800, color: '#3B82F6', marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>
                         ${paymentsList.reduce((sum, p) => sum + p.amount, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </div>
                 </div>
                 <div style={{ ...cardStyle, padding: '16px 20px' }}>
-                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Payments Recorded</div>
+                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.accounting.payments.paymentsRecorded')}</div>
                     <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>
                         {paymentsList.length}
                     </div>
@@ -102,7 +104,7 @@ const PaymentsPage: React.FC = () => {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                <button className="secondary-button" onClick={() => { refreshData(); showToast('Refreshed payments', 'success'); }}>Refresh</button>
+                <button className="secondary-button" onClick={() => { refreshData(); showToast(t('ui.accounting.payments.toast.refreshed'), 'success'); }}>{t('ui.accounting.common.refresh')}</button>
                 <button className="primary-button" onClick={() => {
                     setDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
                     setAmount('');
@@ -110,7 +112,7 @@ const PaymentsPage: React.FC = () => {
                     setDescription('');
                     setIsModalOpen(true);
                 }}>
-                    <Plus size={18} /> Record Payment
+                    <Plus size={18} /> {t('ui.accounting.payments.recordPayment')}
                 </button>
             </div>
 
@@ -118,7 +120,7 @@ const PaymentsPage: React.FC = () => {
                 {paymentsList.length === 0 ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                         <DollarSign size={48} style={{ opacity: 0.2, margin: '0 auto 16px' }} />
-                        <p>No payments recorded yet.</p>
+                        <p>{t('ui.accounting.payments.empty')}</p>
                     </div>
                 ) : isMobile ? (
                     // Phones: one card per payment — no sideways scrolling.
@@ -149,12 +151,12 @@ const PaymentsPage: React.FC = () => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px', minWidth: '680px' }}>
                         <thead>
                             <tr style={{ background: 'var(--color-bg)' }}>
-                                <th style={{ ...thStyle, width: '120px' }}>Date</th>
-                                <th style={{ ...thStyle, width: '150px' }}>Category</th>
-                                <th style={thStyle}>Description</th>
-                                <th style={{ ...thStyle, width: '140px' }}>Payment Method</th>
-                                <th style={{ ...thStyle, width: '120px', textAlign: 'right' }}>Amount</th>
-                                <th style={{ ...thStyle, width: '80px', textAlign: 'right' }}>Actions</th>
+                                <th style={{ ...thStyle, width: '120px' }}>{t('ui.accounting.common.date')}</th>
+                                <th style={{ ...thStyle, width: '150px' }}>{t('ui.accounting.common.category')}</th>
+                                <th style={thStyle}>{t('ui.accounting.common.description')}</th>
+                                <th style={{ ...thStyle, width: '140px' }}>{t('ui.accounting.common.paymentMethod')}</th>
+                                <th style={{ ...thStyle, width: '120px', textAlign: 'right' }}>{t('common.amount')}</th>
+                                <th style={{ ...thStyle, width: '80px', textAlign: 'right' }}>{t('common.actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -194,10 +196,10 @@ const PaymentsPage: React.FC = () => {
                 )}
             </div>
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Record Payment">
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={t('ui.accounting.payments.recordPayment')}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Date</label>
+                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.date')}</label>
                         <input 
                             type="date" 
                             className="search-input" 
@@ -207,49 +209,49 @@ const PaymentsPage: React.FC = () => {
                         />
                     </div>
                     <div>
-                        <MoneyInput field={field} label="Amount" allowKhr placeholder={field.currency === 'KHR' ? '0' : '0.00'} />
+                        <MoneyInput field={field} label={t('common.amount')} allowKhr placeholder={field.currency === 'KHR' ? '0' : '0.00'} />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.category')}</label>
                             <input 
                                 type="text" 
                                 className="search-input" 
                                 style={{ width: '100%' }}
-                                placeholder="e.g. Supplier, Utilities, Rent"
+                                placeholder={t('ui.accounting.payments.categoryPlaceholder')}
                                 value={category}
                                 onChange={(e) => setCategory(e.target.value)}
                             />
                         </div>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Method</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.paymentMethod')}</label>
                             <select 
                                 className="search-input" 
                                 style={{ width: '100%' }}
                                 value={payBy}
                                 onChange={(e) => setPayBy(e.target.value)}
                             >
-                                <option value="Cash">Cash</option>
-                                <option value="Bank Transfer">Bank Transfer</option>
-                                <option value="Credit Card">Credit Card</option>
-                                <option value="Cheque">Cheque</option>
+                                <option value="Cash">{t('ui.accounting.common.method.cash')}</option>
+                                <option value="Bank Transfer">{t('ui.accounting.common.method.bankTransfer')}</option>
+                                <option value="Credit Card">{t('ui.accounting.common.method.creditCard')}</option>
+                                <option value="Cheque">{t('ui.accounting.common.method.cheque')}</option>
                             </select>
                         </div>
                     </div>
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Description (Optional)</label>
+                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.descriptionOptional')}</label>
                         <textarea 
                             className="search-input" 
                             style={{ width: '100%', minHeight: '80px', resize: 'vertical' }}
-                            placeholder="Add details about this payment..."
+                            placeholder={t('ui.accounting.payments.descriptionPlaceholder')}
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                         />
                     </div>
 
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '8px' }}>
-                        <button className="secondary-button" onClick={() => setIsModalOpen(false)}>Cancel</button>
-                        <button className="primary-button" onClick={handleSave}>Record Payment</button>
+                        <button className="secondary-button" onClick={() => setIsModalOpen(false)}>{t('common.cancel')}</button>
+                        <button className="primary-button" onClick={handleSave}>{t('ui.accounting.payments.recordPayment')}</button>
                     </div>
                 </div>
             </Modal>

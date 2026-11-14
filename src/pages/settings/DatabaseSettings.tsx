@@ -4,6 +4,7 @@ import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useHeader } from '../../context/HeaderContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import PinPrompt from '../../components/PinPrompt';
 import { migrateData } from '../../lib/migration';
 
@@ -26,7 +27,7 @@ const DatabaseSettings: React.FC = () => {
             title: (
                 <div>
                     <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>{t('settings.dataManagement')}</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '14px' }}>Backup, restore, and migrate your data</p>
+                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '14px' }}>{t('ui.admin.settings.db.subtitle')}</p>
                 </div>
             )
         });
@@ -34,12 +35,12 @@ const DatabaseSettings: React.FC = () => {
     }, [setHeaderContent, t]);
 
     const handleMigration = async () => {
-        if (!confirm('This will upload all local data to Supabase. Proceed?')) return;
+        if (!confirm(t('ui.admin.settings.db.migrateConfirm'))) return;
         const result = await migrateData();
         if (result.success) {
-            showToast('Migration successful!', 'success');
+            showToast(t('ui.admin.settings.db.migrateOk'), 'success');
         } else {
-            showToast(`Migration failed: ${result.error}`, 'error');
+            showToast(fill(t('ui.admin.settings.db.migrateFailed'), { error: String(result.error) }), 'error');
         }
     };
 
@@ -82,10 +83,10 @@ const DatabaseSettings: React.FC = () => {
                                     setIsBackingUp(true);
                                     try {
                                         await backupData();
-                                        showToast('Backup downloaded', 'success');
+                                        showToast(t('ui.admin.settings.db.backupOk'), 'success');
                                     } catch (err) {
                                         console.error(err);
-                                        showToast('Backup failed: ' + (err instanceof Error ? err.message : 'Unknown error'), 'error');
+                                        showToast(fill(t('ui.admin.settings.db.backupFailed'), { error: err instanceof Error ? err.message : t('ui.admin.settings.db.unknownError') }), 'error');
                                     } finally {
                                         setIsBackingUp(false);
                                     }
@@ -95,7 +96,7 @@ const DatabaseSettings: React.FC = () => {
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', opacity: busy ? 0.6 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}
                             >
                                 <Save size={18} />
-                                {isBackingUp ? 'Backing up…' : t('settings.backupDatabase')}
+                                {isBackingUp ? t('ui.admin.settings.db.backingUp') : t('settings.backupDatabase')}
                             </button>
                             <div style={{ position: 'relative' }}>
                                 <input
@@ -107,7 +108,7 @@ const DatabaseSettings: React.FC = () => {
                                         const file = e.target.files?.[0];
                                         if (!file) return;
 
-                                        if (!confirm(`Restore from ${file.name}? This only works into an EMPTY store — if this store already has data, the restore will refuse and change nothing.`)) {
+                                        if (!confirm(fill(t('ui.admin.settings.db.restoreConfirm'), { file: file.name }))) {
                                             e.target.value = ''; // Reset
                                             return;
                                         }
@@ -120,12 +121,12 @@ const DatabaseSettings: React.FC = () => {
                                                 try {
                                                     json = JSON.parse(event.target?.result as string);
                                                 } catch {
-                                                    throw new Error('This file is not valid JSON — pick a backup file made by the Backup Database button.');
+                                                    throw new Error(t('ui.admin.settings.db.invalidJson'));
                                                 }
                                                 await restoreData(json);
                                             } catch (err) {
                                                 console.error(err);
-                                                showToast(err instanceof Error ? err.message : 'Restore failed', 'error');
+                                                showToast(err instanceof Error ? err.message : t('ui.admin.settings.db.restoreFailed'), 'error');
                                             } finally {
                                                 setIsRestoring(false);
                                             }
@@ -141,7 +142,7 @@ const DatabaseSettings: React.FC = () => {
                                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', opacity: busy ? 0.6 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}
                                 >
                                     <Database size={18} />
-                                    {isRestoring ? 'Restoring…' : t('settings.restoreDatabase')}
+                                    {isRestoring ? t('ui.admin.settings.db.restoring') : t('settings.restoreDatabase')}
                                 </button>
                             </div>
                             <button
@@ -162,10 +163,10 @@ const DatabaseSettings: React.FC = () => {
                 onClose={() => setIsPinPromptOpen(false)}
                 onSuccess={() => {
                     setShowDataManagement(true);
-                    showToast('Access granted', 'success');
+                    showToast(t('ui.admin.settings.db.accessGranted'), 'success');
                 }}
-                title="Unlock Data Management"
-                description="Enter your PIN to access backup and migration tools"
+                title={t('settings.unlockDataManagement')}
+                description={t('ui.admin.settings.db.pinDescription')}
             />
         </div>
     );

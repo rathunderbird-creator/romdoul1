@@ -30,6 +30,8 @@ import { supabase } from '../../lib/supabase';
 import { dayKeyFromDate, addDays } from '../../utils/dateRange';
 import { useFifoValuation, fifoUnitCost, isMissingColumnError } from '../../hooks/useFifo';
 import type { Product, StockAdjustmentReason } from '../../types';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 interface MovementRow {
     product_id: string;
@@ -77,10 +79,10 @@ const KpiCard: React.FC<{ label: string; value: React.ReactNode; sub: string; lo
 );
 
 type Bucket = 'out' | 'below' | 'soon';
-const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
-    out: { label: 'Out of stock', color: RED },
-    below: { label: 'Below reorder', color: AMBER },
-    soon: { label: 'Runs out soon', color: BLUE },
+const BUCKET_META: Record<Bucket, { label: string; tKey: string; color: string }> = {
+    out: { label: 'Out of stock', tKey: 'ui.inventory.dash.bucket.out', color: RED },
+    below: { label: 'Below reorder', tKey: 'ui.inventory.dash.bucket.below', color: AMBER },
+    soon: { label: 'Runs out soon', tKey: 'ui.inventory.dash.bucket.soon', color: BLUE },
 };
 
 interface BuyRow { product: Product; onHand: number; available: number; perDay: number; lasts: number | null; buyQty: number; bucket: Bucket }
@@ -92,6 +94,7 @@ const LOSS_REASONS: ReadonlySet<StockAdjustmentReason> = new Set(['Damaged goods
 
 const InventoryDashboardPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
     const { products, warehouses, warehouseStock, categories, isLoading: storeLoading, refreshData } = useStore();
     const { purchaseOrders, isLoading: poLoading, fetchPurchaseOrders } = useProcurement();
     const { adjustments, fetchAdjustments } = useStockAdjustments();
@@ -100,13 +103,13 @@ const InventoryDashboardPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Inventory Dashboard</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>What to buy now, cash tied up in stock, expiry and losses, and how fast stock turns.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('ui.inventory.dash.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{t('ui.inventory.dash.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     const [movements, setMovements] = useState<MovementRow[]>([]);
     const [movementsLoading, setMovementsLoading] = useState(false);
@@ -289,10 +292,10 @@ const InventoryDashboardPage: React.FC = () => {
                 const val = (Number(mv.quantity) || 0) * movementCost(mv).unit;
                 if (mv.type === 'in') boughtMade += val; else usedSold += val;
             }
-            const label = monthLabel(ym) + (ym === thisMonth ? ' (so far)' : '');
+            const label = monthLabel(ym) + (ym === thisMonth ? t('ui.inventory.dash.soFar') : '');
             return { ym, month: label, stockValue: stockValueByMonth.get(ym) || 0, boughtMade, usedSold };
         });
-    }, [relevantMovements, stockValueNow, movementCost]);
+    }, [relevantMovements, stockValueNow, movementCost, t]);
 
     const stockValueLastMonth = monthlySeries.length >= 2 ? monthlySeries[monthlySeries.length - 2].stockValue : stockValueNow;
     const stockValueDelta = stockValueNow - stockValueLastMonth;
@@ -365,7 +368,7 @@ const InventoryDashboardPage: React.FC = () => {
                     border: `1px solid ${meta.color}55`, background: active ? `${meta.color}33` : `${meta.color}14`, color: meta.color,
                 }}
             >
-                {meta.label} · {count}
+                {t(meta.tKey)} · {count}
             </button>
         );
     };
@@ -375,40 +378,40 @@ const InventoryDashboardPage: React.FC = () => {
             {/* Filters */}
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
                 <div>
-                    <label style={labelStyle}>Warehouse</label>
+                    <label style={labelStyle}>{t('ui.inventory.warehouse')}</label>
                     <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                        <option value="">All warehouses</option>
+                        <option value="">{t('ui.inventory.allWarehouses')}</option>
                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                 </div>
                 <div>
-                    <label style={labelStyle}>Category</label>
+                    <label style={labelStyle}>{t('inventory.category')}</label>
                     <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                        <option value="">All categories</option>
+                        <option value="">{t('ui.inventory.filter.allCategories')}</option>
                         {categories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                 </div>
                 <div>
-                    <label style={labelStyle}>Dead after</label>
+                    <label style={labelStyle}>{t('ui.inventory.dash.deadAfter')}</label>
                     <select value={deadAfterDays} onChange={e => setDeadAfterDays(Number(e.target.value))} style={{ ...inputStyle, cursor: 'pointer' }}>
-                        <option value={30}>30 days</option>
-                        <option value={60}>60 days</option>
-                        <option value={90}>90 days</option>
-                        <option value={180}>180 days</option>
+                        <option value={30}>{fill(t('ui.inventory.nDays'), { n: 30 })}</option>
+                        <option value={60}>{fill(t('ui.inventory.nDays'), { n: 60 })}</option>
+                        <option value={90}>{fill(t('ui.inventory.nDays'), { n: 90 })}</option>
+                        <option value={180}>{fill(t('ui.inventory.nDays'), { n: 180 })}</option>
                     </select>
                 </div>
-                <button onClick={() => { loadAll(); reloadFifo(); }} title="Refresh" style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
+                <button onClick={() => { loadAll(); reloadFifo(); }} title={t('ui.inventory.refresh')} style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
                 </button>
             </div>
             <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', maxWidth: '820px', lineHeight: 1.5 }}>
-                As of {new Date().toLocaleDateString()} · amounts in USD at cost ·{' '}
+                {fill(t('ui.inventory.dash.asOf'), { date: new Date().toLocaleDateString() })}{' '}
                 {fifo.status === 'ready'
-                    ? 'stock valued at FIFO (the cost layers on hand)'
-                    : fifo.status === 'loading' ? 'loading FIFO costs…' : <span style={{ color: '#B45309' }}>stock valued at purchase cost, not FIFO. {fifo.message}</span>}
-                {' '}· movements at their recorded FIFO cost
-                {estimatedMovements > 0 && <span style={{ color: '#B45309' }}>; {estimatedMovements.toLocaleString()} older movement{estimatedMovements === 1 ? '' : 's'} with no recorded cost use the product's purchase cost</span>}.
-                {' '}To Buy Now is estimated at purchase cost (last cost).
+                    ? t('ui.inventory.dash.fifoValued')
+                    : fifo.status === 'loading' ? t('ui.inventory.dash.loadingFifo') : <span style={{ color: '#B45309' }}>{t('ui.inventory.dash.purchaseValued')} {fifo.message}</span>}
+                {' '}· {t('ui.inventory.dash.movementsAtCost')}
+                {estimatedMovements > 0 && <span style={{ color: '#B45309' }}>; {fill(estimatedMovements === 1 ? t('ui.inventory.dash.olderOne') : t('ui.inventory.dash.olderMany'), { n: estimatedMovements.toLocaleString() })}</span>}.
+                {' '}{t('ui.inventory.dash.toBuyNote')}
             </div>
             {/* Rule (INV-1): per-warehouse stock is tracked only by the flows
                 that record a warehouse (posted stock adjustments, wholesale,
@@ -419,34 +422,31 @@ const InventoryDashboardPage: React.FC = () => {
                 company stock. */}
             {warehouseId && (
                 <div style={{ fontSize: '12px', color: '#B45309', maxWidth: '680px' }}>
-                    Single-warehouse figures cover only movements that recorded this warehouse (stock adjustments, wholesale, stock movements).
-                    Retail orders and purchase receipts update company stock without a warehouse, so these on-hand and value figures are partial —
-                    select “All warehouses” for the full company stock.
+                    {t('ui.inventory.dash.singleWarehouseNote')}
                 </div>
             )}
 
             {/* KPIs */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '16px' }}>
-                <KpiCard label="Stock Value" value={usd(stockValueNow)} sub={`${stockValueDelta >= 0 ? '+' : ''}${fmt(stockValueDelta)} since last month`} loading={isLoading} />
-                <KpiCard label="To Buy Now" value={buyRows.length} sub={`USD ${fmt(toBuyCost)}`} loading={isLoading} />
-                <KpiCard label="Days On Hand" value={daysOnHand === null ? '—' : Math.round(daysOnHand)} sub={`Turns ${Math.round(turnsPerYear)}x a year`} loading={isLoading} />
-                <KpiCard label="Cash Tied Up" value={usd(cashTiedUp)} sub={`Dead ${fmt(deadValue)} · excess ${fmt(excessValue)}`} loading={isLoading} />
-                <KpiCard label="Expiring" value="—" sub="Batch expiry tracking isn't set up" loading={isLoading} />
-                <KpiCard label="Losses" value={usd(lossesValue)} sub={`Adjustments and counts, last ${deadAfterDays} days`} loading={isLoading} />
+                <KpiCard label={t('ui.inventory.dash.kpi.stockValue')} value={usd(stockValueNow)} sub={fill(t('ui.inventory.dash.kpi.sinceLastMonth'), { delta: `${stockValueDelta >= 0 ? '+' : ''}${fmt(stockValueDelta)}` })} loading={isLoading} />
+                <KpiCard label={t('ui.inventory.dash.kpi.toBuyNow')} value={buyRows.length} sub={`USD ${fmt(toBuyCost)}`} loading={isLoading} />
+                <KpiCard label={t('ui.inventory.dash.kpi.daysOnHand')} value={daysOnHand === null ? '—' : Math.round(daysOnHand)} sub={fill(t('ui.inventory.dash.kpi.turns'), { n: Math.round(turnsPerYear) })} loading={isLoading} />
+                <KpiCard label={t('ui.inventory.dash.kpi.cashTiedUp')} value={usd(cashTiedUp)} sub={fill(t('ui.inventory.dash.kpi.deadExcess'), { dead: fmt(deadValue), excess: fmt(excessValue) })} loading={isLoading} />
+                <KpiCard label={t('ui.inventory.dash.kpi.expiring')} value="—" sub={t('ui.inventory.dash.kpi.noExpiry')} loading={isLoading} />
+                <KpiCard label={t('ui.inventory.dash.kpi.losses')} value={usd(lossesValue)} sub={fill(t('ui.inventory.dash.kpi.lossesSub'), { n: deadAfterDays })} loading={isLoading} />
             </div>
 
             {/* Buy now */}
             <div style={{ ...cardStyle, padding: '20px 22px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <ShoppingCart size={17} color={BLUE} />
-                    <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)' }}>Buy now</span>
+                    <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.inventory.dash.buyNow')}</span>
                 </div>
                 <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '6px 0 14px', maxWidth: '820px' }}>
-                    Out of stock with recent demand, at or below the reorder point once on-order stock is counted, or running out within {RUNS_OUT_SOON_DAYS} days at the last {PER_DAY_WINDOW} days' usage.
-                    Suggested quantity tops up to the reorder point plus 30 days' usage.
+                    {fill(t('ui.inventory.dash.buyNowHelp'), { soon: RUNS_OUT_SOON_DAYS, window: PER_DAY_WINDOW })}
                 </p>
                 <button onClick={exportBuyNowCsv} disabled={visibleBuyRows.length === 0} style={{ ...btnStyle, opacity: visibleBuyRows.length === 0 ? 0.5 : 1, marginBottom: '14px' }}>
-                    <Download size={14} /> Export CSV
+                    <Download size={14} /> {t('ui.inventory.exportCsv')}
                 </button>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -454,40 +454,40 @@ const InventoryDashboardPage: React.FC = () => {
                         <FilterPill bucket="below" count={belowReorderCount} />
                         <FilterPill bucket="soon" count={runsOutSoonCount} />
                     </div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{buyRows.length} to buy · USD {fmt(toBuyCost)}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{fill(t('ui.inventory.dash.nToBuy'), { n: buyRows.length })} · USD {fmt(toBuyCost)}</div>
                 </div>
 
                 <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Product</th>
-                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>On Hand</th>
-                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Available</th>
-                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Per Day</th>
-                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Lasts</th>
-                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Buy</th>
-                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Est. Cost</th>
+                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.inventory.priceList.product')}</th>
+                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.dash.col.onHand')}</th>
+                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.dash.col.available')}</th>
+                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.dash.col.perDay')}</th>
+                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.dash.col.lasts')}</th>
+                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.summary.buy')}</th>
+                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.dash.col.estCost')}</th>
                             </tr>
                         </thead>
                         <tbody>
                             {isLoading ? (
-                                <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading…</td></tr>
+                                <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.loading')}</td></tr>
                             ) : visibleBuyRows.length === 0 ? (
-                                <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Nothing needs buying right now.</td></tr>
+                                <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.dash.nothingToBuy')}</td></tr>
                             ) : visibleBuyRows.map(r => {
                                 const meta = BUCKET_META[r.bucket];
                                 return (
                                     <tr key={r.product.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                         <td style={{ padding: '10px 14px' }}>
-                                            <span style={{ display: 'inline-block', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '999px', background: `${meta.color}1F`, color: meta.color, marginBottom: '4px' }}>{meta.label}</span>
+                                            <span style={{ display: 'inline-block', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '999px', background: `${meta.color}1F`, color: meta.color, marginBottom: '4px' }}>{t(meta.tKey)}</span>
                                             <div style={{ fontWeight: 700, color: 'var(--color-text-main)' }}>{r.product.name}</div>
-                                            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{r.product.sku || r.product.model} · {r.product.category} · Reorder at {fmt(Number(r.product.reorderLevel) || 0)}</div>
+                                            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{r.product.sku || r.product.model} · {r.product.category} · {fill(t('ui.inventory.dash.reorderAt'), { n: fmt(Number(r.product.reorderLevel) || 0) })}</div>
                                         </td>
                                         <td style={{ padding: '10px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.onHand)}</td>
                                         <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.available)}</td>
                                         <td style={{ padding: '10px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.perDay)}</td>
-                                        <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--color-text-secondary)' }}>{r.lasts === null ? '—' : `${Math.round(r.lasts)}d`}</td>
+                                        <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--color-text-secondary)' }}>{r.lasts === null ? '—' : fill(t('ui.inventory.dash.nDaysShort'), { n: Math.round(r.lasts) })}</td>
                                         <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.buyQty)}</td>
                                         <td style={{ padding: '10px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.buyQty * (Number(r.product.purchaseCost) || 0))}</td>
                                     </tr>
@@ -501,11 +501,11 @@ const InventoryDashboardPage: React.FC = () => {
             {/* Charts */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
                 <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Stock value</div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Month-end value over 12 months, in USD.</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.inventory.dash.stockValueChart')}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>{t('ui.inventory.dash.stockValueHelp')}</div>
                     <div style={{ height: '260px' }}>
                         {isLoading ? (
-                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading…</div>
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.inventory.loading')}</div>
                         ) : (
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart data={monthlySeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -516,7 +516,7 @@ const InventoryDashboardPage: React.FC = () => {
                                         contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
                                         itemStyle={{ color: 'var(--color-text-main)', fontWeight: 600 }}
                                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                        formatter={((value: any) => [fmt(Number(value)), 'Stock value']) as any}
+                                        formatter={((value: any) => [fmt(Number(value)), t('ui.inventory.dash.stockValueChart')]) as any}
                                     />
                                     <Line type="monotone" dataKey="stockValue" stroke={BLUE} strokeWidth={3} dot={{ r: 4, fill: BLUE, strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }} />
                                 </LineChart>
@@ -526,11 +526,11 @@ const InventoryDashboardPage: React.FC = () => {
                 </div>
 
                 <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Money in and out of stock</div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Cost of what was bought or made, against the cost of what was used or sold (not its selling price), per month. This month is so far.</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.inventory.dash.moneyChart')}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>{t('ui.inventory.dash.moneyHelp')}</div>
                     <div style={{ height: '260px' }}>
                         {isLoading ? (
-                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading…</div>
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.inventory.loading')}</div>
                         ) : (
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={monthlySeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -544,8 +544,8 @@ const InventoryDashboardPage: React.FC = () => {
                                         formatter={((value: any, name: any) => [fmt(Number(value)), name]) as any}
                                     />
                                     <Legend wrapperStyle={{ fontSize: '12px' }} />
-                                    <Bar dataKey="boughtMade" name="Bought / made" fill={BLUE} radius={[3, 3, 0, 0]} maxBarSize={28} />
-                                    <Bar dataKey="usedSold" name="Used / sold" fill={AMBER} radius={[3, 3, 0, 0]} maxBarSize={28} />
+                                    <Bar dataKey="boughtMade" name={t('ui.inventory.dash.boughtMade')} fill={BLUE} radius={[3, 3, 0, 0]} maxBarSize={28} />
+                                    <Bar dataKey="usedSold" name={t('ui.inventory.dash.usedSold')} fill={AMBER} radius={[3, 3, 0, 0]} maxBarSize={28} />
                                 </BarChart>
                             </ResponsiveContainer>
                         )}

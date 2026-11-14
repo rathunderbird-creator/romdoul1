@@ -14,6 +14,7 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { useOptionalLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
 import { amountWarningLine, formatKhr, formatRate, formatUsd, khrToUsd, type Currency } from '../utils/currency';
 import type { MoneyField } from '../hooks/useMoneyField';
 
@@ -53,9 +54,9 @@ const MoneyInput: React.FC<MoneyInputProps> = ({
 }) => {
     const lang = useOptionalLanguage();
     const t: Tr | undefined = lang ? (k => lang.t(k)) : undefined;
-    const tx = (key: string, en: string) => {
+    const tx = (key: string, en: string, vars?: Record<string, string | number>) => {
         const v = t?.(key);
-        return v && v !== key ? v : en;
+        return fill(v && v !== key ? v : en, vars);
     };
     const isKhr = field.currency === 'KHR';
     const toggle = (c: Currency) => {
@@ -113,7 +114,7 @@ const MoneyInput: React.FC<MoneyInputProps> = ({
                 disabled={disabled}
                 value={field.amount}
                 onChange={e => field.setAmount(e.target.value)}
-                placeholder={placeholder ?? (isKhr ? 'e.g. 82000' : 'e.g. 20.00')}
+                placeholder={placeholder ?? (isKhr ? tx('ui.components.common.eg', 'e.g. {v}', { v: '82000' }) : tx('ui.components.common.eg', 'e.g. {v}', { v: '20.00' }))}
                 style={{ ...baseInput, fontSize: '16px', fontWeight: 600, ...inputStyle, ...(field.warning ? { border: '1px solid #F59E0B' } : {}) }}
             />
             {isKhr && (
@@ -126,7 +127,7 @@ const MoneyInput: React.FC<MoneyInputProps> = ({
                         value={field.rate}
                         disabled={disabled}
                         onChange={e => field.setRate(e.target.value)}
-                        aria-label="Riel per dollar"
+                        aria-label={tx('ui.components.money.rielPerDollar', 'Riel per dollar')}
                         style={{ ...baseInput, width: '90px', padding: '4px 8px', fontSize: '13px', border: `1px solid ${field.rateInvalid ? '#DC2626' : (field.rateWarning ? '#F59E0B' : 'var(--color-border)')}` }}
                     />
                     {Number(field.rate) !== field.shopRate && (
@@ -147,10 +148,10 @@ const MoneyInput: React.FC<MoneyInputProps> = ({
             )}
             {showSnapDiff && field.snapToUsd !== null && (
                 <div data-money-snap style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                    {`Due ${formatUsd(field.snapToUsd)}; ${formatKhr(field.typed)} = ${formatUsd(khrToUsd(field.typed, Number(field.rate) > 0 ? Number(field.rate) : field.shopRate))} — `}
+                    {tx('ui.components.money.dueEquals', 'Due {due}; {khr} = {usd} — ', { due: formatUsd(field.snapToUsd), khr: formatKhr(field.typed), usd: formatUsd(khrToUsd(field.typed, Number(field.rate) > 0 ? Number(field.rate) : field.shopRate)) })}
                     {Math.abs(field.diffUsd) <= 0.03
-                        ? 'matches.'
-                        : `difference ${formatUsd(Math.abs(field.diffUsd))}.`}
+                        ? tx('ui.components.money.matches', 'matches.')
+                        : tx('ui.components.money.difference', 'difference {amt}.', { amt: formatUsd(Math.abs(field.diffUsd)) })}
                 </div>
             )}
             {(field.warning || field.rateWarning) && (

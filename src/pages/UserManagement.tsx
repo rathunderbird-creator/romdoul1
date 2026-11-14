@@ -11,6 +11,8 @@ import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
 import { useLocation } from 'react-router-dom';
+import { useLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
 
 // --- Permission catalog -----------------------------------------------------
 // Grouped to mirror the app's actual navigation (see Sidebar.tsx / App.tsx routes),
@@ -106,12 +108,31 @@ const PERMISSION_GROUPS: PermissionGroup[] = [
 
 // Flat list of every permission key, derived from the catalog above.
 const ALL_PERMISSIONS: Permission[] = PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key));
+// Translation keys (ui.admin.users.categories.*) per category; the English
+// category names above stay as-is (React keys, collapsed-state keys).
+const CATEGORY_KEYS: Record<string, string> = {
+    'Dashboard': 'dashboard',
+    'Sales & Orders': 'sales',
+    'Inventory': 'inventory',
+    'Finance': 'finance',
+    'Procurement': 'procurement',
+    'HR & Payroll': 'hr',
+    'CRM': 'crm',
+    'Accounting': 'accounting',
+    'Administration': 'administration',
+};
 const UserManagement: React.FC = () => {
     const { users, roles, addUser, updateUser, deleteUser, addRole, updateRole, deleteRole, refreshData, currentUser } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
     const location = useLocation();
+    const { t } = useLanguage();
+    // Display text for the permission catalog; falls back to the English source.
+    const tx = (key: string, en: string) => { const v = t(key); return v && v !== key ? v : en; };
+    const permLabel = (p: PermissionMeta) => tx(`ui.admin.users.perm.${p.key}.label`, p.label);
+    const permDesc = (p: PermissionMeta) => tx(`ui.admin.users.perm.${p.key}.desc`, p.description);
+    const catLabel = (category: string) => tx(`ui.admin.users.categories.${CATEGORY_KEYS[category] || ''}`, category);
     // Which page this URL is: /users = Users, /users/roles = Roles & Permissions
     // (two sidebar entries sharing this component).
     const activeTab: 'users' | 'roles' = location.pathname.startsWith('/users/roles') ? 'roles' : 'users';
@@ -121,16 +142,16 @@ const UserManagement: React.FC = () => {
             title: (
                 <div style={{ marginBottom: '8px' }}>
                     <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>
-                        {activeTab === 'users' ? 'Users' : 'Roles & Permissions'}
+                        {activeTab === 'users' ? t('nav.teamUsers') : t('nav.rolesPermissions')}
                     </h1>
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>
-                        {activeTab === 'users' ? 'Manage user accounts' : 'Define roles and what they can access'}
+                        {activeTab === 'users' ? t('ui.admin.users.usersSubtitle') : t('ui.admin.users.rolesSubtitle')}
                     </p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, activeTab]);
+    }, [setHeaderContent, activeTab, t]);
 
     React.useEffect(() => {
         refreshData(true);
@@ -236,23 +257,23 @@ const UserManagement: React.FC = () => {
         const name = userFormData.name?.trim();
         const email = userFormData.email?.trim();
         if (!name || !email || !userFormData.roleId) {
-            showToast('Please fill in all required fields', 'error');
+            showToast(t('ui.admin.users.fillRequired'), 'error');
             return;
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            showToast('Please enter a valid email address', 'error');
+            showToast(t('ui.admin.users.validEmail'), 'error');
             return;
         }
         const duplicateEmail = users.some(u => u.id !== editingUser?.id && u.email.trim().toLowerCase() === email.toLowerCase());
         if (duplicateEmail) {
-            showToast('A user with this email already exists', 'error');
+            showToast(t('ui.admin.users.emailExists'), 'error');
             return;
         }
         // A new account needs a password up front: PINs can't be read back
         // anymore, so an account created without one would look normal in the
         // list ('••••') but could never log in (check_pin refuses empty PINs).
         if (!editingUser && !(userFormData.pin || '').trim()) {
-            showToast('Please set a login password for the new user', 'error');
+            showToast(t('ui.admin.users.setPassword'), 'error');
             return;
         }
 
@@ -266,14 +287,14 @@ const UserManagement: React.FC = () => {
                 const editPayload: Partial<User> = { ...restForm, name, email };
                 if (pinInput && pinInput.trim()) editPayload.pin = pinInput.trim();
                 await updateUser(editingUser.id, editPayload);
-                showToast('User updated successfully', 'success');
+                showToast(t('ui.admin.users.userUpdated'), 'success');
             } else {
                 await addUser({ ...userFormData, name, email } as Omit<User, 'id'>);
-                showToast('User added successfully', 'success');
+                showToast(t('ui.admin.users.userAdded'), 'success');
             }
             closeUserModal();
         } catch (error) {
-            showToast(error instanceof Error ? error.message : 'Failed to save user', 'error');
+            showToast(error instanceof Error ? error.message : t('ui.admin.users.saveUserFailed'), 'error');
         } finally {
             setIsSavingUser(false);
         }
@@ -281,14 +302,14 @@ const UserManagement: React.FC = () => {
 
     const handleDeleteUser = async (id: string) => {
         if (deletingUserId) return;
-        if (!confirm('Are you sure you want to delete this user?')) return;
+        if (!confirm(t('ui.admin.users.confirmDeleteUser'))) return;
         setDeletingUserId(id);
         try {
             await deleteUser(id);
-            showToast('User deleted successfully', 'success');
+            showToast(t('ui.admin.users.userDeleted'), 'success');
         } catch (error) {
             // e.g. the SEC-3 guard: non-admins cannot delete an admin account.
-            showToast(error instanceof Error ? error.message : 'Failed to delete user', 'error');
+            showToast(error instanceof Error ? error.message : t('ui.admin.users.deleteUserFailed'), 'error');
         } finally {
             setDeletingUserId(null);
         }
@@ -309,12 +330,12 @@ const UserManagement: React.FC = () => {
     const handleSaveRole = async () => {
         const name = roleFormData.name?.trim();
         if (!name) {
-            showToast('Role name is required', 'error');
+            showToast(t('ui.admin.users.roleNameRequired'), 'error');
             return;
         }
         const duplicate = roles.some(r => r.id !== editingRole?.id && r.name.trim().toLowerCase() === name.toLowerCase());
         if (duplicate) {
-            showToast('A role with this name already exists', 'error');
+            showToast(t('ui.admin.users.roleExists'), 'error');
             return;
         }
 
@@ -322,30 +343,30 @@ const UserManagement: React.FC = () => {
             if (editingRole) {
                 // The modal only renames; permissions are edited in the panel.
                 await updateRole(editingRole.id, { name, description: roleFormData.description || '' });
-                showToast('Role updated successfully', 'success');
+                showToast(t('ui.admin.users.roleUpdated'), 'success');
             } else {
                 // New roles start with nothing granted (like the reference
                 // design) and open in the panel for granting.
                 const newRole = await addRole({ name, description: roleFormData.description || '', permissions: [] });
                 setSelectedRoleId(newRole.id);
                 setPermDraft(null);
-                showToast('Role added successfully', 'success');
+                showToast(t('ui.admin.users.roleAdded'), 'success');
             }
             setIsRoleModalOpen(false);
         } catch (error) {
             // Surface the store guard's actual reason (e.g. self-lockout) instead of a
             // generic message, so the user knows why the save was refused.
-            showToast(error instanceof Error ? error.message : 'Failed to save role', 'error');
+            showToast(error instanceof Error ? error.message : t('ui.admin.users.saveRoleFailed'), 'error');
         }
     };
 
     const handleDeleteRole = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this role?')) return;
+        if (!confirm(t('ui.admin.users.confirmDeleteRole'))) return;
         try {
             await deleteRole(id);
-            showToast('Role deleted successfully', 'success');
+            showToast(t('ui.admin.users.roleDeleted'), 'success');
         } catch (error) {
-            showToast(error instanceof Error ? error.message : 'Failed to delete role', 'error');
+            showToast(error instanceof Error ? error.message : t('ui.admin.users.deleteRoleFailed'), 'error');
         }
     };
 
@@ -372,7 +393,7 @@ const UserManagement: React.FC = () => {
 
     const selectRole = (id: string) => {
         if (id === selectedRoleId) return;
-        if (permsDirty && !confirm('Discard unsaved permission changes?')) return;
+        if (permsDirty && !confirm(t('ui.admin.users.discardConfirm'))) return;
         setSelectedRoleId(id);
         setPermDraft(null);
     };
@@ -399,10 +420,10 @@ const UserManagement: React.FC = () => {
         try {
             await updateRole(selectedRole.id, { permissions: permDraft });
             setPermDraft(null);
-            showToast('Permissions updated successfully', 'success');
+            showToast(t('ui.admin.users.permsUpdated'), 'success');
         } catch (error) {
             // Surface the store guard's actual reason (e.g. self-lockout).
-            showToast(error instanceof Error ? error.message : 'Failed to save permissions', 'error');
+            showToast(error instanceof Error ? error.message : t('ui.admin.users.savePermsFailed'), 'error');
         }
     };
 
@@ -422,7 +443,10 @@ const UserManagement: React.FC = () => {
                 ? group.permissions.filter(p =>
                     p.label.toLowerCase().includes(permSearchLower) ||
                     p.description.toLowerCase().includes(permSearchLower) ||
-                    group.category.toLowerCase().includes(permSearchLower))
+                    group.category.toLowerCase().includes(permSearchLower) ||
+                    permLabel(p).toLowerCase().includes(permSearchLower) ||
+                    permDesc(p).toLowerCase().includes(permSearchLower) ||
+                    catLabel(group.category).toLowerCase().includes(permSearchLower))
                 : group.permissions,
         }))
         .filter(g => g.permissions.length > 0);
@@ -456,7 +480,7 @@ const UserManagement: React.FC = () => {
                     so each shows only its own title — no cross tabs. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 0', fontWeight: 'bold', color: 'var(--color-primary)' }}>
                     {activeTab === 'users' ? <UserIcon size={18} /> : <Shield size={18} />}
-                    {activeTab === 'users' ? 'Users' : 'Roles & Permissions'}
+                    {activeTab === 'users' ? t('nav.teamUsers') : t('nav.rolesPermissions')}
                 </div>
                 
                 <div style={{ paddingBottom: '12px' }}>
@@ -470,7 +494,7 @@ const UserManagement: React.FC = () => {
                                 border: 'none', cursor: 'pointer', fontWeight: 500
                             }}
                         >
-                            <Plus size={18} /> Add User
+                            <Plus size={18} /> {t('ui.admin.users.addUser')}
                         </button>
                     ) : (
                         <button
@@ -482,7 +506,7 @@ const UserManagement: React.FC = () => {
                                 border: 'none', cursor: 'pointer', fontWeight: 500
                             }}
                         >
-                            <Plus size={18} /> New Role
+                            <Plus size={18} /> {t('ui.admin.users.newRole')}
                         </button>
                     )}
                 </div>
@@ -498,7 +522,7 @@ const UserManagement: React.FC = () => {
                                 type="text"
                                 value={userSearch}
                                 onChange={e => setUserSearch(e.target.value)}
-                                placeholder="Search by name or email…"
+                                placeholder={t('ui.admin.users.searchUsers')}
                                 style={{ width: '100%', padding: '9px 12px 9px 36px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', boxSizing: 'border-box' }}
                             />
                         </div>
@@ -507,13 +531,13 @@ const UserManagement: React.FC = () => {
                             onChange={e => setUserRoleFilter(e.target.value)}
                             style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', cursor: 'pointer' }}
                         >
-                            <option value="all">All roles</option>
+                            <option value="all">{t('ui.admin.users.allRoles')}</option>
                             {roles.map(role => (
                                 <option key={role.id} value={role.id}>{role.name}</option>
                             ))}
                         </select>
                         <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                            {filteredUsers.length} of {users.length} {users.length === 1 ? 'user' : 'users'}
+                            {fill(users.length === 1 ? t('ui.admin.users.countOne') : t('ui.admin.users.countMany'), { shown: filteredUsers.length, total: users.length })}
                         </span>
                     </div>
 
@@ -522,10 +546,10 @@ const UserManagement: React.FC = () => {
                             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '640px' }}>
                                 <thead style={{ background: 'var(--color-bg-secondary)' }}>
                                     <tr>
-                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>User</th>
-                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Role</th>
-                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Password</th>
-                                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Actions</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.users.colUser')}</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.users.colRole')}</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.users.colPassword')}</th>
+                                        <th style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('common.actions')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -552,7 +576,7 @@ const UserManagement: React.FC = () => {
                                                     fontWeight: 500,
                                                     whiteSpace: 'nowrap'
                                                 }}>
-                                                    {roles.find(r => r.id === user.roleId)?.name || 'Unknown'}
+                                                    {roles.find(r => r.id === user.roleId)?.name || t('ui.admin.users.unknown')}
                                                 </span>
                                             </td>
                                             <td style={{ padding: '14px 16px' }}>
@@ -566,10 +590,10 @@ const UserManagement: React.FC = () => {
                                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                                                     {/* SEC-3: only admins may edit or delete an admin account
                                                         (the store enforces this too — these are honest buttons). */}
-                                                    <button onClick={() => handleOpenUserModal(user)} disabled={!canTouchUser(user)} title={canTouchUser(user) ? 'Edit user' : 'Only an administrator can edit an admin account'} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: canTouchUser(user) ? 'pointer' : 'not-allowed', opacity: canTouchUser(user) ? 1 : 0.35, transition: 'background 0.2s' }} onMouseOver={e => { if (canTouchUser(user)) e.currentTarget.style.background = 'var(--color-bg-secondary)'; }} onMouseOut={e => e.currentTarget.style.background = 'none'}>
+                                                    <button onClick={() => handleOpenUserModal(user)} disabled={!canTouchUser(user)} title={canTouchUser(user) ? t('ui.admin.users.editUser') : t('ui.admin.users.onlyAdminEdit')} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: canTouchUser(user) ? 'pointer' : 'not-allowed', opacity: canTouchUser(user) ? 1 : 0.35, transition: 'background 0.2s' }} onMouseOver={e => { if (canTouchUser(user)) e.currentTarget.style.background = 'var(--color-bg-secondary)'; }} onMouseOut={e => e.currentTarget.style.background = 'none'}>
                                                         <Edit2 size={16} />
                                                     </button>
-                                                    <button onClick={() => handleDeleteUser(user.id)} disabled={!canTouchUser(user) || deletingUserId !== null} title={canTouchUser(user) ? 'Delete user' : 'Only an administrator can delete an admin account'} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: canTouchUser(user) && !deletingUserId ? 'pointer' : 'not-allowed', opacity: canTouchUser(user) ? 1 : 0.35, transition: 'background 0.2s' }} onMouseOver={e => { if (canTouchUser(user)) e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }} onMouseOut={e => e.currentTarget.style.background = 'none'}>
+                                                    <button onClick={() => handleDeleteUser(user.id)} disabled={!canTouchUser(user) || deletingUserId !== null} title={canTouchUser(user) ? t('ui.admin.users.deleteUser') : t('ui.admin.users.onlyAdminDelete')} style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: canTouchUser(user) && !deletingUserId ? 'pointer' : 'not-allowed', opacity: canTouchUser(user) ? 1 : 0.35, transition: 'background 0.2s' }} onMouseOver={e => { if (canTouchUser(user)) e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }} onMouseOut={e => e.currentTarget.style.background = 'none'}>
                                                         <Trash2 size={16} />
                                                     </button>
                                                 </div>
@@ -583,7 +607,7 @@ const UserManagement: React.FC = () => {
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '48px 24px', color: 'var(--color-text-secondary)' }}>
                                 <UsersIcon size={32} style={{ opacity: 0.4 }} />
                                 <div style={{ fontSize: '14px' }}>
-                                    {users.length === 0 ? 'No users yet — add your first user.' : 'No users match your filters.'}
+                                    {users.length === 0 ? t('ui.admin.users.noUsers') : t('ui.admin.users.noUsersMatch')}
                                 </div>
                             </div>
                         )}
@@ -595,7 +619,7 @@ const UserManagement: React.FC = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(260px, 340px) 1fr', gap: '16px', alignItems: 'start' }}>
                     {/* Roles list */}
                     <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
-                        <div style={{ padding: '16px 20px', fontSize: '15px', fontWeight: 700 }}>Roles</div>
+                        <div style={{ padding: '16px 20px', fontSize: '15px', fontWeight: 700 }}>{t('ui.admin.users.roles')}</div>
                         {roles.map(role => {
                             const isAdminRole = role.id === 'admin';
                             const granted = isAdminRole ? ALL_PERMISSIONS.length : role.permissions.filter(p => ALL_PERMISSIONS.includes(p)).length;
@@ -604,11 +628,11 @@ const UserManagement: React.FC = () => {
                             const assignedUsers = users.filter(u => u.roleId === role.id).length;
                             // Why deletion is blocked, if it is — mirrors the store guards.
                             const deleteBlockedReason = isAdminRole
-                                ? 'The Admin role is protected'
+                                ? t('ui.admin.users.adminProtected')
                                 : assignedUsers > 0
-                                    ? 'Reassign its users first'
+                                    ? t('ui.admin.users.reassignFirst')
                                     : currentUser?.roleId === role.id
-                                        ? 'This is your own role'
+                                        ? t('ui.admin.users.ownRole')
                                         : null;
                             return (
                                 <div
@@ -630,19 +654,19 @@ const UserManagement: React.FC = () => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <span style={{ fontWeight: 700, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role.name}</span>
                                             {isAdminRole && (
-                                                <span style={{ fontSize: '11px', fontWeight: 500, padding: '1px 8px', borderRadius: '6px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', flexShrink: 0 }}>system</span>
+                                                <span style={{ fontSize: '11px', fontWeight: 500, padding: '1px 8px', borderRadius: '6px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', flexShrink: 0 }}>{t('ui.admin.users.system')}</span>
                                             )}
                                         </div>
                                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '3px' }}>
-                                            {granted} granted
-                                            {available > 0 && <span style={{ color: '#D97706' }}> · {available} more available</span>}
+                                            {fill(t('ui.admin.users.granted'), { n: granted })}
+                                            {available > 0 && <span style={{ color: '#D97706' }}> · {fill(t('ui.admin.users.moreAvailable'), { n: available })}</span>}
                                         </div>
                                     </div>
                                     {!isAdminRole && (
                                         <button
                                             onClick={(e) => { e.stopPropagation(); if (!deleteBlockedReason) handleDeleteRole(role.id); }}
                                             disabled={!!deleteBlockedReason}
-                                            title={deleteBlockedReason || 'Delete role'}
+                                            title={deleteBlockedReason || t('ui.admin.users.deleteRole')}
                                             style={{ padding: '6px', borderRadius: '6px', color: 'var(--color-red)', background: 'none', border: 'none', cursor: deleteBlockedReason ? 'not-allowed' : 'pointer', opacity: deleteBlockedReason ? 0.35 : 1, flexShrink: 0, display: 'flex' }}
                                         ><Trash2 size={15} /></button>
                                     )}
@@ -652,7 +676,7 @@ const UserManagement: React.FC = () => {
                         })}
                         {roles.length === 0 && (
                             <div style={{ padding: '32px 20px', borderTop: '1px solid var(--color-border)', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                                No roles yet — create your first role.
+                                {t('ui.admin.users.noRoles')}
                             </div>
                         )}
                     </div>
@@ -664,19 +688,19 @@ const UserManagement: React.FC = () => {
                                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '16px 20px', borderBottom: '1px solid var(--color-border)' }}>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontSize: '15px', fontWeight: 700 }}>
-                                            Permissions — <span style={{ color: 'var(--color-primary)' }}>{selectedRole.name}</span>
+                                            {t('ui.admin.users.permissionsTitle')} <span style={{ color: 'var(--color-primary)' }}>{selectedRole.name}</span>
                                         </div>
                                         <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', marginTop: '3px' }}>
                                             {isSystemRole
-                                                ? 'This role is managed by the system and cannot be edited.'
-                                                : (selectedRole.description || 'Click the permission chips to grant or revoke, then save.')}
+                                                ? t('ui.admin.users.systemRoleNote')
+                                                : (selectedRole.description || t('ui.admin.users.chipsHelp'))}
                                         </div>
                                     </div>
                                     {!isSystemRole && (
                                         <button
                                             onClick={() => handleOpenRoleModal(selectedRole)}
-                                            title="Rename role"
-                                            aria-label="Rename role"
+                                            title={t('ui.admin.users.renameRole')}
+                                            aria-label={t('ui.admin.users.renameRole')}
                                             style={{ padding: '7px', borderRadius: '8px', color: 'var(--color-text-secondary)', background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer', display: 'flex', flexShrink: 0 }}
                                         ><Edit2 size={14} /></button>
                                     )}
@@ -690,7 +714,7 @@ const UserManagement: React.FC = () => {
                                             type="text"
                                             value={permSearch}
                                             onChange={e => setPermSearch(e.target.value)}
-                                            placeholder="Search permissions…"
+                                            placeholder={t('ui.admin.users.searchPerms')}
                                             style={{ width: '100%', padding: '9px 12px 9px 34px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', boxSizing: 'border-box', fontSize: '13px' }}
                                         />
                                     </div>
@@ -712,7 +736,7 @@ const UserManagement: React.FC = () => {
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px' }}>
                                                     <button
                                                         onClick={() => setCollapsedCats(prev => ({ ...prev, [group.category]: !prev[group.category] }))}
-                                                        aria-label={collapsed ? `Expand ${group.category}` : `Collapse ${group.category}`}
+                                                        aria-label={fill(collapsed ? t('ui.admin.users.expand') : t('ui.admin.users.collapse'), { name: catLabel(group.category) })}
                                                         aria-expanded={!collapsed}
                                                         style={{ padding: '2px', background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', display: 'flex' }}
                                                     >
@@ -722,7 +746,7 @@ const UserManagement: React.FC = () => {
                                                         onClick={() => toggleRoleGroup(group)}
                                                         role="checkbox"
                                                         aria-checked={allInGroup ? true : grantedInGroup > 0 ? 'mixed' : false}
-                                                        aria-label={`Toggle all ${group.category} permissions`}
+                                                        aria-label={fill(t('ui.admin.users.toggleAll'), { name: catLabel(group.category) })}
                                                         tabIndex={isSystemRole ? -1 : 0}
                                                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRoleGroup(group); } }}
                                                         style={{
@@ -737,20 +761,21 @@ const UserManagement: React.FC = () => {
                                                     >
                                                         {allInGroup ? <Check size={12} /> : grantedInGroup > 0 ? <Minus size={12} /> : null}
                                                     </div>
-                                                    <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{group.category}</span>
+                                                    <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{catLabel(group.category)}</span>
                                                     <span style={{ marginLeft: 'auto', fontSize: '12.5px', fontWeight: 600, color: allInGroup ? 'var(--color-primary)' : 'var(--color-text-secondary)' }}>
                                                         {grantedInGroup}/{keys.length}
                                                     </span>
                                                 </div>
                                                 {!collapsed && (
                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '0 14px 14px 42px' }}>
-                                                        {group.permissions.map(({ key, label, description }) => {
+                                                        {group.permissions.map((perm) => {
+                                                            const { key } = perm;
                                                             const checked = effectivePerms.includes(key);
                                                             return (
                                                                 <button
                                                                     key={key}
                                                                     onClick={() => toggleRolePermission(key)}
-                                                                    title={description}
+                                                                    title={permDesc(perm)}
                                                                     aria-pressed={checked}
                                                                     style={{
                                                                         display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -764,7 +789,7 @@ const UserManagement: React.FC = () => {
                                                                     }}
                                                                 >
                                                                     {checked && <Check size={12} />}
-                                                                    {label}
+                                                                    {permLabel(perm)}
                                                                 </button>
                                                             );
                                                         })}
@@ -775,7 +800,7 @@ const UserManagement: React.FC = () => {
                                     })}
                                     {filteredRoleGroups.length === 0 && (
                                         <div style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                                            No permissions match “{permSearch}”.
+                                            {fill(t('ui.admin.users.noPermsMatch'), { q: permSearch })}
                                         </div>
                                     )}
                                 </div>
@@ -783,17 +808,17 @@ const UserManagement: React.FC = () => {
                                 {/* Unsaved-changes bar */}
                                 {permsDirty && (
                                     <div style={{ position: 'sticky', bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 20px', borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
-                                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>You have unsaved changes</span>
+                                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.users.unsaved')}</span>
                                         <div style={{ display: 'flex', gap: '10px' }}>
-                                            <button onClick={() => setPermDraft(null)} style={{ padding: '8px 14px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500, fontSize: '13px' }}>Discard</button>
-                                            <button onClick={savePermissions} style={{ padding: '8px 16px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>Save changes</button>
+                                            <button onClick={() => setPermDraft(null)} style={{ padding: '8px 14px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500, fontSize: '13px' }}>{t('ui.admin.users.discard')}</button>
+                                            <button onClick={savePermissions} style={{ padding: '8px 16px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>{t('ui.admin.users.saveChanges')}</button>
                                         </div>
                                     </div>
                                 )}
                             </>
                         ) : (
                             <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                                Select a role to view its permissions.
+                                {t('ui.admin.users.selectRole')}
                             </div>
                         )}
                     </div>
@@ -816,14 +841,14 @@ const UserManagement: React.FC = () => {
                                 {userNameTrimmed ? userNameTrimmed.charAt(0).toUpperCase() : <UserIcon size={20} />}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{editingUser ? 'Edit User' : 'Add User'}</h2>
+                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{editingUser ? t('ui.admin.users.editUserTitle') : t('ui.admin.users.addUser')}</h2>
                                 <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                                    {editingUser ? 'Update this user’s account details' : 'Create a new user account'}
+                                    {editingUser ? t('ui.admin.users.editUserSub') : t('ui.admin.users.addUserSub')}
                                 </p>
                             </div>
                             <button
                                 onClick={closeUserModal}
-                                aria-label="Close"
+                                aria-label={t('common.close')}
                                 style={{ padding: '8px', borderRadius: '8px', background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', flexShrink: 0 }}
                                 onMouseOver={e => e.currentTarget.style.background = 'var(--color-bg-secondary)'}
                                 onMouseOut={e => e.currentTarget.style.background = 'none'}
@@ -835,18 +860,18 @@ const UserManagement: React.FC = () => {
                         {/* Body */}
                         <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Name <span style={{ color: 'var(--color-red)' }}>*</span></label>
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.admin.users.name')} <span style={{ color: 'var(--color-red)' }}>*</span></label>
                                 <input
                                     type="text"
                                     value={userFormData.name}
                                     autoFocus
                                     onChange={e => setUserFormData({ ...userFormData, name: e.target.value })}
-                                    placeholder="Full name"
+                                    placeholder={t('ui.admin.users.fullName')}
                                     style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
                                 />
                             </div>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Email <span style={{ color: 'var(--color-red)' }}>*</span></label>
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.admin.users.email')} <span style={{ color: 'var(--color-red)' }}>*</span></label>
                                 <div style={{ position: 'relative' }}>
                                     <Mail size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                                     <input
@@ -859,17 +884,17 @@ const UserManagement: React.FC = () => {
                                 </div>
                                 {userEmailTrimmed && !userEmailValid && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '12px', color: 'var(--color-red)' }}>
-                                        <AlertCircle size={13} /> Enter a valid email address
+                                        <AlertCircle size={13} /> {t('ui.admin.users.enterValidEmail')}
                                     </div>
                                 )}
                                 {userEmailValid && userEmailDuplicate && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '12px', color: 'var(--color-red)' }}>
-                                        <AlertCircle size={13} /> A user with this email already exists
+                                        <AlertCircle size={13} /> {t('ui.admin.users.emailExists')}
                                     </div>
                                 )}
                             </div>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Role <span style={{ color: 'var(--color-red)' }}>*</span></label>
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.admin.users.colRole')} <span style={{ color: 'var(--color-red)' }}>*</span></label>
                                 {/* SEC-3: non-admins only see roles their own role's permissions
                                     cover (never Administrator, never a richer custom role), and
                                     nobody can change their OWN role (the store refuses all of it too). */}
@@ -877,10 +902,10 @@ const UserManagement: React.FC = () => {
                                     value={userFormData.roleId}
                                     onChange={e => setUserFormData({ ...userFormData, roleId: e.target.value })}
                                     disabled={!!editingUser && editingUser.id === currentUser?.id}
-                                    title={editingUser && editingUser.id === currentUser?.id ? 'You cannot change your own role — ask another administrator' : undefined}
+                                    title={editingUser && editingUser.id === currentUser?.id ? t('ui.admin.users.ownRoleTitle') : undefined}
                                     style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box', cursor: editingUser && editingUser.id === currentUser?.id ? 'not-allowed' : undefined }}
                                 >
-                                    <option value="" disabled>Select a role</option>
+                                    <option value="" disabled>{t('ui.admin.users.selectARole')}</option>
                                     {assignableRoles.map(role => (
                                         <option key={role.id} value={role.id}>{role.name}</option>
                                     ))}
@@ -892,33 +917,33 @@ const UserManagement: React.FC = () => {
                                 </select>
                                 {editingUser && editingUser.id === currentUser?.id && (
                                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                        You cannot change your own role.
+                                        {t('ui.admin.users.ownRoleNote')}
                                     </div>
                                 )}
                                 {userFormData.roleId && (
                                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                         {roles.find(r => r.id === userFormData.roleId)?.id === 'admin'
-                                            ? 'Full access to everything'
-                                            : `${roles.find(r => r.id === userFormData.roleId)?.permissions.length || 0} permission(s)`}
+                                            ? t('ui.admin.users.fullAccess')
+                                            : fill(t('ui.admin.users.nPermissions'), { n: roles.find(r => r.id === userFormData.roleId)?.permissions.length || 0 })}
                                     </div>
                                 )}
                             </div>
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Password <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>(optional)</span></label>
+                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.admin.users.colPassword')} <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>{t('ui.admin.users.optional')}</span></label>
                                 <div style={{ position: 'relative' }}>
                                     <input
                                         type={showUserPassword ? 'text' : 'password'}
                                         value={userFormData.pin || ''}
                                         onChange={e => setUserFormData({ ...userFormData, pin: e.target.value })}
                                         disabled={!canSetPinFor(editingUser)}
-                                        placeholder={editingUser ? (canSetPinFor(editingUser) ? 'Leave blank to keep current' : 'Only an administrator can change this password') : 'Set a login password'}
-                                        title={canSetPinFor(editingUser) ? undefined : 'This account’s role has permissions your role does not — ask an administrator'}
+                                        placeholder={editingUser ? (canSetPinFor(editingUser) ? t('ui.admin.users.keepCurrent') : t('ui.admin.users.onlyAdminPassword')) : t('ui.admin.users.setLoginPassword')}
+                                        title={canSetPinFor(editingUser) ? undefined : t('ui.admin.users.richerRole')}
                                         style={{ width: '100%', padding: '10px 40px 10px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box', cursor: canSetPinFor(editingUser) ? undefined : 'not-allowed' }}
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowUserPassword(v => !v)}
-                                        aria-label={showUserPassword ? 'Hide password' : 'Show password'}
+                                        aria-label={showUserPassword ? t('ui.admin.users.hidePassword') : t('ui.admin.users.showPassword')}
                                         style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', padding: '4px', background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', display: 'flex' }}
                                     >
                                         {showUserPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -927,13 +952,13 @@ const UserManagement: React.FC = () => {
                             </div>
                             <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginTop: '4px' }}>
                                 <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: 600, color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <Target size={15} /> Sales Targets ($)
+                                    <Target size={15} /> {t('ui.admin.users.salesTargets')}
                                 </h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                                     {([
-                                        ['Daily', 'dailyTarget'],
-                                        ['Weekly', 'weeklyTarget'],
-                                        ['Monthly', 'monthlyTarget'],
+                                        [t('ui.admin.users.daily'), 'dailyTarget'],
+                                        [t('ui.admin.users.weekly'), 'weeklyTarget'],
+                                        [t('ui.admin.users.monthly'), 'monthlyTarget'],
                                     ] as const).map(([label, field]) => (
                                         <div key={field}>
                                             <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500 }}>{label}</label>
@@ -952,13 +977,13 @@ const UserManagement: React.FC = () => {
 
                         {/* Footer */}
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '16px 24px', borderTop: '1px solid var(--color-border)' }}>
-                            <button onClick={closeUserModal} style={{ padding: '10px 18px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500 }}>Cancel</button>
+                            <button onClick={closeUserModal} style={{ padding: '10px 18px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500 }}>{t('common.cancel')}</button>
                             <button
                                 onClick={handleSaveUser}
                                 disabled={!canSaveUser}
                                 style={{ padding: '10px 18px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: canSaveUser ? 'pointer' : 'not-allowed', fontWeight: 500, opacity: canSaveUser ? 1 : 0.5 }}
                             >
-                                {isSavingUser ? 'Saving…' : (editingUser ? 'Save Changes' : 'Create User')}
+                                {isSavingUser ? t('ui.admin.telegram.saving') : (editingUser ? t('settings.saveChanges') : t('ui.admin.users.createUser'))}
                             </button>
                         </div>
                     </div>
@@ -981,14 +1006,14 @@ const UserManagement: React.FC = () => {
                                 <Shield size={22} />
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{editingRole ? 'Rename Role' : 'New Role'}</h2>
+                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{editingRole ? t('ui.admin.users.renameRoleTitle') : t('ui.admin.users.newRole')}</h2>
                                 <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                                    {editingRole ? 'Update this role’s name and description' : 'Name the role — grant its permissions in the panel'}
+                                    {editingRole ? t('ui.admin.users.renameRoleSub') : t('ui.admin.users.newRoleSub')}
                                 </p>
                             </div>
                             <button
                                 onClick={closeRoleModal}
-                                aria-label="Close"
+                                aria-label={t('common.close')}
                                 style={{ padding: '8px', borderRadius: '8px', background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', flexShrink: 0 }}
                                 onMouseOver={e => e.currentTarget.style.background = 'var(--color-bg-secondary)'}
                                 onMouseOut={e => e.currentTarget.style.background = 'none'}
@@ -1002,31 +1027,31 @@ const UserManagement: React.FC = () => {
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
-                                        Role Name <span style={{ color: 'var(--color-red)' }}>*</span>
+                                        {t('ui.admin.users.roleName')} <span style={{ color: 'var(--color-red)' }}>*</span>
                                     </label>
                                     <input
                                         type="text"
                                         value={roleFormData.name}
                                         autoFocus
                                         onChange={e => setRoleFormData({ ...roleFormData, name: e.target.value })}
-                                        placeholder="e.g. Cashier"
+                                        placeholder={t('ui.admin.users.roleNamePlaceholder')}
                                         style={{ width: '100%', padding: '10px', borderRadius: '8px', border: `1px solid ${roleNameDuplicate ? 'var(--color-red)' : 'var(--color-border)'}`, background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
                                     />
                                     {roleNameDuplicate && (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '12px', color: 'var(--color-red)' }}>
-                                            <AlertCircle size={13} /> A role with this name already exists
+                                            <AlertCircle size={13} /> {t('ui.admin.users.roleExists')}
                                         </div>
                                     )}
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
-                                        Description <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>(optional)</span>
+                                        {t('ui.admin.users.description')} <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>{t('ui.admin.users.optional')}</span>
                                     </label>
                                     <input
                                         type="text"
                                         value={roleFormData.description}
                                         onChange={e => setRoleFormData({ ...roleFormData, description: e.target.value })}
-                                        placeholder="Short summary of this role"
+                                        placeholder={t('ui.admin.users.descriptionPlaceholder')}
                                         style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)', boxSizing: 'border-box' }}
                                     />
                                 </div>
@@ -1036,13 +1061,13 @@ const UserManagement: React.FC = () => {
 
                         {/* Footer */}
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '16px 24px', borderTop: '1px solid var(--color-border)' }}>
-                            <button onClick={closeRoleModal} style={{ padding: '10px 18px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500 }}>Cancel</button>
+                            <button onClick={closeRoleModal} style={{ padding: '10px 18px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500 }}>{t('common.cancel')}</button>
                             <button
                                 onClick={handleSaveRole}
                                 disabled={!canSaveRole}
                                 style={{ padding: '10px 18px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: canSaveRole ? 'pointer' : 'not-allowed', fontWeight: 500, opacity: canSaveRole ? 1 : 0.5 }}
                             >
-                                {editingRole ? 'Save Changes' : 'Create Role'}
+                                {editingRole ? t('settings.saveChanges') : t('ui.admin.users.createRole')}
                             </button>
                         </div>
                     </div>

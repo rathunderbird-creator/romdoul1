@@ -23,6 +23,8 @@ import { dayKeyFromDate, addDays } from '../../utils/dateRange';
 import { productWarehouseLines } from '../../utils/stockOnHand';
 import { useFifoValuation, fifoUnitCost, fifoMismatchCount, fetchFifoCheck, isMissingColumnError, type FifoCheck, type FifoStatus } from '../../hooks/useFifo';
 import type { Product } from '../../types';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill, tNow } from '../../i18n/translate';
 
 interface MovementRow {
     id: string;
@@ -38,13 +40,13 @@ interface MovementRow {
 interface ShortLine { id: string; order: string; product: string; quantity: number; short: number; cost: number | null }
 
 type TabKey = 'stock-on-hand' | 'stock-card' | 'valuation' | 'fifo-check' | 'expiring' | 'reconciliation';
-const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number; color?: string }> }[] = [
-    { key: 'stock-on-hand', label: 'Stock on Hand', icon: Layers },
-    { key: 'stock-card', label: 'Stock Card', icon: FileText },
-    { key: 'valuation', label: 'Valuation', icon: Tag },
-    { key: 'fifo-check', label: 'FIFO check', icon: ShieldCheck },
-    { key: 'expiring', label: 'Expiring', icon: CalendarClock },
-    { key: 'reconciliation', label: 'Reconciliation', icon: CheckCircle2 },
+const TABS: { key: TabKey; label: string; tKey: string; icon: React.ComponentType<{ size?: number; color?: string }> }[] = [
+    { key: 'stock-on-hand', label: 'Stock on Hand', tKey: 'ui.inventory.reports.tabs.stockOnHand', icon: Layers },
+    { key: 'stock-card', label: 'Stock Card', tKey: 'ui.inventory.reports.tabs.stockCard', icon: FileText },
+    { key: 'valuation', label: 'Valuation', tKey: 'ui.inventory.reports.tabs.valuation', icon: Tag },
+    { key: 'fifo-check', label: 'FIFO check', tKey: 'ui.inventory.reports.tabs.fifoCheck', icon: ShieldCheck },
+    { key: 'expiring', label: 'Expiring', tKey: 'ui.inventory.reports.tabs.expiring', icon: CalendarClock },
+    { key: 'reconciliation', label: 'Reconciliation', tKey: 'ui.inventory.reports.tabs.reconciliation', icon: CheckCircle2 },
 ];
 
 const fmt = (n: number): string => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -84,21 +86,22 @@ const Kpi: React.FC<{ label: string; value: React.ReactNode; sub?: React.ReactNo
 
 // Which cost the Stock on Hand and Valuation figures use.
 const CostBasisNote: React.FC<{ status: FifoStatus; message: string | null; mismatches: number; onCheck: () => void }> = ({ status, message, mismatches, onCheck }) => {
-    if (status === 'loading') return <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0 }}>Loading FIFO costs…</p>;
+    const { t } = useLanguage();
+    if (status === 'loading') return <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0 }}>{t('ui.inventory.reports.loadingFifo')}</p>;
     if (status !== 'ready') {
         return (
             <p style={{ fontSize: '12px', color: '#B45309', margin: 0, maxWidth: '680px' }}>
-                Valued at each product's purchase cost (last cost), not FIFO. {message}
+                {t('ui.inventory.reports.valuedPurchase')} {message}
             </p>
         );
     }
     return (
         <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0, maxWidth: '680px' }}>
-            Valued at FIFO: each product's unit cost is the average of the cost layers it holds now. A product with no layers uses its last receipt cost.
+            {t('ui.inventory.reports.valuedFifo')}
             {mismatches > 0 && (
                 <span style={{ color: '#B45309' }}>
-                    {' '}{mismatches} product{mismatches === 1 ? '' : 's'} hold a different number of layers than their stock, so their value is an estimate —{' '}
-                    <button onClick={onCheck} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}>see FIFO check</button>.
+                    {' '}{fill(mismatches === 1 ? t('ui.inventory.reports.mismatchEstimateOne') : t('ui.inventory.reports.mismatchEstimateMany'), { n: mismatches })}{' '}
+                    <button onClick={onCheck} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}>{t('ui.inventory.reports.seeFifoCheck')}</button>.
                 </span>
             )}
         </p>
@@ -108,6 +111,7 @@ const CostBasisNote: React.FC<{ status: FifoStatus; message: string | null; mism
 const InventoryReportsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const { products, warehouses, warehouseStock, categories, isLoading, refreshData } = useStore();
     const stockSignature = useMemo(() => products.map(p => `${p.id}:${p.stock}`).join('|'), [products]);
     const fifo = useFifoValuation(true, stockSignature);
@@ -116,13 +120,13 @@ const InventoryReportsPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Inventory Reports</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>What you hold, what it is worth, and whether the books agree.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('ui.inventory.reports.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{t('ui.inventory.reports.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     const [tab, setTab] = useState<TabKey>('stock-on-hand');
     const activeProducts = useMemo(() => products.filter(p => p.isActive !== false), [products]);
@@ -166,7 +170,7 @@ const InventoryReportsPage: React.FC = () => {
             const unitCost = fifo.status === 'ready' ? fifoUnitCost(fifo.rows.get(p.id), purchaseCost) : purchaseCost;
             if (warehouseId) {
                 const qty = warehouseStockByProductAndWarehouse.get(`${p.id}::${warehouseId}`) || 0;
-                if (qty !== 0) lines.push({ product: p, warehouseName: warehouses.find(w => w.id === warehouseId)?.name || 'Unknown', qty, unitCost });
+                if (qty !== 0) lines.push({ product: p, warehouseName: warehouses.find(w => w.id === warehouseId)?.name || t('ui.inventory.unknown'), qty, unitCost });
                 continue;
             }
             const tracked = warehouses.map(w => ({
@@ -179,7 +183,7 @@ const InventoryReportsPage: React.FC = () => {
             }
         }
         return lines;
-    }, [filteredProducts, warehouseId, warehouses, warehouseStockByProductAndWarehouse, fifo.status, fifo.rows]);
+    }, [filteredProducts, warehouseId, warehouses, warehouseStockByProductAndWarehouse, fifo.status, fifo.rows, t]);
 
     const fifoMismatches = useMemo(() => fifo.status === 'ready' ? fifoMismatchCount(fifo.rows, filteredProducts.map(p => p.id)) : 0, [fifo.status, fifo.rows, filteredProducts]);
     const costBasisNote = <CostBasisNote status={fifo.status} message={fifo.message} mismatches={fifoMismatches} onCheck={() => setTab('fifo-check')} />;
@@ -187,9 +191,7 @@ const InventoryReportsPage: React.FC = () => {
     // Shown whenever a single warehouse is selected (Stock on Hand + Valuation).
     const warehouseCaveat = warehouseId ? (
         <p style={{ fontSize: '12px', color: '#B45309', margin: 0, maxWidth: '680px' }}>
-            Per-warehouse figures cover only movements that record a warehouse (posted stock adjustments, wholesale, stock movements).
-            Retail orders and purchase receipts update company stock without a warehouse, so a single warehouse view is partial —
-            select “All warehouses” for the full, reconciled company stock (untracked stock appears there as “Unassigned”).
+            {t('ui.inventory.reports.warehouseCaveat')}
         </p>
     ) : null;
 
@@ -253,7 +255,7 @@ const InventoryReportsPage: React.FC = () => {
             setCardMovements((data || []) as unknown as MovementRow[]);
         } catch (e) {
             console.error('Failed to fetch the stock card:', e);
-            showToast('Failed to load the stock card for this product.', 'error');
+            showToast(tNow('ui.inventory.reports.cardLoadFailed'), 'error');
         } finally {
             setCardLoading(false);
         }
@@ -281,7 +283,7 @@ const InventoryReportsPage: React.FC = () => {
     const [shortLines, setShortLines] = useState<{ retail: ShortLine[]; wholesale: ShortLine[]; message: string | null }>({ retail: [], wholesale: [], message: null });
     const loadCheck = useCallback(async () => {
         setCheck(c => ({ ...c, status: 'loading' }));
-        const res = await fetchFifoCheck().catch(e => ({ status: 'error' as const, data: null, message: `Could not run the FIFO check: ${e instanceof Error ? e.message : String(e)}` }));
+        const res = await fetchFifoCheck().catch(e => ({ status: 'error' as const, data: null, message: tNow('ui.inventory.reports.checkFailed', { msg: e instanceof Error ? e.message : String(e) }) }));
         setCheck(res);
         if (res.status !== 'ready' || !res.data) { setShortLines({ retail: [], wholesale: [], message: null }); return; }
         const { retail_lines, wholesale_lines } = res.data.shortfall;
@@ -297,7 +299,7 @@ const InventoryReportsPage: React.FC = () => {
         setShortLines({
             retail: ((r.data || []) as Record<string, unknown>[]).map(x => ({ id: String(x.id), order: String(x.sale_id ?? ''), product: String(x.name || x.product_id || ''), quantity: Number(x.quantity) || 0, short: Number(x.cogs_short_qty) || 0, cost: toNum(x.cogs_cost) })),
             wholesale: ((w.data || []) as Record<string, unknown>[]).map(x => ({ id: String(x.id), order: String(x.wholesale_order_id ?? ''), product: String(x.product_name || x.product_id || ''), quantity: Number(x.quantity) || 0, short: Number(x.cogs_short_qty) || 0, cost: toNum(x.cogs_cost) })),
-            message: r.error || w.error ? `Could not list the shortfall lines: ${(r.error || w.error)?.message || 'unknown error'}` : null,
+            message: r.error || w.error ? tNow('ui.inventory.reports.shortListFailed', { msg: (r.error || w.error)?.message || tNow('ui.inventory.unknownError') }) : null,
         });
     }, []);
     useEffect(() => { if (tab === 'fifo-check') loadCheck(); }, [tab, loadCheck]);
@@ -316,7 +318,7 @@ const InventoryReportsPage: React.FC = () => {
     }, [stockLines]);
 
     const NavBtn: React.FC<{ tabKey: TabKey }> = ({ tabKey }) => {
-        const { label, icon: Icon } = TABS.find(t => t.key === tabKey)!;
+        const { tKey, icon: Icon } = TABS.find(tb => tb.key === tabKey)!;
         const active = tab === tabKey;
         return (
             <button
@@ -329,7 +331,7 @@ const InventoryReportsPage: React.FC = () => {
                     boxShadow: active ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
                 }}
             >
-                <Icon size={16} color={active ? 'var(--color-primary)' : 'var(--color-text-secondary)'} /> {label}
+                <Icon size={16} color={active ? 'var(--color-primary)' : 'var(--color-text-secondary)'} /> {t(tKey)}
             </button>
         );
     };
@@ -337,7 +339,7 @@ const InventoryReportsPage: React.FC = () => {
     return (
         <div className="acct-page" style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
             <div style={{ width: '210px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                {TABS.map(t => <NavBtn key={t.key} tabKey={t.key} />)}
+                {TABS.map(tb => <NavBtn key={tb.key} tabKey={tb.key} />)}
             </div>
 
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -345,31 +347,31 @@ const InventoryReportsPage: React.FC = () => {
                     <>
                         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
                             <div>
-                                <label style={labelStyle}>Warehouse</label>
+                                <label style={labelStyle}>{t('ui.inventory.warehouse')}</label>
                                 <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                    <option value="">All warehouses</option>
+                                    <option value="">{t('ui.inventory.allWarehouses')}</option>
                                     {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label style={labelStyle}>Category</label>
+                                <label style={labelStyle}>{t('inventory.category')}</label>
                                 <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                    <option value="">All categories</option>
+                                    <option value="">{t('ui.inventory.filter.allCategories')}</option>
                                     {categories.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
                             </div>
                             <div style={{ flex: '1 1 220px', maxWidth: '280px' }}>
-                                <label style={labelStyle}>Search</label>
+                                <label style={labelStyle}>{t('common.search')}</label>
                                 <div style={{ position: 'relative' }}>
                                     <Search size={14} color="var(--color-text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
-                                    <input type="text" placeholder="Product code or name…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, width: '100%', paddingLeft: '30px', boxSizing: 'border-box' }} />
+                                    <input type="text" placeholder={t('ui.inventory.reports.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, width: '100%', paddingLeft: '30px', boxSizing: 'border-box' }} />
                                 </div>
                             </div>
-                            <button onClick={() => { refreshData(); fifo.reload(); }} title="Refresh" style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
+                            <button onClick={() => { refreshData(); fifo.reload(); }} title={t('ui.inventory.refresh')} style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
                                 <RefreshCw size={15} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
                             </button>
-                            <button onClick={printList} style={btnStyle}><Printer size={14} /> Print list</button>
-                            <button onClick={exportCsv} style={btnStyle}><Download size={14} /> Export CSV</button>
+                            <button onClick={printList} style={btnStyle}><Printer size={14} /> {t('ui.inventory.reports.printList')}</button>
+                            <button onClick={exportCsv} style={btnStyle}><Download size={14} /> {t('ui.inventory.exportCsv')}</button>
                         </div>
 
                         {warehouseCaveat}
@@ -377,15 +379,15 @@ const InventoryReportsPage: React.FC = () => {
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '14px' }}>
                             <div style={{ ...cardStyle, padding: '14px 18px' }}>
-                                <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Lines</div>
+                                <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.reports.lines')}</div>
                                 <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '4px' }}>{stockLines.length}</div>
                             </div>
                             <div style={{ ...cardStyle, padding: '14px 18px' }}>
-                                <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Total Quantity</div>
+                                <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.reports.totalQty')}</div>
                                 <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '4px' }}>{fmt(totalQty)}</div>
                             </div>
                             <div style={{ ...cardStyle, padding: '14px 18px' }}>
-                                <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Total Value</div>
+                                <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.stats.totalValue')}</div>
                                 <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '4px' }}>{fmt(totalValue)}</div>
                             </div>
                         </div>
@@ -395,20 +397,20 @@ const InventoryReportsPage: React.FC = () => {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Product</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Warehouse</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Bin</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Batch</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Qty</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Unit Cost</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Value</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.inventory.priceList.product')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.inventory.warehouse')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.inventory.reports.bin')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.inventory.reports.batch')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.reports.qty')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.reports.unitCost')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.reports.value')}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {isLoading ? (
-                                            <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading…</td></tr>
+                                            <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.loading')}</td></tr>
                                         ) : stockLines.length === 0 ? (
-                                            <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No stock matches these filters.</td></tr>
+                                            <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.reports.noStockMatch')}</td></tr>
                                         ) : stockLines.map((l, i) => {
                                             const reorder = Number(l.product.reorderLevel) || 0;
                                             const below = reorder > 0 && l.qty < reorder;
@@ -419,11 +421,11 @@ const InventoryReportsPage: React.FC = () => {
                                                         <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{l.product.sku ? l.product.name : l.product.category}</div>
                                                     </td>
                                                     <td style={{ padding: '12px 16px', color: 'var(--color-text-main)' }}>{l.warehouseName}</td>
-                                                    <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)' }}>Default</td>
+                                                    <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.reports.defaultBin')}</td>
                                                     <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)' }}>—</td>
                                                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                                                         <div style={{ fontWeight: 700, color: below ? '#D97706' : 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmt(l.qty)} <span style={{ fontWeight: 400, fontSize: '11px', color: 'var(--color-text-secondary)' }}>PCS</span></div>
-                                                        {below && <div style={{ fontSize: '11px', color: '#D97706', fontWeight: 600 }}>below reorder ({fmt(reorder)})</div>}
+                                                        {below && <div style={{ fontSize: '11px', color: '#D97706', fontWeight: 600 }}>{fill(t('ui.inventory.reports.belowReorder'), { n: fmt(reorder) })}</div>}
                                                     </td>
                                                     <td style={{ padding: '12px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(l.unitCost)}</td>
                                                     <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(l.qty * l.unitCost)}</td>
@@ -440,9 +442,9 @@ const InventoryReportsPage: React.FC = () => {
                 {tab === 'stock-card' && (
                     <>
                         <div>
-                            <label style={labelStyle}>Product</label>
+                            <label style={labelStyle}>{t('ui.inventory.priceList.product')}</label>
                             <select value={cardProductId} onChange={e => setCardProductId(e.target.value)} style={{ ...inputStyle, minWidth: '280px', cursor: 'pointer' }}>
-                                <option value="">Select a product…</option>
+                                <option value="">{t('ui.inventory.reports.selectProduct')}</option>
                                 {activeProducts.map(p => <option key={p.id} value={p.id}>{p.sku ? `${p.sku} · ` : ''}{p.name}</option>)}
                             </select>
                         </div>
@@ -451,30 +453,30 @@ const InventoryReportsPage: React.FC = () => {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Date</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Type</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Source</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Qty</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Unit Cost</th>
-                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Balance</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('orders.date')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.inventory.reports.type')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.inventory.reports.source')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.reports.qty')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.reports.unitCost')}</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('orders.balance')}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {!cardProductId ? (
-                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Choose a product to see its stock card.</td></tr>
+                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.reports.chooseProduct')}</td></tr>
                                         ) : cardLoading ? (
-                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading…</td></tr>
+                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.loading')}</td></tr>
                                         ) : cardRows.length === 0 ? (
-                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No movements for this product in the last 365 days.</td></tr>
+                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.reports.noCardMovements')}</td></tr>
                                         ) : cardRows.map(r => (
                                             <tr key={r.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                                 <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{r.movement_date}</td>
                                                 <td style={{ padding: '12px 16px' }}>
-                                                    <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '999px', background: r.type === 'in' ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.14)', color: r.type === 'in' ? '#059669' : '#DC2626' }}>{r.type === 'in' ? 'IN' : 'OUT'}</span>
+                                                    <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '999px', background: r.type === 'in' ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.14)', color: r.type === 'in' ? '#059669' : '#DC2626' }}>{r.type === 'in' ? t('ui.inventory.reports.in') : t('ui.inventory.reports.out')}</span>
                                                 </td>
                                                 <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)' }}>{r.source || '—'}{r.reference_id ? ` · ${r.reference_id}` : ''}</td>
                                                 <td style={{ padding: '12px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.delta < 0 ? '#DC2626' : 'var(--color-text-main)' }}>{r.delta > 0 ? '+' : ''}{fmt(r.delta)}</td>
-                                                <td style={{ padding: '12px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.costRecorded ? 'var(--color-text-main)' : 'var(--color-text-secondary)' }} title={r.costRecorded ? 'FIFO cost recorded on this movement' : 'Recorded before FIFO costing'}>{r.unitCost === null ? '—' : fmt(r.unitCost)}</td>
+                                                <td style={{ padding: '12px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.costRecorded ? 'var(--color-text-main)' : 'var(--color-text-secondary)' }} title={r.costRecorded ? t('ui.inventory.reports.costRecordedTitle') : t('ui.inventory.reports.preFifoTitle')}>{r.unitCost === null ? '—' : fmt(r.unitCost)}</td>
                                                 <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.running)}</td>
                                             </tr>
                                         ))}
@@ -484,7 +486,7 @@ const InventoryReportsPage: React.FC = () => {
                         </div>
                         {cardProductId && cardHasUncosted && (
                             <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0, maxWidth: '680px' }}>
-                                Unit cost is the FIFO cost recorded on each movement. Grey figures were recorded before FIFO costing: stock in shows its receipt price, stock out shows —, because those records carry the selling price, not a cost.
+                                {t('ui.inventory.reports.cardCostNote')}
                             </p>
                         )}
                     </>
@@ -494,9 +496,9 @@ const InventoryReportsPage: React.FC = () => {
                     <>
                         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
                             <div>
-                                <label style={labelStyle}>Warehouse</label>
+                                <label style={labelStyle}>{t('ui.inventory.warehouse')}</label>
                                 <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                    <option value="">All warehouses</option>
+                                    <option value="">{t('ui.inventory.allWarehouses')}</option>
                                     {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                                 </select>
                             </div>
@@ -509,15 +511,15 @@ const InventoryReportsPage: React.FC = () => {
                             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                        <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Category</th>
-                                        <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Qty</th>
-                                        <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Avg Unit Cost</th>
-                                        <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Value</th>
+                                        <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('inventory.category')}</th>
+                                        <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.reports.qty')}</th>
+                                        <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.reports.avgUnitCost')}</th>
+                                        <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.inventory.reports.value')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {valuationRows.length === 0 ? (
-                                        <tr><td colSpan={4} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No stock to value.</td></tr>
+                                        <tr><td colSpan={4} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.reports.noStockToValue')}</td></tr>
                                     ) : valuationRows.map(r => (
                                         <tr key={r.category} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                             <td style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-main)' }}>{r.category}</td>
@@ -530,7 +532,7 @@ const InventoryReportsPage: React.FC = () => {
                                 {valuationRows.length > 0 && (
                                     <tfoot>
                                         <tr style={{ borderTop: '2px solid var(--color-border)' }}>
-                                            <td style={{ padding: '12px 16px', fontWeight: 700 }}>Total</td>
+                                            <td style={{ padding: '12px 16px', fontWeight: 700 }}>{t('common.total')}</td>
                                             <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(valuationRows.reduce((s, r) => s + r.qty, 0))}</td>
                                             <td />
                                             <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{fmt(valuationRows.reduce((s, r) => s + r.value, 0))}</td>
@@ -547,59 +549,59 @@ const InventoryReportsPage: React.FC = () => {
                     <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                             <button onClick={loadCheck} style={btnStyle} disabled={check.status === 'loading'}>
-                                <RefreshCw size={14} style={check.status === 'loading' ? { animation: 'spin 1s linear infinite' } : {}} /> Run check
+                                <RefreshCw size={14} style={check.status === 'loading' ? { animation: 'spin 1s linear infinite' } : {}} /> {t('ui.inventory.reports.runCheck')}
                             </button>
                             <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                Compares the FIFO cost layers with product stock and with the Inventory (1300) balance in the ledger.
+                                {t('ui.inventory.reports.checkHelp')}
                             </span>
                         </div>
 
                         {check.status === 'loading' && !check.data ? (
-                            <div style={{ ...cardStyle, padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Running the FIFO check…</div>
+                            <div style={{ ...cardStyle, padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.inventory.reports.runningCheck')}</div>
                         ) : check.status === 'missing' || check.status === 'error' || !check.data ? (
-                            <EmptyConcept icon={ShieldCheck} title={check.status === 'missing' ? 'FIFO costing is not set up' : 'The FIFO check could not run'} body={check.message || 'Unknown error'} />
+                            <EmptyConcept icon={ShieldCheck} title={check.status === 'missing' ? t('ui.inventory.reports.fifoNotSetUp') : t('ui.inventory.reports.checkCouldNotRun')} body={check.message || t('ui.inventory.reports.unknownErrorCap')} />
                         ) : (() => {
                             const c = check.data;
                             const balanced = Math.abs(c.variance) < 0.005;
                             const shortLinesTotal = c.shortfall.retail_lines + c.shortfall.wholesale_lines;
                             const allClear = balanced && c.product_mismatches === 0 && shortLinesTotal === 0 && c.inventory_account_found;
                             const recon: { label: string; help: string; amount: number; sign: '+' | '−' | '' ; strong?: boolean }[] = [
-                                { label: 'Cost layers in stock', help: `${fmt(c.pool_units)} units`, amount: c.pool_value, sign: '' },
-                                { label: 'Shipped, COGS not booked yet', help: 'Goods out on orders not settled', amount: c.retail_out_unbooked, sign: '+' },
-                                { label: 'COGS booked, not shipped yet', help: 'Orders settled before shipping', amount: c.retail_booked_not_out, sign: '−' },
-                                { label: 'Cost change after COGS was booked', help: 'Shipped cost minus the COGS booked', amount: c.retail_booked_out_diff, sign: '+' },
-                                { label: 'Expected Inventory (1300)', help: '', amount: c.expected_1300, sign: '', strong: true },
-                                { label: 'Inventory (1300) in the ledger', help: `Posted and Draft entries · Posted only ${fmt(c.ledger_1300_posted)}`, amount: c.ledger_1300, sign: '', strong: true },
+                                { label: t('ui.inventory.reports.recon.layers'), help: fill(t('ui.inventory.reports.nUnits'), { n: fmt(c.pool_units) }), amount: c.pool_value, sign: '' },
+                                { label: t('ui.inventory.reports.recon.shippedNotBooked'), help: t('ui.inventory.reports.recon.shippedNotBookedHelp'), amount: c.retail_out_unbooked, sign: '+' },
+                                { label: t('ui.inventory.reports.recon.bookedNotShipped'), help: t('ui.inventory.reports.recon.bookedNotShippedHelp'), amount: c.retail_booked_not_out, sign: '−' },
+                                { label: t('ui.inventory.reports.recon.costChange'), help: t('ui.inventory.reports.recon.costChangeHelp'), amount: c.retail_booked_out_diff, sign: '+' },
+                                { label: t('ui.inventory.reports.recon.expected'), help: '', amount: c.expected_1300, sign: '', strong: true },
+                                { label: t('ui.inventory.reports.recon.ledger'), help: fill(t('ui.inventory.reports.recon.ledgerHelp'), { n: fmt(c.ledger_1300_posted) }), amount: c.ledger_1300, sign: '', strong: true },
                             ];
                             return (
                                 <>
                                     <div style={{ ...cardStyle, padding: '12px 16px', display: 'flex', gap: '10px', alignItems: 'flex-start', borderColor: allClear ? 'rgba(16,185,129,0.45)' : 'rgba(245,158,11,0.55)', background: allClear ? 'rgba(16,185,129,0.07)' : 'rgba(245,158,11,0.08)' }}>
                                         {allClear ? <CheckCircle2 size={18} color="#059669" /> : <AlertTriangle size={18} color="#D97706" />}
                                         <div style={{ fontSize: '13px', color: 'var(--color-text-main)', lineHeight: 1.5 }}>
-                                            {allClear ? 'Layers, stock and the books agree.' : (
+                                            {allClear ? t('ui.inventory.reports.allClear') : (
                                                 <>
-                                                    <strong>Needs attention:</strong>{' '}
+                                                    <strong>{t('ui.inventory.reports.needsAttention')}</strong>{' '}
                                                     {[
-                                                        !balanced && `the ledger is ${fmt(Math.abs(c.variance))} ${c.variance > 0 ? 'above' : 'below'} what the layers say`,
-                                                        c.product_mismatches > 0 && `${c.product_mismatches} product${c.product_mismatches === 1 ? '' : 's'} hold a different number of layers than their stock`,
-                                                        shortLinesTotal > 0 && `${shortLinesTotal} order line${shortLinesTotal === 1 ? '' : 's'} shipped more than the layers held`,
-                                                        !c.inventory_account_found && 'no Inventory (1300) account was found in the chart of accounts',
+                                                        !balanced && fill(c.variance > 0 ? t('ui.inventory.reports.ledgerAbove') : t('ui.inventory.reports.ledgerBelow'), { amount: fmt(Math.abs(c.variance)) }),
+                                                        c.product_mismatches > 0 && fill(c.product_mismatches === 1 ? t('ui.inventory.reports.mismatchOne') : t('ui.inventory.reports.mismatchMany'), { n: c.product_mismatches }),
+                                                        shortLinesTotal > 0 && fill(shortLinesTotal === 1 ? t('ui.inventory.reports.shortOne') : t('ui.inventory.reports.shortMany'), { n: shortLinesTotal }),
+                                                        !c.inventory_account_found && t('ui.inventory.reports.noInventoryAccount'),
                                                     ].filter(Boolean).join('; ')}.
-                                                    {' '}Draft entries count here; post them so the books show the same.
+                                                    {' '}{t('ui.inventory.reports.draftNote')}
                                                 </>
                                             )}
                                         </div>
                                     </div>
 
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '14px' }}>
-                                        <Kpi label="Cost layers" value={fmt(c.pool_value)} sub={`${fmt(c.pool_units)} units in stock`} />
-                                        <Kpi label="Expected 1300" value={fmt(c.expected_1300)} sub="From the layers and open orders" />
-                                        <Kpi label="Ledger 1300" value={fmt(c.ledger_1300)} sub={`Posted only ${fmt(c.ledger_1300_posted)}`} />
-                                        <Kpi label="Variance" value={fmt(c.variance)} sub="Ledger minus expected" tone={balanced ? 'ok' : 'bad'} />
+                                        <Kpi label={t('ui.inventory.reports.kpi.costLayers')} value={fmt(c.pool_value)} sub={fill(t('ui.inventory.reports.kpi.unitsInStock'), { n: fmt(c.pool_units) })} />
+                                        <Kpi label={t('ui.inventory.reports.kpi.expected')} value={fmt(c.expected_1300)} sub={t('ui.inventory.reports.kpi.expectedSub')} />
+                                        <Kpi label={t('ui.inventory.reports.kpi.ledger')} value={fmt(c.ledger_1300)} sub={fill(t('ui.inventory.reports.kpi.postedOnly'), { n: fmt(c.ledger_1300_posted) })} />
+                                        <Kpi label={t('ui.inventory.reports.variance')} value={fmt(c.variance)} sub={t('ui.inventory.reports.kpi.varianceSub')} tone={balanced ? 'ok' : 'bad'} />
                                     </div>
 
                                     <div style={{ ...cardStyle, overflow: 'hidden' }}>
-                                        <div style={{ padding: '14px 16px 4px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Inventory (1300) against the layers</div>
+                                        <div style={{ padding: '14px 16px 4px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.inventory.reports.reconTitle')}</div>
                                         <table data-resize="off" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                             <tbody>
                                                 {recon.map(row => (
@@ -614,7 +616,7 @@ const InventoryReportsPage: React.FC = () => {
                                                 ))}
                                                 <tr style={{ borderTop: '1px solid var(--color-border)', background: balanced ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)' }}>
                                                     <td style={{ padding: '10px 16px' }} />
-                                                    <td style={{ padding: '10px 16px 10px 0', fontWeight: 700, color: 'var(--color-text-main)' }}>Variance</td>
+                                                    <td style={{ padding: '10px 16px 10px 0', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.inventory.reports.variance')}</td>
                                                     <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: balanced ? '#059669' : '#DC2626' }}>{fmt(c.variance)}</td>
                                                 </tr>
                                             </tbody>
@@ -622,21 +624,21 @@ const InventoryReportsPage: React.FC = () => {
                                     </div>
 
                                     <div style={{ ...cardStyle, overflow: 'hidden' }}>
-                                        <div style={{ padding: '14px 16px 4px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Layers against stock</div>
-                                        <div style={{ padding: '0 16px 10px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Products whose count of in-stock cost layers is not their stock. A stock adjustment (Count correction) brings them back in line.</div>
+                                        <div style={{ padding: '14px 16px 4px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.inventory.reports.layersTitle')}</div>
+                                        <div style={{ padding: '0 16px 10px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.reports.layersHelp')}</div>
                                         <div style={{ overflowX: 'auto' }}>
                                             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                                 <thead>
                                                     <tr style={{ borderBottom: '1px solid var(--color-border)', borderTop: '1px solid var(--color-border)' }}>
-                                                        <th style={thStyle}>Product</th>
-                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Stock</th>
-                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Layers</th>
-                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Difference</th>
+                                                        <th style={thStyle}>{t('ui.inventory.priceList.product')}</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>{t('inventory.stock')}</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>{t('ui.inventory.reports.layers')}</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>{t('ui.inventory.reports.difference')}</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {c.products.length === 0 ? (
-                                                        <tr><td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Every product's layers match its stock.</td></tr>
+                                                        <tr><td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.reports.allLayersMatch')}</td></tr>
                                                     ) : c.products.map(p => (
                                                         <tr key={p.product_id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                                             <td style={{ padding: '10px 16px' }}>
@@ -654,14 +656,14 @@ const InventoryReportsPage: React.FC = () => {
                                     </div>
 
                                     <div style={{ ...cardStyle, overflow: 'hidden' }}>
-                                        <div style={{ padding: '14px 16px 4px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Shortfall lines</div>
+                                        <div style={{ padding: '14px 16px 4px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.inventory.reports.shortTitle')}</div>
                                         <div style={{ padding: '0 16px 10px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                            Order lines that took more units than the layers held. The missing units are costed at the product's last receipt cost.
-                                            {' '}Retail: {fmt(c.shortfall.retail_lines)} line{c.shortfall.retail_lines === 1 ? '' : 's'}, {fmt(c.shortfall.retail_qty)} units · Wholesale: {fmt(c.shortfall.wholesale_lines)} line{c.shortfall.wholesale_lines === 1 ? '' : 's'}, {fmt(c.shortfall.wholesale_qty)} units.
+                                            {t('ui.inventory.reports.shortHelp')}
+                                            {' '}{fill(t('ui.inventory.reports.shortCounts'), { rl: fmt(c.shortfall.retail_lines), rlWord: c.shortfall.retail_lines === 1 ? t('ui.inventory.reports.lineOne') : t('ui.inventory.reports.lineMany'), rq: fmt(c.shortfall.retail_qty), wl: fmt(c.shortfall.wholesale_lines), wlWord: c.shortfall.wholesale_lines === 1 ? t('ui.inventory.reports.lineOne') : t('ui.inventory.reports.lineMany'), wq: fmt(c.shortfall.wholesale_qty) })}
                                         </div>
                                         {c.shortfall.wholesale_backfill_lines > 0 && (
                                             <div style={{ padding: '0 16px 10px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                                Not counted as shortfall: pre-FIFO wholesale (booked cost), {fmt(c.shortfall.wholesale_backfill_lines)} line{c.shortfall.wholesale_backfill_lines === 1 ? '' : 's'}, {fmt(c.shortfall.wholesale_backfill_qty)} units, {fmt(c.shortfall.wholesale_backfill_cost)}. These open wholesale orders shipped before the FIFO rebuild; they hold the cost of goods already booked for them, so a cancel returns exactly that.
+                                                {fill(t('ui.inventory.reports.backfillNote'), { n: fmt(c.shortfall.wholesale_backfill_lines), lineWord: c.shortfall.wholesale_backfill_lines === 1 ? t('ui.inventory.reports.lineOne') : t('ui.inventory.reports.lineMany'), q: fmt(c.shortfall.wholesale_backfill_qty), cost: fmt(c.shortfall.wholesale_backfill_cost) })}
                                             </div>
                                         )}
                                         {shortLines.message && <div style={{ padding: '0 16px 10px', fontSize: '12px', color: '#B45309' }}>{shortLines.message}</div>}
@@ -669,20 +671,20 @@ const InventoryReportsPage: React.FC = () => {
                                             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                                 <thead>
                                                     <tr style={{ borderBottom: '1px solid var(--color-border)', borderTop: '1px solid var(--color-border)' }}>
-                                                        <th style={thStyle}>Kind</th>
-                                                        <th style={thStyle}>Order</th>
-                                                        <th style={thStyle}>Product</th>
-                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Qty</th>
-                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Short</th>
-                                                        <th style={{ ...thStyle, textAlign: 'right' }}>Line cost</th>
+                                                        <th style={thStyle}>{t('ui.inventory.reports.kind')}</th>
+                                                        <th style={thStyle}>{t('ui.inventory.reports.order')}</th>
+                                                        <th style={thStyle}>{t('ui.inventory.priceList.product')}</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>{t('ui.inventory.reports.qty')}</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>{t('ui.inventory.reports.short')}</th>
+                                                        <th style={{ ...thStyle, textAlign: 'right' }}>{t('ui.inventory.reports.lineCost')}</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {shortLinesTotal === 0 ? (
-                                                        <tr><td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No order line is short.</td></tr>
+                                                        <tr><td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.reports.noShort')}</td></tr>
                                                     ) : [...shortLines.retail.map(l => ({ ...l, kind: 'Retail' })), ...shortLines.wholesale.map(l => ({ ...l, kind: 'Wholesale' }))].map(l => (
                                                         <tr key={`${l.kind}-${l.id}`} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                                            <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{l.kind}</td>
+                                                            <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{l.kind === 'Retail' ? t('ui.inventory.reports.retail') : t('ui.inventory.summary.wholesale')}</td>
                                                             <td style={{ padding: '10px 16px', color: 'var(--color-text-main)', fontSize: '12px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.order}>{l.order || '—'}</td>
                                                             <td style={{ padding: '10px 16px', color: 'var(--color-text-main)' }}>{l.product || '—'}</td>
                                                             <td style={{ padding: '10px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(l.quantity)}</td>
@@ -694,7 +696,7 @@ const InventoryReportsPage: React.FC = () => {
                                             </table>
                                         </div>
                                         {(shortLines.retail.length >= SHORT_LINE_LIMIT || shortLines.wholesale.length >= SHORT_LINE_LIMIT) && (
-                                            <div style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Showing the first {SHORT_LINE_LIMIT} lines of each kind.</div>
+                                            <div style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{fill(t('ui.inventory.reports.showingFirst'), { n: SHORT_LINE_LIMIT })}</div>
                                         )}
                                     </div>
                                 </>
@@ -706,18 +708,18 @@ const InventoryReportsPage: React.FC = () => {
                 {tab === 'expiring' && (
                     <EmptyConcept
                         icon={CalendarClock}
-                        title="No expiry data to show"
-                        body="This system doesn't track batch or lot expiry dates yet. To populate this view, products would need an expiry-tracked flag, stock receipts would need a batch and expiry date, and issuing stock would need to check it before it goes out."
+                        title={t('ui.inventory.reports.noExpiryTitle')}
+                        body={t('ui.inventory.reports.noExpiryBody')}
                     />
                 )}
 
                 {tab === 'reconciliation' && (
                     <EmptyConcept
                         icon={CheckCircle2}
-                        title="No counts recorded yet"
-                        body="This system doesn't have a stock-count / reconciliation workflow yet. To populate this view, a count session would record a counted quantity per product and bin against the book quantity, and post the difference as a Stock Adjustment."
-                        actionLabel="Start a count"
-                        onAction={() => showToast('Mockup only — there is no count workflow to start yet.', 'info')}
+                        title={t('ui.inventory.reports.noCountsTitle')}
+                        body={t('ui.inventory.reports.noCountsBody')}
+                        actionLabel={t('ui.inventory.reports.startCount')}
+                        onAction={() => showToast(t('ui.inventory.reports.countMock'), 'info')}
                     />
                 )}
             </div>

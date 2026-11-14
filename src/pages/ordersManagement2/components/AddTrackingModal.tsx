@@ -9,6 +9,7 @@ import { X } from 'lucide-react';
 import { D2, cardStyle } from '../../dashboard2/theme';
 import { IN_HOUSE_COURIER } from '../metrics';
 import type { Order } from '../metrics';
+import { useOM2Lang } from '../ui2';
 
 interface AddTrackingModalProps {
     isOpen: boolean;
@@ -32,6 +33,7 @@ const AddTrackingModal: React.FC<AddTrackingModalProps> = ({ isOpen, orders, onC
     const [values, setValues] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const { tx } = useOM2Lang();
     const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
     // Re-seed local state from each order's current tracking number every time
@@ -102,7 +104,7 @@ const AddTrackingModal: React.FC<AddTrackingModalProps> = ({ isOpen, orders, onC
             // Caller closes the modal on success; keep it open (with the
             // user's input intact) if the save rejects.
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to save tracking numbers.');
+            setError(err instanceof Error ? err.message : tx('om2.tracking.saveFailed', 'Failed to save tracking numbers.'));
         } finally {
             setSaving(false);
         }
@@ -119,17 +121,17 @@ const AddTrackingModal: React.FC<AddTrackingModalProps> = ({ isOpen, orders, onC
                 onClick={e => e.stopPropagation()}
                 role="dialog"
                 aria-modal="true"
-                aria-label={`Add tracking IDs - ${orders.length} order(s)`}
+                aria-label={tx('om2.tracking.title', 'Add tracking IDs - {n} order(s)', { n: orders.length })}
                 style={{ ...cardStyle, width: 560, maxWidth: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 48px rgba(17,24,39,0.25)' }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${D2.border}`, flexShrink: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: D2.ink }}>
-                        Add tracking IDs - {orders.length} order(s)
+                        {tx('om2.tracking.title', 'Add tracking IDs - {n} order(s)', { n: orders.length })}
                     </div>
                     <button
                         type="button"
                         onClick={requestClose}
-                        aria-label="Close"
+                        aria-label={tx('om2.close', 'Close')}
                         className="d2-clickable"
                         style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${D2.border}`, background: D2.card, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                     >
@@ -140,7 +142,7 @@ const AddTrackingModal: React.FC<AddTrackingModalProps> = ({ isOpen, orders, onC
                 <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {orders.map((order, index) => {
                         const ownDriver = isOwnDriver(order);
-                        const customerName = order.customer?.name || 'Unknown';
+                        const customerName = order.customer?.name || tx('om2.unknown', 'Unknown');
                         const courier = order.shipping?.company || '—';
                         return (
                             <div key={order.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -165,8 +167,8 @@ const AddTrackingModal: React.FC<AddTrackingModalProps> = ({ isOpen, orders, onC
                                         ref={el => { inputRefs.current[index] = el; }}
                                         type="text"
                                         data-order-index={index}
-                                        value={ownDriver ? 'own driver - no tracking needed' : (values[order.id] ?? '')}
-                                        placeholder="Tracking ID"
+                                        value={ownDriver ? tx('om2.tracking.ownDriver', 'own driver - no tracking needed') : (values[order.id] ?? '')}
+                                        placeholder={tx('om2.tracking.placeholder', 'Tracking ID')}
                                         disabled={ownDriver || saving}
                                         onChange={ownDriver ? undefined : (e: ChangeEvent<HTMLInputElement>) => setValues(prev => ({ ...prev, [order.id]: e.target.value }))}
                                         onPaste={index === 0 ? handleFirstPaste : undefined}
@@ -191,7 +193,7 @@ const AddTrackingModal: React.FC<AddTrackingModalProps> = ({ isOpen, orders, onC
                         disabled={saving}
                         style={{ padding: '10px 18px', borderRadius: 10, fontWeight: 600, fontSize: 13, border: `1px solid ${D2.border}`, background: D2.card, color: D2.ink, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}
                     >
-                        Cancel
+                        {tx('om2.cancel', 'Cancel')}
                     </button>
                     <button
                         type="button"
@@ -200,7 +202,7 @@ const AddTrackingModal: React.FC<AddTrackingModalProps> = ({ isOpen, orders, onC
                         disabled={saving || !hasChanges}
                         style={{ padding: '10px 18px', borderRadius: 10, fontWeight: 600, fontSize: 13 }}
                     >
-                        {saving ? 'Saving…' : 'Save'}
+                        {saving ? tx('om2.saving', 'Saving…') : tx('om2.save', 'Save')}
                     </button>
                 </div>
             </div>

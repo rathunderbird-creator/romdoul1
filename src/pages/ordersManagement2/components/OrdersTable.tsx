@@ -7,14 +7,13 @@ import React, { useCallback, useEffect, useRef, useState, startTransition } from
 import { ArrowUp, ArrowDown, ChevronsUpDown, Eye, Copy, Check, Printer, Flag } from 'lucide-react';
 import { D2, tabular, fmtMoney, fmtInt } from '../../dashboard2/theme';
 import { useLocalStorageState } from '../../dashboard2/ui';
-import { MutedPill, AlertPill, ORDER_STATUS_TONE, PAY_STATUS_TONE, copyToClipboard } from '../ui2';
+import { MutedPill, AlertPill, ORDER_STATUS_TONE, PAY_STATUS_TONE, copyToClipboard, useOM2Lang } from '../ui2';
 import { orderStatusOf, payStatusOf, trackingStateOf, orderBalance, receivedAmountOf, ALL_PAGE_SIZE, type Order, type SortState, type SortKey } from '../metrics';
 import type { OM2Filters } from '../urlFilters';
 import { getOperatorForPhone } from '../../../utils/telecom';
 import { getPaymentLogo, getPaymentColor } from '../../../utils/payment';
 import { getShippingLogo } from '../../../utils/shipping';
 import { getShippingCoColor } from '../../../utils/orderUtils';
-import { orderStatusLabel } from '../../../utils/orderStatusRules';
 import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../../../utils/liveColumnResize';
 
 export interface OrdersTableProps {
@@ -127,6 +126,7 @@ const SortTh: React.FC<{
 // reason to keep them as two separate columns. ─────────────────────────────
 
 const CourierCell: React.FC<{ order: Order; missing: boolean }> = ({ order, missing }) => {
+    const { tx } = useOM2Lang();
     const [copied, setCopied] = useState(false);
     const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, []);
@@ -150,18 +150,18 @@ const CourierCell: React.FC<{ order: Order; missing: boolean }> = ({ order, miss
                 {logo && <img src={logo} alt="" style={{ width: 12, height: 12, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}
                 <span className="om2-khmer" style={{ fontSize: 12, color: getShippingCoColor(company), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }} title={company}>{company || '—'}</span>
             </div>
-            {state === 'own-driver' && <span style={{ color: D2.muted, fontSize: 11 }}>no tracking needed</span>}
-            {state === 'not-shipped' && <span style={{ color: D2.muted, fontSize: 11 }}>not shipped</span>}
-            {state === 'missing' && missing && <AlertPill icon={<Flag size={11} aria-hidden />}>no tracking</AlertPill>}
+            {state === 'own-driver' && <span style={{ color: D2.muted, fontSize: 11 }}>{tx('om2.table.noTrackingNeeded', 'no tracking needed')}</span>}
+            {state === 'not-shipped' && <span style={{ color: D2.muted, fontSize: 11 }}>{tx('om2.table.notShipped', 'not shipped')}</span>}
+            {state === 'missing' && missing && <AlertPill icon={<Flag size={11} aria-hidden />}>{tx('om2.table.noTracking', 'no tracking')}</AlertPill>}
             {state === 'tracked' && (
                 <button
                     type="button"
                     onClick={handleCopy}
-                    title="Copy tracking number"
+                    title={tx('om2.table.copyTracking', 'Copy tracking number')}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: D2.blue, fontSize: 11, cursor: 'pointer', ...tabular }}
                 >
                     <Copy size={11} aria-hidden />
-                    {copied ? 'Copied!' : tracking}
+                    {copied ? tx('om2.copied', 'Copied!') : tracking}
                 </button>
             )}
         </div>
@@ -174,6 +174,7 @@ const iconButtonStyle: React.CSSProperties = {
 };
 
 const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, onFiltersChange, selectedIds, onSelectedIdsChange, onRowClick, onPrintOrder, visibleColumns, columnLabels, sort, onSortChange, isMissingTracking }) => {
+    const { tx, statusLabel, payLabel } = useOM2Lang();
     const wrapRef = useRef<HTMLDivElement>(null);
     const headerCheckboxRef = useRef<HTMLInputElement>(null);
     const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
@@ -326,12 +327,12 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                     type="checkbox"
                                     checked={allSelected}
                                     onChange={toggleSelectAll}
-                                    aria-label="Select all orders on this page"
+                                    aria-label={tx('om2.table.selectAll', 'Select all orders on this page')}
                                 />
                             </th>
                             {showCustomer && (
                                 <SortTh
-                                    label={columnLabels.customer || 'Customer'}
+                                    label={columnLabels.customer || tx('om2.columns.customer', 'Customer')}
                                     sortKey="customer"
                                     sort={sort}
                                     onToggle={toggleSort}
@@ -354,7 +355,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                 />
                             ))}
                             {showActions && (
-                                <th scope="col" style={{ width: 90, minWidth: 90, maxWidth: 90, textAlign: 'right' }}>Actions</th>
+                                <th scope="col" style={{ width: 90, minWidth: 90, maxWidth: 90, textAlign: 'right' }}>{columnLabels.actions || tx('om2.columns.actions', 'Actions')}</th>
                             )}
                             {/* Filler: takes the spare width on a wide screen, so the
                                 sized columns keep exactly their widths. */}
@@ -363,7 +364,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                     </thead>
                     <tbody>
                         {orders.map(order => {
-                            const name = order.customer?.name || 'Unknown customer';
+                            const name = order.customer?.name || tx('om2.unknownCustomer', 'Unknown customer');
                             const operator = getOperatorForPhone(order.customer?.phone);
                             const missing = isMissingTracking(order);
                             const status = orderStatusOf(order);
@@ -387,7 +388,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                             checked={selected}
                                             onClick={e => e.stopPropagation()}
                                             onChange={() => toggleRow(order.id)}
-                                            aria-label={`Select order for ${name}`}
+                                            aria-label={tx('om2.table.selectOrder', 'Select order for {name}', { name })}
                                         />
                                     </td>
                                     {showCustomer && (
@@ -395,7 +396,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                             <button
                                                 type="button"
                                                 onClick={() => onRowClick(order)}
-                                                aria-label={`Open order details for ${name}`}
+                                                aria-label={tx('om2.table.openOrder', 'Open order details for {name}', { name })}
                                                 style={{ all: 'unset', display: 'block', width: '100%', cursor: 'pointer' }}
                                             >
                                                 <div className="om2-khmer" title={name} style={{ fontSize: 13, fontWeight: 600, color: D2.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{name}</div>
@@ -413,7 +414,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                                     <td key={key} style={colCellStyle(key)}>
                                                         {item ? (
                                                             <>
-                                                                <div style={{ fontSize: 13, color: D2.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}{extraItems > 0 ? ` +${extraItems} more` : ''}</div>
+                                                                <div style={{ fontSize: 13, color: D2.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}{extraItems > 0 ? ` ${tx('om2.table.moreN', '+{n} more', { n: extraItems })}` : ''}</div>
                                                                 <div style={{ fontSize: 11, color: D2.muted }}>{'×'} {item.quantity}</div>
                                                             </>
                                                         ) : <span style={{ color: D2.muted }}>—</span>}
@@ -430,12 +431,12 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                                     </td>
                                                 );
                                             case 'status':
-                                                return <td key={key} style={colCellStyle(key)}><MutedPill tone={ORDER_STATUS_TONE[status] || 'neutral'}>{orderStatusLabel(status)}</MutedPill></td>;
+                                                return <td key={key} style={colCellStyle(key)}><MutedPill tone={ORDER_STATUS_TONE[status] || 'neutral'}>{statusLabel(status)}</MutedPill></td>;
                                             case 'payStatus':
                                                 return (
                                                     <td key={key} style={colCellStyle(key)}>
                                                         <MutedPill tone={PAY_STATUS_TONE[pay] || 'neutral'}>
-                                                            {pay === 'Deposit' ? `Deposit ${fmtMoney(order.depositAmount || order.amountReceived || 0)}` : pay}
+                                                            {pay === 'Deposit' ? `${payLabel('Deposit')} ${fmtMoney(order.depositAmount || order.amountReceived || 0)}` : payLabel(pay)}
                                                         </MutedPill>
                                                     </td>
                                                 );
@@ -500,7 +501,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                     {showActions && (
                                         <td onClick={e => e.stopPropagation()} style={{ textAlign: 'right', width: 90, minWidth: 90, maxWidth: 90, overflow: 'hidden' }}>
                                             <div style={{ display: 'inline-flex', gap: 4 }}>
-                                                <button type="button" className="om2-row-actions" style={iconButtonStyle} onClick={e => { e.stopPropagation(); onRowClick(order); }} aria-label={`View order for ${name}`} title="View">
+                                                <button type="button" className="om2-row-actions" style={iconButtonStyle} onClick={e => { e.stopPropagation(); onRowClick(order); }} aria-label={tx('om2.table.viewOrder', 'View order for {name}', { name })} title={tx('om2.table.view', 'View')}>
                                                     <Eye size={14} />
                                                 </button>
                                                 <button
@@ -508,12 +509,12 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                                     className="om2-row-actions"
                                                     style={{ ...iconButtonStyle, color: copiedOrderId === order.id ? D2.green : iconButtonStyle.color }}
                                                     onClick={e => handleCopyOrder(e, order)}
-                                                    aria-label={`Copy order summary for ${name}`}
-                                                    title={copiedOrderId === order.id ? 'Copied!' : 'Copy order summary'}
+                                                    aria-label={tx('om2.table.copySummaryFor', 'Copy order summary for {name}', { name })}
+                                                    title={copiedOrderId === order.id ? tx('om2.copied', 'Copied!') : tx('om2.table.copySummary', 'Copy order summary')}
                                                 >
                                                     {copiedOrderId === order.id ? <Check size={14} /> : <Copy size={14} />}
                                                 </button>
-                                                <button type="button" className="om2-row-actions" style={iconButtonStyle} onClick={e => { e.stopPropagation(); onPrintOrder(order); }} aria-label={`Print receipt for ${name}`} title="Print receipt">
+                                                <button type="button" className="om2-row-actions" style={iconButtonStyle} onClick={e => { e.stopPropagation(); onPrintOrder(order); }} aria-label={tx('om2.table.printFor', 'Print receipt for {name}', { name })} title={tx('om2.table.printReceipt', 'Print receipt')}>
                                                     <Printer size={14} />
                                                 </button>
                                             </div>
@@ -528,17 +529,17 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, padding: '10px 4px 0', fontSize: 12, color: D2.muted }}>
-                <span style={tabular}>Showing {from}-{to} of {fmtInt(totalCount)}</span>
+                <span style={tabular}>{tx('om2.table.showing', 'Showing {from}-{to} of {total}', { from, to, total: fmtInt(totalCount) })}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        Rows per page
+                        {tx('om2.table.rowsPerPage', 'Rows per page')}
                         <select
                             value={filters.pageSize}
                             onChange={e => setPageSize(Number(e.target.value))}
                             style={{ padding: '4px 8px', borderRadius: 7, border: `1px solid ${D2.border}`, background: D2.card, color: D2.ink, fontSize: 12 }}
                         >
                             {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
-                            <option value={ALL_PAGE_SIZE}>All</option>
+                            <option value={ALL_PAGE_SIZE}>{tx('om2.sum.all', 'All')}</option>
                         </select>
                     </label>
                     <button
@@ -547,10 +548,10 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                         disabled={!canPrev}
                         style={{ padding: '5px 12px', borderRadius: 7, border: `1px solid ${D2.border}`, background: D2.card, color: canPrev ? D2.ink : D2.muted, cursor: canPrev ? 'pointer' : 'default', opacity: canPrev ? 1 : 0.5 }}
                     >
-                        Prev
+                        {tx('om2.table.prev', 'Prev')}
                     </button>
                     <span style={tabular}>
-                        Page <span style={{ color: D2.ink, fontWeight: 600 }}>{fmtInt(Math.min(filters.page, totalPages))}</span> of {fmtInt(totalPages)}
+                        {tx('om2.table.page', 'Page')} <span style={{ color: D2.ink, fontWeight: 600 }}>{fmtInt(Math.min(filters.page, totalPages))}</span> {tx('om2.table.of', 'of')} {fmtInt(totalPages)}
                     </span>
                     <button
                         type="button"
@@ -558,7 +559,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                         disabled={!canNext}
                         style={{ padding: '5px 12px', borderRadius: 7, border: `1px solid ${D2.border}`, background: D2.card, color: canNext ? D2.ink : D2.muted, cursor: canNext ? 'pointer' : 'default', opacity: canNext ? 1 : 0.5 }}
                     >
-                        Next
+                        {tx('om2.table.next', 'Next')}
                     </button>
                 </div>
             </div>

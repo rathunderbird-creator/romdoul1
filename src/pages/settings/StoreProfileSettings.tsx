@@ -61,7 +61,7 @@ const StoreProfileSettings: React.FC = () => {
             title: (
                 <div>
                     <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>{t('settings.storeProfile')}</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '14px' }}>Manage your business info and appearance</p>
+                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '14px' }}>{t('ui.admin.settings.storeSubtitle')}</p>
                 </div>
             ),
             actions: (
@@ -235,11 +235,11 @@ const StoreProfileSettings: React.FC = () => {
 
                                             if (publicData?.publicUrl) {
                                                 setLocalState({ ...localState, logo: publicData.publicUrl });
-                                                showToast('Logo uploaded', 'success');
+                                                showToast(t('ui.admin.settings.logoUploaded'), 'success');
                                             }
                                         } catch (err: any) {
                                             console.error('Logo upload error:', err);
-                                            showToast('Logo upload failed', 'error');
+                                            showToast(t('ui.admin.settings.logoUploadFailed'), 'error');
                                         } finally {
                                             setIsUploadingLogo(false);
                                             e.target.value = '';
@@ -272,7 +272,7 @@ const StoreProfileSettings: React.FC = () => {
                             type="text"
                             value={localState.storeAddress}
                             onChange={(e) => setLocalState({ ...localState, storeAddress: e.target.value })}
-                            placeholder="e.g. 123 Speaker Ave, Audio City"
+                            placeholder={t('ui.admin.settings.addressPlaceholder')}
                             className="search-input"
                             style={{ width: '100%', padding: '12px' }}
                         />

@@ -7,7 +7,7 @@
 import React from 'react';
 import { Flag } from 'lucide-react';
 import { D2, tabular, fmtMoney, fmtInt, PASSIVE_OPACITY } from '../../dashboard2/theme';
-import { AlertPill, MutedPill } from '../ui2';
+import { AlertPill, MutedPill, useOM2Lang } from '../ui2';
 import type { SummaryTotals, StatusSegment } from '../metrics';
 import type { OM2Filters } from '../urlFilters';
 
@@ -77,6 +77,7 @@ const FilterButton: React.FC<{
 };
 
 const SummaryStrip: React.FC<SummaryStripProps> = ({ totals, segments, noTracking, filters, onFiltersChange }) => {
+    const { tx, statusLabel } = useOM2Lang();
     const allActive = filters.statuses.length === 0 && !filters.noTrackingOnly;
     const noTrackingActive = filters.noTrackingOnly;
 
@@ -96,21 +97,21 @@ const SummaryStrip: React.FC<SummaryStripProps> = ({ totals, segments, noTrackin
             background: D2.card, border: `1px solid ${D2.border}`, borderRadius: 11,
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-                <Stat label="Orders" value={fmtInt(totals.orderCount)} />
+                <Stat label={tx('om2.sum.orders', 'Orders')} value={fmtInt(totals.orderCount)} />
                 <Divider />
-                <Stat label="Booked" value={fmtMoney(totals.booked)} />
+                <Stat label={tx('om2.sum.booked', 'Booked')} value={fmtMoney(totals.booked)} />
                 <Divider />
-                <Stat label="Owed" value={fmtMoney(totals.owed)} color={D2.amber} big />
+                <Stat label={tx('om2.sum.owed', 'Owed')} value={fmtMoney(totals.owed)} color={D2.amber} big />
                 <Divider />
-                <Stat label="Collected" value={fmtMoney(totals.collected)} color={D2.green} />
+                <Stat label={tx('om2.sum.collected', 'Collected')} value={fmtMoney(totals.collected)} color={D2.green} />
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginLeft: 'auto' }}>
                 <FilterButton
                     active={allActive}
-                    label="All"
+                    label={tx('om2.sum.all', 'All')}
                     count={totals.orderCount}
-                    ariaLabel={`All, ${fmtInt(totals.orderCount)} orders, show all orders`}
+                    ariaLabel={tx('om2.sum.allAria', 'All, {n} orders, show all orders', { n: fmtInt(totals.orderCount) })}
                     onClick={selectAll}
                 />
                 {segments.map(segment => (
@@ -119,9 +120,9 @@ const SummaryStrip: React.FC<SummaryStripProps> = ({ totals, segments, noTrackin
                         active={filters.statuses.length === 1 && filters.statuses[0] === segment.key}
                         dimmed={segment.count === 0}
                         color={segmentColor(segment.key)}
-                        label={segment.label}
+                        label={statusLabel(segment.label)}
                         count={segment.count}
-                        ariaLabel={`${segment.label}, ${fmtInt(segment.count)} orders, filter to this status`}
+                        ariaLabel={tx('om2.sum.segmentAria', '{status}, {n} orders, filter to this status', { status: statusLabel(segment.label), n: fmtInt(segment.count) })}
                         onClick={() => toggleSegment(segment.key)}
                     />
                 ))}
@@ -130,7 +131,7 @@ const SummaryStrip: React.FC<SummaryStripProps> = ({ totals, segments, noTrackin
                     className="d2-clickable"
                     onClick={toggleNoTracking}
                     aria-pressed={noTrackingActive}
-                    aria-label={`No tracking, ${fmtInt(noTracking)} orders, filter to missing tracking`}
+                    aria-label={tx('om2.sum.noTrackingAria', 'No tracking, {n} orders, filter to missing tracking', { n: fmtInt(noTracking) })}
                     style={{
                         display: 'inline-flex', alignItems: 'center', background: 'none', border: 'none', padding: 0,
                         borderRadius: 999, cursor: 'pointer',
@@ -138,9 +139,9 @@ const SummaryStrip: React.FC<SummaryStripProps> = ({ totals, segments, noTrackin
                     }}
                 >
                     {noTracking > 0 ? (
-                        <AlertPill icon={<Flag size={11} aria-hidden />}>{`No tracking ${fmtInt(noTracking)}`}</AlertPill>
+                        <AlertPill icon={<Flag size={11} aria-hidden />}>{tx('om2.sum.noTrackingN', 'No tracking {n}', { n: fmtInt(noTracking) })}</AlertPill>
                     ) : (
-                        <MutedPill tone="neutral">{`No tracking ${fmtInt(noTracking)}`}</MutedPill>
+                        <MutedPill tone="neutral">{tx('om2.sum.noTrackingN', 'No tracking {n}', { n: fmtInt(noTracking) })}</MutedPill>
                     )}
                 </button>
             </div>

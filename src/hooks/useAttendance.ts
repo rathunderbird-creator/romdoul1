@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { User, StaffAttendance } from '../types';
+import { tNow } from '../i18n/translate';
 
 export const useAttendance = () => {
     const [attendances, setAttendances] = useState<StaffAttendance[]>([]);
@@ -60,7 +61,7 @@ export const useAttendance = () => {
 
         } catch (err: any) {
             console.error('Error fetching attendance:', err);
-            setError(err.message || 'Failed to fetch attendance');
+            setError(err.message || tNow('ui.store.hr.fetchAttendanceFailed'));
         } finally {
             setIsLoading(false);
         }
@@ -173,7 +174,7 @@ export const useAttendance = () => {
             console.error('Error saving attendance:', err);
             // Revert optimistic update
             setAttendances(previousState);
-            setError(`Database Error: ${err.message || 'Failed to save attendance'}. Please ensure 'migrations/full_schema.sql' was run in your Supabase SQL Editor.`);
+            setError(tNow('ui.store.hr.saveAttendanceFailed', { error: err.message || tNow('ui.store.hr.saveAttendanceFallback') }));
             throw err;
         }
     };

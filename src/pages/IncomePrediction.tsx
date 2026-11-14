@@ -10,8 +10,10 @@ import { defaultRange, dayKeysOfRange, parseDay, rangeMonths, wholeMonthOf, MAX_
 import { roundCents } from '../utils/money';
 import { isMissingTableError, errMessage } from '../utils/supabaseErrors';
 import { useStore } from '../context/StoreContext';
+import { useLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
 import DateRangeControl from './pageIncomePrediction/components/DateRangeControl';
-import { rangeLabel, monthShortLabel } from './pageIncomePrediction/format';
+import { rangeLabel, monthShortLabel, weekdayShort } from './pageIncomePrediction/format';
 // The shared range control's pip-icon-button / pip-range-picker styles.
 import './pageIncomePrediction/pageIncomePrediction.css';
 
@@ -38,9 +40,11 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 // calendar month (the default view) keeps its bare month name, "September", so
 // that view reads exactly as it always did; any other range reads
 // "5 Sep – 15 Sep 2026" (see rangeLabel).
-const periodShortLabel = (range: DateRange): string => {
+const periodShortLabel = (range: DateRange, language: 'en' | 'km'): string => {
     const whole = wholeMonthOf(range);
-    return whole ? MONTH_NAMES[parseInt(whole.split('-')[1]) - 1] : rangeLabel(range, 'en');
+    if (!whole) return rangeLabel(range, language);
+    const m = parseInt(whole.split('-')[1]) - 1;
+    return language === 'km' ? new Date(2026, m, 1).toLocaleDateString('km-KH', { month: 'long' }) : MONTH_NAMES[m];
 };
 
 const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -99,6 +103,7 @@ const IncomePrediction: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
     const { products, currentUser, shippingRates } = useStore();
+    const { t, language } = useLanguage();
 
     // Any inclusive span of local days (default: the current calendar month).
     const [range, setRange] = useState<DateRange>(() => defaultRange(new Date()));
@@ -181,13 +186,13 @@ const IncomePrediction: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Income Prediction</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Daily Profit Forecast & Manual Expenses</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('nav.incomePrediction')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.admin.income.subtitle')}</p>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     // fetchData depends on the range's two ends (primitives), not the object, so an
     // equal range re-created by the picker doesn't trigger a reload.
@@ -542,14 +547,14 @@ const IncomePrediction: React.FC = () => {
             setTimeout(() => setSavedCells(prev => { const n = new Set(prev); n.delete(day.date); return n; }), 2000);
         } catch (error) {
             console.error('Failed to save prediction:', error);
-            alert('Failed to save. Check console for details.');
+            alert(t('ui.admin.income.saveFailed'));
         } finally {
             setSavingCells(prev => { const n = new Set(prev); n.delete(day.date); return n; });
         }
     };
 
     const handleReset = async (day: DailyPrediction) => {
-        if (!confirm(`Are you sure you want to unsave ${day.date}? This will revert to auto-calculated live data.`)) return;
+        if (!confirm(fill(t('ui.admin.income.confirmUnsave'), { date: day.date }))) return;
         
         setSavingCells(prev => new Set(prev).add(day.date));
         try {
@@ -570,7 +575,7 @@ const IncomePrediction: React.FC = () => {
             fetchData();
         } catch (error) {
             console.error('Failed to reset prediction:', error);
-            alert('Failed to reset. Check console for details.');
+            alert(t('ui.admin.income.resetFailed'));
         } finally {
             setSavingCells(prev => { const n = new Set(prev); n.delete(day.date); return n; });
         }
@@ -595,7 +600,7 @@ const IncomePrediction: React.FC = () => {
         }, { shippedDelivered: 0, orderCount: 0, cogs: 0, shipping: 0, boostPage: 0, staff: 0, profit: 0 });
     }, [dailyData]);
 
-    const periodShort = periodShortLabel(range);
+    const periodShort = periodShortLabel(range, language);
     // (`spansMonths` — days of different months share the ledger, so each is tagged
     // with its month — is declared above, next to the column widths that depend on it.)
 
@@ -642,7 +647,7 @@ const IncomePrediction: React.FC = () => {
                     {isSaving && <Loader2 size={12} style={{ color, animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
                     {isSaved && <Check size={12} style={{ color: '#10B981', flexShrink: 0 }} />}
                     {saveError && !isSaving && (
-                        <span title={`Not saved: ${saveError}. Click the box and press Enter to retry.`} style={{ display: 'inline-flex', flexShrink: 0 }}>
+                        <span title={fill(t('ui.admin.income.notSaved'), { error: saveError })} style={{ display: 'inline-flex', flexShrink: 0 }}>
                             <AlertTriangle size={12} color="#EF4444" />
                         </span>
                     )}
@@ -655,7 +660,7 @@ const IncomePrediction: React.FC = () => {
                             onBlur={() => handleInputBlur(day.date, field)}
                             onKeyDown={e => handleKeyDown(e, day.date, field)}
                             placeholder="0"
-                            title={autoSaved ? 'Saved automatically when you stop typing' : title}
+                            title={autoSaved ? t('ui.admin.income.autoSaved') : title}
                             style={{
                                 width: '100%',
                                 boxSizing: 'border-box',
@@ -723,10 +728,10 @@ const IncomePrediction: React.FC = () => {
                     </div>
                     <div>
                         <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: 'var(--color-text-main)' }}>
-                            Income Prediction
+                            {t('nav.incomePrediction')}
                         </h2>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: '2px 0 0 0' }}>
-                            Daily profit forecast · {rangeLabel(range, 'en')}
+                            {t('ui.admin.income.dailyForecast')} · {rangeLabel(range, language)}
                         </p>
                     </div>
                 </div>
@@ -736,7 +741,7 @@ const IncomePrediction: React.FC = () => {
                         range={range}
                         now={new Date()}
                         onChange={setRange}
-                        labels={{ prev: 'Previous period', next: 'Next period', tooLong: `Limited to the latest ${MAX_RANGE_DAYS} days` }}
+                        labels={{ prev: t('pagePrediction.prevMonth'), next: t('pagePrediction.nextMonth'), tooLong: fill(t('incomeRange.tooLong'), { n: MAX_RANGE_DAYS }) }}
                         compact={isMobile}
                     />
                     <button
@@ -744,7 +749,7 @@ const IncomePrediction: React.FC = () => {
                         disabled={isLoading}
                         className="secondary-button"
                         style={{ padding: '8px', borderRadius: '10px', height: '38px', width: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        title="Refresh"
+                        title={t('pagePrediction.refresh')}
                     >
                         <RefreshCw size={16} style={{ animation: isLoading ? 'spin 1s linear infinite' : 'none' }} />
                     </button>
@@ -761,11 +766,11 @@ const IncomePrediction: React.FC = () => {
                     display: 'flex', flexDirection: 'column', gap: '6px'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Revenue ({periodShort})</span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{fill(t('ui.admin.income.kpiRevenue'), { p: periodShort })}</span>
                         <div style={{ padding: '4px', borderRadius: '6px', background: 'rgba(16,185,129,0.12)' }}><TrendingUp size={12} color="#10B981" /></div>
                     </div>
                     <div style={{ fontSize: '18px', fontWeight: 800, color: '#10B981' }}>${fmt(totals.shippedDelivered)}</div>
-                    <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>{totals.orderCount} orders</div>
+                    <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>{fill(t('ui.admin.income.nOrders'), { n: totals.orderCount })}</div>
                 </div>
 
                 {/* Total Expenses Card */}
@@ -776,12 +781,12 @@ const IncomePrediction: React.FC = () => {
                     display: 'flex', flexDirection: 'column', gap: '6px'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Expenses ({periodShort})</span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{fill(t('ui.admin.income.kpiExpenses'), { p: periodShort })}</span>
                         <div style={{ padding: '4px', borderRadius: '6px', background: 'rgba(239,68,68,0.12)' }}><TrendingDown size={12} color="#EF4444" /></div>
                     </div>
                     <div style={{ fontSize: '18px', fontWeight: 800, color: '#EF4444' }}>${fmt(totalExpenses)}</div>
                     <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>
-                        COGS ${fmt(totals.cogs)} · Ship ${fmt(totals.shipping)}
+                        {t('pagePrediction.columns.cogs')} ${fmt(totals.cogs)} · {t('ui.admin.income.ship')} ${fmt(totals.shipping)}
                     </div>
                 </div>
 
@@ -793,7 +798,7 @@ const IncomePrediction: React.FC = () => {
                     display: 'flex', flexDirection: 'column', gap: '6px'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Profit ({periodShort})</span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{fill(t('ui.admin.income.kpiProfit'), { p: periodShort })}</span>
                         <div style={{ padding: '4px', borderRadius: '6px', background: `rgba(${totals.profit >= 0 ? '139,92,246' : '239,68,68'},0.12)` }}>
                             <DollarSign size={12} color={totals.profit >= 0 ? '#8B5CF6' : '#EF4444'} />
                         </div>
@@ -801,7 +806,7 @@ const IncomePrediction: React.FC = () => {
                     <div style={{ fontSize: '18px', fontWeight: 800, color: totals.profit >= 0 ? '#8B5CF6' : '#EF4444' }}>
                         ${fmt(totals.profit)}
                     </div>
-                    <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>Margin: {margin.toFixed(1)}%</div>
+                    <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.income.margin')} {margin.toFixed(1)}%</div>
                 </div>
 
                 {/* Trend Card */}
@@ -813,13 +818,13 @@ const IncomePrediction: React.FC = () => {
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>
-                            Ad + Staff ({periodShort})
+                            {fill(t('ui.admin.income.kpiAdStaff'), { p: periodShort })}
                         </span>
                         <div style={{ padding: '4px', borderRadius: '6px', background: 'rgba(59,130,246,0.12)' }}><Megaphone size={12} color="#3B82F6" /></div>
                     </div>
                     <div style={{ fontSize: '18px', fontWeight: 800, color: '#3B82F6' }}>${fmt(totals.boostPage + totals.staff)}</div>
                     <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>
-                        Ads ${fmt(totals.boostPage)} · Staff ${fmt(totals.staff)}
+                        {t('ui.admin.income.ads')} ${fmt(totals.boostPage)} · {t('ui.admin.income.staff')} ${fmt(totals.staff)}
                     </div>
                 </div>
             </div>
@@ -829,12 +834,12 @@ const IncomePrediction: React.FC = () => {
                 <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#8B5CF6', flexShrink: 0 }} />
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>Daily Profit Trend</span>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>{t('ui.admin.income.trend')}</span>
                     </div>
                     <div style={{ flex: 1, maxWidth: '500px' }}>{sparkline}</div>
                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                        Avg: <strong style={{ color: totals.profit >= 0 ? '#8B5CF6' : '#EF4444' }}>
-                            ${fmt(dailyData.length > 0 ? totals.profit / (dailyData.filter(d => !d.isFuture).length || 1) : 0)}/day
+                        {t('ui.admin.income.avg')} <strong style={{ color: totals.profit >= 0 ? '#8B5CF6' : '#EF4444' }}>
+                            ${fmt(dailyData.length > 0 ? totals.profit / (dailyData.filter(d => !d.isFuture).length || 1) : 0)}{t('ui.admin.income.perDay')}
                         </strong>
                     </div>
                 </div>
@@ -845,8 +850,8 @@ const IncomePrediction: React.FC = () => {
                     <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '1px' }} />
                     <span>
                         {staffStoreError.missing
-                            ? <>Staff isn't auto-saved on this database yet: run <code>migrations/full_schema.sql</code> in the Supabase SQL editor. Until then, Staff is only stored when you press Save on the row.</>
-                            : <>Couldn't load saved Staff amounts ({staffStoreError.message}), so Staff is only stored when you press Save on the row. Refresh to try again.</>}
+                            ? <>{t('ui.admin.income.staffMissingA')}<code>migrations/full_schema.sql</code>{t('ui.admin.income.staffMissingB')}</>
+                            : <>{fill(t('ui.admin.income.staffLoadFailed'), { message: staffStoreError.message })}</>}
                     </span>
                 </div>
             )}
@@ -869,28 +874,28 @@ const IncomePrediction: React.FC = () => {
                                 borderBottom: '2px solid var(--color-border)',
                                 fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
                                 padding: '10px 12px', color: 'var(--color-text-secondary)'
-                            }}>Date{resizeHandle(0)}</th>
-                            <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Orders{resizeHandle(1)}</th>
+                            }}>{t('ui.admin.income.colDate')}{resizeHandle(0)}</th>
+                            <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('pagePrediction.columns.orders')}{resizeHandle(1)}</th>
                             <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'right', color: '#10B981' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Package size={12} /> Revenue</span>{resizeHandle(2)}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Package size={12} /> {t('pagePrediction.columns.revenue')}</span>{resizeHandle(2)}
                             </th>
                             <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'right', color: '#F59E0B' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Megaphone size={12} /> Boost</span>{resizeHandle(3)}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Megaphone size={12} /> {t('pagePrediction.columns.boost')}</span>{resizeHandle(3)}
                             </th>
                             <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'right', color: '#EF4444' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><DollarSign size={12} /> COGS</span>{resizeHandle(4)}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><DollarSign size={12} /> {t('pagePrediction.columns.cogs')}</span>{resizeHandle(4)}
                             </th>
                             <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'right', color: '#EF4444' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Truck size={12} /> Shipping</span>{resizeHandle(5)}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Truck size={12} /> {t('pagePrediction.columns.shipping')}</span>{resizeHandle(5)}
                             </th>
                             <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'right', color: '#F59E0B' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Users size={12} /> Staff</span>{resizeHandle(6)}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Users size={12} /> {t('ui.admin.income.staff')}</span>{resizeHandle(6)}
                             </th>
                             <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'right', color: '#8B5CF6' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><TrendingUp size={12} /> Profit</span>{resizeHandle(7)}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><TrendingUp size={12} /> {t('ui.admin.income.profit')}</span>{resizeHandle(7)}
                             </th>
                             <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                                Action{resizeHandle(8)}
+                                {t('ui.admin.income.action')}{resizeHandle(8)}
                             </th>
                             <th aria-hidden style={{ padding: 0, borderBottom: '2px solid var(--color-border)' }} />
                         </tr>
@@ -934,7 +939,7 @@ const IncomePrediction: React.FC = () => {
                                                         color: day.isToday ? '#8B5CF6' : day.isWeekend ? '#EF4444' : 'var(--color-text-secondary)',
                                                         textTransform: 'uppercase'
                                                     }}>
-                                                        {monthShortLabel(day.date, 'en')}
+                                                        {monthShortLabel(day.date, language)}
                                                     </span>
                                                 )}
                                                 <span style={{
@@ -949,7 +954,7 @@ const IncomePrediction: React.FC = () => {
                                                     color: day.isWeekend ? '#EF4444' : 'var(--color-text-secondary)',
                                                     textTransform: 'uppercase'
                                                 }}>
-                                                    {day.dayOfWeek}
+                                                    {language === 'km' ? weekdayShort(parseDay(day.date).getDay(), language) : day.dayOfWeek}
                                                 </span>
                                                 {day.isToday && (
                                                     <span style={{
@@ -957,7 +962,7 @@ const IncomePrediction: React.FC = () => {
                                                         background: '#8B5CF6', color: 'white',
                                                         padding: '1px 5px', borderRadius: '4px',
                                                         textTransform: 'uppercase', letterSpacing: '0.5px'
-                                                    }}>Today</span>
+                                                    }}>{t('pagePrediction.today')}</span>
                                                 )}
                                             </div>
                                         </td>
@@ -973,7 +978,7 @@ const IncomePrediction: React.FC = () => {
                                         </td>
 
                                         {/* Boost Page (editable) */}
-                                        {renderEditableCell(day, 'boostPage', '#F59E0B', day.boostFromPages ? 'From Prediction by Page (sum of all pages). Edit to override; Save freezes it.' : undefined)}
+                                        {renderEditableCell(day, 'boostPage', '#F59E0B', day.boostFromPages ? t('ui.admin.income.boostFromPages') : undefined)}
 
                                         {/* COGS */}
                                         <td style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 500, fontSize: '12px', color: day.cogs > 0 ? '#EF4444' : 'var(--color-text-secondary)' }}>
@@ -1002,7 +1007,7 @@ const IncomePrediction: React.FC = () => {
                                                 <button 
                                                     onClick={() => handleReset(day)}
                                                     disabled={savingCells.has(day.date)}
-                                                    title="Unsave and recalculate"
+                                                    title={t('ui.admin.income.unsave')}
                                                     style={{ padding: '6px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', borderRadius: '8px', cursor: 'pointer', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}
                                                 >
                                                     {savingCells.has(day.date) ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <RotateCcw size={16} />}
@@ -1011,7 +1016,7 @@ const IncomePrediction: React.FC = () => {
                                                 <button 
                                                     onClick={() => handleSave(day)}
                                                     disabled={savingCells.has(day.date)}
-                                                    title="Save prediction"
+                                                    title={t('ui.admin.income.savePrediction')}
                                                     style={{ padding: '6px', background: savedCells.has(day.date) ? '#10B981' : 'rgba(139, 92, 246, 0.1)', color: savedCells.has(day.date) ? 'white' : '#8B5CF6', borderRadius: '8px', cursor: 'pointer', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', transition: 'all 0.2s' }}
                                                 >
                                                     {savingCells.has(day.date) ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : savedCells.has(day.date) ? <Check size={16} /> : <Save size={16} />}
@@ -1029,7 +1034,7 @@ const IncomePrediction: React.FC = () => {
                             {/* Column totals row */}
                             <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-surface)' }}>
                                 <td style={{ bottom: 'auto', position: 'sticky', left: 0, zIndex: 1, background: 'var(--color-surface)', fontWeight: 700, fontSize: '12px', padding: '12px', borderRight: '1px solid var(--color-border)', color: 'var(--color-text-main)' }}>
-                                    TOTALS
+                                    {t('ui.admin.income.totals')}
                                 </td>
                                 <td style={{ bottom: 'auto', textAlign: 'center', fontWeight: 700, fontSize: '12px', padding: '12px', color: 'var(--color-text-main)' }}>
                                     {totals.orderCount}
@@ -1070,7 +1075,7 @@ const IncomePrediction: React.FC = () => {
                                         ? 'linear-gradient(90deg, rgba(139,92,246,0.1), rgba(16,185,129,0.1))'
                                         : 'linear-gradient(90deg, rgba(239,68,68,0.1), rgba(239,68,68,0.05))'
                                 }}>
-                                    {totals.profit >= 0 ? '🟢' : '🔴'} NET PROFIT ({periodShort.toUpperCase()})
+                                    {totals.profit >= 0 ? '🟢' : '🔴'} {fill(t('ui.admin.income.netProfit'), { p: periodShort.toUpperCase() })}
                                 </td>
                                 <td style={{
                                     bottom: 'auto', textAlign: 'right', fontWeight: 800, fontSize: '18px', padding: '16px',

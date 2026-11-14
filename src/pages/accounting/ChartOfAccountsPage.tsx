@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Edit, Trash2, Search, ChevronDown, ChevronRight, Check, AlertTriangle } from 'lucide-react';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { Modal } from '../../components';
 import { useAccounting } from '../../hooks/useAccounting';
 import type { ChartOfAccount } from '../../types';
@@ -53,6 +55,15 @@ const SUB_TYPES: Record<ChartOfAccount['account_type'], string[]> = {
 const subLabelOf = (acc: ChartOfAccount, parentName?: string): string =>
     acc.sub_type || parentName || '';
 
+// On-screen names for the standard sub-categories (custom ones show as typed).
+const SUB_TYPE_KEYS: Record<string, string> = {
+    'Current Asset': 'currentAsset', 'Fixed Asset': 'fixedAsset', 'Other Asset': 'otherAsset',
+    'Current Liability': 'currentLiability', 'Long-term Liability': 'longTermLiability',
+    'Contributed Capital': 'contributedCapital', 'Other Equity': 'otherEquity', 'Retained Earnings': 'retainedEarnings',
+    'Operating Revenue': 'operatingRevenue', 'Other Revenue': 'otherRevenue',
+    'Operating Expense': 'operatingExpense', 'Cost of Goods Sold': 'costOfGoodsSold', 'Other Expense': 'otherExpense',
+};
+
 const subLabelStyle: React.CSSProperties = {
     fontSize: '11px', fontWeight: 500, color: 'var(--color-text-muted)',
     marginLeft: '8px', whiteSpace: 'nowrap'
@@ -62,6 +73,10 @@ const ChartOfAccountsPage = () => {
     const isMobile = useMobile();
     const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
+    const subDisp = (s: string) => (SUB_TYPE_KEYS[s] ? t('ui.accounting.common.subType.' + SUB_TYPE_KEYS[s]) : s);
+    const typeDisp = (type: string) => t('ui.accounting.common.accountType.' + type);
+    const accountsCount = (n: number) => fill(t(n === 1 ? 'ui.accounting.coa.accountCountOne' : 'ui.accounting.coa.accountCount'), { n });
     const { accounts, isLoading, fetchAccounts, saveAccount, deleteAccount } = useAccounting();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -90,13 +105,13 @@ const ChartOfAccountsPage = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Chart of Accounts</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Manage your ledger accounts and hierarchies.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.chartOfAccounts')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('ui.accounting.coa.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     // True once the first fetch has settled. The seed effect below must not run
     // before that: on mount `accounts` is [] while the fetch is still in flight,
@@ -177,7 +192,7 @@ const ChartOfAccountsPage = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (confirm('Are you sure you want to delete this account?')) {
+        if (confirm(t('ui.accounting.coa.confirmDelete'))) {
             await deleteAccount(id);
         }
     };
@@ -295,9 +310,9 @@ const ChartOfAccountsPage = () => {
                     <div
                         className="hover-highlight"
                         onClick={(e) => { e.stopPropagation(); goToLedger(acc.id); }}
-                        title="View in General Ledger"
+                        title={t('ui.accounting.coa.viewInLedger')}
                         style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px', cursor: 'pointer', display: 'inline-block' }}
-                    >{acc.account_code} · {opts.subLabel || acc.account_type.toUpperCase()}</div>
+                    >{acc.account_code} · {opts.subLabel ? subDisp(opts.subLabel) : typeDisp(acc.account_type).toUpperCase()}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: bal.negative ? '#DC2626' : 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{bal.text}</div>
@@ -317,7 +332,7 @@ const ChartOfAccountsPage = () => {
                     <Search size={16} color="#8792a2" style={{ position: 'absolute', left: '12px', top: '10px' }} />
                     <input 
                         type="text" 
-                        placeholder="Search by code or name..." 
+                        placeholder={t('ui.accounting.coa.searchPlaceholder')} 
                         style={{ 
                             width: '100%', padding: '8px 12px 8px 36px', 
                             borderRadius: '8px', border: '1px solid #e2e8f0',
@@ -337,36 +352,36 @@ const ChartOfAccountsPage = () => {
                         boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                     }}
                 >
-                    <Plus size={16} /> Add Account
+                    <Plus size={16} /> {t('ui.accounting.coa.addAccount')}
                 </button>
             </div>
 
             {/* Summary: real balances per account type, from journal entry lines */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '14px', marginBottom: '24px' }}>
-                {TYPE_CARDS.map(({ type, label, color }) => {
-                    const t = summary.types[type];
+                {TYPE_CARDS.map(({ type, color }) => {
+                    const ts = summary.types[type];
                     return (
                         <div key={type} style={{ background: 'var(--color-surface)', border: '1px solid #e2e8f0', borderTop: `3px solid ${color}`, borderRadius: '12px', padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</div>
-                            <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '6px', fontVariantNumeric: 'tabular-nums', color: lineSums === null ? 'var(--color-text-muted)' : t.balance < 0 ? '#DC2626' : 'var(--color-text-main)' }}>
-                                {lineSums === null ? '…' : formatCurrency(t.balance)}
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{t('ui.accounting.common.typePlural.' + type)}</div>
+                            <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '6px', fontVariantNumeric: 'tabular-nums', color: lineSums === null ? 'var(--color-text-muted)' : ts.balance < 0 ? '#DC2626' : 'var(--color-text-main)' }}>
+                                {lineSums === null ? '…' : formatCurrency(ts.balance)}
                             </div>
                             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                                {t.count} {t.count === 1 ? 'account' : 'accounts'}
+                                {accountsCount(ts.count)}
                             </div>
                         </div>
                     );
                 })}
                 <div
-                    title="In double-entry bookkeeping, total debits must equal total credits across all journal entries."
+                    title={t('ui.accounting.coa.ledgerCheckHint')}
                     style={{ background: 'var(--color-surface)', border: '1px solid #e2e8f0', borderTop: `3px solid ${lineSums !== null && !summary.balanced ? '#DC2626' : '#10B981'}`, borderRadius: '12px', padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
                 >
-                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Ledger Check</div>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{t('ui.accounting.coa.ledgerCheck')}</div>
                     <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '6px', color: lineSums === null ? 'var(--color-text-muted)' : summary.balanced ? '#10B981' : '#DC2626' }}>
-                        {lineSums === null ? '…' : summary.balanced ? 'Balanced' : `Off by ${formatCurrency(summary.debits - summary.credits)}`}
+                        {lineSums === null ? '…' : summary.balanced ? t('ui.accounting.coa.balanced') : fill(t('ui.accounting.coa.offBy'), { amount: formatCurrency(summary.debits - summary.credits) })}
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px', fontVariantNumeric: 'tabular-nums' }}>
-                        {lineSums === null ? 'Loading journal entries…' : `Debits ${formatCurrency(summary.debits)} · Credits ${formatCurrency(summary.credits)}`}
+                        {lineSums === null ? t('ui.accounting.coa.loadingEntries') : fill(t('ui.accounting.coa.debitsCredits'), { debits: formatCurrency(summary.debits), credits: formatCurrency(summary.credits) })}
                     </div>
                 </div>
             </div>
@@ -375,13 +390,13 @@ const ChartOfAccountsPage = () => {
                 {isMobile ? (
                     // Phones: stacked account rows instead of the wide table.
                     isLoading ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading accounts...</div>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.accounting.coa.loading')}</div>
                     ) : accounts.length === 0 ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>No accounts found</div>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.accounting.coa.empty')}</div>
                     ) : (
                         <>
                             {accountGroups.length === 0 && (
-                                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>No accounts found</div>
+                                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.accounting.coa.empty')}</div>
                             )}
                             {accountGroups.map(group => {
                                 const typeCollapsed = !!collapsedTypes[group.type] && !searchQuery;
@@ -392,7 +407,7 @@ const ChartOfAccountsPage = () => {
                                             style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'var(--color-bg)', borderBottom: '1px solid #f1f5f9', borderLeft: `3px solid ${group.color}`, cursor: 'pointer' }}
                                         >
                                             {typeCollapsed ? <ChevronRight size={14} color="#94a3b8" style={{ flexShrink: 0 }} /> : <ChevronDown size={14} color="#94a3b8" style={{ flexShrink: 0 }} />}
-                                            <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: group.color }}>{group.label}</span>
+                                            <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: group.color }}>{t('ui.accounting.common.typePlural.' + group.type)}</span>
                                             <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>· {group.count}</span>
                                             <span style={{ marginLeft: 'auto', fontSize: '12px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-secondary)' }}>
                                                 {lineSums === null ? '…' : formatCurrency(groupBalance(group))}
@@ -423,22 +438,22 @@ const ChartOfAccountsPage = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '620px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '120px' }}>Code</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Account Name</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '150px' }}>Type</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '150px', textAlign: 'right' }}>Balance</th>
-                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '100px', textAlign: 'right' }}>Actions</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '120px' }}>{t('ui.accounting.common.code')}</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>{t('ui.accounting.common.accountName')}</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '150px' }}>{t('ui.accounting.common.type')}</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '150px', textAlign: 'right' }}>{t('ui.accounting.common.balance')}</th>
+                            <th style={{ padding: '16px 24px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', width: '100px', textAlign: 'right' }}>{t('common.actions')}</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading accounts...</td></tr>
+                            <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.coa.loading')}</td></tr>
                         ) : accounts.length === 0 ? (
-                            <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No accounts found</td></tr>
+                            <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.coa.empty')}</td></tr>
                         ) : (
                             <>
                                 {accountGroups.length === 0 && (
-                                    <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No accounts found</td></tr>
+                                    <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.coa.empty')}</td></tr>
                                 )}
                                 {accountGroups.map(group => {
                                     const typeCollapsed = !!collapsedTypes[group.type] && !searchQuery;
@@ -451,8 +466,8 @@ const ChartOfAccountsPage = () => {
                                     <td colSpan={3} style={{ padding: '10px 24px', borderLeft: `3px solid ${group.color}` }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             {typeCollapsed ? <ChevronRight size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
-                                            <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: group.color }}>{group.label}</span>
-                                            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>· {group.count} {group.count === 1 ? 'account' : 'accounts'}</span>
+                                            <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: group.color }}>{t('ui.accounting.common.typePlural.' + group.type)}</span>
+                                            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>· {accountsCount(group.count)}</span>
                                         </div>
                                     </td>
                                     <td style={{ padding: '10px 24px', textAlign: 'right', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-secondary)' }}>
@@ -471,7 +486,7 @@ const ChartOfAccountsPage = () => {
                                                 <td
                                                     className="hover-highlight"
                                                     onClick={() => goToLedger(parent.id)}
-                                                    title="View in General Ledger"
+                                                    title={t('ui.accounting.coa.viewInLedger')}
                                                     style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--color-text-main)', cursor: 'pointer' }}
                                                 >{parent.account_code}</td>
                                                 <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--color-text-main)' }}>
@@ -481,10 +496,10 @@ const ChartOfAccountsPage = () => {
                                                     >
                                                         {hasChildren ? (isExpanded ? <ChevronDown size={16} color="#94a3b8" /> : <ChevronRight size={16} color="#94a3b8" />) : <span style={{ width: 16 }}/>}
                                                         {parent.account_name}
-                                                        {subLabelOf(parent) && <span style={subLabelStyle}>{subLabelOf(parent)}</span>}
+                                                        {subLabelOf(parent) && <span style={subLabelStyle}>{subDisp(subLabelOf(parent))}</span>}
                                                     </div>
                                                 </td>
-                                                <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontSize: '12px' }}>{parent.account_type}</td>
+                                                <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontSize: '12px' }}>{typeDisp(parent.account_type)}</td>
                                                 <td style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right', color: balance.negative ? '#DC2626' : 'var(--color-text-main)' }}>{balance.text}</td>
                                                 <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                                                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
@@ -500,14 +515,14 @@ const ChartOfAccountsPage = () => {
                                                         <td
                                                             className="hover-highlight"
                                                             onClick={() => goToLedger(child.id)}
-                                                            title="View in General Ledger"
+                                                            title={t('ui.accounting.coa.viewInLedger')}
                                                             style={{ padding: '14px 24px 14px 48px', color: 'var(--color-text-secondary)', fontWeight: '500', cursor: 'pointer' }}
                                                         >{child.account_code}</td>
                                                         <td style={{ padding: '14px 24px 14px 48px', color: 'var(--color-text-secondary)' }}>
                                                             {child.account_name}
-                                                            {subLabelOf(child, parent.account_name) && <span style={subLabelStyle}>{subLabelOf(child, parent.account_name)}</span>}
+                                                            {subLabelOf(child, parent.account_name) && <span style={subLabelStyle}>{subDisp(subLabelOf(child, parent.account_name))}</span>}
                                                         </td>
-                                                        <td style={{ padding: '14px 24px', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontSize: '12px' }}>{child.account_type}</td>
+                                                        <td style={{ padding: '14px 24px', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontSize: '12px' }}>{typeDisp(child.account_type)}</td>
                                                         <td style={{ padding: '14px 24px', textAlign: 'right', color: childBalance.negative ? '#DC2626' : 'var(--color-text-secondary)' }}>{childBalance.text}</td>
                                                         <td style={{ padding: '14px 24px', textAlign: 'right' }}>
                                                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
@@ -528,14 +543,14 @@ const ChartOfAccountsPage = () => {
                                             <td
                                                 className="hover-highlight"
                                                 onClick={() => goToLedger(orphan.id)}
-                                                title="View in General Ledger"
+                                                title={t('ui.accounting.coa.viewInLedger')}
                                                 style={{ padding: '16px 24px', fontWeight: '500', color: 'var(--color-text-main)', cursor: 'pointer' }}
                                             >{orphan.account_code}</td>
                                             <td style={{ padding: '16px 24px', color: 'var(--color-text-main)' }}>
                                                 {orphan.account_name}
-                                                {subLabelOf(orphan) && <span style={subLabelStyle}>{subLabelOf(orphan)}</span>}
+                                                {subLabelOf(orphan) && <span style={subLabelStyle}>{subDisp(subLabelOf(orphan))}</span>}
                                             </td>
-                                            <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontSize: '12px' }}>{orphan.account_type}</td>
+                                            <td style={{ padding: '16px 24px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', fontSize: '12px' }}>{typeDisp(orphan.account_type)}</td>
                                             <td style={{ padding: '16px 24px', textAlign: 'right', color: orphanBalance.negative ? '#DC2626' : 'var(--color-text-main)' }}>{orphanBalance.text}</td>
                                             <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
@@ -560,7 +575,7 @@ const ChartOfAccountsPage = () => {
             <Modal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                title={editingAccount ? 'Edit Account' : 'Create Account'}
+                title={editingAccount ? t('ui.accounting.coa.editAccount') : t('ui.accounting.coa.createAccount')}
                 width="640px"
             >
                 {(() => {
@@ -573,46 +588,46 @@ const ChartOfAccountsPage = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', padding: '8px 0' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '160px 1fr', gap: '16px' }}>
                                 <div>
-                                    <label style={fieldLabel}>Account Code</label>
+                                    <label style={fieldLabel}>{t('ui.accounting.common.accountCode')}</label>
                                     <input
                                         type="text"
                                         style={fieldInput}
                                         value={formData.account_code || ''}
                                         onChange={(e) => setFormData({ ...formData, account_code: e.target.value })}
-                                        placeholder="e.g., 1000"
+                                        placeholder={t('ui.accounting.coa.codePlaceholder')}
                                     />
                                 </div>
                                 <div>
-                                    <label style={fieldLabel}>Account Name</label>
+                                    <label style={fieldLabel}>{t('ui.accounting.common.accountName')}</label>
                                     <input
                                         type="text"
                                         className="d2-khmer"
                                         style={fieldInput}
                                         value={formData.account_name || ''}
                                         onChange={(e) => setFormData({ ...formData, account_name: e.target.value })}
-                                        placeholder="e.g., Cash on Hand"
+                                        placeholder={t('ui.accounting.coa.namePlaceholder')}
                                     />
                                 </div>
                             </div>
 
                             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                                 <div>
-                                    <label style={fieldLabel}>Account Type</label>
+                                    <label style={fieldLabel}>{t('ui.accounting.common.accountTypeLabel')}</label>
                                     <select
                                         style={{ ...fieldInput, cursor: 'pointer' }}
                                         value={formData.account_type}
                                         onChange={(e) => setFormData({ ...formData, account_type: e.target.value as ChartOfAccount['account_type'], sub_type: '' })}
                                     >
-                                        <option value="Asset">Asset</option>
-                                        <option value="Liability">Liability</option>
-                                        <option value="Equity">Equity</option>
-                                        <option value="Revenue">Revenue</option>
-                                        <option value="Expense">Expense</option>
+                                        <option value="Asset">{t('ui.accounting.common.accountType.Asset')}</option>
+                                        <option value="Liability">{t('ui.accounting.common.accountType.Liability')}</option>
+                                        <option value="Equity">{t('ui.accounting.common.accountType.Equity')}</option>
+                                        <option value="Revenue">{t('ui.accounting.common.accountType.Revenue')}</option>
+                                        <option value="Expense">{t('ui.accounting.common.accountType.Expense')}</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label style={fieldLabel}>
-                                        Sub Category <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>(optional)</span>
+                                        {t('ui.accounting.coa.subCategory')} <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>({t('ui.accounting.common.optional')})</span>
                                     </label>
                                     <select
                                         style={{ ...fieldInput, cursor: 'pointer' }}
@@ -621,21 +636,21 @@ const ChartOfAccountsPage = () => {
                                     >
                                         <option value="">—</option>
                                         {SUB_TYPES[formData.account_type || 'Asset'].map(s => (
-                                            <option key={s} value={s}>{s}</option>
+                                            <option key={s} value={s}>{subDisp(s)}</option>
                                         ))}
                                     </select>
                                 </div>
                             </div>
 
                             <div>
-                                <label style={fieldLabel}>Description <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                                <label style={fieldLabel}>{t('ui.accounting.common.description')} <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>({t('ui.accounting.common.optional')})</span></label>
                                 <input
                                     type="text"
                                     className="d2-khmer"
                                     style={fieldInput}
                                     value={formData.description || ''}
                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                    placeholder="Describe the account..."
+                                    placeholder={t('ui.accounting.coa.descPlaceholder')}
                                 />
                             </div>
 
@@ -648,10 +663,10 @@ const ChartOfAccountsPage = () => {
                             }}>
                                 <div style={{ minWidth: 0 }}>
                                     <div className="d2-khmer" style={{ fontSize: '14px', fontWeight: 700, color: accent, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                        {ready ? <>✓ {formData.account_code} · {formData.account_name}</> : 'Code and name required'}
+                                        {ready ? <>✓ {formData.account_code} · {formData.account_name}</> : t('ui.accounting.coa.codeNameRequired')}
                                     </div>
                                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
-                                        {formData.account_type || 'Asset'}{formData.sub_type ? ` · ${formData.sub_type}` : ''}{formData.is_active ? '' : ' · Inactive'}
+                                        {typeDisp(formData.account_type || 'Asset')}{formData.sub_type ? ` · ${subDisp(formData.sub_type)}` : ''}{formData.is_active ? '' : ` · ${t('ui.accounting.coa.inactive')}`}
                                     </div>
                                 </div>
                                 {ready
@@ -669,8 +684,8 @@ const ChartOfAccountsPage = () => {
                                     onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                                     style={{ cursor: 'pointer' }}
                                 />
-                                <span style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--color-text-main)' }}>Active</span>
-                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>— inactive accounts stay out of entry forms</span>
+                                <span style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--color-text-main)' }}>{t('ui.accounting.coa.active')}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>— {t('ui.accounting.coa.activeHint')}</span>
                             </label>
 
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '4px' }}>
@@ -678,14 +693,14 @@ const ChartOfAccountsPage = () => {
                                     onClick={() => setIsModalOpen(false)}
                                     style={{ padding: '10px 18px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-main)', fontWeight: 600, fontSize: '13.5px', cursor: 'pointer' }}
                                 >
-                                    Cancel
+                                    {t('common.cancel')}
                                 </button>
                                 <button
                                     onClick={handleSave}
                                     disabled={!ready}
                                     style={{ padding: '10px 18px', borderRadius: '8px', border: 'none', background: '#2742c9', color: 'white', fontWeight: 600, fontSize: '13.5px', cursor: ready ? 'pointer' : 'not-allowed', opacity: ready ? 1 : 0.55 }}
                                 >
-                                    {editingAccount ? 'Save Changes' : 'Create Account'}
+                                    {editingAccount ? t('ui.accounting.common.saveChanges') : t('ui.accounting.coa.createAccount')}
                                 </button>
                             </div>
                         </div>

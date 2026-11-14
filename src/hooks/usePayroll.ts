@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { StaffAttendance } from '../types';
+import { tNow } from '../i18n/translate';
 
 export const usePayroll = () => {
     const [attendances, setAttendances] = useState<StaffAttendance[]>([]);
@@ -32,7 +33,7 @@ export const usePayroll = () => {
             setAttendances(mappedAttendances);
         } catch (err: any) {
             console.error('Error fetching attendance for payroll:', err);
-            setError(err.message || 'Failed to fetch attendance');
+            setError(err.message || tNow('ui.store.hr.fetchAttendanceFailed'));
         } finally {
             setIsLoading(false);
         }

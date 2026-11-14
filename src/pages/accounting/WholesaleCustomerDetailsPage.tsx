@@ -5,6 +5,8 @@ import { supabase } from '../../lib/supabase';
 import { fetchAll } from '../../utils/fetchAll';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useWholesale } from '../../hooks/useWholesale';
 import type { WholesaleCustomer, WholesaleOrder } from '../../types';
 
@@ -28,6 +30,7 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
     const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const { deleteWholesaleOrder, deleteCustomerPayment } = useWholesale();
 
     const [customer, setCustomer] = useState<WholesaleCustomer | null>(null);
@@ -55,7 +58,7 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
             const { data: cust, error: cErr } = await supabase.from('wholesale_customers').select('*').eq('id', id).single();
             if (cErr) throw cErr;
             setCustomer(cust);
-            setHeaderContent({ title: header(`${cust.name} — Ledger`, 'Account statement and payment history') });
+            setHeaderContent({ title: header(fill(t('ui.wholesale.details.ledgerTitle'), { name: cust.name }), t('ui.wholesale.details.ledgerSub')) });
 
             // Orders for this customer (matched by name), with items + payments.
             // Paged (fetchAll, date + unique id for a stable order): the account
@@ -71,15 +74,15 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
             setOrders(ordData);
         } catch (error: any) {
             console.error('Error fetching customer ledger:', error);
-            showToast('Failed to load customer details: ' + error.message, 'error');
+            showToast(t('ui.wholesale.details.loadFailed') + error.message, 'error');
         } finally {
             setIsLoading(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [id]);
+    }, [id, t]);
 
     useEffect(() => {
-        setHeaderContent({ title: header('Customer Ledger', 'Loading customer details...') });
+        setHeaderContent({ title: header(t('ui.wholesale.details.customerLedger'), t('ui.wholesale.details.loading')) });
         fetchData();
         return () => setHeaderContent(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -89,8 +92,8 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
         const entries: Omit<LedgerEntry, 'balance'>[] = [];
         orders.forEach(o => {
             const desc = (o.items && o.items.length > 0)
-                ? o.items.map(i => `${i.product_name || 'Item'}=${i.quantity}($${i.unit_price})`).join(', ')
-                : `Wholesale Order #${o.id.slice(0, 8)}`;
+                ? o.items.map(i => `${i.product_name || t('ui.wholesale.common.item')}=${i.quantity}($${i.unit_price})`).join(', ')
+                : `${t('ui.wholesale.orders.copy.heading')} #${o.id.slice(0, 8)}`;
             entries.push({
                 id: `wo-${o.id}`, date: o.order_date, type: 'Invoice', description: desc,
                 reference: o.id.slice(0, 8).toUpperCase(), invoiceNumber: o.invoice_number || '',
@@ -99,7 +102,7 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
             (o.payments || []).forEach((p: any) => {
                 entries.push({
                     id: `pay-${p.id}`, date: p.payment_date, type: 'Payment',
-                    description: `Payment ${fmt(Number(p.amount) || 0)}${p.notes ? ' — ' + p.notes : ''}`,
+                    description: `${t('ui.wholesale.common.payment')} ${fmt(Number(p.amount) || 0)}${p.notes ? ' — ' + p.notes : ''}`,
                     reference: o.id.slice(0, 8).toUpperCase(), invoiceNumber: '',
                     paymentMethod: p.payment_method || '', debt: 0, paid: Number(p.amount) || 0
                 });
@@ -108,7 +111,7 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
         entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         let bal = 0;
         return entries.map(e => { bal += e.debt - e.paid; return { ...e, balance: bal }; }).reverse();
-    }, [orders]);
+    }, [orders, t]);
 
     const filteredLedger = useMemo(() => ledger.filter(e => {
         if (dateStart && e.date < dateStart) return false;
@@ -132,7 +135,7 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
     const deletingRef = useRef(false);
     const handleDelete = async (entry: LedgerEntry) => {
         if (deletingRef.current) return;
-        if (!window.confirm(`Delete this ${entry.type}? This cannot be undone.`)) return;
+        if (!window.confirm(entry.type === 'Invoice' ? t('ui.wholesale.details.confirmDeleteInvoice') : t('ui.wholesale.details.confirmDeletePayment'))) return;
         deletingRef.current = true;
         try {
             if (entry.id.startsWith('wo-')) {
@@ -154,8 +157,8 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
         return (
             <div className="page-container fade-in">
                 <div className="glass-panel" style={{ padding: '40px', textAlign: 'center' }}>
-                    <h3>Customer not found</h3>
-                    <button className="primary-button" onClick={() => navigate('/wholesale/customers')} style={{ marginTop: '16px' }}>Back to Customers</button>
+                    <h3>{t('ui.wholesale.details.notFound')}</h3>
+                    <button className="primary-button" onClick={() => navigate('/wholesale/customers')} style={{ marginTop: '16px' }}>{t('ui.wholesale.details.backToCustomers')}</button>
                 </div>
             </div>
         );
@@ -168,7 +171,7 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
                 <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '18px 20px' }}>
                     <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><User size={22} /></div>
                     <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Customer</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('ui.wholesale.common.customer')}</div>
                         <div style={{ fontSize: '17px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customer.name}</div>
                         {customer.phone && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}><Phone size={10} />{customer.phone}</div>}
                     </div>
@@ -176,14 +179,14 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
                 <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '18px 20px' }}>
                     <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #ef4444, #f87171)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Receipt size={22} /></div>
                     <div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Invoiced</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('ui.wholesale.details.totalInvoiced')}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700, color: '#ef4444' }}>{fmt(stats.totalDebt)}</div>
                     </div>
                 </div>
                 <div className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '18px 20px' }}>
                     <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #10b981, #34d399)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><DollarSign size={22} /></div>
                     <div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Received</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('ui.wholesale.details.totalReceived')}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700, color: '#10b981' }}>{fmt(stats.totalPaid)}</div>
                     </div>
                 </div>
@@ -196,7 +199,7 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: 'var(--color-text-secondary)' }}>{stats.paidPercent}%</div>
                     </div>
                     <div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Outstanding</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('ui.wholesale.orders.stats.outstanding')}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700, color: stats.balance > 0 ? '#ef4444' : '#10b981' }}>{fmt(stats.balance)}</div>
                     </div>
                 </div>
@@ -205,14 +208,14 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
             {/* Date filter */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
                 <Calendar size={16} color="var(--color-text-muted)" />
-                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>Filter by date:</span>
+                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.details.filterByDate')}</span>
                 <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)} className="input-field" style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }} />
                 <span style={{ color: 'var(--color-text-muted)' }}>→</span>
                 <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)} className="input-field" style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)' }} />
                 {(dateStart || dateEnd) && (
-                    <button onClick={() => { setDateStart(''); setDateEnd(''); }} style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '12px', cursor: 'pointer', fontWeight: 500 }}>Clear</button>
+                    <button onClick={() => { setDateStart(''); setDateEnd(''); }} style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '12px', cursor: 'pointer', fontWeight: 500 }}>{t('ui.wholesale.common.clear')}</button>
                 )}
-                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginLeft: 'auto' }}>{filteredLedger.length} entries</span>
+                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginLeft: 'auto' }}>{fill(t('ui.wholesale.details.nEntries'), { n: filteredLedger.length })}</span>
             </div>
 
             {/* Ledger */}
@@ -220,13 +223,13 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
                 <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', border: 'none' }}>
                     <thead>
                         <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                            <th style={{ ...lth, width: '100px' }}>Date</th>
-                            <th style={{ ...lth, width: '100px' }}>Type</th>
-                            <th style={lth}>Description</th>
-                            <th style={{ ...lth, width: '120px' }}>Invoice No</th>
-                            <th style={{ ...lth, color: '#ef4444', textAlign: 'right', width: '120px' }}>Debt</th>
-                            <th style={{ ...lth, color: '#3b82f6', textAlign: 'right', width: '120px' }}>Received</th>
-                            <th style={{ ...lth, textAlign: 'right', width: '120px' }}>Balance</th>
+                            <th style={{ ...lth, width: '100px' }}>{t('ui.wholesale.common.date')}</th>
+                            <th style={{ ...lth, width: '100px' }}>{t('ui.wholesale.common.type')}</th>
+                            <th style={lth}>{t('ui.wholesale.common.description')}</th>
+                            <th style={{ ...lth, width: '120px' }}>{t('ui.wholesale.details.invoiceNo')}</th>
+                            <th style={{ ...lth, color: '#ef4444', textAlign: 'right', width: '120px' }}>{t('ui.wholesale.details.debt')}</th>
+                            <th style={{ ...lth, color: '#3b82f6', textAlign: 'right', width: '120px' }}>{t('ui.wholesale.details.received')}</th>
+                            <th style={{ ...lth, textAlign: 'right', width: '120px' }}>{t('ui.wholesale.common.balance')}</th>
                             <th style={{ ...lth, textAlign: 'center', width: '60px' }} />
                         </tr>
                     </thead>
@@ -235,7 +238,7 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
                             <tr><td colSpan={8} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', color: 'var(--color-text-secondary)' }}>
                                     <FileText size={32} style={{ opacity: 0.5 }} />
-                                    <p>No transactions found for this customer.</p>
+                                    <p>{t('ui.wholesale.details.noTransactions')}</p>
                                 </div>
                             </td></tr>
                         ) : (
@@ -245,8 +248,8 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
                                         <td style={{ padding: '12px 20px', fontSize: '13px', fontWeight: 500 }}>{new Date(e.date).toLocaleDateString('en-GB').replace(/\//g, '-')}</td>
                                         <td style={{ padding: '12px 20px', fontSize: '13px' }}>
                                             {e.type === 'Invoice'
-                                                ? <span style={{ color: '#ef4444', fontWeight: 600, display: 'inline-flex', padding: '3px 10px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '20px', fontSize: '12px' }}>Invoice</span>
-                                                : <span style={{ color: '#3b82f6', fontWeight: 600, display: 'inline-flex', padding: '3px 10px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: '20px', fontSize: '12px' }}>Payment</span>}
+                                                ? <span style={{ color: '#ef4444', fontWeight: 600, display: 'inline-flex', padding: '3px 10px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '20px', fontSize: '12px' }}>{t('ui.wholesale.common.invoice')}</span>
+                                                : <span style={{ color: '#3b82f6', fontWeight: 600, display: 'inline-flex', padding: '3px 10px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: '20px', fontSize: '12px' }}>{t('ui.wholesale.common.payment')}</span>}
                                         </td>
                                         <td style={{ padding: '12px 20px', fontSize: '13px' }}>
                                             <div>{e.description}</div>
@@ -257,14 +260,14 @@ const WholesaleCustomerDetailsPage: React.FC = () => {
                                         <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: e.paid > 0 ? '#3b82f6' : 'var(--color-text-muted)' }}>{e.paid > 0 ? fmt(e.paid) : ''}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: '14px', fontWeight: 700, color: e.balance > 0 ? '#ef4444' : '#10b981' }}>{fmt(e.balance)}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'center' }}>
-                                            <button onClick={() => handleDelete(e)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.5 }} title="Delete Entry" onMouseEnter={ev => (ev.currentTarget.style.opacity = '1')} onMouseLeave={ev => (ev.currentTarget.style.opacity = '0.5')}>
+                                            <button onClick={() => handleDelete(e)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.5 }} title={t('ui.wholesale.details.deleteEntry')} onMouseEnter={ev => (ev.currentTarget.style.opacity = '1')} onMouseLeave={ev => (ev.currentTarget.style.opacity = '0.5')}>
                                                 <Trash2 size={15} />
                                             </button>
                                         </td>
                                     </tr>
                                 ))}
                                 <tr style={{ background: 'rgba(0,0,0,0.03)', borderTop: '2px solid var(--color-border)' }}>
-                                    <td colSpan={4} style={{ padding: '14px 20px', fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals {(dateStart || dateEnd) ? '(filtered)' : ''}</td>
+                                    <td colSpan={4} style={{ padding: '14px 20px', fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('ui.wholesale.details.totals')} {(dateStart || dateEnd) ? t('ui.wholesale.details.filtered') : ''}</td>
                                     <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '15px', fontWeight: 700, color: '#ef4444' }}>{fmt(filteredTotals.totalDebt)}</td>
                                     <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '15px', fontWeight: 700, color: '#3b82f6' }}>{fmt(filteredTotals.totalPaid)}</td>
                                     <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '15px', fontWeight: 700, color: stats.balance > 0 ? '#ef4444' : '#10b981' }}>{fmt(stats.balance)}</td>

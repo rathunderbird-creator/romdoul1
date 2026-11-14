@@ -4,11 +4,14 @@ import { useStore } from '../../context/StoreContext';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 const CategoriesPage: React.FC = () => {
     const { categories, addCategory, removeCategory, products, currentUser } = useStore();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const isMobile = useMobile();
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -21,13 +24,13 @@ const CategoriesPage: React.FC = () => {
             title: (
                 <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Tags size={16} /> Categories
+                        <Tags size={16} /> {t('ui.inventory.categories.title')}
                     </h1>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     const filteredCategories = useMemo(() => {
         return categories.filter(c => c.toLowerCase().includes(searchTerm.toLowerCase())).sort((a, b) => a.localeCompare(b));
@@ -43,34 +46,34 @@ const CategoriesPage: React.FC = () => {
         if (!trimmed) return;
 
         if (categories.includes(trimmed)) {
-            showToast('Category already exists', 'error');
+            showToast(t('ui.inventory.categories.exists'), 'error');
             return;
         }
 
         try {
             addCategory(trimmed);
             setNewCategory('');
-            showToast('Category added', 'success');
+            showToast(t('ui.inventory.categories.added'), 'success');
         } catch (error) {
-            showToast('Failed to add category', 'error');
+            showToast(t('ui.inventory.categories.addFailed'), 'error');
         }
     };
 
     const handleDeleteCategory = (category: string) => {
         const count = getProductCount(category);
         if (count > 0) {
-            if (!window.confirm(`There are ${count} products in the "${category}" category. Deleting it will leave those products uncategorized (or keep the string on their record but it won't show in the dropdown). Are you sure?`)) {
+            if (!window.confirm(fill(t('ui.inventory.categories.confirmDeleteUsed'), { n: count, category }))) {
                 return;
             }
         } else {
-            if (!window.confirm(`Delete category "${category}"?`)) return;
+            if (!window.confirm(fill(t('ui.inventory.categories.confirmDelete'), { category }))) return;
         }
 
         try {
             removeCategory(category);
-            showToast('Category deleted', 'success');
+            showToast(t('ui.inventory.categories.deleted'), 'success');
         } catch (error) {
-            showToast('Failed to delete category', 'error');
+            showToast(t('ui.inventory.categories.deleteFailed'), 'error');
         }
     };
 
@@ -80,12 +83,12 @@ const CategoriesPage: React.FC = () => {
                 {/* Main List Area */}
                 <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-                        <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Product Categories</h2>
+                        <h2 style={{ fontSize: '18px', fontWeight: 600 }}>{t('ui.inventory.categories.productCategories')}</h2>
                         <div style={{ position: 'relative', width: isMobile ? '100%' : '300px' }}>
                             <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                             <input
                                 type="text"
-                                placeholder="Search categories..."
+                                placeholder={t('ui.inventory.categories.searchPlaceholder')}
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 style={{ width: '100%', padding: '10px 16px 10px 40px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '14px', outline: 'none' }}
@@ -96,8 +99,8 @@ const CategoriesPage: React.FC = () => {
                     {filteredCategories.length === 0 ? (
                         <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', borderRadius: '16px', border: '1px dashed var(--color-border)' }}>
                             <Tags size={48} style={{ opacity: 0.2, marginBottom: '16px', margin: '0 auto' }} />
-                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)' }}>No categories found</h3>
-                            <p style={{ fontSize: '14px', marginTop: '8px' }}>{searchTerm ? 'Try a different search term.' : 'Use the form to add your first category.'}</p>
+                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)' }}>{t('ui.inventory.categories.none')}</h3>
+                            <p style={{ fontSize: '14px', marginTop: '8px' }}>{searchTerm ? t('ui.inventory.tryDifferentSearch') : t('ui.inventory.categories.addFirst')}</p>
                         </div>
                     ) : (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
@@ -112,7 +115,7 @@ const CategoriesPage: React.FC = () => {
                                             <div>
                                                 <h3 style={{ fontSize: '15px', fontWeight: 600 }}>{category}</h3>
                                                 <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
-                                                    {pCount} {pCount === 1 ? 'product' : 'products'}
+                                                    {pCount} {pCount === 1 ? t('ui.inventory.categories.productOne') : t('ui.inventory.categories.productMany')}
                                                 </div>
                                             </div>
                                         </div>
@@ -132,21 +135,21 @@ const CategoriesPage: React.FC = () => {
                 {isAdmin && (
                     <div style={{ alignSelf: 'start' }}>
                         <div className="glass-panel" style={{ padding: '20px' }}>
-                            <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>Add Category</h3>
+                            <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>{t('ui.inventory.categories.add')}</h3>
                             <form onSubmit={handleAddCategory} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 <div>
-                                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Category Name *</label>
+                                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>{t('ui.inventory.categories.name')} *</label>
                                     <input
                                         required
                                         type="text"
                                         value={newCategory}
                                         onChange={e => setNewCategory(e.target.value)}
-                                        placeholder="e.g., Portable Speakers"
+                                        placeholder={t('ui.inventory.categories.namePlaceholder')}
                                         style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '13px', background: 'var(--color-bg)', outline: 'none' }}
                                     />
                                 </div>
                                 <button type="submit" className="primary-button" style={{ width: '100%', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '4px' }}>
-                                    <Plus size={16} /> Add Category
+                                    <Plus size={16} /> {t('ui.inventory.categories.add')}
                                 </button>
                             </form>
                         </div>

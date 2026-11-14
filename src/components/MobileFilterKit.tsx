@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Search, Filter, X, RefreshCw, Plus } from 'lucide-react';
+import { useTx } from './useTx';
 
 /**
  * Shared mobile building blocks (the pattern used by Orders Management and
@@ -34,13 +35,15 @@ export const MobileSearchBar: React.FC<{
     onAdd?: () => void;
     addDisabled?: boolean;
     extra?: React.ReactNode;
-}> = ({ searchValue, onSearchChange, placeholder = 'Search...', activeCount, onOpenFilter, onAdd, addDisabled, extra }) => (
+}> = ({ searchValue, onSearchChange, placeholder, activeCount, onOpenFilter, onAdd, addDisabled, extra }) => {
+    const tx = useTx();
+    return (
     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', position: 'sticky', top: 0, zIndex: 60, background: 'var(--color-bg)', padding: '4px 0' }}>
         <div style={{ position: 'relative', flex: 1 }}>
             <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
             <input
                 type="text"
-                placeholder={placeholder}
+                placeholder={placeholder ?? tx('ui.components.mobileFilter.search', 'Search...')}
                 value={searchValue}
                 onChange={(e) => onSearchChange(e.target.value)}
                 style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '14px', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}
@@ -57,12 +60,13 @@ export const MobileSearchBar: React.FC<{
         </button>
         {extra}
         {onAdd && (
-            <button onClick={onAdd} disabled={addDisabled} className="primary-button" title="Add" style={{ width: '42px', height: '42px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0, opacity: addDisabled ? 0.5 : 1 }}>
+            <button onClick={onAdd} disabled={addDisabled} className="primary-button" title={tx('ui.components.mobileFilter.add', 'Add')} style={{ width: '42px', height: '42px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0, opacity: addDisabled ? 0.5 : 1 }}>
                 <Plus size={22} />
             </button>
         )}
     </div>
-);
+    );
+};
 
 // Right-side slide-in filter drawer with search + optional refresh on top,
 // the children (chip groups / tools) in the middle, and Clear / Filter footer.
@@ -76,7 +80,9 @@ export const MobileFilterDrawer: React.FC<{
     onRefresh?: () => void;
     isRefreshing?: boolean;
     children: React.ReactNode;
-}> = ({ isOpen, onClose, onClear, searchValue, onSearchChange, searchPlaceholder = 'Search...', onRefresh, isRefreshing, children }) => (
+}> = ({ isOpen, onClose, onClear, searchValue, onSearchChange, searchPlaceholder, onRefresh, isRefreshing, children }) => {
+    const tx = useTx();
+    return (
     <>
         {isOpen && (
             <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1199 }} />
@@ -92,7 +98,7 @@ export const MobileFilterDrawer: React.FC<{
             boxShadow: '-8px 0 30px rgba(0,0,0,0.18)'
         }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Filter</h3>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>{tx('common.filter', 'Filter')}</h3>
                 <button onClick={onClose} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <X size={18} />
                 </button>
@@ -103,14 +109,14 @@ export const MobileFilterDrawer: React.FC<{
                     <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                     <input
                         type="text"
-                        placeholder={searchPlaceholder}
+                        placeholder={searchPlaceholder ?? tx('ui.components.mobileFilter.search', 'Search...')}
                         value={searchValue}
                         onChange={(e) => onSearchChange(e.target.value)}
                         style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '14px', background: 'var(--color-bg)', color: 'var(--color-text-main)' }}
                     />
                 </div>
                 {onRefresh && (
-                    <button onClick={onRefresh} title="Refresh" style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                    <button onClick={onRefresh} title={tx('dashboard2.refresh', 'Refresh')} style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
                         <RefreshCw size={17} style={isRefreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
                     </button>
                 )}
@@ -120,15 +126,16 @@ export const MobileFilterDrawer: React.FC<{
 
             <div style={{ marginTop: 'auto', position: 'sticky', bottom: 0, background: 'var(--color-surface)', paddingTop: '12px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: '10px' }}>
                 <button onClick={onClear} style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}>
-                    Clear
+                    {tx('ui.components.mobileFilter.clear', 'Clear')}
                 </button>
                 <button onClick={onClose} className="primary-button" style={{ flex: 1, padding: '12px', borderRadius: '12px', fontWeight: 600, fontSize: '14px' }}>
-                    Filter
+                    {tx('common.filter', 'Filter')}
                 </button>
             </div>
         </div>
     </>
-);
+    );
+};
 
 // Swipe-left row (same interaction as the Orders mobile cards): dragging the
 // row left reveals action buttons; tap outside or the row to close. Vertical

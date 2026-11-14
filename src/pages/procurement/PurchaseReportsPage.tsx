@@ -15,6 +15,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Clock, FileText, PackageSearch, RefreshCw, Printer, Download } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useMobile } from '../../hooks/useMobile';
 import { dayKeyFromDate } from '../../utils/dateRange';
@@ -24,10 +26,10 @@ import { fetchAll } from '../../utils/fetchAll';
 import type { PurchaseOrder } from '../../types';
 
 type TabKey = 'aging' | 'statement' | 'open';
-const TABS: { key: TabKey; label: string; icon: typeof Clock }[] = [
-    { key: 'aging', label: 'AP Aging', icon: Clock },
-    { key: 'statement', label: 'Supplier Statement', icon: FileText },
-    { key: 'open', label: 'Open Orders', icon: PackageSearch },
+const TABS: { key: TabKey; labelKey: string; icon: typeof Clock }[] = [
+    { key: 'aging', labelKey: 'ui.supplier.reports.tabAging', icon: Clock },
+    { key: 'statement', labelKey: 'ui.supplier.reports.tabStatement', icon: FileText },
+    { key: 'open', labelKey: 'ui.supplier.reports.tabOpen', icon: PackageSearch },
 ];
 
 const BLUE = '#5469d4', RED = '#DC2626';
@@ -52,6 +54,7 @@ const refBadgeStyle: React.CSSProperties = { display: 'inline-block', padding: '
 
 const PurchaseReportsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
     const { suppliers, purchaseOrders, supplierPayments, isLoading, fetchSuppliers, fetchPurchaseOrders, fetchSupplierPayments } = useProcurement();
     const [tab, setTab] = useState<TabKey>('aging');
     const isMobile = useMobile();
@@ -60,13 +63,13 @@ const PurchaseReportsPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Purchase Reports</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', margin: 0 }}>What we owe, and what is still to arrive</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.purchaseReports')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', margin: 0 }}>{t('ui.supplier.reports.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     const reload = useCallback(() => { fetchSuppliers(); fetchPurchaseOrders(); fetchSupplierPayments(); }, [fetchSuppliers, fetchPurchaseOrders, fetchSupplierPayments]);
     useEffect(() => { reload(); }, [reload]);
@@ -159,14 +162,14 @@ const PurchaseReportsPage: React.FC = () => {
         const rows = Array.from(bySupplier.entries()).map(([supplierId, b]) => {
             const supplier = suppliers.find(s => s.id === supplierId);
             const total = b.current + b.d1_30 + b.d31_60 + b.d61_90 + b.d90plus - b.credit;
-            return { supplierId, supplierName: supplier?.name || 'Unknown supplier', code: supplierCodes.get(supplierId) || '—', ...b, total };
+            return { supplierId, supplierName: supplier?.name || t('ui.supplier.common.unknownSupplier'), code: supplierCodes.get(supplierId) || '—', ...b, total };
         }).sort((a, b) => a.code.localeCompare(b.code));
         const totals = rows.reduce((t, r) => ({
             current: t.current + r.current, d1_30: t.d1_30 + r.d1_30, d31_60: t.d31_60 + r.d31_60,
             d61_90: t.d61_90 + r.d61_90, d90plus: t.d90plus + r.d90plus, credit: t.credit + r.credit, total: t.total + r.total,
         }), { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, credit: 0, total: 0 });
         return { rows, totals };
-    }, [receivedPOs, supplierPayments, receiptDates, suppliers, asAt, daysOverdueAsOf, supplierCodes]);
+    }, [receivedPOs, supplierPayments, receiptDates, suppliers, asAt, daysOverdueAsOf, supplierCodes, t]);
 
     // ── Supplier Statement ──
     const [statementSupplierId, setStatementSupplierId] = useState('');
@@ -175,7 +178,8 @@ const PurchaseReportsPage: React.FC = () => {
 
     const statementEntries = useMemo(() => {
         if (!statementSupplierId) return [];
-        type Entry = { date: string; ref: string; description: string; amount: number };
+        // description stays English (CSV/print); descKey/descVars are its on-screen text.
+        type Entry = { date: string; ref: string; description: string; descKey: string; descVars?: Record<string, string>; amount: number };
         const entries: Entry[] = [];
         // Rule (PRO-5 + FIN-2): the statement charges every RECEIVED PO —
         // invoiced or not — because A/P is credited at receive, and it uses
@@ -189,6 +193,8 @@ const PurchaseReportsPage: React.FC = () => {
                 date: owedFromDateOf(po, receiptDates.get(po.id)),
                 ref: poRef(po),
                 description: po.invoice_number ? `Bill · ${po.invoice_number}` : 'Bill · received, no invoice yet',
+                descKey: po.invoice_number ? 'ui.supplier.reports.descBill' : 'ui.supplier.reports.descBillNoInvoice',
+                descVars: po.invoice_number ? { inv: po.invoice_number } : undefined,
                 amount: po.total_amount || 0,
             });
         }
@@ -199,7 +205,7 @@ const PurchaseReportsPage: React.FC = () => {
         // is really owed.
         const chargePoIds = new Set(receivedPOs.filter(po => po.supplier_id === statementSupplierId).map(po => po.id));
         for (const p of statementPayments(supplierPayments, statementSupplierId, chargePoIds)) {
-            entries.push({ date: p.payment_date, ref: `PAY-${p.id.slice(0, 8).toUpperCase()}`, description: `Payment${p.payment_method ? ` · ${p.payment_method}` : ''}`, amount: -(p.amount || 0) });
+            entries.push({ date: p.payment_date, ref: `PAY-${p.id.slice(0, 8).toUpperCase()}`, description: `Payment${p.payment_method ? ` · ${p.payment_method}` : ''}`, descKey: p.payment_method ? 'ui.supplier.reports.descPaymentMethod' : 'ui.supplier.reports.descPayment', descVars: p.payment_method ? { method: p.payment_method } : undefined, amount: -(p.amount || 0) });
         }
         entries.sort((a, b) => a.date.localeCompare(b.date));
         return entries;
@@ -273,7 +279,7 @@ const PurchaseReportsPage: React.FC = () => {
             <div className="acct-page" style={{ flex: isMobile ? undefined : '18 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '18px' }}>
                 {/* Tabs */}
                 <div style={{ display: 'flex', gap: '4px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '4px', flexWrap: 'wrap', alignSelf: 'flex-start' }}>
-                    {TABS.map(({ key, label, icon: Icon }) => (
+                    {TABS.map(({ key, labelKey, icon: Icon }) => (
                         <button key={key} onClick={() => setTab(key)} style={{
                             display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '9px', border: 'none',
                             background: tab === key ? 'var(--color-surface)' : 'transparent',
@@ -281,7 +287,7 @@ const PurchaseReportsPage: React.FC = () => {
                             fontWeight: tab === key ? 700 : 500, fontSize: '13px', cursor: 'pointer',
                             boxShadow: tab === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s',
                         }}>
-                            <Icon size={15} /> {label}
+                            <Icon size={15} /> {t(labelKey)}
                         </button>
                     ))}
                 </div>
@@ -290,16 +296,16 @@ const PurchaseReportsPage: React.FC = () => {
                     <>
                         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', flexWrap: 'wrap' }}>
                             <div>
-                                <label style={labelStyle}>As at</label>
+                                <label style={labelStyle}>{t('ui.supplier.reports.asAt')}</label>
                                 <input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} style={inputStyle} />
                             </div>
-                            <button onClick={reload} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
+                            <button onClick={reload} title={t('ui.supplier.common.reload')} style={{ ...btnStyle, padding: '9px 10px' }}>
                                 <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
                             </button>
-                            <button onClick={printList} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
-                            <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
-                            <button disabled title="Coming soon" style={{ ...btnStyle, opacity: 0.4, cursor: 'not-allowed' }}><FileText size={14} /> Print for approval</button>
-                            <button disabled title="Coming soon" style={{ ...btnStyle, opacity: 0.4, cursor: 'not-allowed' }}><Download size={14} style={{ transform: 'rotate(180deg)' }} /> Request payment</button>
+                            <button onClick={printList} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> {t('ui.supplier.common.printList')}</button>
+                            <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> {t('ui.supplier.common.exportCsv')}</button>
+                            <button disabled title={t('ui.supplier.reports.comingSoon')} style={{ ...btnStyle, opacity: 0.4, cursor: 'not-allowed' }}><FileText size={14} /> {t('ui.supplier.reports.printForApproval')}</button>
+                            <button disabled title={t('ui.supplier.reports.comingSoon')} style={{ ...btnStyle, opacity: 0.4, cursor: 'not-allowed' }}><Download size={14} style={{ transform: 'rotate(180deg)' }} /> {t('ui.supplier.reports.requestPayment')}</button>
                         </div>
 
                         <div style={cardStyle}>
@@ -307,21 +313,21 @@ const PurchaseReportsPage: React.FC = () => {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Supplier</th>
-                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Current</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.supplier.common.supplier')}</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.supplier.reports.current')}</th>
                                             <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>1–30</th>
                                             <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>31–60</th>
                                             <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>61–90</th>
                                             <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>90+</th>
-                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Credit</th>
-                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Total</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.supplier.reports.credit')}</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('common.total')}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {loading ? (
-                                            <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading…</td></tr>
+                                            <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.loading')}</td></tr>
                                         ) : aging.rows.length === 0 ? (
-                                            <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No outstanding bills.</td></tr>
+                                            <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.reports.noOutstanding')}</td></tr>
                                         ) : aging.rows.map(r => (
                                             <tr key={r.supplierId} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                                 <td style={{ padding: '12px 20px' }}>
@@ -341,7 +347,7 @@ const PurchaseReportsPage: React.FC = () => {
                                     {!loading && aging.rows.length > 0 && (
                                         <tfoot>
                                             <tr style={{ background: 'var(--color-bg)' }}>
-                                                <td style={{ padding: '12px 20px', fontWeight: 700 }}>Total · USD</td>
+                                                <td style={{ padding: '12px 20px', fontWeight: 700 }}>{t('ui.supplier.reports.totalUsd')}</td>
                                                 <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.current)}</td>
                                                 <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.d1_30)}</td>
                                                 <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{cellText(aging.totals.d31_60)}</td>
@@ -362,32 +368,32 @@ const PurchaseReportsPage: React.FC = () => {
                     <>
                         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', flexWrap: 'wrap' }}>
                             <div>
-                                <label style={labelStyle}>Supplier</label>
+                                <label style={labelStyle}>{t('ui.supplier.common.supplier')}</label>
                                 <select value={statementSupplierId} onChange={e => setStatementSupplierId(e.target.value)} style={{ ...inputStyle, maxWidth: '260px', cursor: 'pointer' }}>
-                                    <option value="">Select a supplier…</option>
+                                    <option value="">{t('ui.supplier.reports.selectSupplier')}</option>
                                     {[...suppliers].sort((a, b) => (supplierCodes.get(a.id) || '').localeCompare(supplierCodes.get(b.id) || '')).map(s => (
                                         <option key={s.id} value={s.id}>{supplierCodes.get(s.id)} · {s.name}</option>
                                     ))}
                                 </select>
                             </div>
                             <div>
-                                <label style={labelStyle}>From</label>
+                                <label style={labelStyle}>{t('ui.supplier.common.from')}</label>
                                 <input type="date" value={statementFrom} onChange={e => setStatementFrom(e.target.value)} style={inputStyle} />
                             </div>
                             <div>
-                                <label style={labelStyle}>To</label>
+                                <label style={labelStyle}>{t('ui.supplier.common.to')}</label>
                                 <input type="date" value={statementTo} onChange={e => setStatementTo(e.target.value)} style={inputStyle} />
                             </div>
-                            <button onClick={reload} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
+                            <button onClick={reload} title={t('ui.supplier.common.reload')} style={{ ...btnStyle, padding: '9px 10px' }}>
                                 <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
                             </button>
-                            <button onClick={printList} disabled={loading || !statementSupplierId} style={{ ...btnStyle, opacity: loading || !statementSupplierId ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
-                            <button onClick={exportCsv} disabled={loading || !statementSupplierId} style={{ ...btnStyle, opacity: loading || !statementSupplierId ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
+                            <button onClick={printList} disabled={loading || !statementSupplierId} style={{ ...btnStyle, opacity: loading || !statementSupplierId ? 0.5 : 1 }}><Printer size={14} /> {t('ui.supplier.common.printList')}</button>
+                            <button onClick={exportCsv} disabled={loading || !statementSupplierId} style={{ ...btnStyle, opacity: loading || !statementSupplierId ? 0.5 : 1 }}><Download size={14} /> {t('ui.supplier.common.exportCsv')}</button>
                         </div>
 
                         {!statementSupplierId ? (
                             <div style={{ ...cardStyle, padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                                Pick a supplier above to see their statement.
+                                {t('ui.supplier.reports.pickSupplier')}
                             </div>
                         ) : (
                             <div style={cardStyle}>
@@ -397,23 +403,23 @@ const PurchaseReportsPage: React.FC = () => {
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{supplierCodes.get(statementSupplierId)}</span>
                                     </div>
                                     <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                                        Closing balance: <strong style={{ color: statement.closing < -0.005 ? BLUE : 'var(--color-text-main)' }}>{fmt(statement.closing)}</strong>
+                                        {t('ui.supplier.reports.closingBalance')}: <strong style={{ color: statement.closing < -0.005 ? BLUE : 'var(--color-text-main)' }}>{fmt(statement.closing)}</strong>
                                     </span>
                                 </div>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                         <thead>
                                             <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Date</th>
-                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Reference</th>
-                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Description</th>
-                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Amount</th>
-                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Balance</th>
+                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.supplier.common.date')}</th>
+                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.supplier.common.reference')}</th>
+                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.supplier.common.description')}</th>
+                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('common.amount')}</th>
+                                                <th style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.supplier.common.balance')}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                                <td style={{ padding: '10px 20px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>Opening balance</td>
+                                                <td style={{ padding: '10px 20px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>{t('ui.supplier.reports.openingBalance')}</td>
                                                 <td></td><td></td><td></td>
                                                 <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: statement.opening < -0.005 ? BLUE : 'var(--color-text-secondary)' }}>{fmt(statement.opening)}</td>
                                             </tr>
@@ -421,16 +427,16 @@ const PurchaseReportsPage: React.FC = () => {
                                                 <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                                     <td style={{ padding: '10px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{r.date}</td>
                                                     <td style={{ padding: '10px 20px', whiteSpace: 'nowrap' }}><span style={refBadgeStyle}>{r.ref}</span></td>
-                                                    <td style={{ padding: '10px 20px', color: 'var(--color-text-main)' }}>{r.description}</td>
+                                                    <td style={{ padding: '10px 20px', color: 'var(--color-text-main)' }}>{fill(t(r.descKey), r.descVars)}</td>
                                                     <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.amount < 0 ? BLUE : 'var(--color-text-main)' }}>{r.amount < 0 ? `(${fmt(-r.amount)})` : fmt(r.amount)}</td>
                                                     <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: r.balance < -0.005 ? BLUE : 'var(--color-text-main)' }}>{fmt(r.balance)}</td>
                                                 </tr>
                                             ))}
                                             {statement.rows.length === 0 && (
-                                                <tr><td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No activity in this range.</td></tr>
+                                                <tr><td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.reports.noActivity')}</td></tr>
                                             )}
                                             <tr style={{ background: 'var(--color-bg)' }}>
-                                                <td style={{ padding: '10px 20px', fontWeight: 700, color: 'var(--color-text-main)' }}>Closing balance</td>
+                                                <td style={{ padding: '10px 20px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.supplier.reports.closingBalance')}</td>
                                                 <td></td><td></td><td></td>
                                                 <td style={{ padding: '10px 20px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: statement.closing < -0.005 ? BLUE : 'var(--color-text-main)' }}>{fmt(statement.closing)}</td>
                                             </tr>
@@ -445,11 +451,11 @@ const PurchaseReportsPage: React.FC = () => {
                 {tab === 'open' && (
                     <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-                            <button onClick={reload} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
+                            <button onClick={reload} title={t('ui.supplier.common.reload')} style={{ ...btnStyle, padding: '9px 10px' }}>
                                 <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
                             </button>
-                            <button onClick={printList} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
-                            <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
+                            <button onClick={printList} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> {t('ui.supplier.common.printList')}</button>
+                            <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> {t('ui.supplier.common.exportCsv')}</button>
                         </div>
 
                         <div style={cardStyle}>
@@ -457,27 +463,27 @@ const PurchaseReportsPage: React.FC = () => {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Reference</th>
-                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Supplier</th>
-                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Order Date</th>
-                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Expected Delivery</th>
-                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Status</th>
-                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Total</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.supplier.common.reference')}</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.supplier.common.supplier')}</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.supplier.reports.orderDate')}</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.supplier.reports.expectedDelivery')}</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{t('ui.supplier.common.status')}</th>
+                                            <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{t('common.total')}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {loading ? (
-                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading…</td></tr>
+                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.loading')}</td></tr>
                                         ) : openOrders.length === 0 ? (
-                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No open orders — everything has arrived.</td></tr>
+                                            <tr><td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.reports.noOpenOrders')}</td></tr>
                                         ) : openOrders.map(po => (
                                             <tr key={po.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                                 <td style={{ padding: '12px 20px' }}><span style={refBadgeStyle}>{poRef(po)}</span></td>
-                                                <td style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{suppliers.find(s => s.id === po.supplier_id)?.name || 'Unknown supplier'}</td>
+                                                <td style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{suppliers.find(s => s.id === po.supplier_id)?.name || t('ui.supplier.common.unknownSupplier')}</td>
                                                 <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{po.order_date}</td>
                                                 <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{po.expected_delivery_date || '—'}</td>
                                                 <td style={{ padding: '12px 20px' }}>
-                                                    <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: po.status === 'Sent' ? 'rgba(59,130,246,0.12)' : 'var(--color-bg)', color: po.status === 'Sent' ? '#3B82F6' : 'var(--color-text-secondary)' }}>{po.status}</span>
+                                                    <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: po.status === 'Sent' ? 'rgba(59,130,246,0.12)' : 'var(--color-bg)', color: po.status === 'Sent' ? '#3B82F6' : 'var(--color-text-secondary)' }}>{po.status === 'Sent' ? t('ui.supplier.reports.sent') : po.status === 'Draft' ? t('ui.supplier.common.draft') : po.status}</span>
                                                 </td>
                                                 <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(po.total_amount || 0)}</td>
                                             </tr>

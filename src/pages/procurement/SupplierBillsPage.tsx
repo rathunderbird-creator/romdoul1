@@ -18,6 +18,8 @@ import { Plus, Search, Eye, Printer, CheckCircle2, Pencil, Trash2, DollarSign, D
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useProcurement, postPurchaseReceiptEntry } from '../../hooks/useProcurement';
 import { useAccounting } from '../../hooks/useAccounting';
 import { useMobile } from '../../hooks/useMobile';
@@ -46,11 +48,18 @@ const STATUS_CFG: Record<BillStatus, { color: string; bg: string }> = {
     'Partially Paid': { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)' },
     Paid: { color: '#10b981', bg: 'rgba(16, 185, 129, 0.08)' },
 };
-const statusChip = (status: BillStatus) => {
+// Display labels only — the status values themselves stay English (logic/CSV/print).
+const STATUS_LABEL_KEY: Record<BillStatus, string> = {
+    Draft: 'ui.supplier.common.draft',
+    Posted: 'ui.supplier.common.posted',
+    'Partially Paid': 'ui.supplier.common.partiallyPaid',
+    Paid: 'status.paid',
+};
+const statusChip = (status: BillStatus, label: string) => {
     const cfg = STATUS_CFG[status];
     return (
         <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', whiteSpace: 'nowrap', background: cfg.bg, color: cfg.color }}>
-            {status}
+            {label}
         </span>
     );
 };
@@ -81,6 +90,8 @@ const SupplierBillsPage = () => {
     const { setHeaderContent } = useHeader();
     const { currentUser, purchaseSettings } = useStore();
     const { showToast } = useToast();
+    const { t } = useLanguage();
+    const statusLabel = (s: BillStatus) => t(STATUS_LABEL_KEY[s]);
     const isMobile = useMobile();
     const {
         purchaseOrders, suppliers, isLoading,
@@ -94,13 +105,13 @@ const SupplierBillsPage = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Supplier Bills</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>What we owe — posting a bill turns a delivery into a payable.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.supplierBills')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('ui.supplier.bills.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchPurchaseOrders();
@@ -164,9 +175,9 @@ const SupplierBillsPage = () => {
     const billSuppliers = useMemo(() => {
         const ids = new Set(bills.map(po => po.supplier_id));
         return Array.from(ids)
-            .map(id => ({ id, name: supplierById.get(id)?.name || bills.find(po => po.supplier_id === id)?.supplier?.name || '(Deleted supplier)' }))
+            .map(id => ({ id, name: supplierById.get(id)?.name || bills.find(po => po.supplier_id === id)?.supplier?.name || t('ui.supplier.bills.deletedSupplier') }))
             .sort((a, b) => a.name.localeCompare(b.name));
-    }, [bills, supplierById]);
+    }, [bills, supplierById, t]);
 
     const filteredBills = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -211,7 +222,7 @@ const SupplierBillsPage = () => {
     };
     const submitBillModal = async () => {
         if (!billModal || !billModal.poId || !billModal.reference.trim()) {
-            showToast('Pick a delivery and enter a reference', 'error');
+            showToast(t('ui.supplier.bills.toast.pickDelivery'), 'error');
             return;
         }
         setIsSavingBill(true);
@@ -246,16 +257,16 @@ const SupplierBillsPage = () => {
                 je = created || undefined;
             }
             if (!je) {
-                showToast('Could not create a ledger entry for this delivery — check the Chart of Accounts has Inventory and Accounts Payable accounts.', 'error');
+                showToast(t('ui.supplier.bills.toast.noLedgerEntry'), 'error');
                 return;
             }
             const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', je.id);
             if (error) throw error;
-            showToast('Bill posted', 'success');
+            showToast(t('ui.supplier.bills.toast.posted'), 'success');
             await fetchJournalEntries();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to post bill: ' + msg, 'error');
+            showToast(t('ui.supplier.bills.toast.postFailed') + msg, 'error');
         } finally {
             setPostingId(null);
         }
@@ -263,7 +274,7 @@ const SupplierBillsPage = () => {
 
     // ── Un-bill (Draft only) — clears the reference, never touches the PO itself ──
     const handleUnbill = async (po: PurchaseOrder) => {
-        if (!confirm('Remove this bill? The delivery stays received — you can bill it again later.')) return;
+        if (!confirm(t('ui.supplier.bills.confirmUnbill'))) return;
         try {
             await clearBillReference(po.id);
             if (viewPOId === po.id) setViewPOId(null);
@@ -311,7 +322,7 @@ const SupplierBillsPage = () => {
     // ── Print / CSV ──
     const openPrintWindow = (title: string, bodyHtml: string) => {
         const w = window.open('', '_blank', 'width=860,height=900');
-        if (!w) { showToast('Allow popups to print', 'error'); return; }
+        if (!w) { showToast(t('ui.supplier.common.allowPopups'), 'error'); return; }
         w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${PRINT_CSS}</style></head><body>${bodyHtml}</body></html>`);
         w.document.close();
         w.focus();
@@ -399,7 +410,7 @@ const SupplierBillsPage = () => {
                     onClick={() => openNewBill()}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '10px', fontWeight: 600, whiteSpace: 'nowrap' }}
                 >
-                    <Plus size={18} /> New Bill
+                    <Plus size={18} /> {t('ui.supplier.bills.newBill')}
                 </button>
             </div>
 
@@ -409,61 +420,61 @@ const SupplierBillsPage = () => {
                     <Search size={15} color="var(--color-text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                     <input
                         type="text"
-                        placeholder="Search reference, invoice no. or supplier…"
+                        placeholder={t('ui.supplier.bills.searchPlaceholder')}
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         style={{ ...inputStyle, paddingLeft: '34px' }}
                     />
                 </div>
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | BillStatus)} style={{ ...inputStyle, width: 'auto', minWidth: '140px', cursor: 'pointer' }}>
-                    <option value="All">All statuses</option>
-                    {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    <option value="All">{t('ui.supplier.common.allStatuses')}</option>
+                    {STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                 </select>
                 <select value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '160px', cursor: 'pointer' }}>
-                    <option value="All">All suppliers</option>
+                    <option value="All">{t('ui.supplier.common.allSuppliers')}</option>
                     {billSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <select
                     value=""
                     onChange={e => { if (e.target.value) openNewBill(e.target.value); }}
                     disabled={billableDeliveries.length === 0}
-                    title={billableDeliveries.length === 0 ? 'No received deliveries waiting to be billed' : 'Pick a delivery to bill'}
+                    title={billableDeliveries.length === 0 ? t('ui.supplier.bills.noDeliveriesToBill') : t('ui.supplier.bills.pickDeliveryToBill')}
                     style={{ ...inputStyle, width: 'auto', minWidth: '160px', cursor: billableDeliveries.length === 0 ? 'not-allowed' : 'pointer', opacity: billableDeliveries.length === 0 ? 0.6 : 1 }}
                 >
-                    <option value="">Bill a delivery…</option>
+                    <option value="">{t('ui.supplier.bills.billADelivery')}</option>
                     {billableDeliveries.map(po => (
                         <option key={po.id} value={po.id}>
                             {poShortId(po)} · {po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—'} · {fmtUsd(po.total_amount)}
                         </option>
                     ))}
                 </select>
-                <button onClick={() => { fetchPurchaseOrders(); fetchJournalEntries(); }} title="Refresh" style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
+                <button onClick={() => { fetchPurchaseOrders(); fetchJournalEntries(); }} title={t('ui.supplier.common.refresh')} style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} />
                 </button>
                 {hasActiveFilters && (
                     <button onClick={() => { setSearch(''); setStatusFilter('All'); setSupplierFilter('All'); }} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
-                        Clear
+                        {t('ui.supplier.common.clear')}
                     </button>
                 )}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     <button onClick={printList} disabled={isLoading || filteredBills.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredBills.length === 0) ? 0.5 : 1 }}>
-                        <Printer size={13} /> Print list
+                        <Printer size={13} /> {t('ui.supplier.common.printList')}
                     </button>
                     <button onClick={exportCsv} disabled={isLoading || filteredBills.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredBills.length === 0) ? 0.5 : 1 }}>
-                        <Download size={13} /> Export CSV
+                        <Download size={13} /> {t('ui.supplier.common.exportCsv')}
                     </button>
                 </div>
             </div>
 
             {/* List */}
             {isLoading ? (
-                <div style={{ textAlign: 'center', padding: '60px', color: 'var(--color-text-secondary)' }}>Loading bills…</div>
+                <div style={{ textAlign: 'center', padding: '60px', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.bills.loading')}</div>
             ) : filteredBills.length === 0 ? (
                 <div className="glass-panel" style={{ textAlign: 'center', padding: '60px', borderRadius: '16px' }}>
                     <FileText size={40} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-                    <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>No bills found</h3>
+                    <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{t('ui.supplier.bills.noneFound')}</h3>
                     <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                        {hasActiveFilters ? 'Try adjusting your filters.' : 'Bill a received delivery to get started.'}
+                        {hasActiveFilters ? t('ui.supplier.common.tryAdjustFilters') : t('ui.supplier.bills.getStarted')}
                     </p>
                 </div>
             ) : isMobile ? (
@@ -472,11 +483,11 @@ const SupplierBillsPage = () => {
                         const status = billStatusOf(po);
                         const outstanding = (po.total_amount || 0) - (po.amount_paid || 0);
                         const actions = [
-                            { icon: Eye, label: 'View', color: '#6366F1', onClick: () => openView(po) },
-                            ...(needsPosting(po) ? [{ icon: CheckCircle2, label: 'Post', color: '#4C5FD0', onClick: () => setConfirmPostPO(po) }] : []),
+                            { icon: Eye, label: t('ui.supplier.common.view'), color: '#6366F1', onClick: () => openView(po) },
+                            ...(needsPosting(po) ? [{ icon: CheckCircle2, label: t('ui.supplier.common.post'), color: '#4C5FD0', onClick: () => setConfirmPostPO(po) }] : []),
                             ...(status === 'Draft' ? [
-                                { icon: Pencil, label: 'Edit', color: '#2563EB', onClick: () => openEditBill(po) },
-                                { icon: Trash2, label: 'Delete', color: '#EF4444', onClick: () => handleUnbill(po) },
+                                { icon: Pencil, label: t('common.edit'), color: '#2563EB', onClick: () => openEditBill(po) },
+                                { icon: Trash2, label: t('common.delete'), color: '#EF4444', onClick: () => handleUnbill(po) },
                             ] : []),
                         ];
                         return (
@@ -488,11 +499,11 @@ const SupplierBillsPage = () => {
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                                         <span className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—'}{hasBillDate && po.bill_date ? ` · Billed ${fmtDate(po.bill_date)}` : ''} · Due {fmtDate(po.payment_due_date)}
+                                            {po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—'}{hasBillDate && po.bill_date ? ` · ${t('ui.supplier.common.billed')} ${fmtDate(po.bill_date)}` : ''} · {t('ui.supplier.common.due')} {fmtDate(po.payment_due_date)}
                                         </span>
                                         {outstanding > 0.005 && <span style={{ fontSize: '12px', fontWeight: 700, color: '#ef4444', flexShrink: 0 }}>{fmtUsd(outstanding)}</span>}
                                     </div>
-                                    <div style={{ marginTop: '6px' }}>{statusChip(status)}</div>
+                                    <div style={{ marginTop: '6px' }}>{statusChip(status, statusLabel(status))}</div>
                                 </div>
                             </SwipeRow>
                         );
@@ -504,13 +515,13 @@ const SupplierBillsPage = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13.5px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Reference</th>
-                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Supplier</th>
-                                    {hasBillDate && <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Billed</th>}
-                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Due</th>
-                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Total</th>
-                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Outstanding</th>
-                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Status</th>
+                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>{t('ui.supplier.common.reference')}</th>
+                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>{t('ui.supplier.common.supplier')}</th>
+                                    {hasBillDate && <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>{t('ui.supplier.common.billed')}</th>}
+                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>{t('ui.supplier.common.due')}</th>
+                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>{t('common.total')}</th>
+                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>{t('ui.supplier.common.outstanding')}</th>
+                                    <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>{t('ui.supplier.common.status')}</th>
                                     <th style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}></th>
                                 </tr>
                             </thead>
@@ -526,20 +537,20 @@ const SupplierBillsPage = () => {
                                             <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(po.payment_due_date)}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(po.total_amount)}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: outstanding > 0.005 ? '#ef4444' : 'var(--color-text-main)' }}>{fmtUsd(outstanding)}</td>
-                                            <td style={{ padding: '12px 20px' }}>{statusChip(status)}</td>
+                                            <td style={{ padding: '12px 20px' }}>{statusChip(status, statusLabel(status))}</td>
                                             <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                                                    <button onClick={() => openView(po)} title="View" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
-                                                    <button onClick={() => printBill(po)} title="Print" style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
+                                                    <button onClick={() => openView(po)} title={t('ui.supplier.common.view')} style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
+                                                    <button onClick={() => printBill(po)} title={t('ui.supplier.common.print')} style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
                                                     {needsPosting(po) && (
-                                                        <button onClick={() => setConfirmPostPO(po)} disabled={postingId === po.id} title="Post" style={{ background: 'rgba(76,95,208,0.1)', border: 'none', cursor: postingId === po.id ? 'not-allowed' : 'pointer', color: '#4c5fd0', padding: '6px', borderRadius: '6px', opacity: postingId === po.id ? 0.6 : 1 }}>
+                                                        <button onClick={() => setConfirmPostPO(po)} disabled={postingId === po.id} title={t('ui.supplier.common.post')} style={{ background: 'rgba(76,95,208,0.1)', border: 'none', cursor: postingId === po.id ? 'not-allowed' : 'pointer', color: '#4c5fd0', padding: '6px', borderRadius: '6px', opacity: postingId === po.id ? 0.6 : 1 }}>
                                                             {postingId === po.id ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={15} />}
                                                         </button>
                                                     )}
                                                     {status === 'Draft' && (
                                                         <>
-                                                            <button onClick={() => openEditBill(po)} title="Edit" style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px' }}><Pencil size={15} /></button>
-                                                            <button onClick={() => handleUnbill(po)} title="Delete" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}><Trash2 size={15} /></button>
+                                                            <button onClick={() => openEditBill(po)} title={t('common.edit')} style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px' }}><Pencil size={15} /></button>
+                                                            <button onClick={() => handleUnbill(po)} title={t('common.delete')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}><Trash2 size={15} /></button>
                                                         </>
                                                     )}
                                                 </div>
@@ -551,7 +562,7 @@ const SupplierBillsPage = () => {
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
                                     <td colSpan={hasBillDate ? 4 : 3} style={{ padding: '12px 20px', fontSize: '12.5px', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                                        Total Records: {filteredBills.length}
+                                        {fill(t('ui.supplier.bills.totalRecords'), { n: filteredBills.length })}
                                     </td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'var(--color-text-main)' }}>{fmtUsd(billTotals.totalAmount)}</td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: billTotals.totalOutstanding > 0.005 ? '#ef4444' : 'var(--color-text-main)' }}>{fmtUsd(billTotals.totalOutstanding)}</td>
@@ -564,11 +575,11 @@ const SupplierBillsPage = () => {
             )}
 
             {/* New / Edit Bill modal */}
-            <Modal isOpen={!!billModal} onClose={() => setBillModal(null)} title={billModal?.locked && bills.some(b => b.id === billModal.poId) ? 'Edit Bill' : 'New Bill'}>
+            <Modal isOpen={!!billModal} onClose={() => setBillModal(null)} title={billModal?.locked && bills.some(b => b.id === billModal.poId) ? t('ui.supplier.bills.editBill') : t('ui.supplier.bills.newBill')}>
                 {billModal && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         <div>
-                            <label style={labelStyle}>Delivery {!billModal.locked && <span style={{ color: 'red' }}>*</span>}</label>
+                            <label style={labelStyle}>{t('ui.supplier.bills.delivery')} {!billModal.locked && <span style={{ color: 'red' }}>*</span>}</label>
                             {billModal.locked ? (
                                 <div style={{ ...inputStyle, background: 'var(--color-bg)' }}>
                                     {(() => {
@@ -578,7 +589,7 @@ const SupplierBillsPage = () => {
                                 </div>
                             ) : (
                                 <select value={billModal.poId} onChange={e => setBillModal({ ...billModal, poId: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                    <option value="">Bill a delivery…</option>
+                                    <option value="">{t('ui.supplier.bills.billADelivery')}</option>
                                     {billableDeliveries.map(po => (
                                         <option key={po.id} value={po.id}>{poShortId(po)} · {po.supplier?.name || supplierById.get(po.supplier_id)?.name || '—'} · {fmtUsd(po.total_amount)}</option>
                                     ))}
@@ -586,27 +597,27 @@ const SupplierBillsPage = () => {
                             )}
                         </div>
                         <div>
-                            <label style={labelStyle}>Reference <span style={{ color: 'red' }}>*</span></label>
-                            <input type="text" value={billModal.reference} onChange={e => setBillModal({ ...billModal, reference: e.target.value })} placeholder="e.g. BIL-20261022-001" style={inputStyle} />
+                            <label style={labelStyle}>{t('ui.supplier.common.reference')} <span style={{ color: 'red' }}>*</span></label>
+                            <input type="text" value={billModal.reference} onChange={e => setBillModal({ ...billModal, reference: e.target.value })} placeholder={t('ui.supplier.bills.referencePlaceholder')} style={inputStyle} />
                         </div>
                         {hasBillDate && (
                             <div>
-                                <label style={labelStyle}>Billed date</label>
+                                <label style={labelStyle}>{t('ui.supplier.bills.billedDate')}</label>
                                 <input type="date" value={billModal.billDate} onChange={e => setBillModal({ ...billModal, billDate: e.target.value })} style={inputStyle} />
                             </div>
                         )}
                         <div>
-                            <label style={labelStyle}>Due date</label>
+                            <label style={labelStyle}>{t('ui.supplier.bills.dueDate')}</label>
                             <input type="date" value={billModal.dueDate} onChange={e => setBillModal({ ...billModal, dueDate: e.target.value })} style={inputStyle} />
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-                            <button onClick={() => setBillModal(null)} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>Cancel</button>
+                            <button onClick={() => setBillModal(null)} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>{t('common.cancel')}</button>
                             <button
                                 onClick={submitBillModal}
                                 disabled={isSavingBill || !billModal.poId || !billModal.reference.trim()}
                                 style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: (!billModal.poId || !billModal.reference.trim()) ? 'var(--color-border)' : 'var(--color-primary)', color: (!billModal.poId || !billModal.reference.trim()) ? 'var(--color-text-muted)' : 'white', cursor: isSavingBill ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 600 }}
                             >
-                                {isSavingBill ? 'Saving…' : 'Save Bill'}
+                                {isSavingBill ? t('ui.supplier.common.saving') : t('ui.supplier.bills.saveBill')}
                             </button>
                         </div>
                     </div>
@@ -614,24 +625,24 @@ const SupplierBillsPage = () => {
             </Modal>
 
             {/* View Bill modal */}
-            <Modal isOpen={!!viewPOId} onClose={() => setViewPOId(null)} title="Supplier Bill" width="640px">
+            <Modal isOpen={!!viewPOId} onClose={() => setViewPOId(null)} title={t('ui.supplier.bills.viewTitle')} width="640px">
                 {viewPO && viewStatus && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
-                            <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Reference</span>
+                            <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.supplier.common.reference')}</span>
                             <span style={{ color: 'var(--color-text-main)' }}>{viewPO.invoice_number || poShortId(viewPO)}</span>
-                            <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Supplier</span>
+                            <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.supplier.common.supplier')}</span>
                             <span className="d2-khmer" style={{ color: 'var(--color-text-main)' }}>{viewPO.supplier?.name || supplierById.get(viewPO.supplier_id)?.name || '—'}</span>
                             {hasBillDate && (
                                 <>
-                                    <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Billed</span>
+                                    <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.supplier.common.billed')}</span>
                                     <span style={{ color: 'var(--color-text-main)' }}>{fmtDate(viewPO.bill_date)}</span>
                                 </>
                             )}
-                            <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Due</span>
+                            <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.supplier.common.due')}</span>
                             <span style={{ color: 'var(--color-text-main)' }}>{fmtDate(viewPO.payment_due_date)}</span>
-                            <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</span>
-                            <span>{statusChip(viewStatus)}</span>
+                            <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.supplier.common.status')}</span>
+                            <span>{statusChip(viewStatus, statusLabel(viewStatus))}</span>
                         </div>
                         <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
                             {/* Scrolls sideways once a column is dragged wider (the card clips overflow). */}
@@ -639,9 +650,9 @@ const SupplierBillsPage = () => {
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                                 <thead>
                                     <tr style={{ background: 'var(--color-bg)' }}>
-                                        <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: 'var(--color-text-secondary)' }}>Item</th>
-                                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', color: 'var(--color-text-secondary)' }}>Qty</th>
-                                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', color: 'var(--color-text-secondary)' }}>Amount</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.item')}</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.qty')}</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', color: 'var(--color-text-secondary)' }}>{t('common.amount')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -655,11 +666,11 @@ const SupplierBillsPage = () => {
                                 </tbody>
                                 <tfoot>
                                     <tr style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                        <td colSpan={2} style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--color-text-main)' }}>Total</td>
+                                        <td colSpan={2} style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('common.total')}</td>
                                         <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--color-text-main)' }}>{fmtUsd(viewPO.total_amount)}</td>
                                     </tr>
                                     <tr style={{ background: 'var(--color-bg)' }}>
-                                        <td colSpan={2} style={{ padding: '8px 12px', fontWeight: 700, color: viewOutstanding > 0.005 ? '#ef4444' : 'var(--color-text-main)' }}>Outstanding</td>
+                                        <td colSpan={2} style={{ padding: '8px 12px', fontWeight: 700, color: viewOutstanding > 0.005 ? '#ef4444' : 'var(--color-text-main)' }}>{t('ui.supplier.common.outstanding')}</td>
                                         <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: viewOutstanding > 0.005 ? '#ef4444' : 'var(--color-text-main)' }}>{fmtUsd(viewOutstanding)}</td>
                                     </tr>
                                 </tfoot>
@@ -669,12 +680,12 @@ const SupplierBillsPage = () => {
 
                         <div>
                             <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: '8px' }}>
-                                Payments {viewPayments.length > 0 && <span style={{ background: '#10b981', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewPayments.length}</span>}
+                                {t('ui.supplier.bills.payments')} {viewPayments.length > 0 && <span style={{ background: '#10b981', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewPayments.length}</span>}
                             </div>
                             {viewPaymentsLoading ? (
-                                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Loading…</div>
+                                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.loading')}</div>
                             ) : viewPayments.length === 0 ? (
-                                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>No payments recorded yet.</div>
+                                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.bills.noPaymentsYet')}</div>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                     {viewPayments.map(p => (
@@ -689,16 +700,16 @@ const SupplierBillsPage = () => {
 
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
                             <button onClick={() => printBill(viewPO)} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                                <Printer size={13} /> Print
+                                <Printer size={13} /> {t('ui.supplier.common.print')}
                             </button>
                             {needsPosting(viewPO) && (
                                 <button onClick={() => setConfirmPostPO(viewPO)} disabled={postingId === viewPO.id} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: postingId === viewPO.id ? 'not-allowed' : 'pointer', opacity: postingId === viewPO.id ? 0.6 : 1 }}>
-                                    <CheckCircle2 size={13} /> {postingId === viewPO.id ? 'Posting…' : 'Post'}
+                                    <CheckCircle2 size={13} /> {postingId === viewPO.id ? t('ui.supplier.common.posting') : t('ui.supplier.common.post')}
                                 </button>
                             )}
                             {(viewStatus === 'Posted' || viewStatus === 'Partially Paid') && (
                                 <button onClick={openPaymentModal} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: '#10b981', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                                    <DollarSign size={13} /> Record Payment
+                                    <DollarSign size={13} /> {t('ui.supplier.common.recordPayment')}
                                 </button>
                             )}
                         </div>
@@ -729,8 +740,8 @@ const SupplierBillsPage = () => {
                 const previewLines = jeLines.length > 0
                     ? [...jeLines].sort((a, b) => (b.debit > 0 ? 1 : 0) - (a.debit > 0 ? 1 : 0))
                     : [
-                        { name: 'Inventory', debit: amount, credit: 0 },
-                        { name: 'Accounts Payable', debit: 0, credit: amount },
+                        { name: t('ui.supplier.bills.inventoryAccount'), debit: amount, credit: 0 },
+                        { name: t('ui.supplier.bills.apAccount'), debit: 0, credit: amount },
                     ];
                 return (
                 <div onClick={() => setConfirmPostPO(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
@@ -740,30 +751,30 @@ const SupplierBillsPage = () => {
                                 <HelpCircle size={22} />
                             </div>
                             <div>
-                                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: 'var(--color-text-main)' }}>Are you sure?</h3>
+                                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: 'var(--color-text-main)' }}>{t('ui.supplier.common.areYouSure')}</h3>
                                 <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', margin: 0 }}>
-                                    Post {confirmPostPO.invoice_number || poShortId(confirmPostPO)}? This books the entry below and creates the payable.
+                                    {fill(t('ui.supplier.bills.confirmPost'), { ref: confirmPostPO.invoice_number || poShortId(confirmPostPO) })}
                                 </p>
                             </div>
                         </div>
                         <div style={{ marginTop: '16px', borderRadius: '10px', border: '1px solid color-mix(in srgb, #4c5fd0 30%, var(--color-border))', background: 'color-mix(in srgb, #4c5fd0 4%, var(--color-surface))', padding: '10px 14px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#4c5fd0', marginBottom: '4px' }}>Journal Entry Preview</div>
+                            <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#4c5fd0', marginBottom: '4px' }}>{t('ui.supplier.common.jePreview')}</div>
                             {previewLines.map((l, i) => (
                                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0', borderBottom: i < previewLines.length - 1 ? '1px solid var(--color-border)' : 'none', fontSize: '13px', color: 'var(--color-text-main)' }}>
-                                    <span className="d2-khmer" style={l.credit > 0 ? { paddingLeft: '18px' } : undefined}>{l.debit > 0 ? 'Dr.' : 'Cr.'} {l.name}</span>
+                                    <span className="d2-khmer" style={l.credit > 0 ? { paddingLeft: '18px' } : undefined}>{l.debit > 0 ? t('ui.supplier.common.dr') : t('ui.supplier.common.cr')} {l.name}</span>
                                     <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmtNum(l.debit > 0 ? l.debit : l.credit)}</span>
                                 </div>
                             ))}
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
                             <button onClick={() => setConfirmPostPO(null)} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                                Cancel
+                                {t('common.cancel')}
                             </button>
                             <button
                                 onClick={() => { const po = confirmPostPO; setConfirmPostPO(null); postBill(po); }}
                                 style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                             >
-                                Post
+                                {t('ui.supplier.common.post')}
                             </button>
                         </div>
                     </div>

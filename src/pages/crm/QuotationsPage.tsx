@@ -4,6 +4,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { Modal } from '../../components';
 import { useCrm } from '../../hooks/useCrm';
+import { useLanguage } from '../../context/LanguageContext';
 import type { Quotation, QuotationItem } from '../../types';
 import { dayKeyFromDate } from '../../utils/dateRange';
 
@@ -22,6 +23,14 @@ const statusConfig = (s?: string) => {
 const QuotationsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { products } = useStore();
+    const { t } = useLanguage();
+    const qStatusLabel = (s: string) => ({
+        All: t('common.all'),
+        Draft: t('ui.people.crm.quoteStatus.draft'),
+        Sent: t('ui.people.crm.quoteStatus.sent'),
+        Accepted: t('ui.people.crm.quoteStatus.accepted'),
+        Rejected: t('ui.people.hr.leave.st.rejected'),
+    } as Record<string, string>)[s] ?? s;
     const { quotations, leads, isLoading, tableMissing, fetchQuotations, fetchLeads, saveQuotation, updateQuotationStatus, deleteQuotation } = useCrm();
 
     const [search, setSearch] = useState('');
@@ -38,13 +47,13 @@ const QuotationsPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Quotations</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Price quotes offered to leads</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('nav.quotations')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.people.crm.quotes.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => { fetchQuotations(); fetchLeads(true); }, [fetchQuotations, fetchLeads]);
 
@@ -101,17 +110,17 @@ const QuotationsPage: React.FC = () => {
     };
 
     const handleDelete = async (q: Quotation) => {
-        if (confirm('Delete this quotation?')) { try { await deleteQuotation(q.id); } catch { /* hook toasts */ } }
+        if (confirm(t('ui.people.crm.quotes.confirmDelete'))) { try { await deleteQuotation(q.id); } catch { /* hook toasts */ } }
     };
 
     return (
         <div style={{ padding: '24px' }}>
             {/* Summary cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                <StatCard icon={FileText} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Total Quotations" value={String(counts.All)} />
-                <StatCard icon={Send} gradient="linear-gradient(135deg, #3b82f6, #60a5fa)" label="Pending (Draft + Sent)" value={String(summary.pending)} />
-                <StatCard icon={CheckCircle2} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Accepted Value" value={fmt(summary.acceptedValue)} valueColor="#10b981" />
-                <StatCard icon={DollarSign} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Total Quoted Value" value={fmt(summary.totalValue)} />
+                <StatCard icon={FileText} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label={t('ui.people.crm.quotes.total')} value={String(counts.All)} />
+                <StatCard icon={Send} gradient="linear-gradient(135deg, #3b82f6, #60a5fa)" label={t('ui.people.crm.quotes.pending')} value={String(summary.pending)} />
+                <StatCard icon={CheckCircle2} gradient="linear-gradient(135deg, #10b981, #34d399)" label={t('ui.people.crm.quotes.acceptedValue')} value={fmt(summary.acceptedValue)} valueColor="#10b981" />
+                <StatCard icon={DollarSign} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={t('ui.people.crm.quotes.totalValue')} value={fmt(summary.totalValue)} />
             </div>
 
             {/* Toolbar */}
@@ -119,7 +128,7 @@ const QuotationsPage: React.FC = () => {
                 <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                     {(['All', ...QUOTE_STATUSES] as const).map(tab => (
                         <button key={tab} onClick={() => setStatusFilter(tab)} style={{ padding: '7px 14px', border: 'none', background: statusFilter === tab ? 'var(--color-primary)' : 'transparent', color: statusFilter === tab ? 'white' : 'var(--color-text-secondary)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            {tab}
+                            {qStatusLabel(tab)}
                             <span style={{ background: statusFilter === tab ? 'rgba(255,255,255,0.25)' : 'var(--color-bg)', padding: '1px 7px', borderRadius: '12px', fontSize: '10px', fontWeight: 700 }}>{counts[tab] || 0}</span>
                         </button>
                     ))}
@@ -127,13 +136,13 @@ const QuotationsPage: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ position: 'relative', width: '240px' }}>
                         <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                        <input type="text" placeholder="Search lead, quote #..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                        <input type="text" placeholder={t('ui.people.crm.quotes.searchPh')} value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
                     </div>
-                    <button className="secondary-button" onClick={() => fetchQuotations()} title="Refresh" style={{ padding: '9px 12px' }}>
+                    <button className="secondary-button" onClick={() => fetchQuotations()} title={t('ui.people.common.refresh')} style={{ padding: '9px 12px' }}>
                         <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} />
                     </button>
-                    <button className="primary-button" disabled={tableMissing || leads.length === 0} onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }} title={leads.length === 0 ? 'Add a lead first' : undefined}>
-                        <Plus size={18} /> New Quotation
+                    <button className="primary-button" disabled={tableMissing || leads.length === 0} onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }} title={leads.length === 0 ? t('ui.people.crm.inter.addLeadFirst') : undefined}>
+                        <Plus size={18} /> {t('ui.people.crm.quotes.new')}
                     </button>
                 </div>
             </div>
@@ -141,22 +150,22 @@ const QuotationsPage: React.FC = () => {
             {tableMissing ? (
                 <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
-                    <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>Database setup needed</p>
-                    <p style={{ fontSize: '13px' }}>Run <code>migrations/full_schema.sql</code> in your Supabase SQL editor, then Refresh.</p>
+                    <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>{t('ui.people.crm.dbSetup')}</p>
+                    <p style={{ fontSize: '13px' }}>{t('ui.people.crm.dbRun')} <code>migrations/full_schema.sql</code> {t('ui.people.crm.dbRunAfter')}</p>
                 </div>
             ) : (
                 <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
                     <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none', minWidth: '820px' }}>
                         <thead>
                             <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                                <th style={thStyle}>Quote #</th>
-                                <th style={thStyle}>Lead</th>
-                                <th style={thStyle}>Created</th>
-                                <th style={thStyle}>Valid Until</th>
-                                <th style={{ ...thStyle, textAlign: 'center' }}>Items</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
-                                <th style={{ ...thStyle, textAlign: 'center' }}>Status</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+                                <th style={thStyle}>{t('ui.people.crm.quotes.quoteNo')}</th>
+                                <th style={thStyle}>{t('ui.people.crm.lead')}</th>
+                                <th style={thStyle}>{t('ui.people.crm.leads.created')}</th>
+                                <th style={thStyle}>{t('ui.people.crm.quotes.validUntil')}</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>{t('ui.people.crm.quotes.items')}</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>{t('common.total')}</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>{t('ui.people.hr.status.label')}</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>{t('common.actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -164,7 +173,7 @@ const QuotationsPage: React.FC = () => {
                                 <tr><td colSpan={8} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', color: 'var(--color-text-secondary)' }}>
                                         <FileText size={40} style={{ opacity: 0.25 }} />
-                                        <p style={{ fontSize: '14px' }}>{search || statusFilter !== 'All' ? 'No quotations match your filters.' : 'No quotations yet. Create one for a lead.'}</p>
+                                        <p style={{ fontSize: '14px' }}>{search || statusFilter !== 'All' ? t('ui.people.crm.quotes.noMatch') : t('ui.people.crm.quotes.noneYet')}</p>
                                     </div>
                                 </td></tr>
                             ) : filtered.map((q, idx) => {
@@ -180,28 +189,28 @@ const QuotationsPage: React.FC = () => {
                                             {q.valid_until ? (
                                                 <span style={{ color: expired ? '#ef4444' : 'var(--color-text-secondary)', fontWeight: expired ? 600 : 400 }}>
                                                     {new Date(q.valid_until).toLocaleDateString('en-GB').replace(/\//g, '-')}
-                                                    {expired && <span style={{ marginLeft: '5px', fontSize: '10px', fontWeight: 700 }}>EXPIRED</span>}
+                                                    {expired && <span style={{ marginLeft: '5px', fontSize: '10px', fontWeight: 700 }}>{t('ui.people.crm.quotes.expired')}</span>}
                                                 </span>
                                             ) : '—'}
                                         </td>
                                         <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{q.items?.length || 0}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, fontSize: '14px' }}>{fmt(q.total_amount || 0)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'center' }}>
-                                            <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: sc.bg, color: sc.color }}>{q.status}</span>
+                                            <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: sc.bg, color: sc.color }}>{qStatusLabel(q.status)}</span>
                                         </td>
                                         <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
                                                 {q.status === 'Draft' && (
-                                                    <button onClick={() => updateQuotationStatus(q.id, 'Sent')} title="Mark Sent" style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px' }}><Send size={14} /></button>
+                                                    <button onClick={() => updateQuotationStatus(q.id, 'Sent')} title={t('ui.people.crm.quotes.markSent')} style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px' }}><Send size={14} /></button>
                                                 )}
                                                 {q.status === 'Sent' && (
                                                     <>
-                                                        <button onClick={() => updateQuotationStatus(q.id, 'Accepted')} title="Mark Accepted" style={{ background: 'rgba(16,185,129,0.1)', border: 'none', cursor: 'pointer', color: '#059669', padding: '6px', borderRadius: '6px' }}><CheckCircle2 size={14} /></button>
-                                                        <button onClick={() => updateQuotationStatus(q.id, 'Rejected')} title="Mark Rejected" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}><XCircle size={14} /></button>
+                                                        <button onClick={() => updateQuotationStatus(q.id, 'Accepted')} title={t('ui.people.crm.quotes.markAccepted')} style={{ background: 'rgba(16,185,129,0.1)', border: 'none', cursor: 'pointer', color: '#059669', padding: '6px', borderRadius: '6px' }}><CheckCircle2 size={14} /></button>
+                                                        <button onClick={() => updateQuotationStatus(q.id, 'Rejected')} title={t('ui.people.crm.quotes.markRejected')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}><XCircle size={14} /></button>
                                                     </>
                                                 )}
-                                                <button onClick={() => openModal(q)} title="Edit" style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px' }}><Edit size={14} /></button>
-                                                <button onClick={() => handleDelete(q)} title="Delete" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}><Trash2 size={14} /></button>
+                                                <button onClick={() => openModal(q)} title={t('common.edit')} style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px' }}><Edit size={14} /></button>
+                                                <button onClick={() => handleDelete(q)} title={t('common.delete')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}><Trash2 size={14} /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -212,52 +221,52 @@ const QuotationsPage: React.FC = () => {
                 </div>
             )}
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editing ? 'Edit Quotation' : 'New Quotation'}>
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editing ? t('ui.people.crm.quotes.edit') : t('ui.people.crm.quotes.new')}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '520px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px' }}>
                         <div>
-                            <label style={labelStyle}>Lead *</label>
+                            <label style={labelStyle}>{t('ui.people.crm.lead')} *</label>
                             <select className="search-input" style={{ width: '100%' }} value={leadId} onChange={e => setLeadId(e.target.value)}>
-                                <option value="" disabled>Select lead…</option>
+                                <option value="" disabled>{t('ui.people.crm.inter.selectLead')}</option>
                                 {leads.map(l => <option key={l.id} value={l.id}>{l.name}{l.company_name ? ` (${l.company_name})` : ''}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label style={labelStyle}>Status</label>
+                            <label style={labelStyle}>{t('ui.people.hr.status.label')}</label>
                             <select className="search-input" style={{ width: '100%' }} value={status} onChange={e => setStatus(e.target.value as Quotation['status'])}>
-                                {QUOTE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                                {QUOTE_STATUSES.map(s => <option key={s} value={s}>{qStatusLabel(s)}</option>)}
                             </select>
                         </div>
-                        <div><label style={labelStyle}>Valid Until</label><input type="date" className="search-input" style={{ width: '100%' }} value={validUntil} onChange={e => setValidUntil(e.target.value)} /></div>
+                        <div><label style={labelStyle}>{t('ui.people.crm.quotes.validUntil')}</label><input type="date" className="search-input" style={{ width: '100%' }} value={validUntil} onChange={e => setValidUntil(e.target.value)} /></div>
                     </div>
 
                     {/* Line items */}
                     <div>
-                        <label style={labelStyle}>Items</label>
+                        <label style={labelStyle}>{t('ui.people.crm.quotes.items')}</label>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {lines.map((l, idx) => (
                                 <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.4fr 0.7fr 0.9fr auto', gap: '8px', alignItems: 'center' }}>
                                     <select className="search-input" value="" onChange={e => pickProduct(idx, e.target.value)}>
-                                        <option value="">Pick product…</option>
+                                        <option value="">{t('ui.people.crm.quotes.pickProduct')}</option>
                                         {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                     </select>
-                                    <input className="search-input" placeholder="Item name" value={l.name || ''} onChange={e => setLine(idx, { name: e.target.value })} />
-                                    <input type="number" className="search-input" placeholder="Qty" min="0" value={l.quantity ?? ''} onChange={e => setLine(idx, { quantity: Number(e.target.value) })} />
-                                    <input type="number" className="search-input" placeholder="Unit $" min="0" step="0.01" value={l.unit_price ?? ''} onChange={e => setLine(idx, { unit_price: Number(e.target.value) })} />
-                                    <button className="icon-button" style={{ color: '#EF4444' }} onClick={() => setLines(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev)} title="Remove"><X size={16} /></button>
+                                    <input className="search-input" placeholder={t('ui.people.crm.quotes.itemName')} value={l.name || ''} onChange={e => setLine(idx, { name: e.target.value })} />
+                                    <input type="number" className="search-input" placeholder={t('ui.people.common.qty')} min="0" value={l.quantity ?? ''} onChange={e => setLine(idx, { quantity: Number(e.target.value) })} />
+                                    <input type="number" className="search-input" placeholder={t('ui.people.crm.quotes.unitPrice')} min="0" step="0.01" value={l.unit_price ?? ''} onChange={e => setLine(idx, { unit_price: Number(e.target.value) })} />
+                                    <button className="icon-button" style={{ color: '#EF4444' }} onClick={() => setLines(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev)} title={t('ui.people.common.remove')}><X size={16} /></button>
                                 </div>
                             ))}
                         </div>
                         <button className="secondary-button" style={{ marginTop: '8px', fontSize: '13px' }} onClick={() => setLines(prev => [...prev, { name: '', quantity: 1, unit_price: 0 }])}>
-                            <Plus size={14} /> Add line
+                            <Plus size={14} /> {t('ui.people.crm.quotes.addLine')}
                         </button>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)', paddingTop: '14px' }}>
-                        <div style={{ fontSize: '14px' }}>Total: <strong style={{ fontSize: '18px', color: 'var(--color-primary)' }}>{fmt(quoteTotal)}</strong></div>
+                        <div style={{ fontSize: '14px' }}>{t('common.total')}: <strong style={{ fontSize: '18px', color: 'var(--color-primary)' }}>{fmt(quoteTotal)}</strong></div>
                         <div style={{ display: 'flex', gap: '12px' }}>
-                            <button className="secondary-button" onClick={() => setIsModalOpen(false)}>Cancel</button>
-                            <button className="primary-button" disabled={saving || !leadId || quoteTotal <= 0} onClick={handleSave}>{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Create Quotation')}</button>
+                            <button className="secondary-button" onClick={() => setIsModalOpen(false)}>{t('common.cancel')}</button>
+                            <button className="primary-button" disabled={saving || !leadId || quoteTotal <= 0} onClick={handleSave}>{saving ? t('ui.people.common.saving') : (editing ? t('ui.people.common.saveChanges') : t('ui.people.crm.quotes.create'))}</button>
                         </div>
                     </div>
                 </div>

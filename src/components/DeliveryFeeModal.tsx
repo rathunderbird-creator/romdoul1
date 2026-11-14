@@ -8,6 +8,7 @@ import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
 import CashBankOptions from './CashBankOptions';
 import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
 import { accountCurrency, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { useTx } from './useTx';
 
 // The most a delivery fee plausibly is, in USD: above it the field warns
 // (the Romdoul2 incident: a $2 fee typed as 8000 riel was booked as $8,000).
@@ -28,6 +29,7 @@ const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset
 const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onConfirm }) => {
     const { paymentMethods, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
+    const tx = useTx();
     const field = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: DELIVERY_FEE_MAX_PLAUSIBLE_USD });
     const [method, setMethod] = useState('');
     const [date, setDate] = useState(today());
@@ -81,8 +83,8 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
                             <Truck size={19} />
                         </div>
                         <div>
-                            <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>Paid for Delivery Fee</h2>
-                            <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '1px 0 0 0' }}>{order.customer?.name || 'Customer'} · Order total ${order.total.toFixed(2)}</p>
+                            <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>{tx('ui.components.payStatus.pdFeeTitle', 'Paid for Delivery Fee')}</h2>
+                            <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '1px 0 0 0' }}>{order.customer?.name || tx('ui.components.common.customer', 'Customer')} · {tx('ui.components.deliveryFee.orderTotal', 'Order total')} ${order.total.toFixed(2)}</p>
                         </div>
                     </div>
                     <button onClick={onClose} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -94,11 +96,11 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
                 <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <MoneyInput
                         field={field}
-                        label="Delivery Fee Amount"
+                        label={tx('ui.components.deliveryFee.amount', 'Delivery Fee Amount')}
                         required
                         autoFocus
                         allowKhr
-                        placeholder={field.currency === 'KHR' ? 'e.g. 8000' : 'e.g. 1.50'}
+                        placeholder={field.currency === 'KHR' ? tx('ui.components.common.eg', 'e.g. {v}', { v: '8000' }) : tx('ui.components.common.eg', 'e.g. {v}', { v: '1.50' })}
                         onToggleCurrency={coupling.onToggleCurrency}
                         khrUnavailableReason={coupling.khrUnavailableReason}
                         labelStyle={labelStyle}
@@ -106,40 +108,40 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
                     />
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
-                            <label style={labelStyle}>Pay By</label>
+                            <label style={labelStyle}>{tx('orders.payBy', 'Pay By')}</label>
                             <select value={method} onChange={e => setMethod(e.target.value)} style={inputStyle}>
                                 {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label style={labelStyle}>Date</label>
+                            <label style={labelStyle}>{tx('orders.date', 'Date')}</label>
                             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
                         </div>
                     </div>
                     <div>
-                        <label style={labelStyle}>Received into *</label>
+                        <label style={labelStyle}>{tx('ui.components.common.receivedInto', 'Received into')} *</label>
                         <select
                             value={depositAccountId}
                             onChange={e => coupling.onAccountChange(e.target.value)}
                             style={{ ...inputStyle, border: `1px solid ${paymentAccounts.length > 0 && !depositAccountId ? '#DC2626' : 'var(--color-border)'}` }}
                         >
-                            <option value="">Bank or cash account…</option>
+                            <option value="">{tx('ui.components.common.bankOrCash', 'Bank or cash account…')}</option>
                             <CashBankOptions accounts={paymentAccounts} />
                         </select>
                         {paymentAccounts.length === 0 && (
                             <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                No cash or bank accounts in the Chart of Accounts yet — the fee saves without one.
+                                {tx('ui.components.deliveryFee.noAccounts', 'No cash or bank accounts in the Chart of Accounts yet — the fee saves without one.')}
                             </div>
                         )}
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '8px 10px' }}>
-                        The order is treated as cancelled — only this delivery fee is posted straight to Revenue (account 4005 · Delivery Fee Revenue), not the order total.
+                        {tx('ui.components.deliveryFee.note', 'The order is treated as cancelled — only this delivery fee is posted straight to Revenue (account 4005 · Delivery Fee Revenue), not the order total.')}
                     </div>
                 </div>
 
                 {/* Footer */}
                 <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                    <button className="secondary-button" onClick={onClose} style={{ padding: '10px 18px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
+                    <button className="secondary-button" onClick={onClose} style={{ padding: '10px 18px', borderRadius: '10px', fontWeight: 600 }}>{tx('common.cancel', 'Cancel')}</button>
                     <button
                         className="primary-button"
                         disabled={!valid}
@@ -159,7 +161,7 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
                         }}
                         style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, background: '#0E7490', opacity: valid ? 1 : 0.5, cursor: valid ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}
                     >
-                        <CheckCircle2 size={16} /> Save
+                        <CheckCircle2 size={16} /> {tx('common.save', 'Save')}
                     </button>
                 </div>
             </div>

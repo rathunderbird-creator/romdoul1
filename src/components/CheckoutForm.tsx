@@ -11,6 +11,7 @@ import { useLocationTree } from '../hooks/useLocationTree';
 import { findByName, locLabel, pickerOptions } from '../utils/locationTree';
 
 import { sendTelegramOrderNotification } from '../utils/telegram';
+import { useTx, orderStatusDisplay } from './useTx';
 import { amountWarningLine, amountWarningText, checkKhrAmount, checkUsdAmount, formatKhr, formatRate, formatUsd, khrMeta, resolveMoney, shopRate, usdToKhr } from '../utils/currency';
 
 interface CheckoutFormProps {
@@ -52,6 +53,7 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
     const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, paymentClaimsReady, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
     const { showToast } = useToast();
+    const tx = useTx();
     const rate = shopRate(khrExchangeRate);
     // Amount received typed in riel: the riel figure is kept here and the
     // USD (at the shop rate, snapped to the total when within 3 cents) goes
@@ -405,7 +407,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         const stockAlreadyDeducted = ['Shipped', 'Delivered', 'Returned'].includes(orderToEdit?.shipping?.status || '');
         const claimed = stockAlreadyDeducted ? qty : existingQty + qty;
         if (claimed > product.stock) {
-            showToast(`Only ${product.stock} in stock for ${product.name}`, 'error');
+            showToast(tx('ui.components.checkout.onlyInStock', 'Only {n} in stock for {name}', { n: product.stock, name: product.name }), 'error');
             return;
         }
 
@@ -437,32 +439,32 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         }
 
         if (!formData.customerName) {
-            showToast('Customer name is required', 'error');
+            showToast(tx('ui.components.checkout.req.customerName', 'Customer name is required'), 'error');
             return;
         }
         if (!formData.customerPhone) {
-            showToast('Phone number is required', 'error');
+            showToast(tx('ui.components.checkout.req.phone', 'Phone number is required'), 'error');
             return;
         }
         if (!formData.city) {
-            showToast('City / Province is required', 'error');
+            showToast(tx('ui.components.checkout.req.city', 'City / Province is required'), 'error');
             return;
         }
         if (!formData.pageName) {
-            showToast('Page Source is required', 'error');
+            showToast(tx('ui.components.checkout.req.page', 'Page Source is required'), 'error');
             return;
         }
         if (!formData.salesman) {
-            showToast('Salesman is required', 'error');
+            showToast(tx('ui.components.checkout.req.salesman', 'Salesman is required'), 'error');
             return;
         }
 
         if (!formData.shippingCompany) {
-            showToast('Shipping Company is required', 'error');
+            showToast(tx('ui.components.checkout.req.shippingCompany', 'Shipping Company is required'), 'error');
             return;
         }
         if (cartItems.length === 0) {
-            showToast('Add at least one product', 'error');
+            showToast(tx('ui.components.checkout.req.product', 'Add at least one product'), 'error');
             return;
         }
 
@@ -597,10 +599,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     // Refused or only partly saved (e.g. the status change was refused);
                     // the reason has been shown. Keep the form open, and no status
                     // notification for a change that didn't happen.
-                    showToast('Not all changes were saved — see the message shown.', 'error');
+                    showToast(tx('ui.components.checkout.notAllSaved', 'Not all changes were saved — see the message shown.'), 'error');
                     return;
                 }
-                showToast('Order updated', 'success');
+                showToast(tx('ui.components.checkout.orderUpdated', 'Order updated'), 'success');
 
                 // Send Telegram Notification if status changed
                 if (orderToEdit.shipping?.status !== formData.shippingStatus) {
@@ -627,8 +629,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 // From what was saved: if attaching the claim failed, the store
                 // already said so and dropped it.
                 showToast(createdSale.paymentClaim
-                    ? `Order created. The ${createdSale.paymentClaim.status === 'Paid' ? 'payment' : 'deposit'} of $${createdSale.paymentClaim.amount.toFixed(2)} waits for Admin, Customer Care or an Accountant to confirm it.`
-                    : 'Order created', 'success');
+                    ? (createdSale.paymentClaim.status === 'Paid'
+                        ? tx('ui.components.checkout.createdPaymentWaits', 'Order created. The payment of ${amt} waits for Admin, Customer Care or an Accountant to confirm it.', { amt: createdSale.paymentClaim.amount.toFixed(2) })
+                        : tx('ui.components.checkout.createdDepositWaits', 'Order created. The deposit of ${amt} waits for Admin, Customer Care or an Accountant to confirm it.', { amt: createdSale.paymentClaim.amount.toFixed(2) }))
+                    : tx('ui.components.checkout.orderCreated', 'Order created'), 'success');
 
                 // Send Telegram Notification
                 if (telegramConfigs && telegramConfigs.length > 0) {
@@ -640,14 +644,14 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         if (config.botToken && config.chatId) {
                             sendTelegramOrderNotification(config.botToken, config.chatId, createdSale, sequenceNumber, config.messageTemplate).catch(err => {
                                 console.error('Failed to send Telegram notification:', err);
-                                showToast(`Telegram Error: ${err.message}`, 'error');
+                                showToast(tx('ui.components.checkout.telegramError', 'Telegram Error: {msg}', { msg: err.message }), 'error');
                             });
                         }
                     });
                 } else if (telegramBotToken && telegramChatId) {
                     sendTelegramOrderNotification(telegramBotToken, telegramChatId, createdSale, sequenceNumber).catch(err => {
                         console.error('Failed to send Telegram notification:', err);
-                        showToast(`Telegram Error: ${err.message}`, 'error');
+                        showToast(tx('ui.components.checkout.telegramError', 'Telegram Error: {msg}', { msg: err.message }), 'error');
                     });
                 }
             }
@@ -659,7 +663,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             // that hasn't run migrations/add_order_payment_functions.sql it
             // names the file to run, and a retry can't succeed until then.
             const message = error instanceof Error && error.message ? error.message : '';
-            showToast(message || 'Failed to save order. Please try again.', 'error');
+            showToast(message || tx('ui.components.checkout.saveFailed', 'Failed to save order. Please try again.'), 'error');
         } finally {
             setIsSubmitting(false);
         }
@@ -669,15 +673,15 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         <div style={{ padding: isMobile ? '12px' : '8px', height: '100%', overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: isMobile ? '12px' : '20px', alignItems: 'center' }}>
                 <div>
-                    <h2 style={{ fontSize: isMobile ? '18px' : '24px', fontWeight: '700', color: 'var(--color-text-main)' }}>{orderToEdit ? 'Edit Order' : 'Checkout'}</h2>
-                    {!isMobile && <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Complete the order information below</p>}
+                    <h2 style={{ fontSize: isMobile ? '18px' : '24px', fontWeight: '700', color: 'var(--color-text-main)' }}>{orderToEdit ? tx('ui.components.orderDetails.editOrder', 'Edit Order') : tx('ui.components.pos.checkout', 'Checkout')}</h2>
+                    {!isMobile && <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>{tx('ui.components.checkout.subtitle', 'Complete the order information below')}</p>}
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                     {!isMobile && (
                         <>
-                            <button onClick={onCancel} disabled={isSubmitting} style={{ padding: '10px 20px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: isSubmitting ? 'not-allowed' : 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s', fontSize: '14px', opacity: isSubmitting ? 0.7 : 1 }}>Cancel</button>
+                            <button onClick={onCancel} disabled={isSubmitting} style={{ padding: '10px 20px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', cursor: isSubmitting ? 'not-allowed' : 'pointer', color: 'var(--color-text-secondary)', fontWeight: 600, transition: 'all 0.2s', fontSize: '14px', opacity: isSubmitting ? 0.7 : 1 }}>{tx('common.cancel', 'Cancel')}</button>
                             <button onClick={handleSubmit} disabled={isSubmitting || !!detectedScammer} className="primary-button" style={{ padding: '10px 32px', borderRadius: '10px', fontSize: '15px', boxShadow: detectedScammer ? 'none' : '0 4px 10px rgba(239, 68, 68, 0.2)', cursor: (isSubmitting || detectedScammer) ? 'not-allowed' : 'pointer', opacity: (isSubmitting || detectedScammer) ? 0.5 : 1, background: detectedScammer ? '#9CA3AF' : undefined }}>
-                                {detectedScammer ? '⛔ Scammer — Blocked' : isSubmitting ? 'Saving...' : (orderToEdit ? 'Update Order' : 'Confirm Order')}
+                                {detectedScammer ? tx('ui.components.checkout.scammerBlocked', '⛔ Scammer — Blocked') : isSubmitting ? tx('ui.components.checkout.saving', 'Saving...') : (orderToEdit ? tx('ui.components.checkout.updateOrder', 'Update Order') : tx('ui.components.checkout.confirmOrder', 'Confirm Order'))}
                             </button>
                         </>
                     )}
@@ -1091,7 +1095,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             </div>
 
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Delivery Status</label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>{tx('ui.components.checkout.deliveryStatus', 'Delivery Status')}</label>
                                 {/* Locked while editing. Changing status here bypassed the shipping and
                                     payment prompts and applied stock movements as a side effect of an
                                     unrelated save, which is how stock ended up mis-counted. Status is
@@ -1102,18 +1106,18 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     value={formData.shippingStatus}
                                     onChange={e => setFormData({ ...formData, shippingStatus: e.target.value as any })}
                                     disabled={currentUser?.roleId === 'salesman' || !!orderToEdit}
-                                    title={orderToEdit ? 'Change delivery status from the order list' : undefined}
+                                    title={orderToEdit ? tx('ui.components.checkout.changeFromList', 'Change delivery status from the order list') : undefined}
                                 >
-                                    {[{id: 'Drafted', name: 'Drafted'},{id: 'Pending', name: 'Pending'},{id: 'Confirmed', name: 'Confirmed'},{id: 'Shipped', name: 'Shipped'},{id: 'Delivered', name: 'Delivered'},{id: 'Returned', name: 'Returning'},{id: 'Cancelled', name: 'Cancelled'}].map(s => <option key={s.id} value={s.id} disabled={!orderToEdit && s.id !== 'Drafted'}>{s.name}</option>)}
+                                    {[{id: 'Drafted', name: 'Drafted'},{id: 'Pending', name: 'Pending'},{id: 'Confirmed', name: 'Confirmed'},{id: 'Shipped', name: 'Shipped'},{id: 'Delivered', name: 'Delivered'},{id: 'Returned', name: 'Returning'},{id: 'Cancelled', name: 'Cancelled'}].map(s => <option key={s.id} value={s.id} disabled={!orderToEdit && s.id !== 'Drafted'}>{orderStatusDisplay(tx, s.id)}</option>)}
                                 </select>
                                 {orderToEdit && (
                                     <p style={{ margin: '6px 0 0', fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                                        Locked while editing. Change it from the Order Status column in the order list so stock is counted correctly.
+                                        {tx('ui.components.checkout.lockedWhileEditing', 'Locked while editing. Change it from the Order Status column in the order list so stock is counted correctly.')}
                                     </p>
                                 )}
                             </div>
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Payment Status</label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>{tx('ui.components.checkout.paymentStatus', 'Payment Status')}</label>
                                 <select
                                     className="search-input"
                                     style={{ width: '100%', padding: '10px 12px', background: currentUser?.roleId === 'salesman' ? 'var(--color-bg)' : 'white', opacity: currentUser?.roleId === 'salesman' ? 0.7 : 1 }}
@@ -1121,7 +1125,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}
                                     disabled={currentUser?.roleId === 'salesman'}
                                 >
-                                    {[{id: 'Unpaid', name: 'Unpaid'}, {id: 'Deposit', name: 'Deposit'}, {id: 'Paid', name: 'Paid'}, {id: 'Get File', name: 'Get File'}, {id: 'Cancel', name: 'Cancel'}].map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    {[{id: 'Unpaid', name: 'Unpaid'}, {id: 'Deposit', name: 'Deposit'}, {id: 'Paid', name: 'Paid'}, {id: 'Get File', name: 'Get File'}, {id: 'Cancel', name: 'Cancel'}].map(s => <option key={s.id} value={s.id}>{tx(`dashboard2.pay.${s.id}`, s.name)}</option>)}
                                 </select>
                             </div>
                         </div>
@@ -1209,7 +1213,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     style={{ width: '100%', padding: '10px 12px', background: formData.paymentAfterDelivery ? 'var(--color-bg)' : 'white' }}
                                     step={rielMode ? '100' : '0.01'}
                                     value={rielMode ? rielTyped : formData.amountReceived}
-                                    placeholder={rielMode ? 'e.g. 82000' : undefined}
+                                    placeholder={rielMode ? tx('ui.components.common.eg', 'e.g. {v}', { v: '82000' }) : undefined}
                                     onChange={e => {
                                         const raw = e.target.value;
                                         const subtotalNow = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -1252,7 +1256,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             )}
                                             {currentUser?.roleId === 'salesman' && usdNow > 0 && (!orderToEdit || orderToEdit.paymentStatus === 'Unpaid') && (
                                                 <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '6px 0 0 0' }}>
-                                                    Admin, Customer Care or an Accountant confirms this payment on the Orders page before it counts as received.
+                                                    {tx('ui.components.checkout.salesmanClaimNote', 'Admin, Customer Care or an Accountant confirms this payment on the Orders page before it counts as received.')}
                                                 </p>
                                             )}
                                         </>
@@ -1264,7 +1268,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
                                     return !formData.paymentAfterDelivery && num > 0 && num < totalNow ? (
                                         <p style={{ fontSize: '11px', color: '#7E22CE', margin: '6px 0 0 0', fontWeight: 600 }}>
-                                            កក់ប្រាក់ ${num.toFixed(2)} — saved as Deposit · balance ${(totalNow - num).toFixed(2)}
+                                            {tx('ui.components.checkout.depositLine', 'កក់ប្រាក់ ${amt} — saved as Deposit · balance ${bal}', { amt: num.toFixed(2), bal: (totalNow - num).toFixed(2) })}
                                         </p>
                                     ) : null;
                                 })()}
@@ -1385,7 +1389,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 <div style={{ paddingTop: '12px', marginTop: 'auto', display: 'flex', gap: '12px', background: 'var(--color-surface)', padding: '12px', borderTop: '1px solid var(--color-border)', position: 'sticky', bottom: 0, zIndex: 1000 }}>
                     <button onClick={onCancel} disabled={isSubmitting} style={{ flex: 1, padding: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', opacity: isSubmitting ? 0.7 : 1 }}>បោះបង់</button>
                     <button onClick={handleSubmit} disabled={isSubmitting || !!detectedScammer} className="primary-button" style={{ flex: 2, padding: '12px', borderRadius: '12px', fontSize: '16px', fontWeight: 700, boxShadow: detectedScammer ? 'none' : '0 4px 12px rgba(239, 68, 68, 0.2)', opacity: (isSubmitting || detectedScammer) ? 0.5 : 1, background: detectedScammer ? '#9CA3AF' : undefined }}>
-                        {detectedScammer ? '⛔ Scammer' : isSubmitting ? 'កំពុងរក្សាទុក...' : (orderToEdit ? 'កែប្រែការកម្ម៉ង់' : 'បញ្ជាក់ការកម្ម៉ង់')}
+                        {detectedScammer ? tx('ui.components.checkout.scammer', '⛔ Scammer') : isSubmitting ? 'កំពុងរក្សាទុក...' : (orderToEdit ? 'កែប្រែការកម្ម៉ង់' : 'បញ្ជាក់ការកម្ម៉ង់')}
                     </button>
                 </div>
             )}

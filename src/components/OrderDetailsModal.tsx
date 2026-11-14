@@ -9,6 +9,7 @@ import { generateOrderCopyText } from '../utils/orderUtils';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import type { Sale } from '../types';
+import { useTx } from './useTx';
 
 interface OrderDetailsModalProps {
     isOpen: boolean;
@@ -23,6 +24,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
     const { sales, hasPermission } = useStore();
     const { showToast } = useToast();
     const navigate = useNavigate();
+    const tx = useTx();
 
     // `sales` is only a recent, paginated slice of the real orders table (see
     // StoreContext.tsx's fetchAllSales .limit(50) + Orders.tsx's infinite
@@ -57,7 +59,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
         if (!order) return;
         const text = generateOrderCopyText(order, sales);
         navigator.clipboard.writeText(text).then(() => {
-            showToast('Order info copied to clipboard', 'success');
+            showToast(tx('ui.components.orderDetails.copied', 'Order info copied to clipboard'), 'success');
         });
     };
 
@@ -71,22 +73,22 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
         <Modal
             isOpen={isOpen}
             onClose={onClose}
-            title={order ? `Order #${order.id.substring(0, 8)}` : 'Order Details'}
+            title={order ? tx('ui.components.orderDetails.orderNo', 'Order #{id}', { id: order.id.substring(0, 8) }) : tx('ui.components.orderDetails.title', 'Order Details')}
             width="800px"
         >
             {!order && isFetchingOrder ? (
                 <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                    Loading order…
+                    {tx('ui.components.orderDetails.loadingOrder', 'Loading order…')}
                 </div>
             ) : !order ? (
                 <div style={{ padding: '40px', textAlign: 'center' }}>
-                    <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px' }}>Order Not Found</h2>
+                    <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px' }}>{tx('ui.components.orderDetails.notFound', 'Order Not Found')}</h2>
                     <button
                         onClick={onClose}
                         className="secondary-button"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
                     >
-                        <ArrowLeft size={16} /> Close
+                        <ArrowLeft size={16} /> {tx('common.close', 'Close')}
                     </button>
                 </div>
             ) : (
@@ -98,7 +100,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
                                 className="secondary-button"
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                             >
-                                <Edit size={16} /> Edit Order
+                                <Edit size={16} /> {tx('ui.components.orderDetails.editOrder', 'Edit Order')}
                             </button>
                         )}
                         <button
@@ -106,7 +108,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
                             className="secondary-button"
                             style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                         >
-                            <Copy size={16} /> Copy Info
+                            <Copy size={16} /> {tx('ui.components.orderDetails.copyInfo', 'Copy Info')}
                         </button>
                     </div>
 

@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Edit, Trash2, Mail, Phone, MapPin, Search, Building2, FileText, Users, AlertTriangle, DollarSign, ArrowUpDown, Printer, Download, RefreshCw } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useMobile } from '../../hooks/useMobile';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../components/MobileFilterKit';
 import { Modal } from '../../components';
@@ -32,9 +34,9 @@ type StatusFilter = 'All' | 'Active' | 'Inactive';
 type SortOption = 'name' | 'balance' | 'newest';
 
 // Active/Inactive pill — same shape as Supplier Bills/Payments' status chips.
-const supplierChip = (active: boolean) => (
+const supplierChip = (active: boolean, label: string) => (
     <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', whiteSpace: 'nowrap', background: active ? 'rgba(16, 185, 129, 0.1)' : 'var(--color-bg)', color: active ? '#10b981' : 'var(--color-text-secondary)' }}>
-        {active ? 'Active' : 'Inactive'}
+        {label}
     </span>
 );
 
@@ -56,6 +58,7 @@ const toolbarBtnStyle: React.CSSProperties = {
 const SuppliersPage = () => {
     const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
     const { suppliers, purchaseOrders, isLoading, fetchSuppliers, fetchPurchaseOrders, saveSupplier, deleteSupplier } = useProcurement();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -79,13 +82,13 @@ const SuppliersPage = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Suppliers</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage vendor and supplier information</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('nav.suppliers')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.supplier.list.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchSuppliers();
@@ -189,7 +192,7 @@ const SuppliersPage = () => {
 
     const handleDelete = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm('Are you sure you want to delete this supplier?')) {
+        if (confirm(t('ui.supplier.list.confirmDelete'))) {
             await deleteSupplier(id);
         }
     };
@@ -237,9 +240,9 @@ const SuppliersPage = () => {
     };
 
     const statusTabs: { label: string; value: StatusFilter; count: number }[] = [
-        { label: 'All', value: 'All', count: summaryStats.total },
-        { label: 'Active', value: 'Active', count: summaryStats.activeCount },
-        { label: 'Inactive', value: 'Inactive', count: summaryStats.inactiveCount },
+        { label: t('common.all'), value: 'All', count: summaryStats.total },
+        { label: t('ui.supplier.common.active'), value: 'Active', count: summaryStats.activeCount },
+        { label: t('ui.supplier.common.inactive'), value: 'Inactive', count: summaryStats.inactiveCount },
     ];
 
     return (
@@ -248,17 +251,17 @@ const SuppliersPage = () => {
                 {/* Summary Stats Bar — mobile: four compact cards on one row */}
                 {isMobile ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' }}>
-                        <MiniStatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Suppliers" value={String(summaryStats.total)} />
-                        <MiniStatCard icon={Building2} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Active" value={String(summaryStats.activeCount)} valueColor="#10b981" />
-                        <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Overdue" value={String(summaryStats.overdueCount)} valueColor={summaryStats.overdueCount > 0 ? '#ef4444' : undefined} />
-                        <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Balance" value={formatCurrency(summaryStats.totalOutstanding)} valueColor={summaryStats.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
+                        <MiniStatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label={t('nav.suppliers')} value={String(summaryStats.total)} />
+                        <MiniStatCard icon={Building2} gradient="linear-gradient(135deg, #10b981, #34d399)" label={t('ui.supplier.common.active')} value={String(summaryStats.activeCount)} valueColor="#10b981" />
+                        <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={t('ui.supplier.common.overdue')} value={String(summaryStats.overdueCount)} valueColor={summaryStats.overdueCount > 0 ? '#ef4444' : undefined} />
+                        <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label={t('ui.supplier.common.balance')} value={formatCurrency(summaryStats.totalOutstanding)} valueColor={summaryStats.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
                     </div>
                 ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                    <SummaryCard color="#6366f1" label="Total Suppliers" value={String(summaryStats.total)} sub={`${summaryStats.activeCount} active · ${summaryStats.inactiveCount} inactive`} />
-                    <SummaryCard color="#10B981" label="Active" value={String(summaryStats.activeCount)} sub={`of ${summaryStats.total} suppliers`} />
-                    <SummaryCard color={summaryStats.overdueCount > 0 ? '#EF4444' : '#D97706'} label="Overdue" value={String(summaryStats.overdueCount)} sub={summaryStats.overdueCount === 1 ? 'supplier past due' : 'suppliers past due'} />
-                    <SummaryCard color={summaryStats.totalOutstanding > 0 ? '#EF4444' : '#10B981'} label="Outstanding Balance" value={formatCurrency(summaryStats.totalOutstanding)} sub="unpaid across all suppliers" />
+                    <SummaryCard color="#6366f1" label={t('ui.supplier.list.totalSuppliers')} value={String(summaryStats.total)} sub={fill(t('ui.supplier.list.activeInactiveSub'), { active: summaryStats.activeCount, inactive: summaryStats.inactiveCount })} />
+                    <SummaryCard color="#10B981" label={t('ui.supplier.common.active')} value={String(summaryStats.activeCount)} sub={fill(t('ui.supplier.list.ofNSuppliers'), { n: summaryStats.total })} />
+                    <SummaryCard color={summaryStats.overdueCount > 0 ? '#EF4444' : '#D97706'} label={t('ui.supplier.common.overdue')} value={String(summaryStats.overdueCount)} sub={summaryStats.overdueCount === 1 ? t('ui.supplier.list.pastDueOne') : t('ui.supplier.list.pastDueMany')} />
+                    <SummaryCard color={summaryStats.totalOutstanding > 0 ? '#EF4444' : '#10B981'} label={t('ui.supplier.list.outstandingBalance')} value={formatCurrency(summaryStats.totalOutstanding)} sub={t('ui.supplier.list.unpaidAcrossAll')} />
                 </div>
                 )}
 
@@ -268,7 +271,7 @@ const SuppliersPage = () => {
                         <MobileSearchBar
                             searchValue={searchQuery}
                             onSearchChange={setSearchQuery}
-                            placeholder="Search suppliers..."
+                            placeholder={t('ui.supplier.list.searchPlaceholder')}
                             activeCount={(statusFilter !== 'All' ? 1 : 0)}
                             onOpenFilter={() => setIsFilterDrawerOpen(true)}
                             onAdd={() => handleOpenModal()}
@@ -279,17 +282,17 @@ const SuppliersPage = () => {
                             onClear={() => { setSearchQuery(''); setStatusFilter('All'); setSortBy('name'); }}
                             searchValue={searchQuery}
                             onSearchChange={setSearchQuery}
-                            searchPlaceholder="Search suppliers..."
+                            searchPlaceholder={t('ui.supplier.list.searchPlaceholder')}
                         >
                             <MobileChipGroup
-                                title="Status"
+                                title={t('ui.supplier.common.status')}
                                 options={statusTabs.map(t => ({ value: t.value, label: t.label, count: t.count }))}
                                 selected={statusFilter}
                                 onSelect={(v) => setStatusFilter(v as any)}
                             />
                             <MobileChipGroup
-                                title="Sort By"
-                                options={[{ value: 'name', label: 'Name' }, { value: 'balance', label: 'Balance' }, { value: 'newest', label: 'Newest' }]}
+                                title={t('ui.supplier.list.sortBy')}
+                                options={[{ value: 'name', label: t('ui.supplier.list.sortName') }, { value: 'balance', label: t('ui.supplier.common.balance') }, { value: 'newest', label: t('ui.supplier.list.sortNewest') }]}
                                 selected={sortBy}
                                 onSelect={(v) => setSortBy(v as any)}
                             />
@@ -350,9 +353,9 @@ const SuppliersPage = () => {
                                     cursor: 'pointer',
                                 }}
                             >
-                                <option value="name">Sort by Name</option>
-                                <option value="balance">Sort by Balance</option>
-                                <option value="newest">Sort by Newest</option>
+                                <option value="name">{t('ui.supplier.list.sortByName')}</option>
+                                <option value="balance">{t('ui.supplier.list.sortByBalance')}</option>
+                                <option value="newest">{t('ui.supplier.list.sortByNewest')}</option>
                             </select>
                         </div>
                     </div>
@@ -364,23 +367,23 @@ const SuppliersPage = () => {
                             <input
                                 type="text"
                                 className="input-field"
-                                placeholder="Search suppliers..."
+                                placeholder={t('ui.supplier.list.searchPlaceholder')}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px' }}
                             />
                         </div>
-                        <button onClick={() => { fetchSuppliers(); fetchPurchaseOrders(); }} title="Reload" style={{ ...toolbarBtnStyle, padding: '9px 10px' }}>
+                        <button onClick={() => { fetchSuppliers(); fetchPurchaseOrders(); }} title={t('ui.supplier.common.reload')} style={{ ...toolbarBtnStyle, padding: '9px 10px' }}>
                             <RefreshCw size={14} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
                         </button>
-                        <button onClick={printList} disabled={isLoading} style={{ ...toolbarBtnStyle, opacity: isLoading ? 0.5 : 1 }}><Printer size={14} /> Print list</button>
-                        <button onClick={exportCsv} disabled={isLoading} style={{ ...toolbarBtnStyle, opacity: isLoading ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
+                        <button onClick={printList} disabled={isLoading} style={{ ...toolbarBtnStyle, opacity: isLoading ? 0.5 : 1 }}><Printer size={14} /> {t('ui.supplier.common.printList')}</button>
+                        <button onClick={exportCsv} disabled={isLoading} style={{ ...toolbarBtnStyle, opacity: isLoading ? 0.5 : 1 }}><Download size={14} /> {t('ui.supplier.common.exportCsv')}</button>
                         <button
                             className="primary-button"
                             onClick={() => handleOpenModal()}
                             style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '10px', fontWeight: 600, boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap' }}
                         >
-                            <Plus size={18} /> New Supplier
+                            <Plus size={18} /> {t('ui.supplier.list.newSupplier')}
                         </button>
                     </div>
                 </div>
@@ -390,11 +393,11 @@ const SuppliersPage = () => {
                 {isMobile ? (
                     <div className="glass-panel" style={{ borderRadius: '16px', padding: 0, overflow: 'hidden' }}>
                         {isLoading ? (
-                            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading suppliers...</div>
+                            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.list.loading')}</div>
                         ) : filteredSuppliers.length === 0 ? (
                             <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                                 <Building2 size={36} style={{ opacity: 0.3, margin: '0 auto 10px', display: 'block' }} />
-                                No suppliers found.
+                                {t('ui.supplier.list.noneFoundDot')}
                             </div>
                         ) : (
                             filteredSuppliers.map(supplier => {
@@ -416,14 +419,14 @@ const SuppliersPage = () => {
                                             <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{supplier.name}</div>
                                             <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                 {[supplier.contact_name, supplier.phone].filter(Boolean).join(' · ') || '—'}
-                                                {bal.poCount > 0 && ` · ${bal.poCount} PO${bal.poCount === 1 ? '' : 's'}`}
+                                                {bal.poCount > 0 && fill(bal.poCount === 1 ? t('ui.supplier.list.poCountOne') : t('ui.supplier.list.poCountMany'), { n: bal.poCount })}
                                             </div>
                                         </div>
                                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                             <div style={{ fontSize: '13px', fontWeight: 800, color: bal.balance > 0.005 ? '#ef4444' : '#10b981', fontVariantNumeric: 'tabular-nums' }}>
                                                 {formatCurrency(bal.balance)}
                                             </div>
-                                            {bal.overdue && <div style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444' }}>OVERDUE</div>}
+                                            {bal.overdue && <div style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444' }}>{t('ui.supplier.list.overdueBadge')}</div>}
                                         </div>
                                     </div>
                                 );
@@ -436,14 +439,14 @@ const SuppliersPage = () => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px', minWidth: '860px' }}>
                         <thead>
                             <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                {['Supplier', 'Contact', 'POs', 'Payment Progress', 'Balance', 'Status', ''].map((h, i) => (
-                                    <th key={h || 'actions'} style={{ padding: '12px 20px', fontWeight: 700, fontSize: '11px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: i === 4 || i === 6 ? 'right' : i === 2 ? 'center' : 'left' }}>{h}</th>
+                                {[t('ui.supplier.common.supplier'), t('ui.supplier.list.colContact'), t('ui.supplier.list.colPOs'), t('ui.supplier.list.colPaymentProgress'), t('ui.supplier.common.balance'), t('ui.supplier.common.status'), ''].map((h, i) => (
+                                    <th key={i} style={{ padding: '12px 20px', fontWeight: 700, fontSize: '11px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: i === 4 || i === 6 ? 'right' : i === 2 ? 'center' : 'left' }}>{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {isLoading ? (
-                                <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading suppliers...</td></tr>
+                                <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.supplier.list.loading')}</td></tr>
                             ) : filteredSuppliers.length === 0 ? (
                                 <tr>
                                     <td colSpan={7} style={{ padding: '60px 20px', textAlign: 'center' }}>
@@ -452,8 +455,8 @@ const SuppliersPage = () => {
                                                 <Building2 size={32} style={{ opacity: 0.5 }} />
                                             </div>
                                             <div>
-                                                <h3 style={{ color: 'var(--color-text-main)', marginBottom: '4px', fontSize: '16px' }}>No suppliers found</h3>
-                                                <p style={{ fontSize: '14px' }}>{searchQuery ? 'Try adjusting your search terms.' : 'Get started by adding your first supplier.'}</p>
+                                                <h3 style={{ color: 'var(--color-text-main)', marginBottom: '4px', fontSize: '16px' }}>{t('ui.supplier.list.noneFound')}</h3>
+                                                <p style={{ fontSize: '14px' }}>{searchQuery ? t('ui.supplier.list.tryAdjustSearch') : t('ui.supplier.list.getStarted')}</p>
                                             </div>
                                             {!searchQuery && (
                                                 <button 
@@ -461,7 +464,7 @@ const SuppliersPage = () => {
                                                     onClick={() => handleOpenModal()}
                                                     style={{ padding: '8px 16px', borderRadius: '8px', marginTop: '8px' }}
                                                 >
-                                                    Add Supplier
+                                                    {t('ui.supplier.list.addSupplier')}
                                                 </button>
                                             )}
                                         </div>
@@ -522,11 +525,11 @@ const SuppliersPage = () => {
                                                             }} />
                                                         </div>
                                                         <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                                                            of {formatCurrency(bal.totalAmount)}
+                                                            {fill(t('ui.supplier.list.ofAmount'), { amount: formatCurrency(bal.totalAmount) })}
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>No orders</span>
+                                                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{t('ui.supplier.list.noOrders')}</span>
                                                 )}
                                             </td>
                                             <td style={{ padding: '14px 20px', textAlign: 'right' }}>
@@ -539,33 +542,33 @@ const SuppliersPage = () => {
                                                         display: 'inline-flex', alignItems: 'center', gap: '4px',
                                                         padding: '2px 8px', borderRadius: '12px', background: 'rgba(239,68,68,0.1)',
                                                     }}>
-                                                        <AlertTriangle size={10} /> {bal.overdueDays}d overdue
+                                                        <AlertTriangle size={10} /> {fill(t('ui.supplier.common.daysOverdue'), { n: bal.overdueDays })}
                                                     </div>
                                                 )}
                                             </td>
                                             <td style={{ padding: '14px 20px' }}>
-                                                {supplierChip(!!supplier.is_active)}
+                                                {supplierChip(!!supplier.is_active, supplier.is_active ? t('ui.supplier.common.active') : t('ui.supplier.common.inactive'))}
                                             </td>
                                             <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
                                                     <button
                                                         style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}
                                                         onClick={() => navigate(`/procurement/suppliers/${supplier.id}`)}
-                                                        title="View ledger"
+                                                        title={t('ui.supplier.list.viewLedger')}
                                                     >
                                                         <FileText size={15} />
                                                     </button>
                                                     <button
                                                         style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}
                                                         onClick={() => handleOpenModal(supplier)}
-                                                        title="Edit supplier"
+                                                        title={t('ui.supplier.list.editSupplier')}
                                                     >
                                                         <Edit size={15} />
                                                     </button>
                                                     <button
                                                         style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}
                                                         onClick={(e) => handleDelete(supplier.id, e)}
-                                                        title="Delete supplier"
+                                                        title={t('ui.supplier.list.deleteSupplier')}
                                                     >
                                                         <Trash2 size={15} />
                                                     </button>
@@ -584,49 +587,49 @@ const SuppliersPage = () => {
                 <Modal
                     isOpen={isModalOpen} 
                     onClose={() => setIsModalOpen(false)} 
-                    title={editingSupplier ? 'Edit Supplier Details' : 'Register New Supplier'}
+                    title={editingSupplier ? t('ui.supplier.list.modalEditTitle') : t('ui.supplier.list.modalNewTitle')}
                 >
                     {/* minWidth 500 forced the modal wider than a phone screen */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '20px', padding: isMobile ? '8px 0' : '16px 0', minWidth: isMobile ? undefined : '500px', maxWidth: '100%' }}>
                     
                         <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
                             <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <Building2 size={16} /> Company Information
+                                <Building2 size={16} /> {t('ui.supplier.list.companyInfo')}
                             </h4>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Supplier Name *</label>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.supplier.list.supplierName')} *</label>
                                     <input 
                                         type="text" 
                                         className="input-field" 
                                         style={{ width: '100%', padding: '10px 12px' }}
                                         value={formData.name || ''} 
                                         onChange={(e) => setFormData({...formData, name: e.target.value})} 
-                                        placeholder="Enter company or individual name"
+                                        placeholder={t('ui.supplier.list.supplierNamePlaceholder')}
                                         autoFocus
                                     />
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Contact Person</label>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.supplier.list.contactPerson')}</label>
                                         <input 
                                             type="text" 
                                             className="input-field" 
                                             style={{ width: '100%', padding: '10px 12px' }}
                                             value={formData.contact_name || ''} 
                                             onChange={(e) => setFormData({...formData, contact_name: e.target.value})} 
-                                            placeholder="Full name"
+                                            placeholder={t('ui.supplier.list.fullName')}
                                         />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Tax ID / VAT</label>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.supplier.list.taxId')}</label>
                                         <input 
                                             type="text" 
                                             className="input-field" 
                                             style={{ width: '100%', padding: '10px 12px' }}
                                             value={formData.tax_id || ''}
                                             onChange={(e) => setFormData({...formData, tax_id: e.target.value})} 
-                                            placeholder="Optional"
+                                            placeholder={t('ui.supplier.list.optional')}
                                         />
                                     </div>
                                 </div>
@@ -635,12 +638,12 @@ const SuppliersPage = () => {
 
                         <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
                             <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <MapPin size={16} /> Contact Details
+                                <MapPin size={16} /> {t('ui.supplier.list.contactDetails')}
                             </h4>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Email Address</label>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.supplier.list.email')}</label>
                                         <input 
                                             type="email" 
                                             className="input-field" 
@@ -651,7 +654,7 @@ const SuppliersPage = () => {
                                         />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Phone Number</label>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.supplier.list.phone')}</label>
                                         <input 
                                             type="text" 
                                             className="input-field" 
@@ -663,13 +666,13 @@ const SuppliersPage = () => {
                                     </div>
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Physical Address</label>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.supplier.list.address')}</label>
                                     <textarea 
                                         className="input-field" 
                                         style={{ width: '100%', padding: '10px 12px', minHeight: '80px', resize: 'vertical' }}
                                         value={formData.address || ''} 
                                         onChange={(e) => setFormData({...formData, address: e.target.value})} 
-                                        placeholder="Full street address..."
+                                        placeholder={t('ui.supplier.list.addressPlaceholder')}
                                     />
                                 </div>
                             </div>
@@ -683,19 +686,19 @@ const SuppliersPage = () => {
                                     onChange={(e) => setFormData({...formData, is_active: e.target.checked})} 
                                     style={{ width: '18px', height: '18px', accentColor: 'var(--color-primary)' }}
                                 />
-                                <span style={{ fontWeight: 500 }}>Active Supplier</span>
+                                <span style={{ fontWeight: 500 }}>{t('ui.supplier.list.activeSupplier')}</span>
                             </label>
                         </div>
 
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: isMobile ? '8px' : '16px', borderTop: '1px solid var(--color-border)', paddingTop: isMobile ? '12px' : '20px' }}>
-                            <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
+                            <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', flex: isMobile ? '0 0 auto' : undefined }}>{t('common.cancel')}</button>
                             <button
                                 className="primary-button"
                                 onClick={handleSave}
                                 disabled={!formData.name}
                                 style={{ padding: '10px 24px', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined }}
                             >
-                                {editingSupplier ? 'Save Changes' : 'Register Supplier'}
+                                {editingSupplier ? t('ui.supplier.list.saveChanges') : t('ui.supplier.list.registerSupplier')}
                             </button>
                         </div>
                     </div>

@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { BarChart3, Package, Wallet, Users, ShoppingBag, Truck, DollarSign } from 'lucide-react';
 import { DateRangePicker } from '../../components';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
 import { supabase } from '../../lib/supabase';
 import { mapSaleEntity } from '../../utils/mapper';
 import { fetchAll } from '../../utils/fetchAll';
@@ -11,6 +12,7 @@ import type { Sale, Transaction } from '../../types';
 const ReportsLayout: React.FC = () => {
     const location = useLocation();
     const isMobile = useMobile();
+    const { t } = useLanguage();
 
     // Global Date State (Default to This Month)
     const [dateRange, setDateRange] = useState(() => {
@@ -78,17 +80,17 @@ const ReportsLayout: React.FC = () => {
     }, [dateRange]);
 
     const tabs = [
-        { path: '/reports/sales', label: 'Sales Overview', icon: BarChart3 },
-        { path: '/reports/products', label: 'Top Products', icon: ShoppingBag },
-        { path: '/reports/inventory', label: 'Inventory', icon: Package },
-        { path: '/reports/financials', label: 'Financials', icon: Wallet },
-        { path: '/reports/staff', label: 'Staff Performance', icon: Users },
-        { path: '/reports/shipping', label: 'Shipping Companies', icon: Truck },
-        { path: '/reports/purchase-cost', label: 'Purchase Cost', icon: DollarSign },
+        { path: '/reports/sales', label: t('nav.salesOverview'), icon: BarChart3 },
+        { path: '/reports/products', label: t('nav.topProducts'), icon: ShoppingBag },
+        { path: '/reports/inventory', label: t('nav.inventory'), icon: Package },
+        { path: '/reports/financials', label: t('nav.financials'), icon: Wallet },
+        { path: '/reports/staff', label: t('nav.staffPerformance'), icon: Users },
+        { path: '/reports/shipping', label: t('nav.shippingCompanies'), icon: Truck },
+        { path: '/reports/purchase-cost', label: t('nav.purchaseCost'), icon: DollarSign },
     ];
 
     // Find current tab label
-    const currentTab = tabs.find(t => location.pathname.includes(t.path));
+    const currentTab = tabs.find(tab => location.pathname.includes(tab.path));
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
@@ -97,9 +99,9 @@ const ReportsLayout: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
                     <div>
                         <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 4px 0', color: 'var(--color-primary)' }}>
-                            {currentTab ? currentTab.label : 'Reports Center'}
+                            {currentTab ? currentTab.label : t('nav.reportsCenter')}
                         </h1>
-                        <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '13px' }}>Analyze your business metrics, sales, inventory, and financials.</p>
+                        <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '13px' }}>{t('ui.people.reports.subtitle')}</p>
                     </div>
 
                     {/* Global Date Filter */}
@@ -112,7 +114,7 @@ const ReportsLayout: React.FC = () => {
                 <div style={{ flex: 1, animation: 'fadeIn 0.3s ease-out', position: 'relative' }}>
                     {isLoadingReports && (
                         <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.7)', zIndex: 10, display: 'flex', justifyContent: 'center', paddingTop: '100px', backdropFilter: 'blur(2px)' }}>
-                            <div className="loader">Loading Data...</div>
+                            <div className="loader">{t('ui.people.reports.loadingData')}</div>
                         </div>
                     )}
                     <Outlet context={{ startDate: dateRange.start, endDate: dateRange.end, reportSales, reportTransactions }} />

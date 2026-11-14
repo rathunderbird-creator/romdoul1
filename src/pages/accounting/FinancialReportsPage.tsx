@@ -4,6 +4,8 @@
 import React, { useState, useEffect } from 'react';
 import { useHeader } from '../../context/HeaderContext';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import DateRangePicker from '../../components/DateRangePicker';
 import { resolveRangePreset, type RangePreset } from '../../utils/dateRangePresets';
 import FinancialStatements, { type TabKey } from './FinancialStatements';
@@ -25,6 +27,7 @@ const todayYmd = (): string => {
 const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab }) => {
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
+    const { t } = useLanguage();
     // Rule (FIN-4): the default year-to-date range is computed FRESH on every
     // visit — only a range the user deliberately picked is persisted and
     // restored. A quick-pick preset ('Today', 'This month', …) is stored by
@@ -63,13 +66,13 @@ const FinancialReportsPage: React.FC<{ initialTab?: TabKey }> = ({ initialTab })
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Financial Reports</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>As at {displayDate(range.end || todayYmd())}</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.financialReports')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{fill(t('ui.accounting.common.asAt'), { date: displayDate(range.end || todayYmd()) })}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, range.end]);
+    }, [setHeaderContent, range.end, t]);
 
     return (
         <div style={isMobile ? { display: 'flex', flexDirection: 'column', gap: '20px' } : { display: 'flex', gap: '20px', alignItems: 'flex-start' }}>

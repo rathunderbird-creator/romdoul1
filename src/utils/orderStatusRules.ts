@@ -8,6 +8,8 @@
 // server-side project is SEC-1). Admin behaviour is unchanged by design: the
 // store itself still warns admins before transitions that skip the stock flow.
 
+import { tNow } from '../i18n/translate';
+
 export interface OrderStatusView {
     shippingStatus?: string | null;
     paymentStatus?: string | null;
@@ -28,6 +30,20 @@ export interface StatusActor {
 const ORDER_STATUS_LABELS: Record<string, string> = { Returned: 'Returning' };
 export const orderStatusLabel = (status: string): string => ORDER_STATUS_LABELS[status] || status;
 
+// The same label in the language the app is in now (status.* in the
+// translation files; English gives exactly orderStatusLabel). For messages;
+// filters keep using orderStatusLabel.
+const STATUS_TEXT_KEYS: Record<string, string> = {
+    Drafted: 'status.ordered', Confirmed: 'status.confirmed', Pending: 'status.pending', Shipped: 'status.shipped',
+    Delivered: 'status.delivered', Cancelled: 'status.cancelled', Returned: 'status.returned', ReStock: 'status.restock',
+    Paid: 'status.paid', Unpaid: 'status.unpaid', Partial: 'status.partial', Cancel: 'status.cancel',
+};
+export const orderStatusText = (status: string): string => {
+    const key = STATUS_TEXT_KEYS[status];
+    const v = key ? tNow(key) : '';
+    return v && v !== key ? v : orderStatusLabel(status);
+};
+
 // Stored statuses whose DISPLAYED label contains `text` but whose stored value
 // doesn't (e.g. "returning" -> ['Returned']), so a text filter on the stored
 // column can still find what staff typed from the screen.
@@ -45,8 +61,8 @@ export const canEnterPostDispatch = (current: string, target: string): boolean =
 
 export const postDispatchMessage = (current: string, target: string): string =>
     POST_DISPATCH_STATUSES.includes(current)
-        ? `This order is already ${orderStatusLabel(current)}. ${orderStatusLabel(current)} orders cannot be changed to ${orderStatusLabel(target)}.`
-        : `Mark the order Shipped before ${orderStatusLabel(target)} — set it back to Drafted and follow Confirmed → Shipped.`;
+        ? tNow('ui.store.statusRules.alreadyPostDispatch', { current: orderStatusText(current), target: orderStatusText(target) })
+        : tNow('ui.store.statusRules.shipFirst', { target: orderStatusText(target) });
 
 // The per-current-status option locks of the Orders.tsx row badge for
 // non-admins (its disabledOptions ladder), as data. 'ReStock' is handled
@@ -86,7 +102,7 @@ export const statusChangeRefusal = (
     const current = order.shippingStatus || 'Pending';
     if (target === 'ReStock') {
         if (!actor.canRestock) {
-            return 'You do not have permission to restock orders.';
+            return tNow('ui.store.order.noRestockPermission');
         }
         // Restocking a Returned order is exactly what restock_orders grants —
         // the one transition out of Returned a permitted non-admin may make
@@ -95,16 +111,16 @@ export const statusChangeRefusal = (
     }
     if (actor.isAdmin) return null;
     if (NON_ADMIN_LOCKED_STATUSES.includes(current)) {
-        return `${orderStatusLabel(current)} orders cannot be changed. Ask an administrator.`;
+        return tNow('ui.store.statusRules.locked', { status: orderStatusText(current) });
     }
     if (order.paymentStatus === 'Cancel') {
-        return 'This order’s payment is cancelled — its status can only be changed by an administrator.';
+        return tNow('ui.store.statusRules.paymentCancelled');
     }
     if (POST_DISPATCH_STATUSES.includes(target) && !canEnterPostDispatch(current, target)) {
         return postDispatchMessage(current, target);
     }
     if (nonAdminDisabledStatusOptions(current).includes(target)) {
-        return `${orderStatusLabel(current)} orders cannot be moved to ${orderStatusLabel(target)}. Ask an administrator.`;
+        return tNow('ui.store.statusRules.cannotMove', { current: orderStatusText(current), target: orderStatusText(target) });
     }
     return null;
 };
@@ -130,14 +146,14 @@ export const paymentChangeRefusal = (
     // and pay-by and books another receipt, exactly the rewrite the single-row
     // badge's readOnly prevents (ORD-9 review).
     if (['Paid', 'PdFee', 'Cancel'].includes(payment)) {
-        return `${payment} orders cannot have their payment changed. Ask an administrator.`;
+        return tNow('ui.store.statusRules.paymentLocked', { status: orderStatusText(payment) });
     }
     if (payment === target) return null; // no-op rows are quietly fine
     if (['ReStock', 'Drafted', 'Returned', 'Cancelled'].includes(shipping)) {
-        return `The payment of ${orderStatusLabel(shipping)} orders can only be changed by an administrator.`;
+        return tNow('ui.store.statusRules.paymentAdminOnly', { status: orderStatusText(shipping) });
     }
     if (target === 'Cancel') {
-        return 'Only an administrator can cancel a payment.';
+        return tNow('ui.store.statusRules.cancelAdminOnly');
     }
     return null;
 };
@@ -156,7 +172,7 @@ export const settleDateChangeRefusal = (
     if (actor.isAdmin) return null;
     const payment = order.paymentStatus || 'Unpaid';
     if (['Paid', 'PdFee', 'Cancel'].includes(payment)) {
-        return `The settle date of ${payment} orders can only be changed by an administrator.`;
+        return tNow('ui.store.statusRules.settleDateAdminOnly', { status: orderStatusText(payment) });
     }
     return null;
 };

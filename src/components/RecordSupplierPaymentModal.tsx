@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Modal from './Modal';
+import { useTx } from './useTx';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
 import { dayKeyFromDate } from '../utils/dateRange';
@@ -47,8 +48,9 @@ const inputStyle: React.CSSProperties = {
 // AccountsPayablePage already each hand-roll, factored out so Supplier
 // Bills doesn't become a third copy.
 const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
-    isOpen, onClose, onConfirm, remainingBalance, supplierName, title = 'Record Payment',
+    isOpen, onClose, onConfirm, remainingBalance, supplierName, title,
 }) => {
+    const tx = useTx();
     const { purchaseSettings, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
     // Above the bill's balance is likely a typo (riel): warn, never block.
@@ -96,17 +98,17 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
     const canRecord = Number(amount) > 0 && !field.rateInvalid && !(paymentAccounts.length > 0 && !accountId);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={title}>
+        <Modal isOpen={isOpen} onClose={onClose} title={title ?? tx('ui.components.recordPayment.title', 'Record Payment')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {supplierName && (
                     <div>
-                        <label style={labelStyle}>Supplier</label>
+                        <label style={labelStyle}>{tx('ui.components.common.supplier', 'Supplier')}</label>
                         <div style={{ ...inputStyle, background: 'var(--color-bg)' }}>{supplierName}</div>
                     </div>
                 )}
                 {remainingBalance > 0 && (
                     <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.12)', borderRadius: '10px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>Remaining Balance</span>
+                        <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{tx('ui.components.recordPayment.remainingBalance', 'Remaining Balance')}</span>
                         <span style={{ fontSize: '18px', fontWeight: 700, color: '#ef4444' }}>
                             {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(remainingBalance)}
                         </span>
@@ -115,7 +117,7 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
                 <div>
                     <MoneyInput
                         field={field}
-                        label="Amount to Pay"
+                        label={tx('ui.components.recordPayment.amountToPay', 'Amount to Pay')}
                         required
                         allowKhr
                         onToggleCurrency={coupling.onToggleCurrency}
@@ -141,7 +143,7 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
                                             cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
                                         }}
                                     >
-                                        <span>{label}</span>
+                                        <span>{label === 'Full' ? tx('ui.components.recordPayment.full', 'Full') : label}</span>
                                         <span style={{ fontSize: '10px', opacity: 0.85 }}>${val.toFixed(2)}</span>
                                     </button>
                                 );
@@ -151,40 +153,40 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                     <div>
-                        <label style={labelStyle}>Payment Date <span style={{ color: 'red' }}>*</span></label>
+                        <label style={labelStyle}>{tx('ui.components.recordPayment.paymentDate', 'Payment Date')} <span style={{ color: 'red' }}>*</span></label>
                         <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} style={inputStyle} />
                     </div>
                     <div>
-                        <label style={labelStyle}>Method</label>
+                        <label style={labelStyle}>{tx('ui.components.recordPayment.method', 'Method')}</label>
                         <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                            <option value="Cash">Cash</option>
-                            <option value="Bank Transfer">Bank Transfer</option>
-                            <option value="On Credit">On Credit</option>
+                            <option value="Cash">{tx('ui.components.method.cash', 'Cash')}</option>
+                            <option value="Bank Transfer">{tx('ui.components.method.bankTransfer', 'Bank Transfer')}</option>
+                            <option value="On Credit">{tx('ui.components.method.onCredit', 'On Credit')}</option>
                         </select>
                     </div>
                 </div>
                 <div>
-                    <label style={labelStyle}>Paid from {paymentAccounts.length > 0 && <span style={{ color: 'red' }}>*</span>}</label>
+                    <label style={labelStyle}>{tx('ui.components.common.paidFrom', 'Paid from')} {paymentAccounts.length > 0 && <span style={{ color: 'red' }}>*</span>}</label>
                     <select
                         value={accountId}
                         onChange={e => coupling.onAccountChange(e.target.value)}
                         style={{ ...inputStyle, cursor: 'pointer', border: `1px solid ${paymentAccounts.length > 0 && !accountId ? 'red' : 'var(--color-border)'}` }}
                     >
-                        <option value="">Bank or cash account…</option>
+                        <option value="">{tx('ui.components.common.bankOrCash', 'Bank or cash account…')}</option>
                         <CashBankOptions accounts={paymentAccounts} />
                     </select>
                     {paymentAccounts.length === 0 && (
                         <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                            No cash or bank accounts in the Chart of Accounts yet — the payment saves without one.
+                            {tx('ui.components.recordPayment.noAccounts', 'No cash or bank accounts in the Chart of Accounts yet — the payment saves without one.')}
                         </div>
                     )}
                 </div>
                 <div>
-                    <label style={labelStyle}>Notes</label>
+                    <label style={labelStyle}>{tx('ui.components.common.notes', 'Notes')}</label>
                     <textarea
                         value={notes}
                         onChange={e => setNotes(e.target.value)}
-                        placeholder="Optional notes…"
+                        placeholder={tx('ui.components.common.optionalNotes', 'Optional notes…')}
                         style={{ ...inputStyle, minHeight: '70px', resize: 'vertical', fontFamily: 'inherit' }}
                     />
                 </div>
@@ -193,7 +195,7 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
                         onClick={onClose}
                         style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}
                     >
-                        Cancel
+                        {tx('common.cancel', 'Cancel')}
                     </button>
                     <button
                         onClick={async () => {
@@ -230,7 +232,7 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
                             cursor: canRecord && !submitting ? 'pointer' : 'not-allowed', fontSize: '14px', fontWeight: 600,
                         }}
                     >
-                        {submitting ? 'Saving…' : 'Record Payment'}
+                        {submitting ? tx('ui.components.common.saving', 'Saving…') : tx('ui.components.recordPayment.title', 'Record Payment')}
                     </button>
                 </div>
             </div>

@@ -27,6 +27,26 @@ import { fetchLedgerStartDate, isBeforeLedgerStart, formatLedgerStart } from '..
 import type { Transaction, Customer } from '../types';
 import { fetchJournalLinesByEntry } from '../utils/journalLines';
 import { useColumnWidths } from './pageIncomePrediction/useColumnWidths';
+import { fill, tNow } from '../i18n/translate';
+
+// The same text outside render (inside a fetch callback).
+const txtNow = (key: string, en: string): string => {
+    const k = `ui.orderFlow.${key}`;
+    const v = tNow(k);
+    return v !== k ? v : en;
+};
+
+// Text under ui.orderFlow; the English text is the fallback for a missing key.
+// Named `txt` because `tx` is a transaction throughout this page.
+const useCpText = () => {
+    const { t } = useLanguage();
+    const txt = React.useCallback((key: string, en: string, vars?: Record<string, string | number>) => {
+        const k = `ui.orderFlow.${key}`;
+        const v = t(k);
+        return fill(v !== k ? v : en, vars);
+    }, [t]);
+    return { txt };
+};
 
 // The cash/bank accounts offered by the bulk Post Now popup, with enough of
 // the chart row for pickCashBankAccount to match a payment's Method against.
@@ -98,8 +118,9 @@ type LedgerStatus = 'Posted' | 'Draft';
 const isDepositRow = (r: CustomerPaymentRow) => r.category === RETAIL_DEPOSIT_CATEGORY;
 
 const TypeBadge: React.FC<{ category?: string }> = ({ category }) => {
+    const { txt } = useCpText();
     const isDeposit = category === RETAIL_DEPOSIT_CATEGORY;
-    const label = isDeposit ? 'Deposit' : 'Paid';
+    const label = isDeposit ? txt('custPay.deposit', 'Deposit') : txt('custPay.paid', 'Paid');
     const color = isDeposit ? '#7C3AED' : '#059669';
     return (
         <span style={{
@@ -114,18 +135,23 @@ const TypeBadge: React.FC<{ category?: string }> = ({ category }) => {
 // Posted (soft blue) / Draft (amber) — same convention as JournalEntriesPage's
 // own status chip, so this column reads consistently with the rest of the
 // accounting section. 'Unknown' while the ledger lookup is loading or failed.
-const StatusChip: React.FC<{ status: LedgerStatus | 'Unknown' }> = ({ status }) => (
+const StatusChip: React.FC<{ status: LedgerStatus | 'Unknown' }> = ({ status }) => {
+    const { txt } = useCpText();
+    return (
     <span style={{
         display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: '12px',
         fontSize: '11px', fontWeight: 400,
         background: status === 'Draft' ? '#fef3c7' : status === 'Posted' ? 'rgba(84, 105, 212, 0.12)' : 'var(--color-bg)',
         color: status === 'Draft' ? '#92400e' : status === 'Posted' ? '#4c5fd0' : 'var(--color-text-secondary)',
     }}>
-        {status === 'Unknown' ? '…' : status}
+        {status === 'Unknown' ? '…' : status === 'Draft' ? txt('custPay.draft', 'Draft') : status === 'Posted' ? txt('custPay.posted', 'Posted') : status}
     </span>
-);
+    );
+};
 
-const Notice: React.FC<{ children: React.ReactNode; onRetry?: () => void }> = ({ children, onRetry }) => (
+const Notice: React.FC<{ children: React.ReactNode; onRetry?: () => void }> = ({ children, onRetry }) => {
+    const { txt } = useCpText();
+    return (
     <div role="alert" style={{
         display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderRadius: '10px',
         background: '#fef3c7', color: '#92400e', fontSize: '13px'
@@ -134,15 +160,17 @@ const Notice: React.FC<{ children: React.ReactNode; onRetry?: () => void }> = ({
         <span style={{ flex: 1 }}>{children}</span>
         {onRetry && (
             <button onClick={onRetry} style={{ padding: '4px 12px', borderRadius: '8px', border: '1px solid #92400e', background: 'transparent', color: '#92400e', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-                Retry
+                {txt('om2.retry', 'Retry')}
             </button>
         )}
     </div>
-);
+    );
+};
 
 const CustomerPaymentPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
+    const { txt } = useCpText();
     const { showToast } = useToast();
     const { currentUser } = useStore();
     // Unposting rewinds finalized books, so it stays an admin-only action
@@ -155,12 +183,12 @@ const CustomerPaymentPage: React.FC = () => {
             title: (
                 <div style={{ marginBottom: '8px' }}>
                     <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('nav.customerPayment')}</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Retail customer payments and deposits — post Draft rows to the ledger</p>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{txt('custPay.subtitle', 'Retail customer payments and deposits — post Draft rows to the ledger')}</p>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, t]);
+    }, [setHeaderContent, t, txt]);
 
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
@@ -244,7 +272,7 @@ const CustomerPaymentPage: React.FC = () => {
             if (seq !== fetchSeqRef.current) return;
             console.error('Failed to fetch customer payments:', error);
             setAllRetailPayments([]);
-            setLoadError((error as { message?: string })?.message || 'Unknown error');
+            setLoadError((error as { message?: string })?.message || txtNow('payTrack.unknownError', 'Unknown error'));
         } finally {
             if (seq === fetchSeqRef.current) setIsLoadingTransactions(false);
         }
@@ -722,7 +750,7 @@ const CustomerPaymentPage: React.FC = () => {
         if (!postTarget) return;
         const tx = postTarget;
         if (beforeLedgerStart(tx.date) || (settleDate && beforeLedgerStart(settleDate))) {
-            showToast(`Payments before ${ledgerStart ? formatLedgerStart(ledgerStart) : 'the ledger start'} stay out of the ledger — the ledger starts at the opening stock count.`, 'info');
+            showToast(txt('custPay.beforeStart', 'Payments before {date} stay out of the ledger — the ledger starts at the opening stock count.', { date: ledgerStart ? formatLedgerStart(ledgerStart) : txt('custPay.theLedgerStart', 'the ledger start') }), 'info');
             setPostTarget(null);
             return;
         }
@@ -754,22 +782,22 @@ const CustomerPaymentPage: React.FC = () => {
             const moved = await moveTransactionDay(tx, settleDate);
             const methodMoved = await syncTransactionMethod(tx, paymentMethod);
             const changes: string[] = [];
-            if (moved.status === 'moved') changes.push(`date moved to ${formatDate(settleDate)}`);
-            if (methodMoved === 'moved') changes.push(`method set to ${paymentMethod}`);
+            if (moved.status === 'moved') changes.push(txt('custPay.dateMovedTo', 'date moved to {date}', { date: formatDate(settleDate) }));
+            if (methodMoved === 'moved') changes.push(txt('custPay.methodSetTo', 'method set to {method}', { method: paymentMethod }));
             if (moved.status === 'row-failed') {
-                showToast('Posted to the ledger, but the payment date could not be updated: ' + moved.message, 'info');
+                showToast(txt('custPay.dateNotUpdated', 'Posted to the ledger, but the payment date could not be updated: ') + moved.message, 'info');
             }
             if (moved.status === 'moved' && moved.saleFailed) {
-                showToast('Date moved, but the order’s own settled date could not be updated — its Orders row still shows the old day.', 'info');
+                showToast(txt('custPay.saleDateNotUpdated', 'Date moved, but the order’s own settled date could not be updated — its Orders row still shows the old day.'), 'info');
             }
             if (methodMoved === 'row-failed') {
-                showToast('Posted to the ledger, but the payment method could not be updated.', 'info');
+                showToast(txt('custPay.methodNotUpdated', 'Posted to the ledger, but the payment method could not be updated.'), 'info');
             }
-            showToast(changes.length > 0 ? `Payment posted — ${changes.join(', ')}` : 'Payment posted to the ledger', 'success');
+            showToast(changes.length > 0 ? txt('custPay.postedWith', 'Payment posted — {changes}', { changes: changes.join(', ') }) : txt('custPay.postedOk', 'Payment posted to the ledger'), 'success');
         }).catch((err: unknown) => {
             console.error('Failed to post payment to the ledger:', err);
-            const message = err instanceof Error ? err.message : 'Unknown error';
-            showToast('Failed to post payment: ' + message, 'error');
+            const message = err instanceof Error ? err.message : txt('payTrack.unknownError', 'Unknown error');
+            showToast(txt('custPay.postFailed', 'Failed to post payment: ') + message, 'error');
         }).finally(() => {
             setPostingIds(s => { const n = new Set(s); n.delete(tx.id); return n; });
             setLedgerNonce(n => n + 1);
@@ -782,7 +810,9 @@ const CustomerPaymentPage: React.FC = () => {
     const handleBulkUnpost = async () => {
         const rows = selectedPostedRows;
         if (!isAdmin || ledger.statusMissing || rows.length === 0 || isBulkUnposting) return;
-        if (!window.confirm(`Return ${rows.length} posted ${rows.length === 1 ? 'payment' : 'payments'} to Draft?\nTheir ledger entries can then be corrected and posted again.`)) return;
+        if (!window.confirm(rows.length === 1
+            ? txt('custPay.unpostConfirmOne', 'Return {n} posted payment to Draft?\nTheir ledger entries can then be corrected and posted again.', { n: rows.length })
+            : txt('custPay.unpostConfirmMany', 'Return {n} posted payments to Draft?\nTheir ledger entries can then be corrected and posted again.', { n: rows.length }))) return;
         setIsBulkUnposting(true);
         const ids = rows.map(r => r.id);
         setPostingIds(prev => new Set([...prev, ...ids]));
@@ -807,7 +837,7 @@ const CustomerPaymentPage: React.FC = () => {
                 // session deleted these entries) — resync so the Posted chips
                 // agree with the toast instead of re-offering a dead-end Unpost.
                 setLedgerNonce(n => n + 1);
-                showToast('No ledger entries exist for the selected payments.', 'info');
+                showToast(txt('custPay.noEntries', 'No ledger entries exist for the selected payments.'), 'info');
                 return;
             }
             for (const batch of chunk(entryIds, PREFIX_CHUNK)) {
@@ -818,7 +848,7 @@ const CustomerPaymentPage: React.FC = () => {
                     // below, since an earlier batch may already be Draft.
                     const msg = error.message || '';
                     if (/status/i.test(msg) && /column|schema cache|does not exist/i.test(msg)) {
-                        showToast('This instance needs migrations/add_entry_status.sql before entries can be unposted.', 'info');
+                        showToast(txt('custPay.needsMigration', 'This instance needs migrations/add_entry_status.sql before entries can be unposted.'), 'info');
                         return;
                     }
                     throw error;
@@ -835,11 +865,13 @@ const CustomerPaymentPage: React.FC = () => {
             // as Posted and would clobber it when it lands — and unposted ids have
             // no postedIds shield. Bumping the nonce cancels that stale load.
             setLedgerNonce(n => n + 1);
-            showToast(`Returned ${rows.length} ${rows.length === 1 ? 'payment' : 'payments'} to Draft`, 'success');
+            showToast(rows.length === 1
+                ? txt('custPay.unpostedOne', 'Returned {n} payment to Draft', { n: rows.length })
+                : txt('custPay.unpostedMany', 'Returned {n} payments to Draft', { n: rows.length }), 'success');
         } catch (err) {
             console.error('Failed to unpost the entries:', err);
-            const message = err instanceof Error ? err.message : 'Unknown error';
-            showToast('Failed to unpost: ' + message, 'error');
+            const message = err instanceof Error ? err.message : txt('payTrack.unknownError', 'Unknown error');
+            showToast(txt('custPay.unpostFailed', 'Failed to unpost: ') + message, 'error');
             // Earlier batches may already be Draft in the DB — drop the
             // postedIds shield for the acted rows so the refetch's statuses win.
             setPostedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
@@ -1005,12 +1037,12 @@ const CustomerPaymentPage: React.FC = () => {
             // the popup is open (rows posted elsewhere) — close it rather than
             // leaving a dead 'Post 0 Payments' button.
             setBulkPostForm(null);
-            showToast('Nothing left to post — the selected payments are already posted.', 'info');
+            showToast(txt('custPay.nothingToPost', 'Nothing left to post — the selected payments are already posted.'), 'info');
             return;
         }
         const chosenDay = /^\d{4}-\d{2}-\d{2}$/.test(form.date) ? form.date : '';
         if (chosenDay && beforeLedgerStart(chosenDay)) {
-            showToast(`Can't post onto a day before ${ledgerStart ? formatLedgerStart(ledgerStart) : 'the ledger start'} — the ledger starts at the opening stock count.`, 'error');
+            showToast(txt('custPay.cantPostBefore', "Can't post onto a day before {date} — the ledger starts at the opening stock count.", { date: ledgerStart ? formatLedgerStart(ledgerStart) : txt('custPay.theLedgerStart', 'the ledger start') }), 'error');
             return;
         }
         const chosenIso = chosenDay ? new Date(chosenDay).toISOString() : '';
@@ -1072,15 +1104,21 @@ const CustomerPaymentPage: React.FC = () => {
         setIsBulkPosting(false);
         setLedgerNonce(n => n + 1);
         const movedNote = chosenIso && moved > 0
-            ? ` — ${moved === 1 ? '1 date' : `${moved} dates`} moved to ${formatDate(chosenIso)}`
+            ? (moved === 1
+                ? txt('custPay.movedNoteOne', ' — 1 date moved to {date}', { date: formatDate(chosenIso) })
+                : txt('custPay.movedNoteMany', ' — {n} dates moved to {date}', { n: moved, date: formatDate(chosenIso) }))
             : '';
         if (failed.length === 0) {
-            showToast(`Posted ${ok} payment${ok === 1 ? '' : 's'} to the ledger${movedNote}`, 'success');
+            showToast((ok === 1
+                ? txt('custPay.bulkPostedOne', 'Posted {n} payment to the ledger', { n: ok })
+                : txt('custPay.bulkPostedMany', 'Posted {n} payments to the ledger', { n: ok })) + movedNote, 'success');
         } else {
-            showToast(`Posted ${ok} of ${rows.length}${movedNote} — failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}`, 'error');
+            showToast(txt('custPay.bulkPostedPartial', 'Posted {ok} of {n}{moved} — failed: {failed}', { ok, n: rows.length, moved: movedNote, failed: failed.slice(0, 3).join(', ') + (failed.length > 3 ? '…' : '') }), 'error');
         }
         if (moveFailed > 0) {
-            showToast(`${moveFailed} payment${moveFailed === 1 ? '' : 's'} posted but couldn't fully move to the new date — the payment or its Orders row may still show the old day.`, 'info');
+            showToast(moveFailed === 1
+                ? txt('custPay.moveFailedOne', "{n} payment posted but couldn't fully move to the new date — the payment or its Orders row may still show the old day.", { n: moveFailed })
+                : txt('custPay.moveFailedMany', "{n} payments posted but couldn't fully move to the new date — the payment or its Orders row may still show the old day.", { n: moveFailed }), 'info');
         }
     };
 
@@ -1093,15 +1131,19 @@ const CustomerPaymentPage: React.FC = () => {
     const handleBulkDelete = async () => {
         const rows = selectedAllRows;
         if (!isAdmin) {
-            showToast('Only an administrator can delete payments.', 'error');
+            showToast(txt('custPay.adminOnlyDelete', 'Only an administrator can delete payments.'), 'error');
             return;
         }
         if (rows.length === 0 || isBulkDeleting) return;
         const linkedCount = rows.filter(r => ledgerReady && ledger.byTx.has(r.id)).length;
         const warn = linkedCount > 0
-            ? `\n${linkedCount} of them ${linkedCount === 1 ? 'has' : 'have'} a ledger entry — ${linkedCount === 1 ? 'it is' : 'those are'} deleted too.`
+            ? '\n' + (linkedCount === 1
+                ? txt('custPay.linkedWarnOne', '{n} of them has a ledger entry — it is deleted too.', { n: linkedCount })
+                : txt('custPay.linkedWarnMany', '{n} of them have a ledger entry — those are deleted too.', { n: linkedCount }))
             : '';
-        if (!window.confirm(`Delete ${rows.length} payment${rows.length === 1 ? '' : 's'} (${formatAmount(selectedTotal)})? This cannot be undone.${warn}`)) return;
+        if (!window.confirm((rows.length === 1
+            ? txt('custPay.deleteConfirmOne', 'Delete {n} payment ({amount})? This cannot be undone.', { n: rows.length, amount: formatAmount(selectedTotal) })
+            : txt('custPay.deleteConfirmMany', 'Delete {n} payments ({amount})? This cannot be undone.', { n: rows.length, amount: formatAmount(selectedTotal) })) + warn)) return;
         setIsBulkDeleting(true);
         const ids = rows.map(r => r.id);
         try {
@@ -1129,12 +1171,14 @@ const CustomerPaymentPage: React.FC = () => {
             const idSet = new Set(ids);
             setAllRetailPayments(prev => prev.filter(r => !idSet.has(r.id)));
             setSelectedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
-            showToast(`Deleted ${rows.length} payment${rows.length === 1 ? '' : 's'}`, 'success');
+            showToast(rows.length === 1
+                ? txt('custPay.deletedOne', 'Deleted {n} payment', { n: rows.length })
+                : txt('custPay.deletedMany', 'Deleted {n} payments', { n: rows.length }), 'success');
             if (entryIds.length > 0) setLedgerNonce(n => n + 1);
         } catch (err) {
             console.error('Bulk delete failed:', err);
-            const message = err instanceof Error ? err.message : 'Unknown error';
-            showToast('Failed to delete: ' + message, 'error');
+            const message = err instanceof Error ? err.message : txt('payTrack.unknownError', 'Unknown error');
+            showToast(txt('custPay.deleteFailed', 'Failed to delete: ') + message, 'error');
             // Re-sync — some rows or their ledger entries may have been removed before the failure.
             fetchRetailPayments();
             setLedgerNonce(n => n + 1);
@@ -1206,7 +1250,7 @@ const CustomerPaymentPage: React.FC = () => {
         ({ ...tdStyle, overflow: 'hidden', textOverflow: 'ellipsis', ...extra });
     const hiddenCount = deletedOrderTxIds.size;
     const statValue = (v: React.ReactNode) => showStats ? v : '—';
-    const countLabel = (n: number) => showStats ? `${n.toLocaleString()} record${n === 1 ? '' : 's'}` : undefined;
+    const countLabel = (n: number) => showStats ? (n === 1 ? txt('income.recordOne', '{n} record', { n: n.toLocaleString() }) : txt('income.recordMany', '{n} records', { n: n.toLocaleString() })) : undefined;
 
     const selectStyle: React.CSSProperties = {
         width: '100%', padding: '10px 32px 10px 36px', borderRadius: '10px', border: '1px solid var(--color-border)',
@@ -1232,14 +1276,14 @@ const CustomerPaymentPage: React.FC = () => {
                 gap: isMobile ? '8px' : '16px'
             }}>
                 <StatsCard
-                    title="Total"
+                    title={txt('delivery.total', 'Total')}
                     value={statValue(formatAmount(stats.total))}
                     trend={countLabel(stats.count)}
                     icon={Wallet}
                     color="var(--color-primary)"
                 />
                 <StatsCard
-                    title="Paid"
+                    title={txt('custPay.paid', 'Paid')}
                     value={statValue(formatAmount(stats.paid))}
                     trend={countLabel(stats.paidCount)}
                     icon={CircleDollarSign}
@@ -1248,7 +1292,7 @@ const CustomerPaymentPage: React.FC = () => {
                     style={typeFilter === 'Paid' ? { outline: '2px solid #059669' } : undefined}
                 />
                 <StatsCard
-                    title="Deposit"
+                    title={txt('custPay.deposit', 'Deposit')}
                     value={statValue(formatAmount(stats.deposit))}
                     trend={countLabel(stats.depositCount)}
                     icon={Banknote}
@@ -1257,7 +1301,7 @@ const CustomerPaymentPage: React.FC = () => {
                     style={typeFilter === 'Deposit' ? { outline: '2px solid #7C3AED' } : undefined}
                 />
                 <StatsCard
-                    title="Unposted (Draft)"
+                    title={txt('custPay.unpostedDraft', 'Unposted (Draft)')}
                     value={ledgerReady ? statValue(formatAmount(stats.draft)) : '—'}
                     trend={ledgerReady ? countLabel(stats.draftCount) : undefined}
                     icon={Receipt}
@@ -1275,7 +1319,7 @@ const CustomerPaymentPage: React.FC = () => {
                     <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                     <input
                         type="text"
-                        placeholder="Search customer, phone, shipping co, reference..."
+                        placeholder={txt('custPay.search', 'Search customer, phone, shipping co, reference...')}
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                         className="search-input"
@@ -1284,7 +1328,7 @@ const CustomerPaymentPage: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Date:</span>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{txt('custPay.dateColon', 'Date:')}</span>
                     <DateRangePicker value={dateRange} onChange={setDateRange} />
                 </div>
 
@@ -1304,7 +1348,7 @@ const CustomerPaymentPage: React.FC = () => {
                                     whiteSpace: 'nowrap'
                                 }}
                             >
-                                {opt === 'All' ? 'All Types' : opt}
+                                {opt === 'All' ? txt('custPay.allTypes', 'All Types') : opt === 'Paid' ? txt('custPay.paid', 'Paid') : txt('custPay.deposit', 'Deposit')}
                             </button>
                         );
                     })}
@@ -1313,9 +1357,9 @@ const CustomerPaymentPage: React.FC = () => {
                 <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 180px', minWidth: '150px', display: 'flex', alignItems: 'center' }}>
                     <Receipt size={16} style={{ position: 'absolute', left: '14px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
                     <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)} style={selectStyle}>
-                        <option value="All">All Statuses</option>
-                        <option value="Draft">Draft</option>
-                        <option value="Posted">Posted</option>
+                        <option value="All">{txt('custPay.allStatuses', 'All Statuses')}</option>
+                        <option value="Draft">{txt('custPay.draft', 'Draft')}</option>
+                        <option value="Posted">{txt('custPay.posted', 'Posted')}</option>
                     </select>
                     <ChevronDown size={18} style={{ position: 'absolute', right: '12px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
                 </div>
@@ -1323,7 +1367,7 @@ const CustomerPaymentPage: React.FC = () => {
                 <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 180px', minWidth: '150px', display: 'flex', alignItems: 'center' }}>
                     <Truck size={16} style={{ position: 'absolute', left: '14px', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
                     <select value={shippingFilter} onChange={e => setShippingFilter(e.target.value)} style={selectStyle}>
-                        <option value="All">All Shipping Co</option>
+                        <option value="All">{txt('income.allShippingCo', 'All Shipping Co')}</option>
                         {/* Keep the active pick listed even when the current range has none of it. */}
                         {(shippingFilter !== 'All' && !shippingOptions.includes(shippingFilter) ? [shippingFilter, ...shippingOptions] : shippingOptions).map(co => (
                             <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
@@ -1338,7 +1382,7 @@ const CustomerPaymentPage: React.FC = () => {
                         disabled={filteredPayments.length === 0 || !showStats}
                         className="secondary-button"
                         style={{ ...iconButtonStyle, opacity: filteredPayments.length === 0 || !showStats ? 0.5 : 1 }}
-                        title="Export to Excel"
+                        title={txt('income.exportExcel', 'Export to Excel')}
                     >
                         <Download size={18} />
                     </button>
@@ -1347,7 +1391,7 @@ const CustomerPaymentPage: React.FC = () => {
                         disabled={isLoadingTransactions}
                         className="secondary-button"
                         style={iconButtonStyle}
-                        title="Refresh"
+                        title={txt('deleted.refresh', 'Refresh')}
                     >
                         <RefreshCw size={18} style={{ animation: isLoadingTransactions ? 'spin 1s linear infinite' : 'none' }} />
                     </button>
@@ -1359,9 +1403,9 @@ const CustomerPaymentPage: React.FC = () => {
                                 background: '#EF4444', color: '#ffffff', cursor: 'pointer',
                                 fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px'
                             }}
-                            title="Clear Filters"
+                            title={txt('income.clearFilters', 'Clear Filters')}
                         >
-                            <X size={16} /> Clear
+                            <X size={16} /> {txt('income.clear', 'Clear')}
                         </button>
                     )}
                 </div>
@@ -1369,17 +1413,17 @@ const CustomerPaymentPage: React.FC = () => {
 
             {resolutionFailed && (
                 <Notice onRetry={() => setDeletedNonce(n => n + 1)}>
-                    Couldn't check which orders were deleted — payments of deleted orders may be included.
+                    {txt('custPay.deletedCheckFailed', "Couldn't check which orders were deleted — payments of deleted orders may be included.")}
                 </Notice>
             )}
             {ledger.state === 'error' && (
                 <Notice onRetry={() => setLedgerNonce(n => n + 1)}>
-                    Couldn't load the ledger status — Post Now is disabled until it loads.
+                    {txt('custPay.ledgerLoadFailed', "Couldn't load the ledger status — Post Now is disabled until it loads.")}
                 </Notice>
             )}
             {ledger.refreshError && (
                 <Notice onRetry={() => setLedgerNonce(n => n + 1)}>
-                    Couldn't refresh the ledger status — showing the last loaded status.
+                    {txt('custPay.ledgerRefreshFailed', "Couldn't refresh the ledger status — showing the last loaded status.")}
                 </Notice>
             )}
 
@@ -1400,7 +1444,7 @@ const CustomerPaymentPage: React.FC = () => {
                     boxShadow: '0 10px 32px rgba(0,0,0,0.22)'
                 }}>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
-                        {selectedAllRows.length} selected · {formatAmount(selectedTotal)}
+                        {txt('om2.bulk.selectedN', '{n} selected', { n: selectedAllRows.length })} · {formatAmount(selectedTotal)}
                     </span>
                     {selectedPostableRows.length > 0 && (
                         <button
@@ -1413,7 +1457,7 @@ const CustomerPaymentPage: React.FC = () => {
                                 opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
                             }}
                         >
-                            {isBulkPosting ? 'Posting…' : `Post Now (${selectedPostableRows.length})`}
+                            {isBulkPosting ? txt('custPay.posting', 'Posting…') : txt('custPay.postNowN', 'Post Now ({n})', { n: selectedPostableRows.length })}
                         </button>
                     )}
                     {/* Stays mounted mid-unpost: the acted rows join postingIds, which
@@ -1424,7 +1468,7 @@ const CustomerPaymentPage: React.FC = () => {
                         <button
                             onClick={handleBulkUnpost}
                             disabled={bulkBusy}
-                            title="Return the selected posted payments to Draft so they can be corrected"
+                            title={txt('custPay.unpostHint', 'Return the selected posted payments to Draft so they can be corrected')}
                             style={{
                                 // Same forced-light amber pairing as the page's status
                                 // chips — a transparent background would put dark amber
@@ -1435,7 +1479,7 @@ const CustomerPaymentPage: React.FC = () => {
                                 opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
                             }}
                         >
-                            {isBulkUnposting ? 'Unposting…' : `Unpost (${selectedPostedRows.length})`}
+                            {isBulkUnposting ? txt('custPay.unposting', 'Unposting…') : txt('custPay.unpostN', 'Unpost ({n})', { n: selectedPostedRows.length })}
                         </button>
                     )}
                     {/* PAY-2: deleting payment rows (posted ones included) is an
@@ -1452,7 +1496,7 @@ const CustomerPaymentPage: React.FC = () => {
                                 opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
                             }}
                         >
-                            <Trash2 size={14} /> {isBulkDeleting ? 'Deleting…' : `Delete (${selectedAllRows.length})`}
+                            <Trash2 size={14} /> {isBulkDeleting ? txt('custPay.deleting', 'Deleting…') : txt('income.deleteN', 'Delete ({n})', { n: selectedAllRows.length })}
                         </button>
                     )}
                     <button
@@ -1465,7 +1509,7 @@ const CustomerPaymentPage: React.FC = () => {
                             whiteSpace: 'nowrap'
                         }}
                     >
-                        Clear
+                        {txt('income.clear', 'Clear')}
                     </button>
                 </div>
                 );
@@ -1491,41 +1535,41 @@ const CustomerPaymentPage: React.FC = () => {
                         style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
                     >
                         <div style={{ width: '420px', maxWidth: '100%', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '14px', boxShadow: '0 18px 44px rgba(0,0,0,0.28)', padding: '20px' }}>
-                            <h3 style={{ margin: '0 0 2px', fontSize: '16px', fontWeight: 700, color: 'var(--color-text-main)' }}>Post {n} draft payment{n === 1 ? '' : 's'}</h3>
-                            <p style={{ margin: '0 0 16px', fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>{formatAmount(selectedPostableTotal)} total · leave a field empty to keep each payment's own value.</p>
+                            <h3 style={{ margin: '0 0 2px', fontSize: '16px', fontWeight: 700, color: 'var(--color-text-main)' }}>{n === 1 ? txt('custPay.bulkTitleOne', 'Post {n} draft payment', { n }) : txt('custPay.bulkTitleMany', 'Post {n} draft payments', { n })}</h3>
+                            <p style={{ margin: '0 0 16px', fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>{txt('custPay.bulkSubtitle', "{amount} total · leave a field empty to keep each payment's own value.", { amount: formatAmount(selectedPostableTotal) })}</p>
                             <div style={{ marginBottom: '14px' }}>
-                                <label style={labelStyle}>Payment date</label>
+                                <label style={labelStyle}>{txt('custPay.paymentDate', 'Payment date')}</label>
                                 <input type="date" value={bulkPostForm.date} onChange={e => setBulkPostForm(f => f && { ...f, date: e.target.value })} style={inputStyle} />
                                 <p style={{ margin: '5px 0 0', fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
                                     {bulkPostForm.date
-                                        ? `All ${n} payment${n === 1 ? '' : 's'} (and their Income & Expense rows) move to this day.`
-                                        : 'Empty — each payment posts on its own date.'}
+                                        ? (n === 1 ? txt('custPay.allMoveOne', 'All {n} payment (and their Income & Expense rows) move to this day.', { n }) : txt('custPay.allMoveMany', 'All {n} payments (and their Income & Expense rows) move to this day.', { n }))
+                                        : txt('custPay.emptyOwnDate', 'Empty — each payment posts on its own date.')}
                                 </p>
                             </div>
                             <div style={{ marginBottom: '14px' }}>
-                                <label style={labelStyle}>Deposited into</label>
+                                <label style={labelStyle}>{txt('custPay.depositedInto', 'Deposited into')}</label>
                                 <select value={bulkPostForm.accountId} onChange={e => setBulkPostForm(f => f && { ...f, accountId: e.target.value })} style={inputStyle}>
-                                    <option value="">Auto — each payment's own account</option>
+                                    <option value="">{txt('custPay.autoAccount', "Auto — each payment's own account")}</option>
                                     {sortCashBankForPicker(bulkAccounts).filter(a => !isKhrAccountName(a.account_name)).map(a => <option key={a.id} value={a.id}>{a.account_name}</option>)}
                                     {bulkAccounts.some(a => isKhrAccountName(a.account_name)) && (
-                                        <optgroup label="Riel (KHR)">
+                                        <optgroup label={txt('custPay.riel', 'Riel (KHR)')}>
                                             {sortCashBankForPicker(bulkAccounts).filter(a => isKhrAccountName(a.account_name)).map(a => <option key={a.id} value={a.id}>{a.account_name}</option>)}
                                         </optgroup>
                                     )}
                                 </select>
                             </div>
                             <div style={{ marginBottom: '18px' }}>
-                                <label style={labelStyle}>Notes</label>
-                                <input type="text" value={bulkPostForm.notes} placeholder="Optional — saved on every posted entry" onChange={e => setBulkPostForm(f => f && { ...f, notes: e.target.value })} style={inputStyle} />
+                                <label style={labelStyle}>{txt('custPay.notes', 'Notes')}</label>
+                                <input type="text" value={bulkPostForm.notes} placeholder={txt('custPay.notesPlaceholder', 'Optional — saved on every posted entry')} onChange={e => setBulkPostForm(f => f && { ...f, notes: e.target.value })} style={inputStyle} />
                                 {bulkPostForm.notes.trim() !== '' && (
                                     <p style={{ margin: '5px 0 0', fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
-                                        Replaces any note the selected entries already carry.
+                                        {txt('custPay.notesReplace', 'Replaces any note the selected entries already carry.')}
                                     </p>
                                 )}
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                                 <button onClick={() => setBulkPostForm(null)} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                                    Cancel
+                                    {txt('om2.cancel', 'Cancel')}
                                 </button>
                                 <button
                                     onClick={handleBulkPost}
@@ -1536,7 +1580,7 @@ const CustomerPaymentPage: React.FC = () => {
                                         cursor: n === 0 ? 'not-allowed' : 'pointer', opacity: n === 0 ? 0.6 : 1
                                     }}
                                 >
-                                    Post {n} Payment{n === 1 ? '' : 's'}
+                                    {n === 1 ? txt('custPay.postBtnOne', 'Post {n} Payment', { n }) : txt('custPay.postBtnMany', 'Post {n} Payments', { n })}
                                 </button>
                             </div>
                         </div>
@@ -1563,21 +1607,21 @@ const CustomerPaymentPage: React.FC = () => {
                                         ref={el => { if (el) el.indeterminate = !allPageSelected && somePageSelected; }}
                                         onChange={togglePage}
                                         disabled={pageSelectableIds.length === 0}
-                                        title="Select all payments on this page"
+                                        title={txt('custPay.selectAllPage', 'Select all payments on this page')}
                                         style={{ cursor: pageSelectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
                                     />
                                 </th>
-                                {th('ref', 'Reference')}
-                                {th('date', 'Date')}
-                                {th('customer', 'Customer')}
-                                {th('type', 'Payment Type')}
-                                {th('amount', 'Amount')}
-                                {th('method', 'Method')}
-                                {th('account', 'Account')}
-                                {hasNotesData && th('notes', 'Notes')}
-                                {th('addedBy', 'Added by')}
-                                {th('status', 'Status')}
-                                {th('action', 'Action')}
+                                {th('ref', txt('custPay.col.reference', 'Reference'))}
+                                {th('date', txt('custPay.col.date', 'Date'))}
+                                {th('customer', txt('custPay.col.customer', 'Customer'))}
+                                {th('type', txt('custPay.col.paymentType', 'Payment Type'))}
+                                {th('amount', txt('custPay.col.amount', 'Amount'))}
+                                {th('method', txt('custPay.col.method', 'Method'))}
+                                {th('account', txt('custPay.col.account', 'Account'))}
+                                {hasNotesData && th('notes', txt('custPay.notes', 'Notes'))}
+                                {th('addedBy', txt('custPay.col.addedBy', 'Added by'))}
+                                {th('status', txt('custPay.col.status', 'Status'))}
+                                {th('action', txt('custPay.col.action', 'Action'))}
                                 {/* Filler: takes whatever width is left on a wide screen,
                                     so the sized columns keep exactly their widths (without
                                     it the browser spreads the spare width over every
@@ -1589,31 +1633,31 @@ const CustomerPaymentPage: React.FC = () => {
                             {loadError ? (
                                 <tr>
                                     <td colSpan={colCount} role="alert" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                                        <div style={{ marginBottom: '12px' }}>Couldn't load retail payments. {loadError}</div>
+                                        <div style={{ marginBottom: '12px' }}>{txt('custPay.loadFailed', "Couldn't load retail payments.")} {loadError}</div>
                                         <button onClick={fetchRetailPayments} disabled={isLoadingTransactions} className="secondary-button" style={{ padding: '8px 16px', borderRadius: '8px' }}>
-                                            Retry
+                                            {txt('om2.retry', 'Retry')}
                                         </button>
                                     </td>
                                 </tr>
                             ) : isBusy ? (
                                 <tr>
                                     <td colSpan={colCount} style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                                        Loading retail payments...
+                                        {txt('custPay.loading', 'Loading retail payments...')}
                                     </td>
                                 </tr>
                             ) : statusFilterBlocked ? (
                                 <tr>
                                     <td colSpan={colCount} role="alert" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                                        <div style={{ marginBottom: '12px' }}>Couldn't load the ledger status, so the Status filter can't be applied.</div>
+                                        <div style={{ marginBottom: '12px' }}>{txt('custPay.statusFilterBlocked', "Couldn't load the ledger status, so the Status filter can't be applied.")}</div>
                                         <button onClick={() => setLedgerNonce(n => n + 1)} className="secondary-button" style={{ padding: '8px 16px', borderRadius: '8px' }}>
-                                            Retry
+                                            {txt('om2.retry', 'Retry')}
                                         </button>
                                     </td>
                                 </tr>
                             ) : filteredPayments.length === 0 ? (
                                 <tr>
                                     <td colSpan={colCount} style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                                        No retail payments found for these filters.
+                                        {txt('custPay.empty', 'No retail payments found for these filters.')}
                                     </td>
                                 </tr>
                             ) : (
@@ -1636,7 +1680,7 @@ const CustomerPaymentPage: React.FC = () => {
                                                     checked={selectedIds.has(r.id)}
                                                     onChange={() => toggleSelect(r.id)}
                                                     disabled={posting}
-                                                    title={posting ? 'Posting…' : 'Select payment'}
+                                                    title={posting ? txt('custPay.posting', 'Posting…') : txt('custPay.selectPayment', 'Select payment')}
                                                     style={{ cursor: posting ? 'not-allowed' : 'pointer' }}
                                                 />
                                             </td>
@@ -1648,9 +1692,9 @@ const CustomerPaymentPage: React.FC = () => {
                                                 {formatAmount(r.amount)}
                                                 {isKhrRow(r) && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{formatMoneyLine(r)}</div>}
                                             </td>
-                                            <td style={cell('method')} title={r.pay_by ? `Saved as: ${r.pay_by}` : undefined}>
+                                            <td style={cell('method')} title={r.pay_by ? txt('custPay.savedAs', 'Saved as: {v}', { v: r.pay_by }) : undefined}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    <span style={{ color: getPaymentColor(method) }}>{method || '—'}</span>
+                                                    <span style={{ color: getPaymentColor(method) }}>{method ? t(`ui.orderFlow.custPay.methodLabel.${method}`) : '—'}</span>
                                                     {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(method)} />}
                                                 </div>
                                             </td>
@@ -1660,7 +1704,7 @@ const CustomerPaymentPage: React.FC = () => {
                                                 const waiting = !accountName && known && ledger.byTx.has(String(r.id)) && !accountsDone;
                                                 return (
                                                     <td style={cell('account', { color: accountName ? undefined : 'var(--color-text-muted)' })}
-                                                        title={accountName || (waiting ? 'Loading…' : 'No ledger entry yet: the account is set when it is posted')}>
+                                                        title={accountName || (waiting ? txt('returning.loading', 'Loading…') : txt('custPay.noEntryYet', 'No ledger entry yet: the account is set when it is posted'))}>
                                                         {accountName || (waiting || !known ? '…' : '—')}
                                                     </td>
                                                 );
@@ -1675,7 +1719,7 @@ const CustomerPaymentPage: React.FC = () => {
                                                     <button
                                                         onClick={() => setPostTarget(r)}
                                                         disabled={!canPost}
-                                                        title={preStart && ledgerStart && status === 'Draft' ? `Before ${formatLedgerStart(ledgerStart)} — the ledger starts at the opening stock count, so this payment stays in Income & Expense` : undefined}
+                                                        title={preStart && ledgerStart && status === 'Draft' ? txt('custPay.beforeStartHint', 'Before {date} — the ledger starts at the opening stock count, so this payment stays in Income & Expense', { date: formatLedgerStart(ledgerStart) }) : undefined}
                                                         style={{
                                                             padding: '6px 12px', borderRadius: '8px', border: 'none',
                                                             background: canPost ? 'var(--color-primary)' : 'var(--color-border)',
@@ -1684,12 +1728,12 @@ const CustomerPaymentPage: React.FC = () => {
                                                             fontSize: '12px', fontWeight: 600
                                                         }}
                                                     >
-                                                        {posting ? 'Posting…' : 'Post Now'}
+                                                        {posting ? txt('custPay.posting', 'Posting…') : txt('custPay.postNow', 'Post Now')}
                                                     </button>
                                                     {orderId && (
                                                         <button
                                                             onClick={() => setViewingOrderId(orderId)}
-                                                            title="View order details"
+                                                            title={txt('custPay.viewOrder', 'View order details')}
                                                             style={{
                                                                 display: 'inline-flex', alignItems: 'center', gap: '4px',
                                                                 padding: '6px 12px', borderRadius: '8px',
@@ -1698,7 +1742,7 @@ const CustomerPaymentPage: React.FC = () => {
                                                                 fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap'
                                                             }}
                                                         >
-                                                            <ExternalLink size={12} /> View
+                                                            <ExternalLink size={12} /> {txt('custPay.view', 'View')}
                                                         </button>
                                                     )}
                                                 </div>
@@ -1719,11 +1763,13 @@ const CustomerPaymentPage: React.FC = () => {
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                             <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                                Showing {((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, filteredPayments.length)} of {filteredPayments.length.toLocaleString()} payment{filteredPayments.length === 1 ? '' : 's'}
-                                {hiddenCount > 0 && ` · ${hiddenCount.toLocaleString()} hidden (order deleted)`}
+                                {filteredPayments.length === 1
+                                    ? txt('custPay.showingOne', 'Showing {from}–{to} of {total} payment', { from: ((page - 1) * pageSize) + 1, to: Math.min(page * pageSize, filteredPayments.length), total: filteredPayments.length.toLocaleString() })
+                                    : txt('custPay.showingMany', 'Showing {from}–{to} of {total} payments', { from: ((page - 1) * pageSize) + 1, to: Math.min(page * pageSize, filteredPayments.length), total: filteredPayments.length.toLocaleString() })}
+                                {hiddenCount > 0 && txt('custPay.hiddenN', ' · {n} hidden (order deleted)', { n: hiddenCount.toLocaleString() })}
                             </span>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{txt('income.show', 'Show:')}</span>
                                 <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '12px', cursor: 'pointer', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}>
                                     {[200, 500, 1000, 2000, 3000].map(n => <option key={n} value={n}>{n}</option>)}
                                 </select>
@@ -1731,17 +1777,17 @@ const CustomerPaymentPage: React.FC = () => {
                         </div>
                         {totalPages > 1 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <button disabled={page === 1} onClick={() => setCurrentPage(1)} className="secondary-button" style={pagerButtonStyle(page === 1)} title="First page">««</button>
-                                <button disabled={page === 1} onClick={() => setCurrentPage(Math.max(1, page - 1))} className="secondary-button" style={pagerButtonStyle(page === 1)} title="Previous page">
+                                <button disabled={page === 1} onClick={() => setCurrentPage(1)} className="secondary-button" style={pagerButtonStyle(page === 1)} title={txt('income.firstPage', 'First page')}>««</button>
+                                <button disabled={page === 1} onClick={() => setCurrentPage(Math.max(1, page - 1))} className="secondary-button" style={pagerButtonStyle(page === 1)} title={txt('income.prevPage', 'Previous page')}>
                                     <ChevronLeft size={16} />
                                 </button>
                                 <span style={{ fontSize: '13px', color: 'var(--color-text-main)', padding: '0 6px', whiteSpace: 'nowrap' }}>
-                                    Page {page} of {totalPages}
+                                    {txt('om2.table.page', 'Page')} {page} {txt('om2.table.of', 'of')} {totalPages}
                                 </span>
-                                <button disabled={page === totalPages} onClick={() => setCurrentPage(Math.min(totalPages, page + 1))} className="secondary-button" style={pagerButtonStyle(page === totalPages)} title="Next page">
+                                <button disabled={page === totalPages} onClick={() => setCurrentPage(Math.min(totalPages, page + 1))} className="secondary-button" style={pagerButtonStyle(page === totalPages)} title={txt('income.nextPage', 'Next page')}>
                                     <ChevronRight size={16} />
                                 </button>
-                                <button disabled={page === totalPages} onClick={() => setCurrentPage(totalPages)} className="secondary-button" style={pagerButtonStyle(page === totalPages)} title="Last page">»»</button>
+                                <button disabled={page === totalPages} onClick={() => setCurrentPage(totalPages)} className="secondary-button" style={pagerButtonStyle(page === totalPages)} title={txt('income.lastPage', 'Last page')}>»»</button>
                             </div>
                         )}
                     </div>
@@ -1759,8 +1805,8 @@ const CustomerPaymentPage: React.FC = () => {
                     initialDepositAccountId={ledger.debitAccountByTx.get(postTarget.id)}
                     depositAccountHint={postTarget.pay_by || undefined}
                     finalizeRow={postTarget}
-                    title="Record Receipt"
-                    description="Confirm the payment date and the account it was deposited into to post this payment to the ledger."
+                    title={txt('custPay.recordReceipt', 'Record Receipt')}
+                    description={txt('custPay.recordReceiptDesc', 'Confirm the payment date and the account it was deposited into to post this payment to the ledger.')}
                     onConfirm={handlePostNowConfirm}
                 />
             )}

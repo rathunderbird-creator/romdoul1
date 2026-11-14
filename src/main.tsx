@@ -6,6 +6,10 @@ import './index.css'
 import App from './App.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import UpdateBanner from './components/UpdateBanner.tsx'
+import { installKhmerMonthNames } from './utils/appLocale'
+
+// Dates with month names follow the app's language (Khmer months in Khmer).
+installKhmerMonthNames();
 import { installResizableTables } from './utils/resizableTables'
 
 // Every table's columns can be dragged wider/narrower (widths kept per browser).

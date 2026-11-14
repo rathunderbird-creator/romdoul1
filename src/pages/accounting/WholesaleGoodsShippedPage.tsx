@@ -12,6 +12,7 @@
 import React, { useMemo, useState } from 'react';
 import { Search, Eye, Printer, RefreshCw, Download, Truck, Database } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { useStore } from '../../context/StoreContext';
 import { useWholesale } from '../../hooks/useWholesale';
 import Modal from '../../components/Modal';
@@ -29,9 +30,10 @@ const payConfig = (s?: string) => {
         default: return { color: '#DC2626', bg: 'rgba(239,68,68,0.1)' };
     }
 };
-const payChip = (s?: string) => {
+// label: the translated display text (the status code itself stays English).
+const payChip = (s?: string, label?: string) => {
     const pc = payConfig(s);
-    return <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', whiteSpace: 'nowrap', background: pc.bg, color: pc.color }}>{s || 'Unpaid'}</span>;
+    return <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', whiteSpace: 'nowrap', background: pc.bg, color: pc.color }}>{label ?? (s || 'Unpaid')}</span>;
 };
 
 const inputStyle: React.CSSProperties = {
@@ -55,6 +57,8 @@ const PRINT_CSS = `
 
 const WholesaleGoodsShippedPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
+    const payStatusLabel = (s?: string) => s === 'Paid' ? t('status.paid') : s === 'Partial' ? t('status.partial') : (!s || s === 'Unpaid') ? t('status.unpaid') : s;
     const { warehouses } = useStore();
     const { wholesaleOrders, isLoading, tableMissing, fetchWholesaleOrders } = useWholesale();
 
@@ -62,13 +66,13 @@ const WholesaleGoodsShippedPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Goods Shipped</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Wholesale orders already delivered</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('ui.wholesale.shipped.title')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('ui.wholesale.shipped.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     React.useEffect(() => { fetchWholesaleOrders(); }, [fetchWholesaleOrders]);
 
@@ -156,26 +160,26 @@ const WholesaleGoodsShippedPage: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '340px' }}>
                     <Search size={15} color="var(--color-text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                    <input type="text" placeholder="Search reference, customer or phone…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
+                    <input type="text" placeholder={t('ui.wholesale.shipped.search')} value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
                 </div>
                 <select value={warehouseFilter} onChange={e => setWarehouseFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '160px', cursor: 'pointer' }}>
-                    <option value="">All warehouses</option>
+                    <option value="">{t('ui.wholesale.shipped.allWarehouses')}</option>
                     {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
-                <button onClick={() => fetchWholesaleOrders()} title="Refresh" style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
+                <button onClick={() => fetchWholesaleOrders()} title={t('ui.wholesale.common.refresh')} style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
                 </button>
                 {hasActiveFilters && (
                     <button onClick={() => { setSearch(''); setWarehouseFilter(''); }} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
-                        Clear
+                        {t('ui.wholesale.common.clear')}
                     </button>
                 )}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     <button onClick={printList} disabled={isLoading || filtered.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filtered.length === 0) ? 0.5 : 1 }}>
-                        <Printer size={13} /> Print list
+                        <Printer size={13} /> {t('ui.wholesale.common.printList')}
                     </button>
                     <button onClick={exportCsv} disabled={isLoading || filtered.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filtered.length === 0) ? 0.5 : 1 }}>
-                        <Download size={13} /> Export CSV
+                        <Download size={13} /> {t('ui.wholesale.common.exportCsv')}
                     </button>
                 </div>
             </div>
@@ -184,17 +188,17 @@ const WholesaleGoodsShippedPage: React.FC = () => {
                 {tableMissing ? (
                     <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                         <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
-                        <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>Database setup needed</p>
-                        <p style={{ fontSize: '13px' }}>Run <code>migrations/full_schema.sql</code> in your Supabase SQL editor, then Refresh.</p>
+                        <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>{t('ui.wholesale.common.dbSetupNeeded')}</p>
+                        <p style={{ fontSize: '13px' }}>{t('ui.wholesale.common.dbSetupRun')} <code>migrations/full_schema.sql</code> {t('ui.wholesale.common.dbSetupThen')}</p>
                     </div>
                 ) : isLoading ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading shipments...</div>
+                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.wholesale.shipped.loading')}</div>
                 ) : filtered.length === 0 ? (
                     <div className="glass-panel" style={{ textAlign: 'center', padding: '60px', border: 'none' }}>
                         <Truck size={40} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-                        <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>No goods shipped yet</h3>
+                        <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{t('ui.wholesale.shipped.noneYet')}</h3>
                         <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                            {hasActiveFilters ? 'Try adjusting your filters.' : 'Mark a wholesale order Delivered to see it here.'}
+                            {hasActiveFilters ? t('ui.wholesale.common.tryAdjusting') : t('ui.wholesale.shipped.emptyHint')}
                         </p>
                     </div>
                 ) : (
@@ -202,8 +206,8 @@ const WholesaleGoodsShippedPage: React.FC = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '760px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                    {['Reference', 'Date', 'Customer', 'Warehouse', 'Lines', 'Total', 'Payment', ''].map((h, i) => (
-                                        <th key={h || 'actions'} style={{ padding: '12px 20px', textAlign: i === 4 || i === 5 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{h}</th>
+                                    {[t('ui.wholesale.common.reference'), t('ui.wholesale.common.date'), t('ui.wholesale.common.customer'), t('ui.wholesale.common.warehouse'), t('ui.wholesale.shipped.lines'), t('common.total'), t('ui.wholesale.common.payment'), ''].map((h, i) => (
+                                        <th key={i} style={{ padding: '12px 20px', textAlign: i === 4 || i === 5 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -216,11 +220,11 @@ const WholesaleGoodsShippedPage: React.FC = () => {
                                         <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)' }}>{warehouseName(o.warehouse_id)}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)' }}>{o.items?.length || 0}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(o.total_amount)}</td>
-                                        <td style={{ padding: '12px 20px' }}>{payChip(o.payment_status)}</td>
+                                        <td style={{ padding: '12px 20px' }}>{payChip(o.payment_status, payStatusLabel(o.payment_status))}</td>
                                         <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                                                <button onClick={() => setViewOrder(o)} title="View" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
-                                                <button onClick={() => printShipment(o)} title="Print" style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
+                                                <button onClick={() => setViewOrder(o)} title={t('ui.wholesale.common.view')} style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
+                                                <button onClick={() => printShipment(o)} title={t('ui.wholesale.common.print')} style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -232,26 +236,26 @@ const WholesaleGoodsShippedPage: React.FC = () => {
             </div>
 
             {viewOrder && (
-                <Modal isOpen={!!viewOrder} onClose={() => setViewOrder(null)} title="Goods Shipped" width="520px">
+                <Modal isOpen={!!viewOrder} onClose={() => setViewOrder(null)} title={t('ui.wholesale.shipped.title')} width="520px">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '8px' }}>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Reference</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.reference')}</span>
                             <span style={{ fontWeight: 600 }}>{refOf(viewOrder)}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Date</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.date')}</span>
                             <span>{fmtDate(viewOrder.order_date)}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Customer</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.customer')}</span>
                             <span className="d2-khmer">{viewOrder.customer_name}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Warehouse</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.warehouse')}</span>
                             <span>{warehouseName(viewOrder.warehouse_id)}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Payment</span>
-                            <span>{payChip(viewOrder.payment_status)}</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.payment')}</span>
+                            <span>{payChip(viewOrder.payment_status, payStatusLabel(viewOrder.payment_status))}</span>
                         </div>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                    <th style={{ textAlign: 'left', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Item</th>
-                                    <th style={{ textAlign: 'right', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Qty</th>
-                                    <th style={{ textAlign: 'right', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Amount</th>
+                                    <th style={{ textAlign: 'left', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.item')}</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.qty')}</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('common.amount')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -265,7 +269,7 @@ const WholesaleGoodsShippedPage: React.FC = () => {
                             </tbody>
                         </table>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '12px 0', borderTop: '1px solid var(--color-border)' }}>
-                            <span style={{ fontWeight: 700 }}>Total</span>
+                            <span style={{ fontWeight: 700 }}>{t('common.total')}</span>
                             <span style={{ fontWeight: 800, fontSize: '18px', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(viewOrder.total_amount)}</span>
                         </div>
                     </div>

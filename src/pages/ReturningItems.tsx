@@ -9,6 +9,8 @@ import { AlertTriangle, Boxes, Clock, ExternalLink, Package, RefreshCw, Search, 
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
+import { useLanguage } from '../context/LanguageContext';
+import { tNow, fill } from '../i18n/translate';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
@@ -40,6 +42,12 @@ const daysSince = (iso: string, now: number): number => {
 };
 const ageColor = (d: number) => (d >= 30 ? '#DC2626' : d >= 7 ? '#D97706' : 'var(--color-text-secondary)');
 const money = (n: number) => `$${n.toFixed(2)}`;
+// Text under ui.orderFlow outside render (load callbacks); English is the fallback.
+const txNow = (key: string, en: string, vars?: Record<string, string | number>): string => {
+    const k = `ui.orderFlow.${key}`;
+    const v = tNow(k, vars);
+    return v !== k ? v : fill(en, vars);
+};
 const errorText = (e: unknown, fallback: string): string => {
     const m = e && typeof e === 'object' ? (e as { message?: unknown }).message : undefined;
     return typeof m === 'string' && m ? m : fallback;
@@ -56,18 +64,25 @@ const ReturningItems: React.FC = () => {
     const isMobile = useMobile();
     const navigate = useNavigate();
     const canRestock = hasPermission('restock_orders');
+    const { t } = useLanguage();
+    // Text under ui.orderFlow; the English text is the fallback for a missing key.
+    const tx = useCallback((key: string, en: string, vars?: Record<string, string | number>) => {
+        const k = `ui.orderFlow.${key}`;
+        const v = t(k);
+        return fill(v !== k ? v : en, vars);
+    }, [t]);
 
     useEffect(() => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Returning Items</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Parcels on their way back that are not restocked yet</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{tx('returning.title', 'Returning Items')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{tx('returning.subtitle', 'Parcels on their way back that are not restocked yet')}</p>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, tx]);
 
     const [orders, setOrders] = useState<Sale[]>([]);
     const [loading, setLoading] = useState(true);
@@ -117,7 +132,7 @@ const ReturningItems: React.FC = () => {
             setNow(Date.now());
         } catch (e) {
             console.error('Failed to load returning orders:', e);
-            if (seq === loadSeq.current) setLoadError(errorText(e, 'Could not load returning orders.'));
+            if (seq === loadSeq.current) setLoadError(errorText(e, txNow('returning.loadFailed', 'Could not load returning orders.')));
         } finally {
             if (seq === loadSeq.current) setLoading(false);
         }
@@ -172,13 +187,16 @@ const ReturningItems: React.FC = () => {
         try {
             const n = await bulkRestockOrders(confirmIds);
             const skipped = confirmIds.length - n;
+            const skippedPart = skipped > 0 ? tx('returning.skippedPart', ' ({n} skipped — no longer Returning)', { n: skipped }) : '';
             showToast(n === 0
-                ? 'Nothing restocked: these orders are no longer Returning.'
-                : `Restocked ${n} order${n === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} skipped — no longer Returning)` : ''}.`, n === 0 ? 'info' : 'success');
+                ? tx('returning.nothingRestocked', 'Nothing restocked: these orders are no longer Returning.')
+                : (n === 1
+                    ? tx('returning.restockedOne', 'Restocked {n} order{skipped}.', { n, skipped: skippedPart })
+                    : tx('returning.restockedMany', 'Restocked {n} orders{skipped}.', { n, skipped: skippedPart })), n === 0 ? 'info' : 'success');
             setConfirmIds(null);
             // bulkRestockOrders bumps salesUpdatedAt, which reloads this list.
         } catch (e) {
-            showToast(errorText(e, 'Restock failed.'), 'error');
+            showToast(errorText(e, tx('returning.restockFailed', 'Restock failed.')), 'error');
         } finally {
             setRestocking(false);
         }
@@ -201,7 +219,7 @@ const ReturningItems: React.FC = () => {
         <button
             onClick={() => setConfirmIds(ids)}
             disabled={ids.length === 0}
-            title="Use only when the parcel is physically back in the shop"
+            title={tx('returning.restockHint', 'Use only when the parcel is physically back in the shop')}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', height: `${FILTER_H}px`, boxSizing: 'border-box', flexShrink: 0, padding: '0 12px', borderRadius: '8px', border: '1px solid #C084FC', background: '#F5F3FF', color: '#7E22CE', fontWeight: 600, fontSize: '12px', cursor: ids.length ? 'pointer' : 'not-allowed', opacity: ids.length ? 1 : 0.5, whiteSpace: 'nowrap' }}
         >
             <Undo2 size={14} /> {label}
@@ -211,11 +229,11 @@ const ReturningItems: React.FC = () => {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px' }}>
-                <StatsCard title="Parcels returning" value={stats.parcels} icon={Package} color="#DC2626" />
-                <StatsCard title="Units" value={stats.units} icon={Boxes} color="#2563EB" />
-                <StatsCard title="Value at cost" value={money(stats.value)} icon={AlertTriangle} color="#D97706" />
-                <StatsCard title="Oldest (days)" value={stats.oldest} icon={Clock} color="#7E22CE"
-                    trend={stats.over30 > 0 ? <span style={{ color: '#DC2626' }}>{stats.over30} over 30 days</span> : undefined} />
+                <StatsCard title={tx('returning.statParcels', 'Parcels returning')} value={stats.parcels} icon={Package} color="#DC2626" />
+                <StatsCard title={tx('returning.statUnits', 'Units')} value={stats.units} icon={Boxes} color="#2563EB" />
+                <StatsCard title={tx('returning.statValue', 'Value at cost')} value={money(stats.value)} icon={AlertTriangle} color="#D97706" />
+                <StatsCard title={tx('returning.statOldest', 'Oldest (days)')} value={stats.oldest} icon={Clock} color="#7E22CE"
+                    trend={stats.over30 > 0 ? <span style={{ color: '#DC2626' }}>{tx('returning.over30', '{n} over 30 days', { n: stats.over30 })}</span> : undefined} />
             </div>
 
             {/* One row on desktop: .search-input is width 100% by default, so every
@@ -224,28 +242,28 @@ const ReturningItems: React.FC = () => {
                 <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '1 1 auto', minWidth: isMobile ? undefined : '200px', maxWidth: isMobile ? undefined : '420px' }}>
                     <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                     <input className="search-input" value={search} onChange={e => setSearch(e.target.value)}
-                        placeholder="Search order, customer, phone, tracking, product"
+                        placeholder={tx('returning.search', 'Search order, customer, phone, tracking, product')}
                         style={{ width: '100%', height: `${FILTER_H}px`, boxSizing: 'border-box', padding: '0 10px 0 30px' }} />
                 </div>
                 <select value={carrier} onChange={e => setCarrier(e.target.value)} className="search-input" style={filterCtl}>
-                    <option value="">All carriers</option>
+                    <option value="">{tx('returning.allCarriers', 'All carriers')}</option>
                     {carriers.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <select value={age} onChange={e => setAge(e.target.value as AgeFilter)} className="search-input" style={filterCtl}>
-                    <option value="all">Any age</option>
-                    <option value="7">7+ days</option>
-                    <option value="30">30+ days</option>
+                    <option value="all">{tx('returning.anyAge', 'Any age')}</option>
+                    <option value="7">{tx('returning.days7', '7+ days')}</option>
+                    <option value="30">{tx('returning.days30', '30+ days')}</option>
                 </select>
-                <button onClick={load} title="Refresh" className="search-input" style={{ ...filterCtl, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button onClick={load} title={tx('deleted.refresh', 'Refresh')} className="search-input" style={{ ...filterCtl, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                     <RefreshCw size={14} />
                 </button>
                 <div style={{ flex: 1 }} />
-                {!isMobile && restockButton(Array.from(selected), `Received → ReStock (${selected.size})`)}
+                {!isMobile && restockButton(Array.from(selected), tx('returning.receivedRestockN', 'Received → ReStock ({n})', { n: selected.size }))}
             </div>
 
             <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
                 <AlertTriangle size={14} style={{ color: '#D97706', flexShrink: 0, marginTop: '1px' }} />
-                <span>These goods are already counted out of stock. Press ReStock only when the parcel is physically back in the shop; until then, follow it up with the carrier using the tracking number.</span>
+                <span>{tx('returning.warning', 'These goods are already counted out of stock. Press ReStock only when the parcel is physically back in the shop; until then, follow it up with the carrier using the tracking number.')}</span>
             </div>
 
             {loadError && <div style={{ color: '#DC2626', fontSize: '13px' }}>{loadError}</div>}
@@ -258,12 +276,12 @@ const ReturningItems: React.FC = () => {
                             <div key={o.id} className="glass-panel" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                     <button onClick={() => navigate(`/orders/${o.id}`)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontWeight: 600, cursor: 'pointer' }}>#{o.id}</button>
-                                    <span style={{ color: ageColor(d), fontWeight: 600, fontSize: '12px' }}>{d} days</span>
+                                    <span style={{ color: ageColor(d), fontWeight: 600, fontSize: '12px' }}>{tx('returning.nDays', '{n} days', { n: d })}</span>
                                 </div>
                                 <div style={{ fontWeight: 600 }}>{o.customer?.name || '-'} <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}>{formatPhoneDisplay(o.customer?.phone)}</span></div>
                                 <div style={{ fontSize: '12px' }}><span style={{ color: getShippingCoColor(o.shipping?.company || '') }}>{o.shipping?.company || '-'}</span> · {trackingCell(o)}</div>
                                 <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{itemsText(o)} · {money(costOf(o))}</div>
-                                {restockButton([o.id], 'Received → ReStock')}
+                                {restockButton([o.id], tx('returning.receivedRestock', 'Received → ReStock'))}
                             </div>
                         );
                     })}
@@ -274,16 +292,16 @@ const ReturningItems: React.FC = () => {
                         <thead>
                             <tr style={{ textAlign: 'left', background: 'var(--color-surface-hover)' }}>
                                 {canRestock && <th style={{ padding: '10px 12px', width: '32px' }}><input type="checkbox" checked={allShownSelected} onChange={toggleAll} /></th>}
-                                <th style={{ padding: '10px 12px' }}>Order</th>
-                                <th style={{ padding: '10px 12px' }}>Order date</th>
-                                <th style={{ padding: '10px 12px' }}>Waiting</th>
-                                <th style={{ padding: '10px 12px' }}>Customer</th>
-                                <th style={{ padding: '10px 12px' }}>Phone</th>
-                                <th style={{ padding: '10px 12px' }}>Carrier</th>
-                                <th style={{ padding: '10px 12px' }}>Tracking</th>
-                                <th style={{ padding: '10px 12px' }}>Items</th>
-                                <th style={{ padding: '10px 12px', textAlign: 'right' }}>Cost</th>
-                                <th style={{ padding: '10px 12px' }}>Remark</th>
+                                <th style={{ padding: '10px 12px' }}>{tx('returning.col.order', 'Order')}</th>
+                                <th style={{ padding: '10px 12px' }}>{tx('returning.col.orderDate', 'Order date')}</th>
+                                <th style={{ padding: '10px 12px' }}>{tx('returning.col.waiting', 'Waiting')}</th>
+                                <th style={{ padding: '10px 12px' }}>{tx('returning.col.customer', 'Customer')}</th>
+                                <th style={{ padding: '10px 12px' }}>{tx('returning.col.phone', 'Phone')}</th>
+                                <th style={{ padding: '10px 12px' }}>{tx('returning.col.carrier', 'Carrier')}</th>
+                                <th style={{ padding: '10px 12px' }}>{tx('returning.col.tracking', 'Tracking')}</th>
+                                <th style={{ padding: '10px 12px' }}>{tx('returning.col.items', 'Items')}</th>
+                                <th style={{ padding: '10px 12px', textAlign: 'right' }}>{tx('returning.col.cost', 'Cost')}</th>
+                                <th style={{ padding: '10px 12px' }}>{tx('returning.col.remark', 'Remark')}</th>
                                 {canRestock && <th style={{ padding: '10px 12px' }} />}
                             </tr>
                         </thead>
@@ -297,7 +315,7 @@ const ReturningItems: React.FC = () => {
                                             <button onClick={() => navigate(`/orders/${o.id}`)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontWeight: 600, cursor: 'pointer' }}>{o.id}</button>
                                         </td>
                                         <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{shortDate(o.date)}</td>
-                                        <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: ageColor(d), fontWeight: 600 }} title={sinceOf(o, returnedAt).fromLog ? `Returning since ${shortDate(sinceOf(o, returnedAt).at)}` : `Since ${shortDate(sinceOf(o, returnedAt).at)} (last change to the order — no status log found)`}>{d} days</td>
+                                        <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: ageColor(d), fontWeight: 600 }} title={sinceOf(o, returnedAt).fromLog ? tx('returning.sinceLog', 'Returning since {date}', { date: shortDate(sinceOf(o, returnedAt).at) }) : tx('returning.sinceEdit', 'Since {date} (last change to the order — no status log found)', { date: shortDate(sinceOf(o, returnedAt).at) })}>{tx('returning.nDays', '{n} days', { n: d })}</td>
                                         <td style={{ padding: '8px 12px' }}>{o.customer?.name || '-'}</td>
                                         <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{formatPhoneDisplay(o.customer?.phone) || '-'}</td>
                                         <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: getShippingCoColor(o.shipping?.company || ''), fontWeight: 600 }}>{o.shipping?.company || '-'}</td>
@@ -305,7 +323,7 @@ const ReturningItems: React.FC = () => {
                                         <td style={{ padding: '8px 12px' }}>{itemsText(o)}</td>
                                         <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>{money(costOf(o))}</td>
                                         <td style={{ padding: '8px 12px', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }} title={o.remark || ''}>{o.remark || '-'}</td>
-                                        {canRestock && <td style={{ padding: '8px 12px' }}>{restockButton([o.id], 'ReStock')}</td>}
+                                        {canRestock && <td style={{ padding: '8px 12px' }}>{restockButton([o.id], tx('returning.restock', 'ReStock'))}</td>}
                                     </tr>
                                 );
                             })}
@@ -316,22 +334,26 @@ const ReturningItems: React.FC = () => {
 
             {!loading && !loadError && rows.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '32px', color: 'var(--color-text-secondary)' }}>
-                    {orders.length === 0 ? 'No parcels are returning. 🎉' : 'No returning parcels match these filters.'}
+                    {orders.length === 0 ? tx('returning.emptyAll', 'No parcels are returning. 🎉') : tx('returning.emptyFiltered', 'No returning parcels match these filters.')}
                 </div>
             )}
-            {loading && <div style={{ textAlign: 'center', padding: '16px', color: 'var(--color-text-secondary)' }}>Loading…</div>}
+            {loading && <div style={{ textAlign: 'center', padding: '16px', color: 'var(--color-text-secondary)' }}>{tx('returning.loading', 'Loading…')}</div>}
 
-            <Modal isOpen={!!confirmIds} onClose={() => !restocking && setConfirmIds(null)} title="Parcel received — restock?" width="480px">
+            <Modal isOpen={!!confirmIds} onClose={() => !restocking && setConfirmIds(null)} title={tx('returning.confirmTitle', 'Parcel received — restock?')} width="480px">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
-                    <p>Restock {confirmOrders.length} order{confirmOrders.length === 1 ? '' : 's'}? Their goods go back into stock and the order{confirmOrders.length === 1 ? ' becomes' : 's become'} ReStock.</p>
+                    <p>{confirmOrders.length === 1
+                        ? tx('returning.confirmOne', 'Restock {n} order? Their goods go back into stock and the order becomes ReStock.', { n: confirmOrders.length })
+                        : tx('returning.confirmMany', 'Restock {n} orders? Their goods go back into stock and the orders become ReStock.', { n: confirmOrders.length })}</p>
                     <div style={{ maxHeight: '180px', overflowY: 'auto', background: 'var(--color-surface-hover)', borderRadius: '8px', padding: '8px 12px' }}>
                         {confirmOrders.map(o => <div key={o.id}>#{o.id} · {itemsText(o)}</div>)}
                     </div>
-                    <p style={{ color: '#B45309', fontWeight: 600 }}>Only confirm if the parcel{confirmOrders.length === 1 ? ' is' : 's are'} physically back in the shop.</p>
+                    <p style={{ color: '#B45309', fontWeight: 600 }}>{confirmOrders.length === 1
+                        ? tx('returning.onlyIfOne', 'Only confirm if the parcel is physically back in the shop.')
+                        : tx('returning.onlyIfMany', 'Only confirm if the parcels are physically back in the shop.')}</p>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                        <button onClick={() => setConfirmIds(null)} disabled={restocking} className="search-input" style={{ padding: '8px 14px', cursor: 'pointer' }}>Cancel</button>
+                        <button onClick={() => setConfirmIds(null)} disabled={restocking} className="search-input" style={{ padding: '8px 14px', cursor: 'pointer' }}>{tx('om2.cancel', 'Cancel')}</button>
                         <button onClick={doRestock} disabled={restocking} style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', background: '#7E22CE', color: 'white', fontWeight: 600, cursor: restocking ? 'wait' : 'pointer' }}>
-                            {restocking ? 'Restocking…' : 'Yes, restock'}
+                            {restocking ? tx('returning.restocking', 'Restocking…') : tx('returning.yesRestock', 'Yes, restock')}
                         </button>
                     </div>
                 </div>

@@ -10,6 +10,8 @@ import FilterDropdown from '../../components/FilterDropdown';
 import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../context/StoreContext';
 import { useAccounting } from '../../hooks/useAccounting';
@@ -101,41 +103,50 @@ const PRINT_CSS = `
   .foot { margin-top: 22px; font-size: 11px; color: #888; }
 `;
 
-const StatusChip: React.FC<{ status: string }> = ({ status }) => (
+const StatusChip: React.FC<{ status: string }> = ({ status }) => {
+    const { t } = useLanguage();
+    return (
     <span style={{
         fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap',
         color: status === 'Draft' ? '#B45309' : '#047857',
         background: status === 'Draft' ? 'rgba(217, 119, 6, 0.12)' : 'rgba(5, 150, 105, 0.12)',
-    }}>{status}</span>
-);
+    }}>{status === 'Draft' ? t('ui.accounting.common.status.draft') : status === 'Posted' ? t('ui.accounting.common.status.posted') : status}</span>
+    );
+};
 
 // Marks entries written by the payment flows (retail receipts/deposits,
 // supplier and wholesale payments) — viewable here, managed on their own page.
-const SystemChip: React.FC = () => (
+const SystemChip: React.FC = () => {
+    const { t } = useLanguage();
+    return (
     <span
-        title="Created automatically by a payment flow (Retail Payment, Procurement or Wholesale) — view and print it here, manage it from its own page."
+        title={t('ui.accounting.re.chip.autoHint')}
         style={{
             fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap',
             // Same blue as the app's primary accent, alpha-blended the same way
             // as ManualChip's amber, for the same look in both themes.
             color: '#1D4ED8', background: 'rgba(37, 99, 235, 0.12)',
             cursor: 'help', textTransform: 'uppercase', letterSpacing: '0.4px',
-        }}>auto</span>
-);
+        }}>{t('ui.accounting.re.chip.auto')}</span>
+    );
+};
 
 // The complement of SystemChip — this entry was recorded directly (on this
 // page, or in Journal Entries), not generated automatically by a payment flow.
-const ManualChip: React.FC = () => (
+const ManualChip: React.FC = () => {
+    const { t } = useLanguage();
+    return (
     <span
-        title="Recorded directly — not generated automatically by a payment flow."
+        title={t('ui.accounting.re.chip.manualHint')}
         style={{
             fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap',
             // Same amber as the Draft status chip above — alpha-blended, so it
             // stays readable on both the light and dark surface.
             color: '#B45309', background: 'rgba(217, 119, 6, 0.12)',
             cursor: 'help', textTransform: 'uppercase', letterSpacing: '0.4px',
-        }}>manual</span>
-);
+        }}>{t('ui.accounting.re.chip.manual')}</span>
+    );
+};
 
 // Local calendar day as YYYY-MM-DD — timezone-safe (uses local date parts,
 // not a UTC-shifted 24h), so it can't land on the wrong date.
@@ -192,6 +203,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
+    // This mode's own texts (ui.accounting.re.revenue.* / .expense.*).
+    const tm = (k: string) => t('ui.accounting.re.' + mode + '.' + k);
     const { currentUser, hasPermission, khrExchangeRate } = useStore();
     // Unposting rewinds finalized books, so it stays admin-only — same gate
     // as Customer Payment's bulk Unpost.
@@ -218,13 +232,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{cfg.title}</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{cfg.subtitle}</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('ui.accounting.re.' + mode + '.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{t('ui.accounting.re.' + mode + '.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, cfg]);
+    }, [setHeaderContent, cfg, mode, t]);
 
     const refetch = useCallback(() => setRefreshKey(k => k + 1), []);
 
@@ -438,8 +452,8 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const startEdit = (row: EntryRow) => {
         // Defense in depth behind the hidden buttons: system entries belong to
         // their own flow, and Posted books don't change (reverse them instead).
-        if (row.isSystem) { showToast('This entry was created by a payment flow — manage it from its own page.', 'info'); return; }
-        if (statusSupported && row.status !== 'Draft') { showToast('Posted entries cannot be changed — record a correcting entry instead.', 'info'); return; }
+        if (row.isSystem) { showToast(t('ui.accounting.re.toast.systemEntry'), 'info'); return; }
+        if (statusSupported && row.status !== 'Draft') { showToast(t('ui.accounting.re.toast.postedNoChange'), 'info'); return; }
         const ls = entryLinesOf(row.entryId);
         // The main line follows this page's direction (revenue = the credit on a
         // Revenue account), so editing a same-type reclass can't flip its sides.
@@ -487,7 +501,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 const noStatus = { ...headerPayload };
                 delete noStatus.status;
                 ({ error } = await supabase.from('journal_entries').update(noStatus).eq('id', editingEntry.entryId));
-                if (!error) showToast('Saved without the status — run migrations/add_entry_status.sql to enable drafts', 'info');
+                if (!error) showToast(t('ui.accounting.re.toast.savedNoStatus'), 'info');
             }
             if (error) throw error;
 
@@ -514,17 +528,17 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     const { error: restoreErr } = await supabase.from('journal_entry_lines').insert(oldLines);
                     if (restoreErr) {
                         console.error('Failed to restore the entry lines after a failed edit:', restoreErr);
-                        throw new Error(`${insErr.message} — and restoring the previous lines also failed; re-enter this ${mode} (${editingEntry.ref || editingEntry.entryId}).`);
+                        throw new Error(fill(t('ui.accounting.re.toast.restoreFailed'), { msg: insErr.message, kind: t('ui.accounting.re.kind.' + mode), ref: editingEntry.ref || editingEntry.entryId }));
                     }
                     throw insErr;
                 }
             }
-            showToast('Entry updated', 'success');
+            showToast(t('ui.accounting.re.toast.updated'), 'success');
             cancelEdit();
             refetch();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to update entry: ' + msg, 'error');
+            showToast(t('ui.accounting.re.toast.updateFailed') + ': ' + msg, 'error');
         } finally {
             setIsSaving(false);
         }
@@ -789,14 +803,14 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             <span
                 className="hover-highlight"
                 onClick={() => navigate(`/accounting/general-ledger?account=${ids[0]}`)}
-                title="View in General Ledger"
+                title={t('ui.accounting.common.viewInLedger')}
                 style={{ cursor: 'pointer' }}
             >{name}</span>
         ) : <span>{name}</span>;
 
     const openPrintWindow = (title: string, bodyHtml: string) => {
         const w = window.open('', '_blank', 'width=860,height=900');
-        if (!w) { showToast('Allow popups to print', 'error'); return; }
+        if (!w) { showToast(t('ui.accounting.re.toast.allowPopups'), 'error'); return; }
         w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${PRINT_CSS}</style></head><body>${bodyHtml}</body></html>`);
         w.document.close();
         w.focus();
@@ -880,11 +894,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         try {
             const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', row.entryId);
             if (error) throw error;
-            showToast('Entry posted', 'success');
+            showToast(t('ui.accounting.re.toast.posted'), 'success');
             refetch();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to post entry: ' + msg, 'error');
+            showToast(t('ui.accounting.re.toast.postFailed') + ': ' + msg, 'error');
         } finally {
             markBusy(row.entryId, false);
         }
@@ -896,12 +910,12 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     // that's a change to finalized books (a non-admin stays Draft-only,
     // same as before this page gained this capability).
     const handleDelete = async (row: EntryRow) => {
-        if (row.isSystem) { showToast('This entry was created by a payment flow — manage it from its own page.', 'info'); return; }
-        if (row.status === 'Posted' && !isAdmin) { showToast('Posted entries can only be deleted by an admin — unpost it first, or ask an admin.', 'info'); return; }
+        if (row.isSystem) { showToast(t('ui.accounting.re.toast.systemEntry'), 'info'); return; }
+        if (row.status === 'Posted' && !isAdmin) { showToast(t('ui.accounting.re.toast.postedAdminOnly'), 'info'); return; }
         if (busyIds.has(row.entryId)) return;
-        const scope = row.lineCount > 2 ? ` The WHOLE journal entry (${row.lineCount} ledger lines, not just the ${mode} part) is removed.` : ' The journal entry and its lines are removed.';
-        const postedWarn = row.status === 'Posted' ? ' This entry is already Posted — deleting it changes the finalized books.' : '';
-        if (!confirm(`Delete this ${mode} entry of ${fmt(row.amount)} (${row.date})?${scope}${postedWarn}`)) return;
+        const scope = row.lineCount > 2 ? ' ' + fill(t('ui.accounting.re.confirm.scopeWhole'), { n: row.lineCount, kind: t('ui.accounting.re.kind.' + mode) }) : ' ' + t('ui.accounting.re.confirm.scopeSingle');
+        const postedWarn = row.status === 'Posted' ? ' ' + t('ui.accounting.re.confirm.postedWarn') : '';
+        if (!confirm(fill(t('ui.accounting.re.confirm.deleteOne'), { kind: t('ui.accounting.re.kind.' + mode), amount: fmt(row.amount), date: row.date }) + scope + postedWarn)) return;
         markBusy(row.entryId, true);
         try {
             const { error: lineErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', row.entryId);
@@ -912,11 +926,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             // leaving it open would save against an entryId that no longer
             // exists and hit a confusing FK-violation error.
             if (editingEntry?.entryId === row.entryId) cancelEdit();
-            showToast('Entry deleted', 'success');
+            showToast(t('ui.accounting.re.toast.deleted'), 'success');
             refetch();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to delete entry: ' + msg, 'error');
+            showToast(t('ui.accounting.re.toast.deleteFailed') + ': ' + msg, 'error');
         } finally {
             markBusy(row.entryId, false);
         }
@@ -966,7 +980,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const handleBulkUnpost = async () => {
         const targets = selectedPostedRows;
         if (!isAdmin || !statusSupported || targets.length === 0 || isBulkUnposting) return;
-        if (!confirm(`Return ${targets.length} posted ${mode} ${targets.length === 1 ? 'entry' : 'entries'} to Draft?\nThey can then be corrected and posted again.`)) return;
+        if (!confirm(fill(t(targets.length === 1 ? 'ui.accounting.re.confirm.unpostOne' : 'ui.accounting.re.confirm.unpostMany'), { n: targets.length, kind: t('ui.accounting.re.kind.' + mode) }))) return;
         setIsBulkUnposting(true);
         const ids = targets.map(r => r.entryId);
         setBusyIds(prev => new Set([...prev, ...ids]));
@@ -975,12 +989,12 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 const { error } = await supabase.from('journal_entries').update({ status: 'Draft' }).in('id', batch);
                 if (error) throw error;
             }
-            showToast(`Returned ${targets.length} ${targets.length === 1 ? 'entry' : 'entries'} to Draft`, 'success');
+            showToast(fill(t(targets.length === 1 ? 'ui.accounting.re.toast.returnedOne' : 'ui.accounting.re.toast.returnedMany'), { n: targets.length }), 'success');
             setSelectedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
             refetch();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to unpost: ' + msg, 'error');
+            showToast(t('ui.accounting.re.toast.unpostFailed') + ': ' + msg, 'error');
             refetch();
         } finally {
             setBusyIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
@@ -994,11 +1008,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         const postedCount = targets.filter(r => r.status === 'Posted').length;
         const multiLineCount = targets.filter(r => r.lineCount > 2).length;
         const warnParts: string[] = [];
-        if (postedCount > 0) warnParts.push(`${postedCount} ${postedCount === 1 ? 'is' : 'are'} already Posted`);
-        if (multiLineCount > 0) warnParts.push(`${multiLineCount} ${multiLineCount === 1 ? 'has' : 'have'} more than 2 ledger lines — the whole journal entry is removed, not just the ${mode} part`);
+        if (postedCount > 0) warnParts.push(fill(t(postedCount === 1 ? 'ui.accounting.re.confirm.postedPartOne' : 'ui.accounting.re.confirm.postedPartMany'), { n: postedCount }));
+        if (multiLineCount > 0) warnParts.push(fill(t(multiLineCount === 1 ? 'ui.accounting.re.confirm.multiPartOne' : 'ui.accounting.re.confirm.multiPartMany'), { n: multiLineCount, kind: t('ui.accounting.re.kind.' + mode) }));
         const warn = warnParts.length > 0 ? `\n${warnParts.join('; ')}.` : '';
         const total = targets.reduce((s, r) => s + r.amount, 0);
-        if (!confirm(`Delete ${targets.length} ${mode} ${targets.length === 1 ? 'entry' : 'entries'} (${fmt(total)})? This cannot be undone.${warn}`)) return;
+        if (!confirm(fill(t(targets.length === 1 ? 'ui.accounting.re.confirm.deleteManyOne' : 'ui.accounting.re.confirm.deleteMany'), { n: targets.length, kind: t('ui.accounting.re.kind.' + mode), amount: fmt(total) }) + warn)) return;
         setIsBulkDeleting(true);
         const ids = targets.map(r => r.entryId);
         setBusyIds(prev => new Set([...prev, ...ids]));
@@ -1015,12 +1029,12 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             }
             // The row just deleted may be the one open in the edit form above.
             if (editingEntry && ids.includes(editingEntry.entryId)) cancelEdit();
-            showToast(`Deleted ${targets.length} ${targets.length === 1 ? 'entry' : 'entries'}`, 'success');
+            showToast(fill(t(targets.length === 1 ? 'ui.accounting.re.toast.deletedOne' : 'ui.accounting.re.toast.deletedMany'), { n: targets.length }), 'success');
             setSelectedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
             refetch();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to delete: ' + msg, 'error');
+            showToast(t('ui.accounting.re.toast.bulkDeleteFailed') + ': ' + msg, 'error');
             refetch();
         } finally {
             setBusyIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
@@ -1054,9 +1068,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             {/* Totals */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px' }}>
                 {[
-                    { label: `${cfg.title} This Month${filtersActive ? ' (Filtered)' : ''}`, value: fmt(totals.month) },
-                    { label: `${cfg.title} All Time${filtersActive ? ' (Filtered)' : ''}`, value: fmt(totals.all) },
-                    { label: `Entries${filtersActive ? ' (Filtered)' : ''}`, value: String(totals.count) },
+                    { label: `${tm('thisMonth')}${filtersActive ? ' ' + t('ui.accounting.re.filteredCap') : ''}`, value: fmt(totals.month) },
+                    { label: `${tm('allTime')}${filtersActive ? ' ' + t('ui.accounting.re.filteredCap') : ''}`, value: fmt(totals.all) },
+                    { label: `${t('ui.accounting.re.entriesCard')}${filtersActive ? ' ' + t('ui.accounting.re.filteredCap') : ''}`, value: String(totals.count) },
                 ].map(c => (
                     <div key={c.label} style={{ ...cardStyle, borderTop: `3px solid ${cfg.color}`, padding: '14px 16px' }}>
                         <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{c.label}</div>
@@ -1073,7 +1087,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <Icon size={18} />
                     </div>
                     <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-text-main)' }}>
-                        {editingEntry ? `Edit ${cfg.title} Entry` : `New ${cfg.title} Entry`}
+                        {editingEntry ? tm('editEntry') : tm('newEntry')}
                         {editingEntry && <span style={{ marginLeft: '10px', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-muted)' }}>{editingEntry.ref || editingEntry.entryId}</span>}
                     </div>
                 </div>
@@ -1081,7 +1095,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 {editingEntry && !editSimple && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', marginBottom: '14px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '12.5px', color: 'var(--color-text-main)' }}>
                         <AlertTriangle size={16} color="#F59E0B" style={{ flexShrink: 0 }} />
-                        This entry has more than two ledger lines, so only its date, description and status can change here — the accounts and amount stay as they are.
+                        {t('ui.accounting.re.multiLineNote')}
                     </div>
                 )}
 
@@ -1089,11 +1103,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '13px', color: 'var(--color-text-main)' }}>
                         <AlertTriangle size={18} color="#F59E0B" style={{ flexShrink: 0 }} />
                         <span>
-                            No active {cfg.accountType} accounts exist yet.{' '}
+                            {fill(t('ui.accounting.re.noActive'), { type: t('ui.accounting.common.accountType.' + cfg.accountType) })}{' '}
                             <button onClick={() => navigate('/accounting/chart-of-accounts')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: '13px' }}>
-                                Create one in the Chart of Accounts
+                                {t('ui.accounting.re.createInCoa')}
                             </button>{' '}
-                            first (account type: {cfg.accountType}).
+                            {fill(t('ui.accounting.re.firstType'), { type: t('ui.accounting.common.accountType.' + cfg.accountType) })}
                         </span>
                     </div>
                 ) : (
@@ -1101,31 +1115,31 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     // on their own row); one column stacked on mobile.
                     <div className="rev-exp-form" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px', alignItems: 'end' }}>
                         <div>
-                            <label style={labelStyle}>Date</label>
+                            <label style={labelStyle}>{t('ui.accounting.common.date')}</label>
                             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
                         </div>
                         <div>
-                            <label style={labelStyle}>Reference Number</label>
+                            <label style={labelStyle}>{t('ui.accounting.re.referenceNumber')}</label>
                             <input
                                 type="text"
                                 value={editingEntry ? (editingEntry.ref || '—') : reference}
                                 onChange={e => setReference(e.target.value)}
                                 disabled={!!editingEntry}
-                                title={editingEntry ? "An existing entry's reference doesn't change here" : 'Auto-generated — edit it if you track your own numbers'}
+                                title={editingEntry ? t('ui.accounting.re.refLockedHint') : t('ui.accounting.re.refAutoHint')}
                                 style={inputStyle}
                             />
                         </div>
                         <div>
-                            <label style={labelStyle}>Status</label>
+                            <label style={labelStyle}>{t('ui.accounting.common.statusLabel')}</label>
                             <select value={entryStatus} onChange={e => setEntryStatus(e.target.value as 'Posted' | 'Draft')} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                <option value="Posted">Posted</option>
-                                <option value="Draft">Draft</option>
+                                <option value="Posted">{t('ui.accounting.common.status.posted')}</option>
+                                <option value="Draft">{t('ui.accounting.common.status.draft')}</option>
                             </select>
                         </div>
                         <div onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') handleSave(); }}>
                             <MoneyInput
                                 field={field}
-                                label="Amount"
+                                label={t('common.amount')}
                                 allowKhr
                                 placeholder={field.currency === 'KHR' ? '0' : '0.00'}
                                 onToggleCurrency={coupling.onToggleCurrency}
@@ -1136,21 +1150,21 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             />
                         </div>
                         <div>
-                            <label style={labelStyle}>{cfg.accountLabel}</label>
+                            <label style={labelStyle}>{tm('accountLabel')}</label>
                             <select value={accountId} onChange={e => setAccountId(e.target.value)} disabled={!!editingEntry && !editSimple} style={{ ...inputStyle, cursor: 'pointer' }}>
                                 {mainAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label style={labelStyle}>{cfg.counterLabel}</label>
+                            <label style={labelStyle}>{tm('counterLabel')}</label>
                             <select value={counterId} onChange={e => coupling.onAccountChange(e.target.value)} disabled={!!editingEntry && !editSimple} style={{ ...inputStyle, cursor: 'pointer' }}>
                                 {mode === 'expense' ? (
                                     <>
-                                        <optgroup label="Cash / bank / other assets">
+                                        <optgroup label={t('ui.accounting.re.optCashAssets')}>
                                             {counterAccounts.filter(a => a.account_type === 'Asset').map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
                                         </optgroup>
                                         {counterAccounts.some(a => a.account_type === 'Liability') && (
-                                            <optgroup label="On credit (liabilities)">
+                                            <optgroup label={t('ui.accounting.re.optOnCredit')}>
                                                 {counterAccounts.filter(a => a.account_type === 'Liability').map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
                                             </optgroup>
                                         )}
@@ -1159,11 +1173,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             </select>
                         </div>
                         <div style={{ gridColumn: '1 / -1' }}>
-                            <label style={labelStyle}>Description (optional)</label>
+                            <label style={labelStyle}>{t('ui.accounting.common.descriptionOptionalLower')}</label>
                             <input
                                 type="text" className="d2-khmer" placeholder={accountById.get(accountId)?.account_name
-                                    ? `Default: ${defaultDescription(mode, accountById.get(accountId)?.account_name || '')}`
-                                    : `e.g. ${mode === 'revenue' ? 'Speaker repair service' : 'Office rent for October'}`}
+                                    ? fill(t('ui.accounting.re.defaultPh'), { text: defaultDescription(mode, accountById.get(accountId)?.account_name || '') })
+                                    : tm('examplePh')}
                                 value={description} onChange={e => setDescription(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
                                 style={inputStyle}
@@ -1179,13 +1193,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             const crName = mode === 'revenue' ? mainName : counterName;
                             return (
                                 <div style={{ gridColumn: '1 / -1', borderRadius: '10px', border: `1px solid color-mix(in srgb, ${cfg.color} 30%, var(--color-border))`, background: `color-mix(in srgb, ${cfg.color} 4%, var(--color-surface))`, padding: '10px 14px' }}>
-                                    <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: cfg.color, marginBottom: '4px' }}>Journal Entry Preview</div>
+                                    <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: cfg.color, marginBottom: '4px' }}>{t('ui.accounting.re.preview')}</div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-main)' }}>
-                                        <span className="d2-khmer">Dr. {drName}</span>
+                                        <span className="d2-khmer">{fill(t('ui.accounting.re.drDot'), { name: drName })}</span>
                                         <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(amountNum)}{field.currency === 'KHR' && <span style={{ fontWeight: 500, color: 'var(--color-text-secondary)' }}> ({formatMoneyLine({ amount: amountNum, ...field.meta })})</span>}</span>
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0 2px', fontSize: '13px', color: 'var(--color-text-main)' }}>
-                                        <span className="d2-khmer" style={{ paddingLeft: '18px' }}>Cr. {crName}</span>
+                                        <span className="d2-khmer" style={{ paddingLeft: '18px' }}>{fill(t('ui.accounting.re.crDot'), { name: crName })}</span>
                                         <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(amountNum)}</span>
                                     </div>
                                 </div>
@@ -1201,14 +1215,14 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     fontSize: '13px', fontWeight: 700, cursor: canSave ? 'pointer' : 'not-allowed', flexShrink: 0, height: '38px',
                                 }}
                             >
-                                {editingEntry ? <Pencil size={15} /> : <Plus size={16} />} {isSaving ? 'Saving…' : editingEntry ? 'Save Changes' : cfg.submit}
+                                {editingEntry ? <Pencil size={15} /> : <Plus size={16} />} {isSaving ? t('ui.accounting.common.saving') : editingEntry ? t('ui.accounting.common.saveChanges') : tm('submit')}
                             </button>
                             {editingEntry && (
                                 <button
                                     onClick={cancelEdit}
                                     style={{ padding: '10px 16px', borderRadius: '9px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', flexShrink: 0, height: '38px' }}
                                 >
-                                    Cancel
+                                    {t('common.cancel')}
                                 </button>
                             )}
                         </div>
@@ -1219,20 +1233,20 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             {/* Entries list */}
             <div style={{ ...cardStyle, overflow: 'hidden' }}>
                 <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--color-text-main)' }}>{cfg.title} Entries</span>
+                    <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--color-text-main)' }}>{tm('entries')}</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         {(() => {
                             const hdrBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 11px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' };
                             const disabled = loading || filteredRows.length === 0;
                             return (
                                 <>
-                                    <button onClick={printList} disabled={disabled} title="Print the listed entries" style={{ ...hdrBtn, opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
-                                        <Printer size={13} /> Print List
+                                    <button onClick={printList} disabled={disabled} title={t('ui.accounting.re.printListHint')} style={{ ...hdrBtn, opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
+                                        <Printer size={13} /> {t('ui.accounting.re.printList')}
                                     </button>
-                                    <button onClick={exportCsv} disabled={disabled} title="Download the listed entries as CSV" style={{ ...hdrBtn, opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
-                                        <Download size={13} /> Export CSV
+                                    <button onClick={exportCsv} disabled={disabled} title={t('ui.accounting.re.exportHint')} style={{ ...hdrBtn, opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
+                                        <Download size={13} /> {t('ui.accounting.common.exportCsv')}
                                     </button>
-                                    <button onClick={refetch} title="Reload" style={hdrBtn}>
+                                    <button onClick={refetch} title={t('ui.accounting.common.reload')} style={hdrBtn}>
                                         <RefreshCw size={13} style={isFetching ? { animation: 'spin 1s linear infinite' } : {}} />
                                     </button>
                                 </>
@@ -1246,45 +1260,45 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     <div style={{ position: 'relative', flex: '1 1 180px', maxWidth: '300px' }}>
                         <Search size={14} color="var(--color-text-muted)" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
                         <input
-                            type="text" className="d2-khmer" placeholder="Search description or account…"
+                            type="text" className="d2-khmer" placeholder={t('ui.accounting.re.searchPlaceholder')}
                             value={search} onChange={e => setSearch(e.target.value)}
                             style={{ ...inputStyle, paddingLeft: '32px', boxSizing: 'border-box' }}
                         />
                     </div>
                     <DateRangePicker value={{ start: dateFrom, end: dateTo }} onChange={(r) => { setDateFrom(r.start); setDateTo(r.end); }} />
                     <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | 'Posted' | 'Draft')} style={{ ...inputStyle, width: 'auto', minWidth: '122px', cursor: 'pointer' }}>
-                        <option value="All">All Statuses</option>
-                        <option value="Posted">Posted</option>
-                        <option value="Draft">Draft</option>
+                        <option value="All">{t('ui.accounting.re.allStatuses')}</option>
+                        <option value="Posted">{t('ui.accounting.common.status.posted')}</option>
+                        <option value="Draft">{t('ui.accounting.common.status.draft')}</option>
                     </select>
                     <select value={originFilter} onChange={e => setOriginFilter(e.target.value as 'All' | 'Auto' | 'Manual')} style={{ ...inputStyle, width: 'auto', minWidth: '122px', cursor: 'pointer' }}>
-                        <option value="All">Auto &amp; Manual</option>
-                        <option value="Auto">Auto only</option>
-                        <option value="Manual">Manual only</option>
+                        <option value="All">{t('ui.accounting.re.autoAndManual')}</option>
+                        <option value="Auto">{t('ui.accounting.re.autoOnly')}</option>
+                        <option value="Manual">{t('ui.accounting.re.manualOnly')}</option>
                     </select>
                     {/* Source and account filters — multi-select dropdowns,
                         ANDed together; within one, ticked options OR. */}
                     {!loading && showSourceFilter && (
                         <FilterDropdown
-                            allLabel="All Sources"
+                            allLabel={t('ui.accounting.re.allSources')}
                             noun="source"
                             options={filterSources.map(s => ({
-                                key: s, label: s, count: sourceCounts.get(s) || 0,
+                                key: s, label: t('ui.accounting.re.source.' + s), count: sourceCounts.get(s) || 0,
                                 title: {
-                                    Retail: 'From the retail flow — receipts, deposits and delivery entries',
-                                    Wholesale: 'From the wholesale flow — wholesale payment entries',
-                                    Direct: 'Recorded directly on this page or in Journal Entries — not from the retail or wholesale flows',
+                                    Retail: t('ui.accounting.re.sourceHint.Retail'),
+                                    Wholesale: t('ui.accounting.re.sourceHint.Wholesale'),
+                                    Direct: t('ui.accounting.re.sourceHint.Direct'),
                                 }[s],
                             }))}
                             selected={sourceFilters}
                             onToggle={k => toggleSourceFilter(k as EntrySource)}
                             onClear={() => setSourceFilters(new Set())}
-                            emptyTitle={`No ${mode} entries here match the current filters`}
+                            emptyTitle={tm('noMatchHere')}
                         />
                     )}
                     {!loading && showAccountFilter && (
                         <FilterDropdown
-                            allLabel="All Accounts"
+                            allLabel={t('ui.accounting.common.allAccountsCap')}
                             noun="account"
                             options={filterAccounts.map(a => ({
                                 key: a.id, label: a.account_name, count: accountCounts.get(a.id) || 0,
@@ -1293,12 +1307,12 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             selected={accountFilters}
                             onToggle={toggleAccountFilter}
                             onClear={() => setAccountFilters(new Set())}
-                            emptyTitle={`No ${mode} entries here match the current filters`}
+                            emptyTitle={tm('noMatchHere')}
                         />
                     )}
                     {!loading && showCounterFilter && (
                         <FilterDropdown
-                            allLabel={mode === 'revenue' ? 'All Received Into' : 'All Paid From'}
+                            allLabel={tm('allCounter')}
                             noun={mode === 'revenue' ? 'received-into account' : 'paid-from account'}
                             options={filterCounters.map(a => ({
                                 key: a.id, label: a.account_name, count: counterCounts.get(a.id) || 0,
@@ -1307,7 +1321,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             selected={counterFilters}
                             onToggle={toggleCounterFilter}
                             onClear={() => setCounterFilters(new Set())}
-                            emptyTitle={`No ${mode} entries here match the current filters`}
+                            emptyTitle={tm('noMatchHere')}
                         />
                     )}
                     {filtersActive && (
@@ -1315,42 +1329,42 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setStatusFilter('All'); setOriginFilter('All'); setAccountFilters(new Set()); setSourceFilters(new Set()); setCounterFilters(new Set()); }}
                             style={{ ...inputStyle, width: 'auto', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
                         >
-                            Clear
+                            {t('ui.accounting.common.clear')}
                         </button>
                     )}
                     <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                        {loading ? '…' : `${filteredRows.length} of ${rows.length}`}
+                        {loading ? '…' : fill(t('ui.accounting.re.nOfTotal'), { n: filteredRows.length, total: rows.length })}
                     </span>
                 </div>
 
                 {loadError && rows.length > 0 && (
                     <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 18px', borderBottom: '1px solid var(--color-border)', fontSize: '12px', color: '#B45309', background: 'rgba(217, 119, 6, 0.07)' }}>
-                        <span style={{ flex: 1 }}>Couldn't refresh the entries — showing the last loaded list. {loadError}</span>
-                        <button onClick={refetch} disabled={isFetching} style={{ padding: '3px 10px', borderRadius: '7px', border: '1px solid #B45309', background: 'transparent', color: '#B45309', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Retry</button>
+                        <span style={{ flex: 1 }}>{t('ui.accounting.re.refreshFailed')} {loadError}</span>
+                        <button onClick={refetch} disabled={isFetching} style={{ padding: '3px 10px', borderRadius: '7px', border: '1px solid #B45309', background: 'transparent', color: '#B45309', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>{t('ui.accounting.re.retry')}</button>
                     </div>
                 )}
                 {!statusSupported && !loading && (
                     <div style={{ padding: '8px 18px', borderBottom: '1px solid var(--color-border)', fontSize: '12px', color: '#B45309', background: 'rgba(217, 119, 6, 0.07)' }}>
-                        Draft / Posted statuses need <code>migrations/add_entry_status.sql</code> on this instance — every entry shows as Posted for now.
+                        {t('ui.accounting.re.statusMigrationBefore')} <code>migrations/add_entry_status.sql</code> {t('ui.accounting.re.statusMigrationAfter')}
                     </div>
                 )}
 
                 {loading ? (
-                    <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading entries…</div>
+                    <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.accounting.re.loadingEntries')}</div>
                 ) : loadError && rows.length === 0 ? (
                     <div role="alert" style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                        <div style={{ marginBottom: '12px' }}>Couldn't load the entries. {loadError}</div>
+                        <div style={{ marginBottom: '12px' }}>{t('ui.accounting.re.loadFailed')} {loadError}</div>
                         <button onClick={refetch} disabled={isFetching} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                            Retry
+                            {t('ui.accounting.re.retry')}
                         </button>
                     </div>
                 ) : rows.length === 0 ? (
                     <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                        No {mode} entries yet — record the first one above.
+                        {tm('emptyAll')}
                     </div>
                 ) : filteredRows.length === 0 ? (
                     <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                        No entries match these filters.
+                        {t('ui.accounting.re.emptyFiltered')}
                     </div>
                 ) : isMobile ? (
                     // Phones: one card per entry — no sideways scrolling.
@@ -1365,7 +1379,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                 checked={selectedIds.has(r.entryId)}
                                                 onChange={() => toggleSelect(r.entryId)}
                                                 disabled={busyIds.has(r.entryId)}
-                                                title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
+                                                title={busyIds.has(r.entryId) ? t('ui.accounting.re.busy') : t('ui.accounting.re.selectEntry')}
                                                 style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer', flexShrink: 0 }}
                                             />
                                         )}
@@ -1390,13 +1404,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                             : <>{accountLink(r.accountName, r.accountIds)} ← {accountLink(r.counterName, r.counterIds)}</>}
                                     </div>
                                     {r.status === 'Draft' && statusSupported && !r.isSystem && (
-                                        <button onClick={() => postEntry(r)} disabled={busyIds.has(r.entryId)} style={{ padding: '4px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer', flexShrink: 0, opacity: busyIds.has(r.entryId) ? 0.6 : 1 }}>{busyIds.has(r.entryId) ? '…' : 'Post'}</button>
+                                        <button onClick={() => postEntry(r)} disabled={busyIds.has(r.entryId)} style={{ padding: '4px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer', flexShrink: 0, opacity: busyIds.has(r.entryId) ? 0.6 : 1 }}>{busyIds.has(r.entryId) ? '…' : t('ui.accounting.re.post')}</button>
                                     )}
                                 </div>
                             </div>
                         ))}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--color-bg)', fontWeight: 800, fontSize: '13px' }}>
-                            <span style={{ color: 'var(--color-text-main)' }}>{filtersActive ? 'Total (filtered)' : 'Total'}</span>
+                            <span style={{ color: 'var(--color-text-main)' }}>{filtersActive ? `${t('common.total')} ${t('ui.accounting.re.filtered')}` : t('common.total')}</span>
                             <span style={{ color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(filteredTotal)}</span>
                         </div>
                     </>
@@ -1418,20 +1432,20 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                 ref={el => { if (el) el.indeterminate = !allSelected && someSelected; }}
                                                 onChange={toggleSelectAll}
                                                 disabled={selectableIds.length === 0}
-                                                title="Select all listed entries"
+                                                title={t('ui.accounting.re.selectAll')}
                                                 style={{ cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
                                             />
                                         </th>
                                     )}
                                     {([
-                                        { key: 'date', label: 'Date' },
-                                        { key: 'ref', label: 'Reference' },
-                                        { key: 'description', label: 'Description' },
-                                        { key: 'account', label: cfg.accountLabel },
-                                        { key: 'counter', label: cfg.counterLabel },
-                                        { key: 'amount', label: 'Amount' },
-                                        { key: 'status', label: 'Status' },
-                                        { key: 'actions', label: 'Actions' },
+                                        { key: 'date', label: t('ui.accounting.common.date') },
+                                        { key: 'ref', label: t('ui.accounting.common.reference') },
+                                        { key: 'description', label: t('ui.accounting.common.description') },
+                                        { key: 'account', label: tm('accountLabel') },
+                                        { key: 'counter', label: tm('counterLabel') },
+                                        { key: 'amount', label: t('common.amount') },
+                                        { key: 'status', label: t('ui.accounting.common.statusLabel') },
+                                        { key: 'actions', label: t('common.actions') },
                                     ] as const).map(c => (
                                         <th key={c.key} style={{ ...widthStyle(c.key), position: 'relative', padding: '14px 20px', textAlign: c.key === 'amount' ? 'right' : 'left', fontSize: '12px', fontWeight: 600, textTransform: 'none', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             {c.label}
@@ -1451,7 +1465,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                     checked={selectedIds.has(r.entryId)}
                                                     onChange={() => toggleSelect(r.entryId)}
                                                     disabled={busyIds.has(r.entryId)}
-                                                    title={busyIds.has(r.entryId) ? 'Busy…' : 'Select entry'}
+                                                    title={busyIds.has(r.entryId) ? t('ui.accounting.re.busy') : t('ui.accounting.re.selectEntry')}
                                                     style={{ cursor: busyIds.has(r.entryId) ? 'not-allowed' : 'pointer' }}
                                                 />
                                             </td>
@@ -1467,16 +1481,16 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                 <StatusChip status={r.status} />
                                                 {r.isSystem ? <SystemChip /> : <ManualChip />}
                                                 {r.status === 'Draft' && statusSupported && !r.isSystem && (
-                                                    <button onClick={() => postEntry(r)} disabled={busyIds.has(r.entryId)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer', opacity: busyIds.has(r.entryId) ? 0.6 : 1 }}>{busyIds.has(r.entryId) ? '…' : 'Post'}</button>
+                                                    <button onClick={() => postEntry(r)} disabled={busyIds.has(r.entryId)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer', opacity: busyIds.has(r.entryId) ? 0.6 : 1 }}>{busyIds.has(r.entryId) ? '…' : t('ui.accounting.re.post')}</button>
                                                 )}
                                             </span>
                                         </td>
                                         <td style={{ ...widthStyle('actions'), padding: '14px 20px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
-                                                {canEdit(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} aria-label="Edit entry" />}
-                                                <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} aria-label="View entry" />
-                                                <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} aria-label="Print entry" />
-                                                {canDelete(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} aria-label="Delete entry" />}
+                                                {canEdit(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} aria-label={t('ui.accounting.re.aria.edit')} />}
+                                                <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} aria-label={t('ui.accounting.re.aria.view')} />
+                                                <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} aria-label={t('ui.accounting.re.aria.print')} />
+                                                {canDelete(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} aria-label={t('ui.accounting.re.aria.delete')} />}
                                             </span>
                                         </td>
                                         <td aria-hidden style={{ padding: 0 }} />
@@ -1486,7 +1500,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontWeight: 800 }}>
                                     <td colSpan={canUseCheckbox ? 6 : 5} style={{ padding: '14px 20px', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                        {`Total — ${filteredRows.length} ${filteredRows.length === 1 ? 'entry' : 'entries'}${filtersActive ? ' (filtered)' : ''}`}
+                                        {`${fill(t(filteredRows.length === 1 ? 'ui.accounting.re.totalEntriesOne' : 'ui.accounting.re.totalEntries'), { n: filteredRows.length })}${filtersActive ? ' ' + t('ui.accounting.re.filtered') : ''}`}
                                     </td>
                                     <td style={{ padding: '14px 20px', textAlign: 'right', color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(filteredTotal)}</td>
                                     <td colSpan={3}></td>
@@ -1518,13 +1532,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         boxShadow: '0 10px 32px rgba(0,0,0,0.22)'
                     }}>
                         <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
-                            {selectedRows.length > 0 ? `${selectedRows.length} selected · ${fmt(selectedTotal)}` : 'Working…'}
+                            {selectedRows.length > 0 ? fill(t('ui.accounting.re.selectedSummary'), { n: selectedRows.length, amount: fmt(selectedTotal) }) : t('ui.accounting.re.working')}
                         </span>
                         {isAdmin && statusSupported && (selectedPostedRows.length > 0 || isBulkUnposting) && (
                             <button
                                 onClick={handleBulkUnpost}
                                 disabled={bulkBusy}
-                                title="Return the selected posted entries to Draft so they can be corrected"
+                                title={t('ui.accounting.re.unpostHint')}
                                 style={{
                                     padding: '8px 16px', borderRadius: '8px',
                                     border: '1px solid #D97706', background: '#FEF3C7', color: '#92400E',
@@ -1532,7 +1546,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
                                 }}
                             >
-                                {isBulkUnposting ? 'Unposting…' : `Unpost (${selectedPostedRows.length})`}
+                                {isBulkUnposting ? t('ui.accounting.re.unposting') : `${t('ui.accounting.re.unpost')} (${selectedPostedRows.length})`}
                             </button>
                         )}
                         {(selectedDeletableRows.length > 0 || isBulkDeleting) && (
@@ -1547,7 +1561,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
                                 }}
                             >
-                                <Trash2 size={14} /> {isBulkDeleting ? 'Deleting…' : `Delete (${selectedDeletableRows.length})`}
+                                <Trash2 size={14} /> {isBulkDeleting ? t('ui.accounting.re.deleting') : `${t('common.delete')} (${selectedDeletableRows.length})`}
                             </button>
                         )}
                         <button
@@ -1560,14 +1574,14 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 whiteSpace: 'nowrap'
                             }}
                         >
-                            Clear
+                            {t('ui.accounting.common.clear')}
                         </button>
                     </div>
                 );
             })()}
 
             {/* View entry modal */}
-            <Modal isOpen={!!viewEntry} onClose={() => setViewEntry(null)} title={`${cfg.title} Entry`} width="820px">
+            <Modal isOpen={!!viewEntry} onClose={() => setViewEntry(null)} title={tm('entry')} width="820px">
                 {viewEntry && (() => {
                     const ls = entryLinesOf(viewEntry.entryId);
                     const totalDebit = ls.reduce((s, l) => s + l.debit, 0);
@@ -1577,13 +1591,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
-                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Reference</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.accounting.common.reference')}</span>
                                 <span style={{ color: 'var(--color-text-main)', fontSize: '12px' }}>{viewEntry.ref || viewEntry.entryId}</span>
-                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Date</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.accounting.common.date')}</span>
                                 <span style={{ color: 'var(--color-text-main)' }}>{viewEntry.date}</span>
-                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.accounting.common.statusLabel')}</span>
                                 <span><StatusChip status={viewEntry.status} /></span>
-                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Description</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.accounting.common.description')}</span>
                                 <span className="d2-khmer" style={{ color: 'var(--color-text-main)' }}>{viewEntry.description || '—'}</span>
                             </div>
                             {/* Balance banner — blue when debits equal credits, red otherwise;
@@ -1596,11 +1610,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                             }}>
                                 <div>
                                     <div style={{ fontSize: '14px', fontWeight: 700, color: accent, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        {balanced ? <>✓ Entry Balanced</> : <>Entry Not Balanced</>}
+                                        {balanced ? <>✓ {t('ui.accounting.re.entryBalanced')}</> : <>{t('ui.accounting.re.entryNotBalanced')}</>}
                                     </div>
                                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>
-                                        Debits: {totalDebit.toFixed(2)} | Credits: {totalCredit.toFixed(2)}
-                                        {!balanced && <> · difference {Math.abs(totalDebit - totalCredit).toFixed(2)}</>}
+                                        {fill(t('ui.accounting.re.debitsCreditsLine'), { debits: totalDebit.toFixed(2), credits: totalCredit.toFixed(2) })}
+                                        {!balanced && <> · {fill(t('ui.accounting.re.differenceLine'), { amount: Math.abs(totalDebit - totalCredit).toFixed(2) })}</>}
                                     </div>
                                 </div>
                                 {balanced
@@ -1611,10 +1625,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                                     <thead>
                                         <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border)' }}>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Account</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Description</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>Debit</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>Credit</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.account')}</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.description')}</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>{t('ui.accounting.common.debit')}</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>{t('ui.accounting.common.credit')}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1623,7 +1637,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                 <td
                                                     className="d2-khmer hover-highlight"
                                                     onClick={() => navigate(`/accounting/general-ledger?account=${l.accountId}`)}
-                                                    title="View in General Ledger"
+                                                    title={t('ui.accounting.common.viewInLedger')}
                                                     style={{ padding: '8px 12px', color: 'var(--color-text-main)', cursor: 'pointer' }}
                                                 >{accountLabelOf(l.accountId)}</td>
                                                 <td className="d2-khmer" style={{ padding: '8px 12px', color: l.lineDescription ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{l.lineDescription || '—'}</td>
@@ -1634,7 +1648,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     </tbody>
                                     <tfoot>
                                         <tr style={{ background: 'var(--color-bg)', fontWeight: 700 }}>
-                                            <td colSpan={2} style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>Total</td>
+                                            <td colSpan={2} style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>{t('common.total')}</td>
                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmt(totalDebit)}</td>
                                             <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmt(totalCredit)}</td>
                                         </tr>
@@ -1646,13 +1660,13 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     onClick={() => printEntry(viewEntry)}
                                     style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '8px', border: 'none', background: cfg.color, color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
                                 >
-                                    <Printer size={15} /> Print
+                                    <Printer size={15} /> {t('ui.accounting.common.print')}
                                 </button>
                                 <button
                                     onClick={() => setViewEntry(null)}
                                     style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                                 >
-                                    Close
+                                    {t('common.close')}
                                 </button>
                             </div>
                         </div>

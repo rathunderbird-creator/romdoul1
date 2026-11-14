@@ -33,6 +33,8 @@ import { dayKeyFromDate } from '../utils/dateRange';
 import { useFifoValuation } from '../hooks/useFifo';
 import type { Product, StockCountReason } from '../types';
 import LazyAvatar from '../components/LazyAvatar';
+import { useLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
 
 type SortConfig = {
     key: keyof Product | 'totalValue';
@@ -76,6 +78,7 @@ const InlineEditCell = ({
     isLowStock?: boolean;
     canEdit?: boolean;
 }) => {
+    const { t } = useLanguage();
     const [isEditing, setIsEditing] = React.useState(false);
     const [tempValue, setTempValue] = React.useState(value.toString());
     const inputRef = React.useRef<HTMLInputElement>(null);
@@ -127,7 +130,7 @@ const InlineEditCell = ({
             onClick={() => { if (canEdit) { setIsEditing(true); setTempValue(value.toString()); } }}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: canEdit ? 'text' : 'default', minHeight: '24px', padding: '2px 4px', borderRadius: '4px', margin: '-2px -4px' }}
             className={canEdit ? "hover-bg-subtle" : ""}
-            title={canEdit ? "Click to edit" : undefined}
+            title={canEdit ? t('ui.inventory.clickToEdit') : undefined}
         >
             {type === 'price' ? (
                 <span style={{ fontWeight: 600 }}>${value}</span>
@@ -150,6 +153,7 @@ const PIE_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4
 const Inventory: React.FC = () => {
     const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, currentUser, productOrder, updateProductOrder, refreshData, addStock, adjustStock, addOnlineOrder, updateOrderStatus, hasPermission } = useStore();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
     const { customers: wholesaleCustomers, fetchCustomers: fetchWholesaleCustomers } = useWholesale();
@@ -175,8 +179,8 @@ const Inventory: React.FC = () => {
         return row && row.qty > 0 ? row.value / row.qty : null;
     };
     const fifoCostTitle = fifo.status === 'ready'
-        ? 'Last cost: the latest receipt cost. FIFO avg: the average cost of the layers in stock now (— when there are none).'
-        : (fifo.message || 'Last cost: the latest receipt cost.');
+        ? t('ui.inventory.fifoCostTitle')
+        : (fifo.message || t('ui.inventory.lastCostTitle'));
 
     // Header effect moved below openAddModal
 
@@ -245,19 +249,19 @@ const Inventory: React.FC = () => {
     const validateStockQty = (raw: number | string, { allowZero = false } = {}): number | null => {
         const qty = Number(raw);
         if (raw === '' || !Number.isFinite(qty)) {
-            showToast('Please enter a valid stock amount', 'error');
+            showToast(t('ui.inventory.toast.invalidStockAmount'), 'error');
             return null;
         }
         if (!Number.isInteger(qty)) {
-            showToast('Stock must be a whole number of units', 'error');
+            showToast(t('ui.inventory.toast.stockWholeNumber'), 'error');
             return null;
         }
         if (allowZero ? qty < 0 : qty <= 0) {
-            showToast(allowZero ? 'Stock cannot be negative' : 'Enter an amount greater than zero', 'error');
+            showToast(allowZero ? t('ui.inventory.toast.stockNotNegative') : t('ui.inventory.toast.amountAboveZero'), 'error');
             return null;
         }
         if (qty > MAX_STOCK_ENTRY) {
-            showToast(`That looks like a typo — ${qty.toLocaleString()} exceeds the ${MAX_STOCK_ENTRY.toLocaleString()} limit`, 'error');
+            showToast(fill(t('ui.inventory.toast.typoLimit'), { qty: qty.toLocaleString(), max: MAX_STOCK_ENTRY.toLocaleString() }), 'error');
             return null;
         }
         return qty;
@@ -271,7 +275,7 @@ const Inventory: React.FC = () => {
 
         const cost = Number(addStockCost) || 0;
         if (cost < 0) {
-            showToast('Unit cost cannot be negative', 'error');
+            showToast(t('ui.inventory.toast.unitCostNotNegative'), 'error');
             return;
         }
 
@@ -280,12 +284,12 @@ const Inventory: React.FC = () => {
         setIsStockSubmitting(true);
         try {
             await addStock(pid, qty, cost);
-            showToast(`Added ${qty} stock to ${name}`, 'success');
+            showToast(fill(t('ui.inventory.toast.addedStock'), { qty, name }), 'success');
             setAddStockProduct(null);
             setRecentlyUpdatedId(pid);
             setTimeout(() => setRecentlyUpdatedId(null), 2000);
         } catch (err) {
-            showToast('Failed to add stock: ' + (err instanceof Error ? err.message : 'unknown error'), 'error');
+            showToast(t('ui.inventory.toast.addStockFailed') + (err instanceof Error ? err.message : t('ui.inventory.unknownError')), 'error');
         } finally {
             setIsStockSubmitting(false);
         }
@@ -302,12 +306,12 @@ const Inventory: React.FC = () => {
         setIsStockSubmitting(true);
         try {
             await adjustStock(pid, qty, adjustStockReason, adjustStockKind);
-            showToast(`Adjusted stock for ${name}`, 'success');
+            showToast(fill(t('ui.inventory.toast.adjustedStock'), { name }), 'success');
             setAdjustStockProduct(null);
             setRecentlyUpdatedId(pid);
             setTimeout(() => setRecentlyUpdatedId(null), 2000);
         } catch (err) {
-            showToast('Failed to adjust stock: ' + (err instanceof Error ? err.message : 'unknown error'), 'error');
+            showToast(t('ui.inventory.toast.adjustStockFailed') + (err instanceof Error ? err.message : t('ui.inventory.unknownError')), 'error');
         } finally {
             setIsStockSubmitting(false);
         }
@@ -320,12 +324,12 @@ const Inventory: React.FC = () => {
         
         const price = Number(wholesalePrice);
         if (isNaN(price) || price < 0) {
-            showToast('Price must be a valid non-negative number', 'error');
+            showToast(t('ui.inventory.toast.priceInvalid'), 'error');
             return;
         }
         
         if (!wholesaleCustomer.trim()) {
-            showToast('Customer name is required', 'error');
+            showToast(t('ui.inventory.toast.customerRequired'), 'error');
             return;
         }
 
@@ -385,17 +389,17 @@ const Inventory: React.FC = () => {
                 }
             }
             if (reachedStatus !== chosenStatus) {
-                showToast(`Wholesale order created for ${qty}x ${wholesaleProduct.name}, but it is still ${reachedStatus}, not ${chosenStatus}. Change its status from the Orders page.`, 'error');
+                showToast(fill(t('ui.inventory.toast.wholesalePartial'), { qty, name: wholesaleProduct.name, reached: reachedStatus, chosen: chosenStatus }), 'error');
                 setWholesaleProduct(null);
                 return;
             }
-            showToast(`Wholesale order created for ${qty}x ${wholesaleProduct.name}`, 'success');
+            showToast(fill(t('ui.inventory.toast.wholesaleCreated'), { qty, name: wholesaleProduct.name }), 'success');
             setWholesaleProduct(null);
             
             setRecentlyUpdatedId(wholesaleProduct.id);
             setTimeout(() => setRecentlyUpdatedId(null), 2000);
         } catch (err) {
-            showToast('Failed to create wholesale order: ' + (err instanceof Error ? err.message : 'unknown error'), 'error');
+            showToast(t('ui.inventory.toast.wholesaleFailed') + (err instanceof Error ? err.message : t('ui.inventory.unknownError')), 'error');
         } finally {
             setIsWholesaleSubmitting(false);
         }
@@ -433,19 +437,19 @@ const Inventory: React.FC = () => {
     };
 
     const handleBulkDelete = () => {
-        if (confirm(`Are you sure you want to delete ${selectedIds.size} products ? `)) {
+        if (confirm(fill(t('ui.inventory.confirm.bulkDelete'), { n: selectedIds.size }))) {
             deleteProducts(Array.from(selectedIds));
             setSelectedIds(new Set());
-            showToast('Products deleted successfully', 'success');
+            showToast(t('ui.inventory.toast.productsDeleted'), 'success');
         }
     };
 
     const handleBulkCategoryUpdate = (newCategory: string) => {
-        if (confirm(`Change category for ${selectedIds.size} items to "${newCategory}"?`)) {
+        if (confirm(fill(t('ui.inventory.confirm.bulkCategory'), { n: selectedIds.size, category: newCategory }))) {
             Array.from(selectedIds).forEach(id => {
                 updateProduct(id, { category: newCategory });
             });
-            showToast(`Category updated to ${newCategory}`, 'success');
+            showToast(fill(t('ui.inventory.toast.categoryUpdated'), { category: newCategory }), 'success');
             setSelectedIds(new Set());
         }
     };
@@ -454,7 +458,7 @@ const Inventory: React.FC = () => {
     // stock adjustment; a refusal is shown instead of failing silently.
     const setStockQuietly = (id: string, newStock: number, note: string) => {
         adjustStock(id, newStock, note).catch(err =>
-            showToast('Failed to adjust stock: ' + (err instanceof Error ? err.message : 'unknown error'), 'error'));
+            showToast(t('ui.inventory.toast.adjustStockFailed') + (err instanceof Error ? err.message : t('ui.inventory.unknownError')), 'error'));
     };
 
     const handleBulkStockUpdate = async (newStock: number) => {
@@ -466,13 +470,13 @@ const Inventory: React.FC = () => {
                 await adjustStock(id, newStock, 'Bulk stock update');
             } catch (err) {
                 const name = products.find(p => p.id === id)?.name || id;
-                failed.push(`${name}: ${err instanceof Error ? err.message : 'unknown error'}`);
+                failed.push(`${name}: ${err instanceof Error ? err.message : t('ui.inventory.unknownError')}`);
             }
         }
         if (failed.length > 0) {
-            showToast(`Stock not updated for ${failed.length} item(s): ${failed.join('; ')}`, 'error');
+            showToast(fill(t('ui.inventory.toast.bulkStockFailed'), { n: failed.length, list: failed.join('; ') }), 'error');
         } else {
-            showToast(`Stock updated to ${newStock} for selected items`, 'success');
+            showToast(fill(t('ui.inventory.toast.bulkStockUpdated'), { n: newStock }), 'success');
         }
         setSelectedIds(new Set());
     };
@@ -670,14 +674,14 @@ const Inventory: React.FC = () => {
             title: (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '16px' }}>
                     <div>
-                        <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: 'var(--color-text-main)' }}>Inventory</h1>
-                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0, marginTop: '4px' }}>{filteredAndSortedProducts ? filteredAndSortedProducts.length : 0} products</p>
+                        <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: 'var(--color-text-main)' }}>{t('inventory.title')}</h1>
+                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0, marginTop: '4px' }}>{fill(t('ui.inventory.nProducts'), { n: filteredAndSortedProducts ? filteredAndSortedProducts.length : 0 })}</p>
                     </div>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, filteredAndSortedProducts, canManageInventory, openAddModalCallback]);
+    }, [setHeaderContent, filteredAndSortedProducts, canManageInventory, openAddModalCallback, t]);
 
     const openEditModal = (product: Product) => {
         setEditingProduct(product);
@@ -696,14 +700,14 @@ const Inventory: React.FC = () => {
 
     const handleSave = () => {
         const errors: Record<string, string> = {};
-        if (!formData.name.trim()) errors.name = 'Product name is required';
-        if (formData.price === '' || Number(formData.price) <= 0) errors.price = 'Sell price must be greater than 0';
-        if (formData.stock === '' || Number(formData.stock) < 0) errors.stock = 'Stock cannot be negative';
-        if (formData.purchaseCost === '' || Number(formData.purchaseCost) < 0) errors.purchaseCost = 'Cost cannot be negative';
+        if (!formData.name.trim()) errors.name = t('ui.inventory.err.nameRequired');
+        if (formData.price === '' || Number(formData.price) <= 0) errors.price = t('ui.inventory.err.priceAboveZero');
+        if (formData.stock === '' || Number(formData.stock) < 0) errors.stock = t('ui.inventory.toast.stockNotNegative');
+        if (formData.purchaseCost === '' || Number(formData.purchaseCost) < 0) errors.purchaseCost = t('ui.inventory.err.costNotNegative');
 
         if (Object.keys(errors).length > 0) {
             setFormErrors(errors);
-            showToast('Please fix the highlighted fields', 'error');
+            showToast(t('ui.inventory.toast.fixFields'), 'error');
             return;
         }
         setFormErrors({});
@@ -725,7 +729,7 @@ const Inventory: React.FC = () => {
             if (newStock !== editingProduct.stock) {
                 setStockQuietly(editingProduct.id, newStock, 'Edited in product form');
             }
-            showToast('Product updated successfully', 'success');
+            showToast(t('ui.inventory.toast.productUpdated'), 'success');
         } else {
             // Update sell price on all existing products with the same name
             const matchingProducts = products.filter(p => p.name.trim().toLowerCase() === formData.name.trim().toLowerCase());
@@ -735,7 +739,7 @@ const Inventory: React.FC = () => {
                 });
             }
             addProduct(productData as Omit<Product, 'id'>);
-            showToast('Product added successfully', 'success');
+            showToast(t('ui.inventory.toast.productAdded'), 'success');
         }
         setIsModalOpen(false);
     };
@@ -747,14 +751,14 @@ const Inventory: React.FC = () => {
     const confirmDelete = () => {
         if (deleteId) {
             deleteProduct(deleteId);
-            showToast('Product deleted', 'info');
+            showToast(t('ui.inventory.toast.productDeleted'), 'info');
             setDeleteId(null);
         }
     };
 
     const handleExportCSV = () => {
         if (filteredAndSortedProducts.length === 0) {
-            showToast('No products to export', 'error');
+            showToast(t('ui.inventory.toast.noProductsExport'), 'error');
             return;
         }
 
@@ -826,7 +830,7 @@ const Inventory: React.FC = () => {
                 }}>
                     <img
                         src={hoverPreview.src}
-                        alt="Preview"
+                        alt={t('ui.inventory.preview')}
                         style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px' }}
                     />
                 </div>
@@ -837,28 +841,28 @@ const Inventory: React.FC = () => {
                 them, so "Out of Stock" and "Total Value" were simply unreachable. */}
             <div className="inventory-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                 <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #6366f1', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Products</span>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>{t('ui.inventory.stats.totalProducts')}</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.totalProducts}</div>
                 </div>
                 <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #3B82F6', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Stock</span>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>{t('ui.inventory.stats.totalStock')}</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.totalAllStock.toLocaleString()}</div>
                 </div>
                 <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #10B981', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>In Stock</span>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>{t('ui.inventory.stockStatus.inStock')}</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{products.filter(p => p.stock > 0).length}</div>
                 </div>
                 <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #F59E0B', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Low Stock</span>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>{t('ui.inventory.stockStatus.lowStock')}</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{stats.lowStock}</div>
                 </div>
                 <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #EF4444', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Out of Stock</span>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>{t('ui.inventory.stockStatus.outOfStock')}</span>
                     <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>{products.filter(p => p.stock === 0).length}</div>
                 </div>
                 {canViewFinancials && (
                     <div style={{ background: 'var(--color-surface)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', borderTop: '4px solid #8B5CF6', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>Total Value</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 500 }}>{t('ui.inventory.stats.totalValue')}</span>
                         <div style={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>${stats.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                 )}
@@ -871,7 +875,7 @@ const Inventory: React.FC = () => {
                     onChange={(e) => setCategoryFilter(e.target.value)}
                     style={filterSelectStyle}
                 >
-                    <option value="All">All Categories</option>
+                    <option value="All">{t('ui.inventory.filter.allCategories')}</option>
                     {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
                 <select
@@ -879,7 +883,7 @@ const Inventory: React.FC = () => {
                     onChange={(e) => setSupplierFilter(e.target.value)}
                     style={filterSelectStyle}
                 >
-                    <option value="All">All Suppliers</option>
+                    <option value="All">{t('ui.inventory.filter.allSuppliers')}</option>
                     {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                 </select>
                 <select
@@ -887,16 +891,16 @@ const Inventory: React.FC = () => {
                     onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
                     style={filterSelectStyle}
                 >
-                    <option value="All">All Statuses</option>
-                    <option value="In Stock">In Stock</option>
-                    <option value="Low Stock">Low Stock</option>
-                    <option value="Out of Stock">Out of Stock</option>
+                    <option value="All">{t('ui.inventory.filter.allStatuses')}</option>
+                    <option value="In Stock">{t('ui.inventory.stockStatus.inStock')}</option>
+                    <option value="Low Stock">{t('ui.inventory.stockStatus.lowStock')}</option>
+                    <option value="Out of Stock">{t('ui.inventory.stockStatus.outOfStock')}</option>
                 </select>
                 <div style={{ flex: 1, minWidth: '200px', position: 'relative', background: 'var(--color-surface)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
                     <Search size={18} color="var(--color-text-muted)" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
                     <input
                         type="text"
-                        placeholder="Search products by name or SKU..."
+                        placeholder={t('ui.inventory.searchPlaceholder')}
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         style={{ width: '100%', padding: '12px 16px 12px 44px', background: 'transparent', border: 'none', outline: 'none', fontSize: '14px', color: '#111827' }}
@@ -905,7 +909,7 @@ const Inventory: React.FC = () => {
                 {canManageInventory && (
                     <button onClick={openAddModalCallback} style={{ background: '#4F46E5', color: '#ffffff', border: 'none', borderRadius: '8px', padding: '0 20px', height: '42px', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flexShrink: 0 }}>
                         <Plus size={18} />
-                        Add Product
+                        {t('inventory.addProduct')}
                     </button>
                 )}
             </div>
@@ -935,7 +939,7 @@ const Inventory: React.FC = () => {
                         ))}
                         {paginatedProducts.length === 0 && (
                             <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '14px' }}>
-                                No products found.
+                                {t('ui.inventory.noProducts')}
                             </div>
                         )}
                     </div>
@@ -949,32 +953,32 @@ const Inventory: React.FC = () => {
                                 </th>
                             )}
                             <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('name')}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Product Name {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{t('inventory.productName')} {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                             </th>
                             <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('category')}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Category {sortConfig?.key === 'category' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{t('inventory.category')} {sortConfig?.key === 'category' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                             </th>
                             {canViewFinancials && (
                                 <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('purchaseCost')} title={fifoCostTitle}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{fifo.status === 'ready' ? 'Last cost / FIFO avg' : 'Last cost'} {sortConfig?.key === 'purchaseCost' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{fifo.status === 'ready' ? t('ui.inventory.col.lastCostFifo') : t('ui.inventory.col.lastCost')} {sortConfig?.key === 'purchaseCost' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                                 </th>
                             )}
                             <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('supplier')}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Supplier {sortConfig?.key === 'supplier' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{t('ui.inventory.col.supplier')} {sortConfig?.key === 'supplier' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                             </th>
                             <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('price')}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Sell Price {sortConfig?.key === 'price' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{t('ui.inventory.col.sellPrice')} {sortConfig?.key === 'price' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                             </th>
                             <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('stock')}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Stock {sortConfig?.key === 'stock' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{t('inventory.stock')} {sortConfig?.key === 'stock' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                             </th>
                             {canViewFinancials && (
                                 <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('totalValue')}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Total Value {sortConfig?.key === 'totalValue' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{t('ui.inventory.stats.totalValue')} {sortConfig?.key === 'totalValue' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                                 </th>
                             )}
-                            <th style={{ padding: '16px', fontWeight: 600 }}>Status</th>
-                            <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                            <th style={{ padding: '16px', fontWeight: 600 }}>{t('ui.inventory.col.status')}</th>
+                            <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>{t('common.actions')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1038,7 +1042,7 @@ const Inventory: React.FC = () => {
                                             onSave={(val) => setStockQuietly(product.id, val, 'Inline stock edit')}
                                             isLowStock={isLowStock}
                                             canEdit={canManageInventory}
-                                        /> pcs
+                                        /> {t('ui.inventory.pcs')}
                                     </td>
                                     {canViewFinancials && (
                                         <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#111827', fontVariantNumeric: 'tabular-nums' }}>
@@ -1056,29 +1060,29 @@ const Inventory: React.FC = () => {
                                             backgroundColor: isOutOfStock ? '#FEE2E2' : (isLowStock ? '#FEF3C7' : '#D1FAE5'),
                                             color: isOutOfStock ? '#EF4444' : (isLowStock ? '#F59E0B' : '#10B981'),
                                         }}>
-                                            {isOutOfStock ? 'Out of Stock' : (isLowStock ? 'Low Stock' : 'In Stock')}
+                                            {isOutOfStock ? t('ui.inventory.stockStatus.outOfStock') : (isLowStock ? t('ui.inventory.stockStatus.lowStock') : t('ui.inventory.stockStatus.inStock'))}
                                         </span>
                                     </td>
                                     <td style={{ padding: '16px', textAlign: 'right' }}>
                                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                            <button onClick={() => setViewingProductId(product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }} title="View Details" aria-label={`View details of ${product.name}`}>
+                                            <button onClick={() => setViewingProductId(product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }} title={t('ui.inventory.viewDetails')} aria-label={fill(t('ui.inventory.viewDetailsOf'), { name: product.name })}>
                                                 <Eye size={14} />
                                             </button>
                                             {canManageInventory && (
                                                 <>
-                                                    <button onClick={() => setStockQuietly(product.id, 0, 'Marked out of stock')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F59E0B' }} title="Mark Out of Stock">
+                                                    <button onClick={() => setStockQuietly(product.id, 0, 'Marked out of stock')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F59E0B' }} title={t('ui.inventory.markOutOfStock')}>
                                                         <AlertTriangle size={14} />
                                                     </button>
-                                                    <button onClick={() => { setAdjustStockProduct(product); setAdjustStockKind('Count correction'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981' }} title="Adjust Stock">
+                                                    <button onClick={() => { setAdjustStockProduct(product); setAdjustStockKind('Count correction'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981' }} title={t('ui.inventory.adjustStock')}>
                                                         <Layers size={14} />
                                                     </button>
-                                                    <button onClick={() => openWholesaleModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3B82F6' }} title="Wholesale Order">
+                                                    <button onClick={() => openWholesaleModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3B82F6' }} title={t('ui.inventory.wholesaleOrder')}>
                                                         <Truck size={14} />
                                                     </button>
-                                                    <button onClick={() => openEditModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)' }} title="Edit Product">
+                                                    <button onClick={() => openEditModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)' }} title={t('ui.inventory.editProduct')}>
                                                         <Edit2 size={14} />
                                                     </button>
-                                                    <button onClick={() => promptDelete(product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444' }} title="Delete">
+                                                    <button onClick={() => promptDelete(product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444' }} title={t('common.delete')}>
                                                         <Trash2 size={14} />
                                                     </button>
                                                 </>
@@ -1093,7 +1097,7 @@ const Inventory: React.FC = () => {
                 )}
                 <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)' }}>
                     <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                        Showing {filteredAndSortedProducts.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to {Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length)} of {filteredAndSortedProducts.length}
+                        {fill(t('ui.inventory.showingRange'), { from: filteredAndSortedProducts.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0, to: Math.min(currentPage * itemsPerPage, filteredAndSortedProducts.length), total: filteredAndSortedProducts.length })}
                     </span>
                     <div style={{ display: 'flex', gap: '8px' }}>
                         <button
@@ -1101,14 +1105,14 @@ const Inventory: React.FC = () => {
                             disabled={currentPage === 1}
                             style={{ padding: '6px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: currentPage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
                         >
-                            Previous
+                            {t('ui.inventory.previous')}
                         </button>
                         <button
                             onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredAndSortedProducts.length / itemsPerPage), p + 1))}
                             disabled={currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0}
                             style={{ padding: '6px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0 ? 'var(--color-text-muted)' : 'var(--color-text-main)', cursor: currentPage >= Math.ceil(filteredAndSortedProducts.length / itemsPerPage) || filteredAndSortedProducts.length === 0 ? 'not-allowed' : 'pointer' }}
                         >
-                            Next
+                            {t('common.next')}
                         </button>
                     </div>
                 </div>
@@ -1137,7 +1141,7 @@ const Inventory: React.FC = () => {
                     }}>
                         <div className="glass-panel" style={{ width: '500px', padding: '32px', animation: 'slideIn 0.3s ease-out' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{editingProduct ? 'Edit Product' : 'Add New Product'}</h3>
+                                <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{editingProduct ? t('ui.inventory.editProduct') : t('ui.inventory.addNewProduct')}</h3>
                                 <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
                             </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1146,18 +1150,18 @@ const Inventory: React.FC = () => {
                                         <input 
                                             className="search-input" 
                                             style={{ width: '100%' }} 
-                                            placeholder="e.g. SKU-12345" 
+                                            placeholder={t('ui.inventory.ph.sku')} 
                                             value={formData.sku || ''} 
                                             onChange={e => setFormData({ ...formData, sku: e.target.value })} 
                                         />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Product Name *</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('inventory.productName')} *</label>
                                         <input 
                                             list="product-names"
                                             className="search-input" 
                                             style={{ width: '100%', borderColor: formErrors.name ? '#EF4444' : undefined }} 
-                                            placeholder="e.g. JBL Flip 6" 
+                                            placeholder={t('ui.inventory.ph.productName')} 
                                             value={formData.name} 
                                             onChange={e => {
                                                 const newName = e.target.value;
@@ -1192,24 +1196,24 @@ const Inventory: React.FC = () => {
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('inventory.category')}</label>
                                         <select className="search-input" style={{ width: '100%' }} value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as any })}>
                                             {categories.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Low Stock Alert</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.form.lowStockAlert')}</label>
                                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '42px', padding: '0 12px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px solid var(--color-border)', cursor: 'pointer' }}>
                                             <input type="checkbox" checked={formData.lowStockAlert} onChange={e => setFormData({ ...formData, lowStockAlert: e.target.checked })} style={{ width: '16px', height: '16px' }} />
-                                            <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>Enable alerts for this product</span>
+                                            <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{t('ui.inventory.form.enableAlerts')}</span>
                                         </label>
                                     </div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Supplier</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.col.supplier')}</label>
                                         <select className="search-input" style={{ width: '100%' }} value={formData.supplier || ''} onChange={e => setFormData({ ...formData, supplier: e.target.value })}>
-                                            <option value="">Select Supplier</option>
+                                            <option value="">{t('ui.inventory.form.selectSupplier')}</option>
                                             {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                         </select>
                                     </div>
@@ -1217,19 +1221,19 @@ const Inventory: React.FC = () => {
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Cost Price ($)</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.form.costPrice')}</label>
                                         <input className="search-input" type="number" style={{ width: '100%', borderColor: formErrors.purchaseCost ? '#EF4444' : undefined }} placeholder="0.00" value={formData.purchaseCost} onChange={e => setFormData({ ...formData, purchaseCost: e.target.value === '' ? '' : Number(e.target.value) })} />
                                         {formErrors.purchaseCost && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>{formErrors.purchaseCost}</p>}
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Selling Price ($) *</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.form.sellingPrice')} *</label>
                                         <input className="search-input" type="number" style={{ width: '100%', borderColor: formErrors.price ? '#EF4444' : undefined }} placeholder="0.00" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value === '' ? '' : Number(e.target.value) })} />
                                         {formErrors.price && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>{formErrors.price}</p>}
                                     </div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Unit of Measure</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.form.unitOfMeasure')}</label>
                                         <select className="search-input" style={{ width: '100%' }} value={formData.unitOfMeasure} onChange={e => setFormData({ ...formData, unitOfMeasure: e.target.value })}>
                                             <option value="PCS">PCS</option>
                                             <option value="BOX">BOX</option>
@@ -1239,16 +1243,16 @@ const Inventory: React.FC = () => {
                                         </select>
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Reorder Level</label>
-                                        <input className="search-input" type="number" min="0" style={{ width: '100%' }} placeholder="e.g. 5" value={formData.reorderLevel} onChange={e => setFormData({ ...formData, reorderLevel: e.target.value === '' ? '' : Math.max(0, Number(e.target.value)) })} disabled={!formData.lowStockAlert} />
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.form.reorderLevel')}</label>
+                                        <input className="search-input" type="number" min="0" style={{ width: '100%' }} placeholder={t('ui.inventory.ph.eg5')} value={formData.reorderLevel} onChange={e => setFormData({ ...formData, reorderLevel: e.target.value === '' ? '' : Math.max(0, Number(e.target.value)) })} disabled={!formData.lowStockAlert} />
                                     </div>
                                 </div>
                                 <div style={{ marginTop: '16px' }}>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Product Image</label>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.form.productImage')}</label>
                                     <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
                                         {formData.image && (
                                             <div style={{ width: '80px', height: '80px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--color-border)', flexShrink: 0, background: 'var(--color-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                <img src={formData.image} alt="Preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                                                <img src={formData.image} alt={t('ui.inventory.preview')} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                                             </div>
                                         )}
                                         <div style={{ flex: 1 }}>
@@ -1288,12 +1292,12 @@ const Inventory: React.FC = () => {
 
                                                         if (publicData?.publicUrl) {
                                                             setFormData(prev => ({ ...prev, image: publicData.publicUrl }));
-                                                            showToast('Image processed and uploaded', 'success');
+                                                            showToast(t('ui.inventory.toast.imageUploaded'), 'success');
                                                         }
 
                                                     } catch (err: any) {
                                                         console.error('Image upload failed:', err);
-                                                        showToast('Upload failed: ' + err.message, 'error');
+                                                        showToast(t('ui.inventory.toast.uploadFailed') + err.message, 'error');
                                                     } finally {
                                                         setIsUploadingImage(false);
                                                         e.target.value = ''; // Reset input so same file can be selected again
@@ -1305,19 +1309,19 @@ const Inventory: React.FC = () => {
                                             />
                                             {isUploadingImage ? (
                                                 <p style={{ fontSize: '12px', color: 'var(--color-primary)', marginTop: '6px', fontWeight: 600 }}>
-                                                    Processing and uploading image...
+                                                    {t('ui.inventory.form.uploadingImage')}
                                                 </p>
                                             ) : (
                                                 <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '6px' }}>
-                                                    Select an image file (Auto crops to 1:1, Auto resizes, & compressed).
+                                                    {t('ui.inventory.form.imageHelp')}
                                                 </p>
                                             )}
                                         </div>
                                     </div>
                                 </div>
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px' }}>
-                                <button onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
-                                <button onClick={handleSave} className="primary-button" style={{ padding: '10px 24px' }}>{editingProduct ? 'Save Changes' : 'Add Product'}</button>
+                                <button onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>{t('common.cancel')}</button>
+                                <button onClick={handleSave} className="primary-button" style={{ padding: '10px 24px' }}>{editingProduct ? t('ui.inventory.saveChanges') : t('inventory.addProduct')}</button>
                             </div>
                         </div>
                     </div>
@@ -1335,13 +1339,13 @@ const Inventory: React.FC = () => {
                             <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
                                 <AlertTriangle size={32} />
                             </div>
-                            <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>Delete Product?</h3>
+                            <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>{t('ui.inventory.deleteProductTitle')}</h3>
                             <p style={{ color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
-                                Are you sure you want to delete this product? This action cannot be undone.
+                                {t('ui.inventory.deleteProductBody')}
                             </p>
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                                <button onClick={() => setDeleteId(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
-                                <button onClick={confirmDelete} style={{ padding: '10px 24px', borderRadius: '8px', backgroundColor: '#EF4444', color: 'white', border: 'none', cursor: 'pointer' }}>Delete</button>
+                                <button onClick={() => setDeleteId(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>{t('common.cancel')}</button>
+                                <button onClick={confirmDelete} style={{ padding: '10px 24px', borderRadius: '8px', backgroundColor: '#EF4444', color: 'white', border: 'none', cursor: 'pointer' }}>{t('common.delete')}</button>
                             </div>
                         </div>
                     </div>
@@ -1358,9 +1362,9 @@ const Inventory: React.FC = () => {
                         <div className="glass-panel" style={{ width: '400px', padding: '32px', animation: 'slideIn 0.3s ease-out' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                                 <div>
-                                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Add Stock</h3>
+                                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{t('ui.inventory.addStock')}</h3>
                                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', marginTop: '4px' }}>
-                                        {addStockProduct.name} - Current Stock: <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{addStockProduct.stock}</span>
+                                        {addStockProduct.name} - {t('ui.inventory.currentStock')}: <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{addStockProduct.stock}</span>
                                     </p>
                                 </div>
                                 <button onClick={() => setAddStockProduct(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', height: 'fit-content' }}><X size={24} /></button>
@@ -1369,12 +1373,12 @@ const Inventory: React.FC = () => {
                             <div style={{ marginBottom: '24px' }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Quantity to Add</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>{t('ui.inventory.qtyToAdd')}</label>
                                         <input
                                             className="search-input"
                                             type="number"
                                             style={{ width: '100%', fontSize: '16px', padding: '12px' }}
-                                            placeholder="e.g. 50"
+                                            placeholder={t('ui.inventory.ph.eg50')}
                                             autoFocus
                                             value={addStockAmount}
                                             onChange={e => setAddStockAmount(e.target.value === '' ? '' : Number(e.target.value))}
@@ -1387,7 +1391,7 @@ const Inventory: React.FC = () => {
                                         />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Unit Cost ($)</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>{t('ui.inventory.unitCost')}</label>
                                         <input
                                             className="search-input"
                                             type="number"
@@ -1401,14 +1405,14 @@ const Inventory: React.FC = () => {
                             </div>
 
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                                <button onClick={() => setAddStockProduct(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
+                                <button onClick={() => setAddStockProduct(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>{t('common.cancel')}</button>
                                 <button
                                     onClick={confirmAddStock}
                                     className="primary-button"
                                     style={{ padding: '10px 24px', cursor: isStockSubmitting ? 'not-allowed' : 'pointer' }}
                                     disabled={addStockAmount === '' || Number(addStockAmount) <= 0 || isStockSubmitting}
                                 >
-                                    {isStockSubmitting ? 'Adding…' : 'Confirm Addition'}
+                                    {isStockSubmitting ? t('ui.inventory.adding') : t('ui.inventory.confirmAddition')}
                                 </button>
                             </div>
                         </div>
@@ -1427,9 +1431,9 @@ const Inventory: React.FC = () => {
                         <div className="glass-panel" style={{ width: '400px', padding: '32px', animation: 'slideIn 0.3s ease-out' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                                 <div>
-                                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Adjust Stock</h3>
+                                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{t('ui.inventory.adjustStock')}</h3>
                                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', marginTop: '4px' }}>
-                                        {adjustStockProduct.name} - Current Stock: <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{adjustStockProduct.stock}</span>
+                                        {adjustStockProduct.name} - {t('ui.inventory.currentStock')}: <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{adjustStockProduct.stock}</span>
                                     </p>
                                 </div>
                                 <button onClick={() => setAdjustStockProduct(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', height: 'fit-content' }}><X size={24} /></button>
@@ -1438,36 +1442,36 @@ const Inventory: React.FC = () => {
                             <div style={{ marginBottom: '24px' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>New Stock Quantity</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>{t('ui.inventory.newStockQty')}</label>
                                         <input
                                             className="search-input"
                                             type="number"
                                             style={{ width: '100%', fontSize: '16px', padding: '12px' }}
-                                            placeholder="e.g. 50"
+                                            placeholder={t('ui.inventory.ph.eg50')}
                                             autoFocus
                                             value={adjustStockAmount}
                                             onChange={e => setAdjustStockAmount(e.target.value === '' ? '' : Number(e.target.value))}
                                         />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Reason</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>{t('ui.inventory.reason')}</label>
                                         <select
                                             className="search-input"
                                             style={{ width: '100%', fontSize: '14px', padding: '12px' }}
                                             value={adjustStockKind}
                                             onChange={e => setAdjustStockKind(e.target.value as StockCountReason)}
                                         >
-                                            <option value="Count correction">Count correction</option>
-                                            <option value="Loss/Damage">Loss/Damage (lowers stock only)</option>
+                                            <option value="Count correction">{t('ui.inventory.reasons.countCorrection')}</option>
+                                            <option value="Loss/Damage">{t('ui.inventory.reasons.lossDamageLowers')}</option>
                                         </select>
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>Note</label>
+                                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-main)', fontWeight: 500 }}>{t('ui.inventory.note')}</label>
                                         <input
                                             className="search-input"
                                             type="text"
                                             style={{ width: '100%', fontSize: '14px', padding: '12px' }}
-                                            placeholder="e.g. Damaged goods, recount, etc."
+                                            placeholder={t('ui.inventory.ph.adjustNote')}
                                             value={adjustStockReason}
                                             onChange={e => setAdjustStockReason(e.target.value)}
                                         />
@@ -1476,14 +1480,14 @@ const Inventory: React.FC = () => {
                             </div>
 
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                                <button onClick={() => setAdjustStockProduct(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Cancel</button>
+                                <button onClick={() => setAdjustStockProduct(null)} style={{ padding: '10px 20px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>{t('common.cancel')}</button>
                                 <button
                                     onClick={confirmAdjustStock}
                                     className="primary-button"
                                     style={{ padding: '10px 24px', cursor: isStockSubmitting ? 'not-allowed' : 'pointer' }}
                                     disabled={adjustStockAmount === '' || Number(adjustStockAmount) < 0 || isStockSubmitting}
                                 >
-                                    {isStockSubmitting ? 'Adjusting…' : 'Confirm Adjustment'}
+                                    {isStockSubmitting ? t('ui.inventory.adjusting') : t('ui.inventory.confirmAdjustment')}
                                 </button>
                             </div>
                         </div>
@@ -1519,9 +1523,9 @@ const Inventory: React.FC = () => {
                                     </div>
                                     <div>
                                         <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>
-                                            New Wholesale Order
+                                            {t('ui.inventory.wholesale.title')}
                                         </h2>
-                                        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{wholesaleProduct.name} - Current Stock: <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{wholesaleProduct.stock}</span></p>
+                                        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{wholesaleProduct.name} - {t('ui.inventory.currentStock')}: <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{wholesaleProduct.stock}</span></p>
                                     </div>
                                 </div>
                                 <button onClick={() => setWholesaleProduct(null)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
@@ -1535,11 +1539,11 @@ const Inventory: React.FC = () => {
                                 {/* Section: Customer Information */}
                                 <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                     <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                        <User size={15} /> Customer Information
+                                        <User size={15} /> {t('ui.inventory.wholesale.customerInfo')}
                                     </h4>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                         <div>
-                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Customer Name *</label>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.wholesale.customerName')} *</label>
                                             <select
                                                 className="input-field"
                                                 style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
@@ -1553,19 +1557,19 @@ const Inventory: React.FC = () => {
                                                     }
                                                 }}
                                             >
-                                                <option value="">Select a customer...</option>
+                                                <option value="">{t('ui.inventory.wholesale.selectCustomer')}</option>
                                                 {wholesaleCustomers.map(c => (
                                                     <option key={c.id} value={c.name}>{c.name}</option>
                                                 ))}
                                             </select>
                                         </div>
                                         <div>
-                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Customer Phone</label>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.wholesale.customerPhone')}</label>
                                             <input
                                                 className="input-field"
                                                 type="text"
                                                 style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
-                                                placeholder="e.g. 012345678"
+                                                placeholder={t('ui.inventory.ph.phone')}
                                                 value={wholesalePhone}
                                                 onChange={e => setWholesalePhone(e.target.value)}
                                             />
@@ -1576,22 +1580,22 @@ const Inventory: React.FC = () => {
                                 {/* Section: Order Details */}
                                 <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                     <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                        <Package size={15} /> Order Details
+                                        <Package size={15} /> {t('ui.inventory.wholesale.orderDetails')}
                                     </h4>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                         <div>
-                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Quantity</label>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.quantity')}</label>
                                             <input
                                                 className="input-field"
                                                 type="number"
                                                 style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
-                                                placeholder="e.g. 50"
+                                                placeholder={t('ui.inventory.ph.eg50')}
                                                 value={wholesaleQuantity}
                                                 onChange={e => setWholesaleQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                                             />
                                         </div>
                                         <div>
-                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Unit Price ($)</label>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.unitPrice')}</label>
                                             <input
                                                 className="input-field"
                                                 type="number"
@@ -1607,58 +1611,58 @@ const Inventory: React.FC = () => {
                                 {/* Section: Payment & Shipping */}
                                 <div style={{ background: 'var(--color-bg)', padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                     <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                        <CreditCard size={15} /> Payment & Shipping
+                                        <CreditCard size={15} /> {t('ui.inventory.wholesale.paymentShipping')}
                                     </h4>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                         <div>
-                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Method</label>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.wholesale.paymentMethod')}</label>
                                             <select
                                                 className="input-field"
                                                 style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 value={wholesalePaymentMethod}
                                                 onChange={e => setWholesalePaymentMethod(e.target.value)}
                                             >
-                                                <option value="Cash">Cash</option>
+                                                <option value="Cash">{t('ui.inventory.wholesale.cash')}</option>
                                                 <option value="QR">QR</option>
-                                                <option value="Bank Transfer">Bank Transfer</option>
+                                                <option value="Bank Transfer">{t('ui.inventory.wholesale.bankTransfer')}</option>
                                             </select>
                                         </div>
                                         <div>
-                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Status</label>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.wholesale.paymentStatus')}</label>
                                             <select
                                                 className="input-field"
                                                 style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 value={wholesalePaymentStatus}
                                                 onChange={e => setWholesalePaymentStatus(e.target.value)}
                                             >
-                                                <option value="Paid">Paid</option>
-                                                <option value="Unpaid">Unpaid</option>
-                                                <option value="Partially Paid">Partially Paid</option>
+                                                <option value="Paid">{t('dashboard2.pay.Paid')}</option>
+                                                <option value="Unpaid">{t('dashboard2.pay.Unpaid')}</option>
+                                                <option value="Partially Paid">{t('ui.inventory.wholesale.partiallyPaid')}</option>
                                             </select>
                                         </div>
                                     </div>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                         <div>
-                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Shipping Status</label>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.wholesale.shippingStatus')}</label>
                                             <select
                                                 className="input-field"
                                                 style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                                 value={wholesaleShippingStatus}
                                                 onChange={e => setWholesaleShippingStatus(e.target.value)}
                                             >
-                                                <option value="Delivered">Delivered</option>
-                                                <option value="Shipped">Shipped</option>
-                                                <option value="Confirmed">Confirmed</option>
-                                                <option value="Drafted">Drafted</option>
+                                                <option value="Delivered">{t('dashboard2.status.Delivered')}</option>
+                                                <option value="Shipped">{t('dashboard2.status.Shipped')}</option>
+                                                <option value="Confirmed">{t('dashboard2.status.Confirmed')}</option>
+                                                <option value="Drafted">{t('dashboard2.status.Drafted')}</option>
                                             </select>
                                         </div>
                                         <div>
-                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Remark</label>
+                                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.remark')}</label>
                                             <input
                                                 className="input-field"
                                                 type="text"
                                                 style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
-                                                placeholder="e.g. Wholesale"
+                                                placeholder={t('ui.inventory.ph.wholesale')}
                                                 value={wholesaleRemark}
                                                 onChange={e => setWholesaleRemark(e.target.value)}
                                             />
@@ -1670,20 +1674,20 @@ const Inventory: React.FC = () => {
                             {/* Modal Footer */}
                             <div style={{ padding: '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(59,130,246,0.03), rgba(37,99,235,0.03))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total</span>
+                                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('common.total')}</span>
                                     <span style={{ fontSize: '24px', fontWeight: 800, color: 'var(--color-primary)', letterSpacing: '-0.5px' }}>
                                         ${wholesaleQuantity !== '' && wholesalePrice !== '' ? (Number(wholesaleQuantity) * Number(wholesalePrice)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
                                     </span>
                                 </div>
                                 <div style={{ display: 'flex', gap: '10px' }}>
-                                    <button className="secondary-button" onClick={() => setWholesaleProduct(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, fontSize: '14px' }}>Cancel</button>
+                                    <button className="secondary-button" onClick={() => setWholesaleProduct(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, fontSize: '14px' }}>{t('common.cancel')}</button>
                                     <button
                                         onClick={confirmWholesaleOrder}
                                         className="primary-button"
                                         style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', cursor: isWholesaleSubmitting ? 'not-allowed' : 'pointer' }}
                                         disabled={!wholesaleCustomer.trim() || wholesaleQuantity === '' || Number(wholesaleQuantity) <= 0 || isWholesaleSubmitting}
                                     >
-                                        <CheckCircle2 size={16} /> {isWholesaleSubmitting ? 'Submitting…' : 'Create Order'}
+                                        <CheckCircle2 size={16} /> {isWholesaleSubmitting ? t('ui.inventory.submitting') : t('ui.inventory.wholesale.createOrder')}
                                     </button>
                                 </div>
                             </div>

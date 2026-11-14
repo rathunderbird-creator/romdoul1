@@ -4,6 +4,8 @@ import { usePayroll } from '../hooks/usePayroll';
 import { AlertCircle, Edit2, CalendarDays, Check } from 'lucide-react';
 import type { User } from '../types';
 import { useToast } from '../context/ToastContext';
+import { useLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
 
 // Helper to get initials
 const getInitials = (name: string) => {
@@ -14,6 +16,7 @@ const Payroll: React.FC = () => {
     const { users, roles, updateUser, currency } = useStore();
     const { attendances, isLoading, error, fetchAttendanceForPeriod } = usePayroll();
     const { showToast } = useToast();
+    const { t } = useLanguage();
 
     // Default to current month
     const currentDate = new Date();
@@ -105,19 +108,19 @@ const Payroll: React.FC = () => {
     const handleSalaryUpdate = async (userId: string) => {
         const val = Number(tempBaseSalary);
         if (isNaN(val)) {
-            showToast('Invalid salary amoount', 'error');
+            showToast(t('ui.admin.payroll.invalidSalary'), 'error');
             return;
         }
 
         setSavingId(userId);
         try {
             await updateUser(userId, { baseSalary: val });
-            showToast('Base salary updated successfully', 'success');
+            showToast(t('ui.admin.payroll.salaryUpdated'), 'success');
             setEditingUserId(null);
         } catch (err) {
             // Surface the store's refusal reason (e.g. a SEC-3 guard) instead
             // of a generic failure the user would just retry blindly.
-            showToast(err instanceof Error && err.message ? err.message : 'Failed to update base salary', 'error');
+            showToast(err instanceof Error && err.message ? err.message : t('ui.admin.payroll.salaryUpdateFailed'), 'error');
         } finally {
             setSavingId(null);
         }
@@ -156,7 +159,7 @@ const Payroll: React.FC = () => {
         setLateDeductionRate(rate);
         localStorage.setItem('payroll_late_deduction_rate', rate.toString());
         setTempLateRate(null);
-        showToast('Late penalty saved', 'success');
+        showToast(t('ui.admin.payroll.latePenaltySaved'), 'success');
     };
 
     // Derived Payroll Calculations (Computed directly in React to reflect any instant DB updates to user or attendance)
@@ -224,7 +227,7 @@ const Payroll: React.FC = () => {
              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>                
                 {/* Late Penalty Setup */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--color-surface)', padding: '10px 16px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                    <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Late Penalty:</span>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{t('ui.admin.payroll.latePenalty')}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--color-text-muted)' }}>{currencySymbol}</span>
                         <input 
@@ -247,9 +250,9 @@ const Payroll: React.FC = () => {
                                 cursor: tempLateRate !== null ? 'pointer' : 'default', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', height: '28px',
                                 transition: 'all 0.2s'
                             }}
-                        >Save</button>
+                        >{t('common.save')}</button>
                     </div>
-                    <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>per day</span>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{t('ui.admin.payroll.perDay')}</span>
                 </div>
 
                 {/* Month Picker */}
@@ -284,30 +287,30 @@ const Payroll: React.FC = () => {
             <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.04)', border: '1px solid var(--color-border)' }}>
                 {isLoading ? (
                     <div style={{ padding: '64px', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '16px' }}>
-                        <div className="loader" style={{ width: '48px', height: '48px' }}>Loading...</div>
-                        <p style={{ color: 'var(--color-text-muted)' }}>Calculating Payroll for {selectedMonth}...</p>
+                        <div className="loader" style={{ width: '48px', height: '48px' }}>{t('common.loading')}</div>
+                        <p style={{ color: 'var(--color-text-muted)' }}>{fill(t('ui.admin.payroll.calculating'), { month: selectedMonth })}</p>
                     </div>
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
                             <thead style={{ background: 'var(--color-bg-secondary)' }}>
                                 <tr>
-                                    <th style={{ padding: '16px 24px', textAlign: 'left', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Staff Member</th>
-                                    <th style={{ padding: '16px', textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Present</th>
-                                    <th style={{ padding: '16px', textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Absent</th>
-                                    <th style={{ padding: '16px', textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Late / Half</th>
-                                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Leaves</th>
-                                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Extra Deduct ($)</th>
-                                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Incentive ($)</th>
-                                    <th style={{ padding: '16px 24px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Base Salary</th>
-                                    <th style={{ padding: '16px 24px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text)', borderBottom: '1px solid var(--color-border)', backgroundColor: 'rgba(34, 197, 94, 0.05)' }}>Net Salary</th>
+                                    <th style={{ padding: '16px 24px', textAlign: 'left', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.admin.payroll.staffMember')}</th>
+                                    <th style={{ padding: '16px', textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.admin.payroll.present')}</th>
+                                    <th style={{ padding: '16px', textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.admin.payroll.absent')}</th>
+                                    <th style={{ padding: '16px', textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.admin.payroll.lateHalf')}</th>
+                                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.admin.payroll.leaves')}</th>
+                                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.admin.payroll.extraDeduct')}</th>
+                                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.admin.payroll.incentive')}</th>
+                                    <th style={{ padding: '16px 24px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.admin.payroll.baseSalary')}</th>
+                                    <th style={{ padding: '16px 24px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-text)', borderBottom: '1px solid var(--color-border)', backgroundColor: 'rgba(34, 197, 94, 0.05)' }}>{t('ui.admin.payroll.netSalary')}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {payrollData.length === 0 ? (
                                     <tr>
                                         <td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                            No users found. Go to User Management to add staff.
+                                            {t('ui.admin.payroll.noUsers')}
                                         </td>
                                     </tr>
                                 ) : (
@@ -344,9 +347,9 @@ const Payroll: React.FC = () => {
                                                 </td>
                                                 <td style={{ padding: '16px', textAlign: 'center', fontWeight: '500' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: (stats.Late > 0 || stats.HalfDay > 0) ? 'var(--color-warning)' : 'var(--color-text-muted)'}}>
-                                                        <span>{stats.Late} L</span>
+                                                        <span>{stats.Late} {t('ui.admin.payroll.lateShort')}</span>
                                                         <span style={{ color: 'var(--color-border)' }}>|</span>
-                                                        <span>{stats.HalfDay} H</span>
+                                                        <span>{stats.HalfDay} {t('ui.admin.payroll.halfShort')}</span>
                                                     </div>
                                                 </td>
                                                 <td style={{ padding: '16px', textAlign: 'right', fontWeight: '500', color: stats.Leave > 0 ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>
@@ -372,7 +375,7 @@ const Payroll: React.FC = () => {
                                                         <button 
                                                             onClick={() => handleManualDeductionBlur(user.id)}
                                                             style={{ padding: '4px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '4px', color: 'var(--color-success)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                                            title="Save Deduction"
+                                                            title={t('ui.admin.payroll.saveDeduction')}
                                                         ><Check size={14} /></button>
                                                     </div>
                                                 </td>
@@ -396,7 +399,7 @@ const Payroll: React.FC = () => {
                                                         <button 
                                                             onClick={() => handleIncentiveBlur(user.id)}
                                                             style={{ padding: '4px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '4px', color: 'var(--color-success)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                                            title="Save Incentive"
+                                                            title={t('ui.admin.payroll.saveIncentive')}
                                                         ><Check size={14} /></button>
                                                     </div>
                                                 </td>
@@ -421,7 +424,7 @@ const Payroll: React.FC = () => {
                                                                 disabled={savingId === user.id}
                                                                 style={{ padding: '6px 10px', background: 'var(--color-primary)', color: 'white', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px'}}
                                                             >
-                                                                {savingId === user.id ? '...' : 'Save'}
+                                                                {savingId === user.id ? '...' : t('common.save')}
                                                             </button>
                                                         </div>
                                                     ) : (
@@ -446,12 +449,12 @@ const Payroll: React.FC = () => {
                                                         </span>
                                                         {totalDeductions > 0 && (
                                                             <span style={{ fontSize: '12px', color: 'var(--color-danger)', fontWeight: 'bold' }}>
-                                                                -{Number(totalDeductions).toLocaleString('en-US', { style: 'currency', currency: 'USD' }).replace('$', currencySymbol)} deductions
+                                                                -{Number(totalDeductions).toLocaleString('en-US', { style: 'currency', currency: 'USD' }).replace('$', currencySymbol)} {t('ui.admin.payroll.deductions')}
                                                             </span>
                                                         )}
                                                         {incentiveAmount > 0 && (
                                                             <span style={{ fontSize: '12px', color: 'var(--color-success)', fontWeight: 'bold' }}>
-                                                                +{Number(incentiveAmount).toLocaleString('en-US', { style: 'currency', currency: 'USD' }).replace('$', currencySymbol)} incentives
+                                                                +{Number(incentiveAmount).toLocaleString('en-US', { style: 'currency', currency: 'USD' }).replace('$', currencySymbol)} {t('ui.admin.payroll.incentives')}
                                                             </span>
                                                         )}
                                                     </div>

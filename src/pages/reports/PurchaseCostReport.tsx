@@ -8,6 +8,7 @@ import { fetchAllProducts } from '../../utils/fetchAllProducts';
 import type { Sale, Product } from '../../types';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import { orderStatusLabel } from '../../utils/orderStatusRules';
+import { useLanguage } from '../../context/LanguageContext';
 
 
 const STATUS_OPTIONS = ['Delivered', 'Shipped', 'Pending', 'Confirmed', 'Drafted', 'Returned', 'Cancelled'];
@@ -15,6 +16,14 @@ const STATUS_OPTIONS = ['Delivered', 'Shipped', 'Pending', 'Confirmed', 'Drafted
 const PurchaseCostReport: React.FC = () => {
     const { reportSales } = useOutletContext<any>();
     const { products } = useStore();
+    const { t, language } = useLanguage();
+    // Order-status chip label: the app's English label, or status.* in Khmer.
+    const stLabel = (s: string) => {
+        if (language !== 'km') return orderStatusLabel(s);
+        const key = `status.${s === 'Drafted' ? 'ordered' : s.toLowerCase()}`;
+        const v = t(key);
+        return v === key ? orderStatusLabel(s) : v;
+    };
 
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
 
@@ -72,7 +81,7 @@ const PurchaseCostReport: React.FC = () => {
             (sale.items || []).forEach(item => {
                 const productInfo = productCostMap.get(item.id);
                 const purchaseCost = productInfo?.purchaseCost || 0;
-                const itemName = productInfo?.name || item.name || 'Unknown Product';
+                const itemName = productInfo?.name || item.name || t('ui.people.reports.unknownProduct');
                 const itemImage = productInfo?.image || '';
                 const qty = item.quantity || 1;
                 const sellPrice = item.price || 0;
@@ -125,7 +134,7 @@ const PurchaseCostReport: React.FC = () => {
             totalSellValue: totalSV,
             grossProfit: totalSV - totalPC
         };
-    }, [reportSales, statusFilter, productCostMap]);
+    }, [reportSales, statusFilter, productCostMap, t]);
 
     const toggleStatus = (s: string) => {
         setStatusFilter(prev => {
@@ -147,41 +156,41 @@ const PurchaseCostReport: React.FC = () => {
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Purchase Cost Analytics</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>{t('ui.people.reports.pc.title')}</h2>
 
             {/* KPIs */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(59,130,246,0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(59,130,246,0.2)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Items Moved</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.pc.itemsMoved')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}><ShoppingBag size={18} /></div>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 800 }}>{totalItems.toLocaleString()}</div>
                 </div>
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.1), rgba(239,68,68,0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(239,68,68,0.2)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Total Purchase Cost</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.pc.totalCost')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(239,68,68,0.15)', color: '#EF4444' }}><DollarSign size={18} /></div>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 800, color: '#EF4444' }}>${totalPurchaseCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 </div>
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(16,185,129,0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(16,185,129,0.2)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Total Sell Value</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.pc.totalSell')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', color: '#10B981' }}><Package size={18} /></div>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 800, color: '#10B981' }}>${totalSellValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 </div>
                 <div className="stats-card hover-lift" style={{ background: `linear-gradient(135deg, rgba(${grossProfit >= 0 ? '139,92,246' : '239,68,68'},0.1), rgba(${grossProfit >= 0 ? '139,92,246' : '239,68,68'},0.02))`, padding: '20px', borderRadius: '16px', border: `1px solid rgba(${grossProfit >= 0 ? '139,92,246' : '239,68,68'},0.2)`, display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Gross Profit</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.grossProfit')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: `rgba(${grossProfit >= 0 ? '139,92,246' : '239,68,68'},0.15)`, color: grossProfit >= 0 ? '#8B5CF6' : '#EF4444' }}><TrendingUp size={18} /></div>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 800, color: grossProfit >= 0 ? '#8B5CF6' : '#EF4444' }}>
                         ${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
-                        Margin: {profitMargin.toFixed(1)}%
+                        {t('ui.people.reports.margin')}: {profitMargin.toFixed(1)}%
                     </div>
                 </div>
             </div>
@@ -190,7 +199,7 @@ const PurchaseCostReport: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
                 {/* Cost by Product */}
                 <div className="glass-panel hover-lift" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', height: '400px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>Purchase Cost by Product</h3>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>{t('ui.people.reports.pc.byProduct')}</h3>
                     {chartProducts.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={chartProducts} layout="vertical" margin={{ top: 10, right: 10, left: 20, bottom: 0 }}>
@@ -200,19 +209,19 @@ const PurchaseCostReport: React.FC = () => {
                                 <Tooltip
                                     cursor={{ fill: 'rgba(239,68,68,0.05)' }}
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                    formatter={(v: any, name: any) => [`$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, name === 'cost' ? 'Purchase Cost' : 'Revenue']}
+                                    formatter={(v: any, name: any) => [`$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, name === 'cost' ? t('ui.people.reports.pc.purchaseCost') : t('ui.people.reports.revenue')]}
                                 />
-                                <Legend formatter={(value) => value === 'cost' ? 'Purchase Cost' : 'Sell Value'} />
+                                <Legend formatter={(value) => value === 'cost' ? t('ui.people.reports.pc.purchaseCost') : t('ui.people.reports.pc.sellValue')} />
                                 <Bar dataKey="cost" fill="#EF4444" radius={[0, 4, 4, 0]} barSize={16} name="cost" />
                                 <Bar dataKey="revenue" fill="#10B981" radius={[0, 4, 4, 0]} barSize={16} name="revenue" />
                             </BarChart>
                         </ResponsiveContainer>
-                    ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>No data available.</div>}
+                    ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.people.reports.noData')}</div>}
                 </div>
 
                 {/* Daily Trend */}
                 <div className="glass-panel hover-lift" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', height: '400px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>Daily Cost Trend</h3>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>{t('ui.people.reports.pc.dailyTrend')}</h3>
                     {dailyData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={dailyData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
@@ -226,24 +235,24 @@ const PurchaseCostReport: React.FC = () => {
                                 <YAxis stroke="var(--color-text-secondary)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v.toLocaleString()}`} />
                                 <Tooltip
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                    formatter={(v: any, name: any) => [`$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, name === 'purchaseCost' ? 'Purchase Cost' : name === 'sellValue' ? 'Sell Value' : name]}
+                                    formatter={(v: any, name: any) => [`$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, name === 'purchaseCost' ? t('ui.people.reports.pc.purchaseCost') : name === 'sellValue' ? t('ui.people.reports.pc.sellValue') : name]}
                                     labelFormatter={(label) => { const d = new Date(label + 'T00:00:00'); return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }); }}
                                 />
-                                <Legend formatter={(value) => value === 'purchaseCost' ? 'Purchase Cost' : 'Sell Value'} />
+                                <Legend formatter={(value) => value === 'purchaseCost' ? t('ui.people.reports.pc.purchaseCost') : t('ui.people.reports.pc.sellValue')} />
                                 <Line type="monotone" dataKey="purchaseCost" stroke="#EF4444" strokeWidth={2} dot={{ r: 3, fill: '#EF4444' }} activeDot={{ r: 5 }} name="purchaseCost" />
                                 <Line type="monotone" dataKey="sellValue" stroke="#10B981" strokeWidth={2} dot={{ r: 3, fill: '#10B981' }} activeDot={{ r: 5 }} name="sellValue" />
                             </LineChart>
                         </ResponsiveContainer>
-                    ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>No data available.</div>}
+                    ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.people.reports.noData')}</div>}
                 </div>
             </div>
 
             {/* Product Breakdown Table */}
             <div className="glass-panel" style={{ padding: '24px', overflow: 'hidden' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>Product Breakdown</h3>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>{t('ui.people.reports.pc.breakdown')}</h3>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginRight: '4px' }}>Status:</span>
+                        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginRight: '4px' }}>{t('ui.people.hr.status.label')}:</span>
                         <button
                             onClick={() => setStatusFilter(new Set())}
                             style={{
@@ -253,7 +262,7 @@ const PurchaseCostReport: React.FC = () => {
                                 color: statusFilter.size === 0 ? 'white' : 'var(--color-text-secondary)',
                                 transition: 'all 0.2s'
                             }}
-                        >All</button>
+                        >{t('common.all')}</button>
                         {STATUS_OPTIONS.map(s => (
                             <button
                                 key={s}
@@ -265,7 +274,7 @@ const PurchaseCostReport: React.FC = () => {
                                     color: statusFilter.has(s) ? 'white' : 'var(--color-text-secondary)',
                                     transition: 'all 0.2s'
                                 }}
-                            >{orderStatusLabel(s)}</button>
+                            >{stLabel(s)}</button>
                         ))}
                     </div>
                 </div>
@@ -273,15 +282,15 @@ const PurchaseCostReport: React.FC = () => {
                     <table className="spreadsheet-table">
                         <thead>
                             <tr>
-                                <th>Product</th>
-                                <th style={{ textAlign: 'center' }}>Shipped</th>
-                                <th style={{ textAlign: 'center' }}>Delivered</th>
-                                <th style={{ textAlign: 'right' }}>Total Qty</th>
-                                <th style={{ textAlign: 'right' }}>Cost/Unit</th>
-                                <th style={{ textAlign: 'right' }}>Total Cost</th>
-                                <th style={{ textAlign: 'right' }}>Sell/Unit</th>
-                                <th style={{ textAlign: 'right' }}>Total Revenue</th>
-                                <th style={{ textAlign: 'right' }}>Profit</th>
+                                <th>{t('ui.people.reports.product')}</th>
+                                <th style={{ textAlign: 'center' }}>{t('status.shipped')}</th>
+                                <th style={{ textAlign: 'center' }}>{t('status.delivered')}</th>
+                                <th style={{ textAlign: 'right' }}>{t('ui.people.reports.totalQty')}</th>
+                                <th style={{ textAlign: 'right' }}>{t('ui.people.reports.pc.costUnit')}</th>
+                                <th style={{ textAlign: 'right' }}>{t('ui.people.reports.pc.totalCostCol')}</th>
+                                <th style={{ textAlign: 'right' }}>{t('ui.people.reports.pc.sellUnit')}</th>
+                                <th style={{ textAlign: 'right' }}>{t('ui.people.reports.totalRevenue')}</th>
+                                <th style={{ textAlign: 'right' }}>{t('ui.people.reports.profit')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -304,12 +313,12 @@ const PurchaseCostReport: React.FC = () => {
                                 );
                             })}
                             {productData.length === 0 && (
-                                <tr><td colSpan={9} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)' }}>No shipped or delivered products in this period.</td></tr>
+                                <tr><td colSpan={9} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)' }}>{t('ui.people.reports.pc.empty')}</td></tr>
                             )}
                         </tbody>
                         <tfoot>
                             <tr style={{ fontWeight: 700, background: 'var(--color-surface-hover)' }}>
-                                <td>Total</td>
+                                <td>{t('common.total')}</td>
                                 <td style={{ textAlign: 'center', color: '#3B82F6' }}>{productData.reduce((s, p) => s + p.qtyShipped, 0)}</td>
                                 <td style={{ textAlign: 'center', color: '#10B981' }}>{productData.reduce((s, p) => s + p.qtyDelivered, 0)}</td>
                                 <td style={{ textAlign: 'right' }}>{totalItems}</td>
@@ -323,7 +332,7 @@ const PurchaseCostReport: React.FC = () => {
                     </table>
                 </div>
                 <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '8px' }}>
-                    💡 Purchase cost is based on each product's current "Cost of Purchase" value. Profit = Sell Value − Purchase Cost.
+                    💡 {t('ui.people.reports.pc.note')}
                 </p>
             </div>
         </div>

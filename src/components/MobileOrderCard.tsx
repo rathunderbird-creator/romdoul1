@@ -4,7 +4,7 @@ import type { Sale } from '../types';
 import StatusBadge from './StatusBadge';
 import PaymentStatusBadge from './PaymentStatusBadge';
 import { getOperatorForPhone } from '../utils/telecom';
-import { orderStatusLabel } from '../utils/orderStatusRules';
+import { useTx, orderStatusDisplay } from './useTx';
 import './MobileOrderCard.css';
 
 interface MobileOrderCardProps {
@@ -57,6 +57,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
     trackingUrl = null,
     carrierStatus = null
 }) => {
+    const tx = useTx();
     const getInitials = (name: string) => {
         return name
             .split(' ')
@@ -123,7 +124,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
             return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
         const yesterday = new Date(now.getTime() - 86400000);
-        if (dt.toDateString() === yesterday.toDateString()) return 'Yesterday';
+        if (dt.toDateString() === yesterday.toDateString()) return tx('ui.components.common.yesterday', 'Yesterday');
         return dt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
     };
 
@@ -170,14 +171,14 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
             <div className="moc-swipe-wrap">
                 <div className="moc-swipe-actions" style={{ width: `${actionsWidth}px` }}>
                     <button className="moc-swipe-btn" style={{ background: '#6366F1' }} onClick={(e) => { e.stopPropagation(); closeSwipe(); onView(order); }}>
-                        <Eye size={18} /><span>View</span>
+                        <Eye size={18} /><span>{tx('ui.components.common.view', 'View')}</span>
                     </button>
                     <button className="moc-swipe-btn" style={{ background: '#6B7280' }} onClick={(e) => { e.stopPropagation(); closeSwipe(); onCopy(order); }}>
-                        <Copy size={18} /><span>Copy</span>
+                        <Copy size={18} /><span>{tx('ui.components.common.copy', 'Copy')}</span>
                     </button>
                     {canEdit && (
                         <button className="moc-swipe-btn" style={{ background: '#2563EB' }} onClick={(e) => { e.stopPropagation(); closeSwipe(); onEdit(order); }}>
-                            <Edit size={18} /><span>Edit</span>
+                            <Edit size={18} /><span>{tx('common.edit', 'Edit')}</span>
                         </button>
                     )}
                 </div>
@@ -198,7 +199,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                 <div className="moc-info">
                     <div className="moc-name-row">
                         <span className="moc-customer-name">
-                            {order.customer?.name || 'Unknown'}
+                            {order.customer?.name || tx('ui.components.common.unknown', 'Unknown')}
                         </span>
                         <span className="moc-time">{formatOrderTime(order.date)}</span>
                     </div>
@@ -208,20 +209,20 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                 {order.items[order.items.length - 1].name}
                                 {order.items.length > 1 && <span style={{ color: '#9CA3AF' }}> +{order.items.length - 1}</span>}
                             </>
-                        ) : 'No items'}
+                        ) : tx('ui.components.orderCard.noItems', 'No items')}
                     </div>
                     <div className="moc-tags-row">
                         <span className={`moc-tag shipping-${shippingStatus}`}>
-                            {orderStatusLabel(order.shipping?.status || 'Drafted')}
+                            {orderStatusDisplay(tx, order.shipping?.status || 'Drafted')}
                         </span>
                         {claimTitle && order.paymentClaim ? (
                             // A Salesman's deposit/payment, not confirmed yet: gray.
                             <span className="moc-tag" title={claimTitle} style={{ background: '#F3F4F6', color: '#6B7280', border: '1px solid #D1D5DB' }}>
-                                {order.paymentClaim.status}?
+                                {tx(`dashboard2.pay.${order.paymentClaim.status}`, order.paymentClaim.status)}?
                             </span>
                         ) : (
                             <span className={`moc-tag ${getPayBadgeClass()}`}>
-                                {payStatus === 'Get File' ? 'File' : payStatus}
+                                {payStatus === 'Get File' ? tx('ui.components.orderCard.file', 'File') : tx(`dashboard2.pay.${payStatus}`, payStatus)}
                             </span>
                         )}
                         {order.salesman && <span className="moc-tag tag-salesman">{order.salesman}</span>}
@@ -240,7 +241,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                 <div className="moc-expanded">
                     {/* Customer Info Section */}
                     <div className="moc-section">
-                        <div className="moc-section-title">Customer</div>
+                        <div className="moc-section-title">{tx('ui.components.common.customer', 'Customer')}</div>
                         <div className="moc-details-grid">
                             {order.customer?.phone && (() => {
                                 const operator = getOperatorForPhone(order.customer.phone);
@@ -270,7 +271,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
 
                     {/* Items Section */}
                     <div className="moc-section">
-                        <div className="moc-section-title">Items</div>
+                        <div className="moc-section-title">{tx('ui.components.orderCard.items', 'Items')}</div>
                         <div className="moc-items-container">
                             {order.items.map((item, idx) => (
                                 <div key={idx} className="moc-item-row">
@@ -280,12 +281,12 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             ))}
                             {(order.discount ?? 0) > 0 && (
                                 <div className="moc-item-row" style={{ color: '#DC2626' }}>
-                                    <span>Discount</span>
+                                    <span>{tx('ui.components.common.discount', 'Discount')}</span>
                                     <span style={{ fontWeight: 600 }}>-${(order.discount ?? 0).toFixed(2)}</span>
                                 </div>
                             )}
                             <div className="moc-total-row">
-                                <span>Total</span>
+                                <span>{tx('common.total', 'Total')}</span>
                                 <span>${order.total.toFixed(2)}</span>
                             </div>
                         </div>
@@ -293,12 +294,12 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
 
                     {/* Status Section */}
                     <div className="moc-section">
-                        <div className="moc-section-title">Status</div>
+                        <div className="moc-section-title">{tx('ui.components.report.status', 'Status')}</div>
                         <div className="moc-status-section">
                             <div className="moc-status-row">
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <Package size={14} color="#6B7280" />
-                                    <span className="moc-status-label">Order</span>
+                                    <span className="moc-status-label">{tx('ui.components.orderCard.order', 'Order')}</span>
                                 </div>
                                 <div className="moc-status-control">
                                     <StatusBadge
@@ -322,7 +323,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             <div className="moc-status-row">
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <CreditCard size={14} color="#6B7280" />
-                                    <span className="moc-status-label">Payment</span>
+                                    <span className="moc-status-label">{tx('ui.components.orderCard.payment', 'Payment')}</span>
                                 </div>
                                 <div className="moc-status-control">
                                     <PaymentStatusBadge
@@ -359,7 +360,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                     onClick={(e) => e.stopPropagation()}
                                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--color-primary)', fontWeight: 600, whiteSpace: 'nowrap' }}
                                 >
-                                    <ExternalLink size={13} /> Track
+                                    <ExternalLink size={13} /> {tx('ui.components.orderCard.track', 'Track')}
                                 </a>
                             )}
                         </div>
@@ -373,20 +374,20 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                             disabled={!canPrint}
                         >
                             <Printer size={16} color={canPrint ? (order.isPrinted ? '#2563EB' : '#DC2626') : '#D1D5DB'} />
-                            <span>Print</span>
+                            <span>{tx('ui.components.report.print', 'Print')}</span>
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); onCopy(order); }} className="moc-action-btn">
                             <Copy size={16} />
-                            <span>Copy</span>
+                            <span>{tx('ui.components.common.copy', 'Copy')}</span>
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); onView(order); }} className="moc-action-btn">
                             <Eye size={16} />
-                            <span>View</span>
+                            <span>{tx('ui.components.common.view', 'View')}</span>
                         </button>
                         {canEdit && (
                             <button onClick={(e) => { e.stopPropagation(); onEdit(order); }} className="moc-action-btn primary">
                                 <Edit size={16} />
-                                <span>Edit</span>
+                                <span>{tx('common.edit', 'Edit')}</span>
                             </button>
                         )}
                     </div>

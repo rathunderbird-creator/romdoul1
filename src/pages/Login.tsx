@@ -139,7 +139,7 @@ const Login: React.FC = () => {
                                 border: 'none',
                                 cursor: 'pointer'
                             }}
-                            title="Refresh Users"
+                            title={t('ui.people.login.refreshUsers')}
                         >
                             <RefreshCw size={12} className={isRefreshing ? 'spin' : ''} />
                             {t('login.refresh')}

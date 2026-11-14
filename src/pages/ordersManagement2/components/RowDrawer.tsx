@@ -7,12 +7,11 @@
 import React, { useEffect, useState } from 'react';
 import { Copy, Check, User, Tag, Package, Wallet, Truck, MessageSquare, Flag, Printer } from 'lucide-react';
 import { D2, fmtMoney, tabular } from '../../dashboard2/theme';
-import { DrawerShell, copyToClipboard, MutedPill, AlertPill, ORDER_STATUS_TONE, PAY_STATUS_TONE, TONE_STYLE } from '../ui2';
+import { DrawerShell, copyToClipboard, MutedPill, AlertPill, ORDER_STATUS_TONE, PAY_STATUS_TONE, TONE_STYLE, useOM2Lang } from '../ui2';
 import { orderBalance, previewPayChange, isMissingTracking, orderStatusOf, payStatusOf, IN_HOUSE_COURIER, type Order } from '../metrics';
 import type { OrderEdit, PillTone } from '../types';
 import { getOperatorForPhone } from '../../../utils/telecom';
 import { getShippingLogo } from '../../../utils/shipping';
-import { orderStatusLabel } from '../../../utils/orderStatusRules';
 
 type PayStatus = NonNullable<Order['paymentStatus']>;
 const PAYMENT_STATUS_OPTIONS: PayStatus[] = ['Unpaid', 'Deposit', 'Paid', 'Cancel', 'Get File'];
@@ -144,6 +143,7 @@ const statusSelectStyle = (tone: PillTone): React.CSSProperties => {
 
 const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, onPrint, salesmen, customerCare: customerCareOptions, paymentMethods }) => {
     // All hooks unconditional (Rules of Hooks) — the !order guard comes after.
+    const { tx, statusLabel, payLabel } = useOM2Lang();
     const [paymentStatus, setPaymentStatus] = useState<PayStatus>('Unpaid');
     const [amountReceivedInput, setAmountReceivedInput] = useState('0');
     const [paymentMethod, setPaymentMethod] = useState('');
@@ -214,7 +214,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
     if (!order) return null;
 
     const owed = orderBalance(order);
-    const customerName = order.customer?.name || 'Unknown customer';
+    const customerName = order.customer?.name || tx('om2.unknownCustomer', 'Unknown customer');
     const currentStatus = orderStatusOf(order);
     const currentPayStatus = payStatusOf(order);
     const isOwnDriver = order.shipping?.company === IN_HOUSE_COURIER;
@@ -240,7 +240,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
 
     const onBeforeClose = (): boolean => {
         if (!dirty) return false;
-        return !window.confirm('Discard unsaved changes?');
+        return !window.confirm(tx('om2.drawer.discardConfirm', 'Discard unsaved changes?'));
     };
 
     const handleCopyPhone = async () => {
@@ -269,13 +269,13 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
         const owedMoved = delta.toOwed - delta.fromOwed;
         const collectedMoved = delta.toCollected - delta.fromCollected;
         const parts: string[] = [];
-        if (owedMoved < 0) parts.push(`owed decreases by ${fmtMoney(Math.abs(owedMoved))}`);
-        if (owedMoved > 0) parts.push(`owed increases by ${fmtMoney(owedMoved)}`);
-        if (collectedMoved < 0) parts.push(`collected decreases by ${fmtMoney(Math.abs(collectedMoved))}`);
-        if (collectedMoved > 0) parts.push(`collected increases by ${fmtMoney(collectedMoved)}`);
+        if (owedMoved < 0) parts.push(tx('om2.drawer.owedDown', 'owed decreases by {v}', { v: fmtMoney(Math.abs(owedMoved)) }));
+        if (owedMoved > 0) parts.push(tx('om2.drawer.owedUp', 'owed increases by {v}', { v: fmtMoney(owedMoved) }));
+        if (collectedMoved < 0) parts.push(tx('om2.drawer.collectedDown', 'collected decreases by {v}', { v: fmtMoney(Math.abs(collectedMoved)) }));
+        if (collectedMoved > 0) parts.push(tx('om2.drawer.collectedUp', 'collected increases by {v}', { v: fmtMoney(collectedMoved) }));
         const message = parts.length > 0
-            ? `Mark ${customerName} as ${paymentStatus}? ${parts.join(', ')}.`
-            : `Mark ${customerName} as ${paymentStatus}? This won't change the owed or collected amounts.`;
+            ? tx('om2.drawer.markAsChanges', 'Mark {name} as {status}? {changes}.', { name: customerName, status: payLabel(paymentStatus), changes: parts.join(', ') })
+            : tx('om2.drawer.markAsNoChange', "Mark {name} as {status}? This won't change the owed or collected amounts.", { name: customerName, status: payLabel(paymentStatus) });
         if (!window.confirm(message)) return;
         setPaySaving(true);
         try {
@@ -387,8 +387,8 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                 <button
                     type="button"
                     onClick={() => onPrint(order)}
-                    title="Print receipt"
-                    aria-label="Print receipt"
+                    title={tx('om2.table.printReceipt', 'Print receipt')}
+                    aria-label={tx('om2.table.printReceipt', 'Print receipt')}
                     className="d2-clickable"
                     style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${D2.border}`, background: D2.card, color: D2.ink, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 >
@@ -402,19 +402,19 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                 below. Read-only — the pills mirror the table's own tone
                 mapping so a status here means the same color everywhere. */}
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 14 }}>
-                <MutedPill tone={ORDER_STATUS_TONE[currentStatus] || 'neutral'}>{currentStatus}</MutedPill>
-                <MutedPill tone={PAY_STATUS_TONE[currentPayStatus] || 'neutral'}>{currentPayStatus}</MutedPill>
-                {trackingMissing && <AlertPill icon={<Flag size={11} aria-hidden />}>no tracking</AlertPill>}
+                <MutedPill tone={ORDER_STATUS_TONE[currentStatus] || 'neutral'}>{statusLabel(currentStatus)}</MutedPill>
+                <MutedPill tone={PAY_STATUS_TONE[currentPayStatus] || 'neutral'}>{payLabel(currentPayStatus)}</MutedPill>
+                {trackingMissing && <AlertPill icon={<Flag size={11} aria-hidden />}>{tx('om2.table.noTracking', 'no tracking')}</AlertPill>}
             </div>
             <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-                <StatBox label="Total" value={fmtMoney(order.total)} />
-                <StatBox label="Owed" value={fmtMoney(owed)} tone={owed > 0 ? 'amber' : 'neutral'} />
+                <StatBox label={tx('om2.drawer.total', 'Total')} value={fmtMoney(order.total)} />
+                <StatBox label={tx('om2.sum.owed', 'Owed')} value={fmtMoney(owed)} tone={owed > 0 ? 'amber' : 'neutral'} />
             </div>
 
-            <Section title="Customer" icon={<User size={13} aria-hidden />}>
-                <Field label="Name" value={customerName} khmer truncate fullText={customerName} bold />
+            <Section title={tx('om2.drawer.customer', 'Customer')} icon={<User size={13} aria-hidden />}>
+                <Field label={tx('om2.drawer.name', 'Name')} value={customerName} khmer truncate fullText={customerName} bold />
                 <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, color: D2.muted, marginBottom: 2 }}>Phone</div>
+                    <div style={{ fontSize: 11, color: D2.muted, marginBottom: 2 }}>{tx('om2.drawer.phone', 'Phone')}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         {operator?.logo && <img src={operator.logo} alt={operator.name} title={operator.name} style={{ width: 14, height: 14, objectFit: 'contain', borderRadius: 2, flexShrink: 0 }} />}
                         <span style={{ fontSize: 13, color: D2.ink, fontWeight: 700, ...tabular }}>{order.customer?.phone || '—'}</span>
@@ -422,19 +422,19 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                             <button
                                 type="button"
                                 onClick={handleCopyPhone}
-                                title="Copy phone number"
+                                title={tx('om2.drawer.copyPhone', 'Copy phone number')}
                                 className="d2-clickable"
                                 style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: `1px solid ${D2.border}`, background: D2.card, borderRadius: 6, padding: '2px 7px', fontSize: 11, color: D2.muted, cursor: 'pointer' }}
                             >
                                 {phoneCopied ? <Check size={12} /> : <Copy size={12} />}
-                                {phoneCopied ? 'Copied!' : 'Copy'}
+                                {phoneCopied ? tx('om2.copied', 'Copied!') : tx('om2.drawer.copy', 'Copy')}
                             </button>
                         )}
                     </div>
                 </div>
                 <div style={{ marginBottom: 10 }}>
                     <label htmlFor="om2-drawer-address" style={{ display: 'block', fontSize: 11, color: D2.muted, marginBottom: 4 }}>
-                        Address
+                        {tx('om2.drawer.address', 'Address')}
                     </label>
                     <input
                         id="om2-drawer-address"
@@ -445,13 +445,13 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                         style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: `1px solid ${D2.border}`, fontSize: 13, fontWeight: 700, color: D2.ink }}
                     />
                 </div>
-                {location && <Field label="Location" value={location} khmer bold />}
+                {location && <Field label={tx('om2.drawer.location', 'Location')} value={location} khmer bold />}
             </Section>
 
-            <Section title="Order source" icon={<Tag size={13} aria-hidden />}>
+            <Section title={tx('om2.drawer.orderSource', 'Order source')} icon={<Tag size={13} aria-hidden />}>
                 <div style={{ marginBottom: 10 }}>
                     <label htmlFor="om2-drawer-page" style={{ display: 'block', fontSize: 11, color: D2.muted, marginBottom: 4 }}>
-                        Page
+                        {tx('om2.drawer.page', 'Page')}
                     </label>
                     <input
                         id="om2-drawer-page"
@@ -464,7 +464,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                 </div>
                 <div style={{ marginBottom: 10 }}>
                     <label htmlFor="om2-drawer-salesman" style={{ display: 'block', fontSize: 11, color: D2.muted, marginBottom: 4 }}>
-                        Salesman
+                        {tx('om2.filters.salesman', 'Salesman')}
                     </label>
                     <select
                         id="om2-drawer-salesman"
@@ -478,7 +478,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                 </div>
                 <div style={{ marginBottom: 10 }}>
                     <label htmlFor="om2-drawer-customer-care" style={{ display: 'block', fontSize: 11, color: D2.muted, marginBottom: 4 }}>
-                        Customer care
+                        {tx('om2.drawer.customerCare', 'Customer care')}
                     </label>
                     <select
                         id="om2-drawer-customer-care"
@@ -492,16 +492,16 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                 </div>
             </Section>
 
-            <Section title="Items" icon={<Package size={13} aria-hidden />}>
+            <Section title={tx('om2.drawer.items', 'Items')} icon={<Package size={13} aria-hidden />}>
                 {/* Scrolls (not clips) once a column is dragged wider than the drawer. */}
                 <div style={{ border: `1px solid ${D2.border}`, borderRadius: 8, overflow: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                         <thead>
                             <tr style={{ background: '#f9fafb' }}>
-                                <th scope="col" style={{ textAlign: 'left', padding: '6px 8px', color: D2.muted, fontWeight: 600, fontSize: 11 }}>Item</th>
-                                <th scope="col" style={{ textAlign: 'right', padding: '6px 8px', color: D2.muted, fontWeight: 600, fontSize: 11 }}>Qty</th>
-                                <th scope="col" style={{ textAlign: 'right', padding: '6px 8px', color: D2.muted, fontWeight: 600, fontSize: 11 }}>Price</th>
-                                <th scope="col" style={{ textAlign: 'right', padding: '6px 8px', color: D2.muted, fontWeight: 600, fontSize: 11 }}>Total</th>
+                                <th scope="col" style={{ textAlign: 'left', padding: '6px 8px', color: D2.muted, fontWeight: 600, fontSize: 11 }}>{tx('om2.drawer.item', 'Item')}</th>
+                                <th scope="col" style={{ textAlign: 'right', padding: '6px 8px', color: D2.muted, fontWeight: 600, fontSize: 11 }}>{tx('om2.drawer.qty', 'Qty')}</th>
+                                <th scope="col" style={{ textAlign: 'right', padding: '6px 8px', color: D2.muted, fontWeight: 600, fontSize: 11 }}>{tx('om2.drawer.price', 'Price')}</th>
+                                <th scope="col" style={{ textAlign: 'right', padding: '6px 8px', color: D2.muted, fontWeight: 600, fontSize: 11 }}>{tx('om2.drawer.total', 'Total')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -520,12 +520,12 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                 </div>
             </Section>
 
-            <Section title="Payment" icon={<Wallet size={13} aria-hidden />}>
+            <Section title={tx('om2.drawer.payment', 'Payment')} icon={<Wallet size={13} aria-hidden />}>
                 {/* Total/Owed already shown at-a-glance above — this section
                     is just the editable controls, so it doesn't repeat them. */}
                 <div style={{ marginBottom: 10 }}>
                     <label htmlFor="om2-drawer-pay-status" style={{ display: 'block', fontSize: 11, color: D2.muted, marginBottom: 4 }}>
-                        Payment status
+                        {tx('om2.filters.paymentStatus', 'Payment status')}
                     </label>
                     <select
                         id="om2-drawer-pay-status"
@@ -533,13 +533,13 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                         onChange={e => setPaymentStatus(e.target.value as PayStatus)}
                         style={statusSelectStyle(PAY_STATUS_TONE[paymentStatus])}
                     >
-                        {PAYMENT_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        {PAYMENT_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{payLabel(opt)}</option>)}
                     </select>
                 </div>
 
                 <div style={{ marginBottom: 12 }}>
                     <label htmlFor="om2-drawer-amount-received" style={{ display: 'block', fontSize: 11, color: D2.muted, marginBottom: 4 }}>
-                        Received amount
+                        {tx('om2.drawer.receivedAmount', 'Received amount')}
                     </label>
                     <input
                         id="om2-drawer-amount-received"
@@ -555,7 +555,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                 <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
                     <div style={{ flex: 1 }}>
                         <label htmlFor="om2-drawer-pay-by" style={{ display: 'block', fontSize: 11, color: D2.muted, marginBottom: 4 }}>
-                            Pay by
+                            {tx('om2.drawer.payBy', 'Pay by')}
                         </label>
                         <select
                             id="om2-drawer-pay-by"
@@ -569,7 +569,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                     </div>
                     <div style={{ flex: 1 }}>
                         <label htmlFor="om2-drawer-settle-date" style={{ display: 'block', fontSize: 11, color: D2.muted, marginBottom: 4 }}>
-                            Settled date
+                            {tx('om2.drawer.settledDate', 'Settled date')}
                         </label>
                         <input
                             id="om2-drawer-settle-date"
@@ -583,16 +583,16 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <button type="button" onClick={handleSavePayment} disabled={!payDirty || paySaving} style={saveButtonStyle(payDirty && !paySaving)}>
-                        {paySaving ? 'Saving…' : 'Save'}
+                        {paySaving ? tx('om2.saving', 'Saving…') : tx('om2.save', 'Save')}
                     </button>
-                    {paySaved && <span style={{ fontSize: 12, color: D2.green, fontWeight: 600 }}>Saved</span>}
+                    {paySaved && <span style={{ fontSize: 12, color: D2.green, fontWeight: 600 }}>{tx('om2.saved', 'Saved')}</span>}
                 </div>
             </Section>
 
-            <Section title="Shipping and tracking" icon={<Truck size={13} aria-hidden />}>
+            <Section title={tx('om2.drawer.shipping', 'Shipping and tracking')} icon={<Truck size={13} aria-hidden />}>
                 <div style={{ marginBottom: 10 }}>
                     <label htmlFor="om2-drawer-status" style={{ display: 'block', fontSize: 11, color: D2.muted, marginBottom: 4 }}>
-                        Order status
+                        {tx('om2.filters.orderStatus', 'Order status')}
                     </label>
                     <select
                         id="om2-drawer-status"
@@ -600,14 +600,14 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                         onChange={e => setOrderStatus(e.target.value as ShipStatus)}
                         style={statusSelectStyle(ORDER_STATUS_TONE[orderStatus])}
                     >
-                        {ORDER_STATUS_OPTIONS.map(s => <option key={s} value={s}>{orderStatusLabel(s)}</option>)}
+                        {ORDER_STATUS_OPTIONS.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                     </select>
                     <div style={{ fontSize: 11, color: D2.muted, marginTop: 4 }}>
-                        Some moves aren't allowed from every status (e.g. a Delivered or Returned order is locked) — an invalid change is rejected with a message when you save.
+                        {tx('om2.drawer.statusHint', "Some moves aren't allowed from every status (e.g. a Delivered or Returned order is locked) — an invalid change is rejected with a message when you save.")}
                     </div>
                 </div>
                 <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, color: D2.muted, marginBottom: 2 }}>Courier</div>
+                    <div style={{ fontSize: 11, color: D2.muted, marginBottom: 2 }}>{tx('om2.drawer.courier', 'Courier')}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         {courierLogo && <img src={courierLogo} alt="" style={{ width: 14, height: 14, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}
                         <span className="om2-khmer" title={order.shipping?.company} style={{ fontSize: 13, color: D2.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.shipping?.company || '—'}</span>
@@ -615,15 +615,15 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                 </div>
                 {isOwnDriver ? (
                     <div style={{ fontSize: 12, color: D2.muted, background: '#f1f3f7', border: `1px solid ${D2.border}`, borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
-                        Own driver — no tracking ID needed
+                        {tx('om2.drawer.ownDriver', 'Own driver — no tracking ID needed')}
                     </div>
                 ) : (
                     <div style={{ marginBottom: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                             <label htmlFor="om2-drawer-tracking" style={{ fontSize: 11, color: D2.muted }}>
-                                Tracking ID
+                                {tx('om2.tracking.placeholder', 'Tracking ID')}
                             </label>
-                            {trackingMissing && <AlertPill icon={<Flag size={11} aria-hidden />}>no tracking</AlertPill>}
+                            {trackingMissing && <AlertPill icon={<Flag size={11} aria-hidden />}>{tx('om2.table.noTracking', 'no tracking')}</AlertPill>}
                         </div>
                         <input
                             id="om2-drawer-tracking"
@@ -638,16 +638,16 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                     savable for own-driver orders, which have no tracking field. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <button type="button" onClick={handleSaveTracking} disabled={!trackDirty || trackingSaving} style={saveButtonStyle(trackDirty && !trackingSaving)}>
-                        {trackingSaving ? 'Saving…' : 'Save'}
+                        {trackingSaving ? tx('om2.saving', 'Saving…') : tx('om2.save', 'Save')}
                     </button>
-                    {trackingSaved && <span style={{ fontSize: 12, color: D2.green, fontWeight: 600 }}>Saved</span>}
+                    {trackingSaved && <span style={{ fontSize: 12, color: D2.green, fontWeight: 600 }}>{tx('om2.saved', 'Saved')}</span>}
                 </div>
-                <div style={{ fontSize: 11, color: D2.muted, marginTop: 8 }}>Courier itself isn't editable here.</div>
+                <div style={{ fontSize: 11, color: D2.muted, marginTop: 8 }}>{tx('om2.drawer.courierNotEditable', "Courier itself isn't editable here.")}</div>
             </Section>
 
-            <Section title="Remark" icon={<MessageSquare size={13} aria-hidden />}>
+            <Section title={tx('om2.drawer.remark', 'Remark')} icon={<MessageSquare size={13} aria-hidden />}>
                 <textarea
-                    aria-label="Remark"
+                    aria-label={tx('om2.drawer.remark', 'Remark')}
                     className="om2-khmer"
                     value={remarkInput}
                     onChange={e => setRemarkInput(e.target.value)}
@@ -661,15 +661,15 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
                     more buttons scattered through the drawer. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <button type="button" onClick={handleSaveDetails} disabled={!detailsDirty || detailsSaving} style={saveButtonStyle(detailsDirty && !detailsSaving)}>
-                        {detailsSaving ? 'Saving…' : 'Save details'}
+                        {detailsSaving ? tx('om2.saving', 'Saving…') : tx('om2.drawer.saveDetails', 'Save details')}
                     </button>
-                    {detailsSaved && <span style={{ fontSize: 12, color: D2.green, fontWeight: 600 }}>Saved</span>}
+                    {detailsSaved && <span style={{ fontSize: 12, color: D2.green, fontWeight: 600 }}>{tx('om2.saved', 'Saved')}</span>}
                 </div>
-                <div style={{ fontSize: 11, color: D2.muted, marginTop: 8 }}>Also saves Address, Page, Salesman and Customer care above.</div>
+                <div style={{ fontSize: 11, color: D2.muted, marginTop: 8 }}>{tx('om2.drawer.alsoSaves', 'Also saves Address, Page, Salesman and Customer care above.')}</div>
             </Section>
 
             <div style={{ fontSize: 11, color: D2.muted }}>
-                Last edited by {order.lastEditedBy || '—'} on {fmtDateTime(order.lastEditedAt || order.date)}
+                {tx('om2.drawer.lastEdited', 'Last edited by {by} on {at}', { by: order.lastEditedBy || '—', at: fmtDateTime(order.lastEditedAt || order.date) })}
             </div>
         </DrawerShell>
     );

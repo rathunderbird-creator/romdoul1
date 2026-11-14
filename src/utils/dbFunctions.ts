@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { getSessionArg, isSessionExpiredError, notifySessionExpired } from './session';
+import { tNow } from '../i18n/translate';
 
 // Wholesale orders, customer and supplier payments, Add Stock and receiving a
 // purchase order each run as ONE database function, in one transaction
@@ -20,9 +21,9 @@ export function dbFunctionMessage(error: unknown, area: string): string {
         ? String((error as { message?: unknown }).message || '')
         : String(error || '');
     if (FUNCTION_NAMES.test(message) && /could not find the function|schema cache|does not exist/i.test(message)) {
-        return `${area} needs a one-time database update: run ${MIGRATION} in this store's Supabase SQL editor.`;
+        return tNow('ui.store.dbFn.needsUpdate', { area, file: MIGRATION });
     }
-    return message || 'Unknown error';
+    return message || tNow('ui.store.unknownError');
 }
 
 // SEC-1 session guards (migrations/add_session_guards.sql): every guarded

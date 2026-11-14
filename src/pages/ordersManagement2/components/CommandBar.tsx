@@ -9,6 +9,7 @@ import { DateRangePicker } from '../../../components';
 import { D2, cardStyle, tabular } from '../../dashboard2/theme';
 import type { OM2Filters } from '../urlFilters';
 import type { Translate } from '../types';
+import { useOM2Lang } from '../ui2';
 import { orderStatusLabel } from '../../../utils/orderStatusRules';
 
 interface CommandBarProps {
@@ -78,7 +79,7 @@ const groupLabelStyle: React.CSSProperties = {
     fontSize: 11, fontWeight: 700, color: D2.muted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6,
 };
 
-const FilterGroup: React.FC<{ label: string; options: string[]; selected: string[]; onToggle: (v: string) => void; scroll?: boolean }> = ({ label, options, selected, onToggle, scroll }) => (
+const FilterGroup: React.FC<{ label: string; options: string[]; selected: string[]; onToggle: (v: string) => void; scroll?: boolean; display?: (v: string) => string }> = ({ label, options, selected, onToggle, scroll, display = orderStatusLabel }) => (
     <div style={{ marginBottom: 12 }}>
         <div style={groupLabelStyle}>{label}</div>
         {options.length === 0 ? (
@@ -88,7 +89,7 @@ const FilterGroup: React.FC<{ label: string; options: string[]; selected: string
                 {options.map(opt => (
                     <label key={opt} className="om2-khmer" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: D2.ink, cursor: 'pointer', minWidth: 0 }}>
                         <input type="checkbox" checked={selected.includes(opt)} onChange={() => onToggle(opt)} style={{ flexShrink: 0 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }} title={orderStatusLabel(opt)}>{orderStatusLabel(opt)}</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }} title={display(opt)}>{display(opt)}</span>
                     </label>
                 ))}
             </div>
@@ -156,6 +157,7 @@ const CommandBar: React.FC<CommandBarProps> = ({
     filters, onFiltersChange, onRefresh, onNewOrder, onExport, refreshing,
     salesmen, shippingCompanies, pageSources, columnLabels, visibleColumns, onVisibleColumnsChange, t, isMobile,
 }) => {
+    const { tx, statusLabel, payLabel } = useOM2Lang();
     const [searchValue, setSearchValue] = useState(filters.search);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -236,14 +238,14 @@ const CommandBar: React.FC<CommandBarProps> = ({
         + filters.pages.length + (filters.salesman ? 1 : 0) + (filters.noTrackingOnly ? 1 : 0);
 
     const titleText = tr(t, 'dashboard2.orders', 'Orders');
-    const searchPlaceholder = tr(t, 'ordersManagement2.commandBar.searchPlaceholder', 'Search customer, phone, product, tracking ID, remark...');
+    const searchPlaceholder = tx('om2.searchPlaceholder', 'Search customer, phone, product, tracking ID, remark...');
     const dateRangeLabel = tr(t, 'dashboard2.dateRange', 'Date range');
-    const filtersLabel = tr(t, 'ordersManagement2.commandBar.filters', 'Filters');
-    const columnsLabel = tr(t, 'ordersManagement2.commandBar.columns', 'Columns');
+    const filtersLabel = tx('om2.filtersBtn', 'Filters');
+    const columnsLabel = tx('om2.columnsBtn', 'Columns');
     const refreshLabel = tr(t, 'dashboard2.refresh', 'Refresh');
     const exportLabel = tr(t, 'common.export', 'Export');
     const newOrderLabel = tr(t, 'dashboard2.newOrder', 'New Order');
-    const clearFiltersLabel = tr(t, 'ordersManagement2.commandBar.clearFilters', 'Clear filters');
+    const clearFiltersLabel = tx('om2.clearFilters', 'Clear filters');
     const allLabel = tr(t, 'common.all', 'All');
 
     const refreshButton = (
@@ -360,12 +362,12 @@ const CommandBar: React.FC<CommandBarProps> = ({
                             {clearFiltersLabel}
                         </button>
                     </div>
-                    <FilterGroup label="Order status" options={ORDER_STATUS_OPTIONS} selected={filters.statuses} onToggle={v => toggleArrayFilter('statuses', v)} />
-                    <FilterGroup label="Payment status" options={PAY_STATUS_OPTIONS} selected={filters.payStatuses} onToggle={v => toggleArrayFilter('payStatuses', v)} />
-                    <FilterGroup label="Shipping company" options={shippingCompanies} selected={filters.shippingCos} onToggle={v => toggleArrayFilter('shippingCos', v)} scroll />
-                    <FilterGroup label="Pages" options={pageSources} selected={filters.pages} onToggle={v => toggleArrayFilter('pages', v)} scroll />
+                    <FilterGroup label={tx('om2.filters.orderStatus', 'Order status')} display={statusLabel} options={ORDER_STATUS_OPTIONS} selected={filters.statuses} onToggle={v => toggleArrayFilter('statuses', v)} />
+                    <FilterGroup label={tx('om2.filters.paymentStatus', 'Payment status')} display={payLabel} options={PAY_STATUS_OPTIONS} selected={filters.payStatuses} onToggle={v => toggleArrayFilter('payStatuses', v)} />
+                    <FilterGroup label={tx('om2.filters.shippingCompany', 'Shipping company')} options={shippingCompanies} selected={filters.shippingCos} onToggle={v => toggleArrayFilter('shippingCos', v)} scroll />
+                    <FilterGroup label={tx('om2.filters.pages', 'Pages')} options={pageSources} selected={filters.pages} onToggle={v => toggleArrayFilter('pages', v)} scroll />
                     <div>
-                        <div style={groupLabelStyle}>Salesman</div>
+                        <div style={groupLabelStyle}>{tx('om2.filters.salesman', 'Salesman')}</div>
                         <select
                             value={filters.salesman}
                             onChange={handleSalesmanChange}

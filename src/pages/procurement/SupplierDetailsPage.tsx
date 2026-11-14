@@ -5,6 +5,8 @@ import { supabase } from '../../lib/supabase';
 import { fetchAll } from '../../utils/fetchAll';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill, tNow } from '../../i18n/translate';
 import { useMobile } from '../../hooks/useMobile';
 import { MiniStatCard } from '../../components/MobileFilterKit';
 import { useProcurement } from '../../hooks/useProcurement';
@@ -33,6 +35,7 @@ const SupplierDetailsPage = () => {
     const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const { deletePurchaseOrder, deleteSupplierPayment } = useProcurement();
 
     const [supplier, setSupplier] = useState<Supplier | null>(null);
@@ -45,7 +48,6 @@ const SupplierDetailsPage = () => {
     const [typeFilter, setTypeFilter] = useState<'All' | LedgerEntry['type']>('All');
 
     useEffect(() => {
-        if (!supplier) {
             setHeaderContent({
                 title: (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
@@ -57,15 +59,14 @@ const SupplierDetailsPage = () => {
                             <ArrowLeft size={20} />
                         </button>
                         <div>
-                            <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Supplier Ledger</h1>
-                            <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Loading supplier details...</p>
+                            <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{supplier ? fill(t('ui.supplier.details.titleWithName'), { name: supplier.name }) : t('ui.supplier.details.title')}</h1>
+                            <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{supplier ? t('ui.supplier.details.subtitle') : t('ui.supplier.details.loadingDetails')}</p>
                         </div>
                     </div>
                 )
             });
-        }
         return () => setHeaderContent(null);
-    }, [setHeaderContent, navigate, supplier]);
+    }, [setHeaderContent, navigate, supplier, t]);
 
     useEffect(() => {
         if (!id) return;
@@ -80,26 +81,8 @@ const SupplierDetailsPage = () => {
                     .eq('id', id)
                     .single();
                 if (supError) throw supError;
+                // The header (with the supplier's name) is set by the effect above.
                 setSupplier(supData);
-
-                // Update Header once supplier is loaded
-                setHeaderContent({
-                    title: (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                            <button 
-                                onClick={() => navigate('/procurement/suppliers')}
-                                className="hover-highlight"
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '8px', display: 'flex', alignItems: 'center', color: 'var(--color-text-secondary)' }}
-                            >
-                                <ArrowLeft size={20} />
-                            </button>
-                            <div>
-                                <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{supData.name} - Ledger</h1>
-                                <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Account statement and payment history</p>
-                            </div>
-                        </div>
-                    )
-                });
 
                 // Fetch POs — paged (fetchAll, unique id order): the supplier's
                 // statement and balance are summed from these lists, so a
@@ -124,14 +107,14 @@ const SupplierDetailsPage = () => {
 
             } catch (error: any) {
                 console.error("Error fetching supplier ledger:", error);
-                showToast("Failed to load supplier details: " + error.message, 'error');
+                showToast(tNow('ui.supplier.details.toast.loadFailed') + error.message, 'error');
             } finally {
                 setIsLoading(false);
             }
         };
 
         fetchData();
-    }, [id, setHeaderContent, navigate, showToast]);
+    }, [id, showToast]);
 
     const ledger = useMemo(() => {
         let entries: Omit<LedgerEntry, 'balance'>[] = [];
@@ -141,12 +124,12 @@ const SupplierDetailsPage = () => {
             let desc = '';
             if (po.items && po.items.length > 0) {
                 const itemStrs = po.items.map((item: any) => {
-                    const prodName = item.product?.name || 'Unknown Product';
+                    const prodName = item.product?.name || t('ui.supplier.details.unknownProduct');
                     return `${prodName}=${item.quantity}($${item.unit_price})`;
                 });
                 desc = `ទិញ ${itemStrs.join(', ')}`;
             } else {
-                desc = `Purchase Order #${po.id.slice(0, 8)}`;
+                desc = fill(t('ui.supplier.details.purchaseOrderNo'), { id: po.id.slice(0, 8) });
             }
 
             entries.push({
@@ -168,7 +151,7 @@ const SupplierDetailsPage = () => {
                 id: `pay-${pay.id}`,
                 date: pay.payment_date,
                 type: 'Payment',
-                description: `សង ${pay.amount}$ - ${pay.notes || (pay.purchase_order ? pay.purchase_order.id.slice(0, 8).toUpperCase() : 'General Payment')}`,
+                description: `សង ${pay.amount}$ - ${pay.notes || (pay.purchase_order ? pay.purchase_order.id.slice(0, 8).toUpperCase() : t('ui.supplier.details.generalPayment'))}`,
                 reference: pay.purchase_order ? pay.purchase_order.id.slice(0, 8).toUpperCase() : 'PAYMENT',
                 invoiceNumber: '',
                 paymentMethod: pay.payment_method || '',
@@ -193,7 +176,7 @@ const SupplierDetailsPage = () => {
 
         // Reverse so newest is first
         return finalizedLedger.reverse();
-    }, [purchaseOrders, payments]);
+    }, [purchaseOrders, payments, t]);
 
     // Filter by date range and entry type
     const filteredLedger = useMemo(() => {
@@ -225,7 +208,7 @@ const SupplierDetailsPage = () => {
     }, [filteredLedger]);
 
     const handleDeleteLedgerEntry = async (entry: LedgerEntry) => {
-        if (!window.confirm(`Are you sure you want to delete this ${entry.type}? This action cannot be undone.`)) return;
+        if (!window.confirm(fill(t('ui.supplier.details.confirmDelete'), { type: entry.type === 'Invoice' ? t('ui.supplier.details.typeInvoice') : t('ui.supplier.details.typePayment') }))) return;
 
         try {
             // Route through the hook's flows: they also clean up the linked
@@ -259,8 +242,8 @@ const SupplierDetailsPage = () => {
         return (
             <div className="page-container fade-in">
                 <div className="glass-panel" style={{ padding: '40px', textAlign: 'center' }}>
-                    <h3>Supplier not found</h3>
-                    <button className="primary-button" onClick={() => navigate('/procurement/suppliers')} style={{ marginTop: '16px' }}>Back to Suppliers</button>
+                    <h3>{t('ui.supplier.details.notFound')}</h3>
+                    <button className="primary-button" onClick={() => navigate('/procurement/suppliers')} style={{ marginTop: '16px' }}>{t('ui.supplier.details.backToSuppliers')}</button>
                 </div>
             </div>
         );
@@ -279,12 +262,12 @@ const SupplierDetailsPage = () => {
                             <div style={{ fontSize: '14px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{supplier.name}</div>
                             {supplier.phone && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{supplier.phone}</div>}
                         </div>
-                        <div style={{ fontSize: '12px', fontWeight: 700, color: stats.paidPercent >= 100 ? '#10b981' : '#f59e0b', flexShrink: 0 }}>{stats.paidPercent}% paid</div>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: stats.paidPercent >= 100 ? '#10b981' : '#f59e0b', flexShrink: 0 }}>{fill(t('ui.supplier.details.percentPaid'), { n: stats.paidPercent })}</div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px' }}>
-                        <MiniStatCard icon={Receipt} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Invoiced" value={formatCurrency(stats.totalDebt)} valueColor="#ef4444" />
-                        <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Paid" value={formatCurrency(stats.totalPaid)} valueColor="#10b981" />
-                        <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Outstanding" value={formatCurrency(stats.balance)} valueColor={stats.balance > 0 ? '#ef4444' : '#10b981'} />
+                        <MiniStatCard icon={Receipt} gradient="linear-gradient(135deg, #ef4444, #f87171)" label={t('ui.supplier.details.invoiced')} value={formatCurrency(stats.totalDebt)} valueColor="#ef4444" />
+                        <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #10b981, #34d399)" label={t('status.paid')} value={formatCurrency(stats.totalPaid)} valueColor="#10b981" />
+                        <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={t('ui.supplier.common.outstanding')} value={formatCurrency(stats.balance)} valueColor={stats.balance > 0 ? '#ef4444' : '#10b981'} />
                     </div>
                 </div>
             ) : (
@@ -295,7 +278,7 @@ const SupplierDetailsPage = () => {
                         <Building2 size={22} />
                     </div>
                     <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Supplier</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('ui.supplier.common.supplier')}</div>
                         <div style={{ fontSize: '17px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{supplier.name}</div>
                         {supplier.phone && <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}><Phone size={10} />{supplier.phone}</div>}
                     </div>
@@ -307,7 +290,7 @@ const SupplierDetailsPage = () => {
                         <Receipt size={22} />
                     </div>
                     <div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Invoiced</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('ui.supplier.details.totalInvoiced')}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700, color: '#ef4444' }}>{formatCurrency(stats.totalDebt)}</div>
                     </div>
                 </div>
@@ -318,7 +301,7 @@ const SupplierDetailsPage = () => {
                         <DollarSign size={22} />
                     </div>
                     <div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Paid</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('ui.supplier.common.totalPaid')}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700, color: '#10b981' }}>{formatCurrency(stats.totalPaid)}</div>
                     </div>
                 </div>
@@ -341,7 +324,7 @@ const SupplierDetailsPage = () => {
                         </div>
                     </div>
                     <div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Outstanding</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('ui.supplier.common.outstanding')}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700, color: stats.balance > 0 ? '#ef4444' : '#10b981' }}>
                             {formatCurrency(stats.balance)}
                         </div>
@@ -353,7 +336,7 @@ const SupplierDetailsPage = () => {
             {/* Date Range Filter */}
             <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px', marginBottom: isMobile ? '12px' : '20px', flexWrap: 'wrap' }}>
                 {!isMobile && <Calendar size={16} color="var(--color-text-muted)" />}
-                {!isMobile && <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>Filter by date:</span>}
+                {!isMobile && <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{t('ui.supplier.details.filterByDate')}</span>}
                 <input
                     type="date"
                     value={dateStart}
@@ -375,20 +358,20 @@ const SupplierDetailsPage = () => {
                     onChange={(e) => setTypeFilter(e.target.value as 'All' | LedgerEntry['type'])}
                     style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer', flex: isMobile ? 1 : undefined, minWidth: 0 }}
                 >
-                    <option value="All">All types</option>
-                    <option value="Invoice">ជំពាក់ (Invoice)</option>
-                    <option value="Payment">សង (Payment)</option>
+                    <option value="All">{t('ui.supplier.details.allTypes')}</option>
+                    <option value="Invoice">{t('ui.supplier.details.optInvoice')}</option>
+                    <option value="Payment">{t('ui.supplier.details.optPayment')}</option>
                 </select>
                 {(dateStart || dateEnd || typeFilter !== 'All') && (
                     <button
                         onClick={() => { setDateStart(''); setDateEnd(''); setTypeFilter('All'); }}
                         style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '12px', cursor: 'pointer', fontWeight: 500 }}
                     >
-                        Clear
+                        {t('ui.supplier.common.clear')}
                     </button>
                 )}
                 <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginLeft: 'auto' }}>
-                    {filteredLedger.length} entries
+                    {fill(t('ui.supplier.details.entriesCount'), { n: filteredLedger.length })}
                 </span>
             </div>
 
@@ -398,7 +381,7 @@ const SupplierDetailsPage = () => {
                     {filteredLedger.length === 0 ? (
                         <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                             <FileText size={32} style={{ opacity: 0.4, margin: '0 auto 10px', display: 'block' }} />
-                            No transactions found for this supplier.
+                            {t('ui.supplier.details.noTransactions')}
                         </div>
                     ) : (
                         <>
@@ -426,9 +409,9 @@ const SupplierDetailsPage = () => {
                                             </span>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                                                 <span style={{ fontSize: '11px', fontWeight: 700, color: entry.balance > 0 ? '#ef4444' : '#10b981' }}>
-                                                    Bal {formatCurrency(entry.balance)}
+                                                    {t('ui.supplier.details.balShort')} {formatCurrency(entry.balance)}
                                                 </span>
-                                                <button onClick={() => handleDeleteLedgerEntry(entry)} title="Delete Entry" style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.6, padding: '2px', display: 'flex' }}>
+                                                <button onClick={() => handleDeleteLedgerEntry(entry)} title={t('ui.supplier.details.deleteEntry')} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.6, padding: '2px', display: 'flex' }}>
                                                     <Trash2 size={14} />
                                                 </button>
                                             </span>
@@ -438,7 +421,7 @@ const SupplierDetailsPage = () => {
                             })}
                             {/* Totals */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'var(--color-bg)', fontSize: '12px', fontWeight: 700, flexWrap: 'wrap', gap: '6px' }}>
-                                <span style={{ color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', fontSize: '11px' }}>Totals{(dateStart || dateEnd) ? ' (filtered)' : ''}</span>
+                                <span style={{ color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', fontSize: '11px' }}>{t('ui.supplier.details.totals')}{(dateStart || dateEnd) ? ` ${t('ui.supplier.details.filtered')}` : ''}</span>
                                 <span style={{ display: 'flex', gap: '10px' }}>
                                     <span style={{ color: '#ef4444' }}>{formatCurrency(filteredTotals.totalDebt)}</span>
                                     <span style={{ color: '#3b82f6' }}>{formatCurrency(filteredTotals.totalPaid)}</span>
@@ -453,14 +436,14 @@ const SupplierDetailsPage = () => {
                 <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', border: 'none' }}>
                     <thead>
                         <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '100px' }}>Date</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '100px' }}>Type</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '130px' }}>Supplier</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '110px' }}>Invoice No</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: '#ef4444', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: '110px' }}>Debt (ជំពាក់)</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: '#3b82f6', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: '110px' }}>Paid (សង)</th>
-                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: '120px' }}>Balance</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '100px' }}>{t('ui.supplier.common.date')}</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '100px' }}>{t('ui.supplier.details.type')}</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '130px' }}>{t('ui.supplier.common.supplier')}</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('ui.supplier.common.description')}</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '110px' }}>{t('ui.supplier.details.invoiceNo')}</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: '#ef4444', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: '110px' }}>{t('ui.supplier.details.colDebt')}</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: '#3b82f6', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: '110px' }}>{t('ui.supplier.details.colPaid')}</th>
+                            <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: '120px' }}>{t('ui.supplier.common.balance')}</th>
                             <th style={{ padding: '14px 20px', fontWeight: 600, fontSize: '12px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', width: '60px' }}></th>
                         </tr>
                     </thead>
@@ -470,7 +453,7 @@ const SupplierDetailsPage = () => {
                                 <td colSpan={9} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', color: 'var(--color-text-secondary)' }}>
                                         <FileText size={32} style={{ opacity: 0.5 }} />
-                                        <p>No transactions found for this supplier.</p>
+                                        <p>{t('ui.supplier.details.noTransactions')}</p>
                                     </div>
                                 </td>
                             </tr>
@@ -527,7 +510,7 @@ const SupplierDetailsPage = () => {
                                             <button 
                                                 onClick={() => handleDeleteLedgerEntry(entry)}
                                                 style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.5, transition: 'opacity 0.2s' }}
-                                                title="Delete Entry"
+                                                title={t('ui.supplier.details.deleteEntry')}
                                                 onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
                                                 onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.5')}
                                             >
@@ -539,7 +522,7 @@ const SupplierDetailsPage = () => {
                                 {/* Totals Row */}
                                 <tr style={{ background: 'rgba(0,0,0,0.03)', borderTop: '2px solid var(--color-border)' }}>
                                     <td colSpan={5} style={{ padding: '14px 20px', fontSize: '13px', fontWeight: 700, color: 'var(--color-text)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                        Totals {(dateStart || dateEnd) ? '(filtered)' : ''}
+                                        {t('ui.supplier.details.totals')} {(dateStart || dateEnd) ? t('ui.supplier.details.filtered') : ''}
                                     </td>
                                     <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '15px', fontWeight: 700, color: '#ef4444' }}>
                                         {formatCurrency(filteredTotals.totalDebt)}

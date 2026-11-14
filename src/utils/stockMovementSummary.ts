@@ -1,3 +1,4 @@
+import { tNow } from '../i18n/translate';
 // Pure aggregation for the "Stock Movement Summary" popup
 // (src/components/StockMovementSummaryModal.tsx). No React, no Supabase.
 //
@@ -167,16 +168,17 @@ export const salesmanOfPool = (pool: SaleCandidate[]): string | undefined => {
 /** Rows that are not a real salesman, pinned below the named ones. */
 export type SpecialRow = 'no-salesman' | 'unknown' | 'not-order';
 
+// Getters: read in the language the app is in at the moment they are shown.
 export const SPECIAL_LABELS: Record<SpecialRow, string> = {
-    'no-salesman': '(No salesman)',
-    'unknown': '(Order unknown)',
-    'not-order': '(Not from a retail order)',
+    get 'no-salesman'() { return tNow('ui.store.movement.noSalesman'); },
+    get 'unknown'() { return tNow('ui.store.movement.orderUnknown'); },
+    get 'not-order'() { return tNow('ui.store.movement.notOrder'); },
 };
 
 export const SPECIAL_HINTS: Record<SpecialRow, string> = {
-    'no-salesman': 'The order has no salesman set',
-    'unknown': 'The order was deleted, or a return could not be matched to a single order',
-    'not-order': 'Purchase-order receipts, manual adjustments and wholesale orders — not tied to a retail order',
+    get 'no-salesman'() { return tNow('ui.store.movement.noSalesmanHint'); },
+    get 'unknown'() { return tNow('ui.store.movement.orderUnknownHint'); },
+    get 'not-order'() { return tNow('ui.store.movement.notOrderHint'); },
 };
 
 // Fixed order of the pinned rows.
