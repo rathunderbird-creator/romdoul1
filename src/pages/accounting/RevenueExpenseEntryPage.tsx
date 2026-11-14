@@ -53,10 +53,10 @@ const CFG = {
     },
 };
 
-// Description used when the field is left empty. Expense: "Expense - Advertising
-// Expense" (owner's format); Revenue keeps "Revenue: <account>".
+// Description used when the field is left empty, in the owner's format:
+// "Expense - Advertising Expense", "Revenue - Sales Revenue".
 const defaultDescription = (mode: 'revenue' | 'expense', accountName: string): string =>
-    mode === 'expense' ? `Expense - ${accountName}` : `Revenue: ${accountName}`;
+    `${mode === 'expense' ? 'Expense' : 'Revenue'} - ${accountName}`;
 
 interface EntryRow {
     entryId: string;
