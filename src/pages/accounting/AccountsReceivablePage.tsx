@@ -10,6 +10,10 @@ import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { Modal } from '../../components';
 import { supabase } from '../../lib/supabase';
 import { useMobile } from '../../hooks/useMobile';
+import MoneyInput from '../../components/MoneyInput';
+import CashBankOptions from '../../components/CashBankOptions';
+import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
+import { accountCurrency, khrToUsd, usdToKhr } from '../../utils/currency';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 
@@ -57,7 +61,7 @@ const AccountsReceivablePage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const navigate = useNavigate();
-    const { warehouses, products, currentUser, wholesaleSettings } = useStore();
+    const { warehouses, products, currentUser, wholesaleSettings, khrExchangeRate } = useStore();
     const { wholesaleOrders, tableMissing: woMissing, fetchWholesaleOrders, recordCustomerPayment } = useWholesale();
     const { accounts, fetchAccounts } = useAccounting();
 
@@ -86,10 +90,13 @@ const AccountsReceivablePage: React.FC = () => {
 
     // Receipt modal (works for both sources)
     const [receiptFor, setReceiptFor] = useState<Receivable | null>(null);
-    const [receiptAmount, setReceiptAmount] = useState<number | string>('');
     const [receiptMethod, setReceiptMethod] = useState('Cash');
     const [receiptNote, setReceiptNote] = useState('');
     const [receiveAccountId, setReceiveAccountId] = useState('');
+    // The amount: USD, or riel for a wholesale receipt into a riel account.
+    // More than the balance is refused, so above it is a typo (riel).
+    const receiptField = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: receiptFor ? receiptFor.balance : null });
+    const receiptCoupling = useAccountCurrency(receiptField, receiptFor?.source === 'wholesale' ? paymentAccounts : [], receiveAccountId, setReceiveAccountId);
 
     // Filters
     const [search, setSearch] = useState('');
@@ -235,16 +242,26 @@ const AccountsReceivablePage: React.FC = () => {
     };
 
     const openReceipt = (r: Receivable) => {
-        setReceiptFor(r); setReceiptAmount(r.balance.toFixed(2)); setReceiptMethod('Cash'); setReceiptNote('');
+        setReceiptFor(r); setReceiptMethod('Cash'); setReceiptNote('');
         // Wholesale Setup's default payment account prefills "Received into".
         const def = wholesaleSettings.defaultPaymentAccountId;
-        setReceiveAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
+        const id = r.source === 'wholesale' && def && paymentAccounts.some(a => a.id === def) ? def : '';
+        setReceiveAccountId(id);
+        // A riel default account opens in riel.
+        receiptField.reset(accountCurrency(paymentAccounts.find(a => a.id === id)) === 'KHR'
+            ? { amount: usdToKhr(r.balance, receiptField.shopRate), currency: 'KHR' }
+            : { amount: r.balance.toFixed(2), currency: 'USD' });
     };
 
     const submitReceipt = async () => {
         if (!receiptFor) return;
-        const amount = Number(receiptAmount);
+        // Riel within 3 cents of the whole balance settles exactly the balance.
+        const rate = Number(receiptField.rate) > 0 ? Number(receiptField.rate) : receiptField.shopRate;
+        const amount = receiptField.currency === 'KHR' && Math.abs(khrToUsd(receiptField.typed, rate) - receiptFor.balance) <= 0.03
+            ? receiptFor.balance : receiptField.usd;
         if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+        if (receiptField.rateInvalid) { showToast('Enter a riel rate above 0', 'error'); return; }
+        if (!receiptField.confirmIfSuspicious()) return;
         // More than is still owed would over-credit the receivable.
         if (receiptFor.source === 'wholesale' && amount > receiptFor.balance + 0.005) {
             showToast(`That's more than the ${receiptFor.balance.toFixed(2)} still owed on this order`, 'error');
@@ -259,7 +276,7 @@ const AccountsReceivablePage: React.FC = () => {
         try {
             if (receiptFor.source === 'wholesale') {
                 const acc = paymentAccounts.find(a => a.id === receiveAccountId);
-                await recordCustomerPayment(receiptFor.id, amount, receiptMethod, receiptNote, undefined, currentUser?.name, receiveAccountId || undefined, acc?.account_name);
+                await recordCustomerPayment(receiptFor.id, amount, receiptMethod, receiptNote, undefined, currentUser?.name, receiveAccountId || undefined, acc?.account_name, receiptField.meta);
             } else {
                 await supabase.from('warehouse_transfer_receipts').insert([{
                     transfer_id: receiptFor.id, amount,
@@ -483,7 +500,15 @@ const AccountsReceivablePage: React.FC = () => {
                             {receiptFor.party} · {receiptFor.desc}
                             <div style={{ marginTop: '4px', color: '#059669', fontWeight: 600 }}>Balance: {fmt(receiptFor.balance)}</div>
                         </div>
-                        <div><label style={labelStyle}>Amount ($)</label><input type="number" className="search-input" style={{ width: '100%' }} value={receiptAmount} onChange={e => setReceiptAmount(e.target.value)} min="0" step="0.01" /></div>
+                        {/* Warehouse-transfer receipts have no currency columns: USD only (with the warning). */}
+                        <MoneyInput
+                            field={receiptField}
+                            label="Amount"
+                            allowKhr={receiptFor.source === 'wholesale'}
+                            onToggleCurrency={receiptCoupling.onToggleCurrency}
+                            khrUnavailableReason={receiptCoupling.khrUnavailableReason}
+                            labelStyle={labelStyle}
+                        />
                         <div><label style={labelStyle}>Method</label>
                             <select className="search-input" style={{ width: '100%' }} value={receiptMethod} onChange={e => setReceiptMethod(e.target.value)}>
                                 <option>Cash</option><option>Bank Transfer</option><option>Credit Card</option><option>Cheque</option>
@@ -491,9 +516,9 @@ const AccountsReceivablePage: React.FC = () => {
                         </div>
                         {receiptFor.source === 'wholesale' && (
                             <div><label style={labelStyle}>Received into *</label>
-                                <select className="search-input d2-khmer" style={{ width: '100%' }} value={receiveAccountId} onChange={e => setReceiveAccountId(e.target.value)}>
+                                <select className="search-input d2-khmer" style={{ width: '100%' }} value={receiveAccountId} onChange={e => receiptCoupling.onAccountChange(e.target.value)}>
                                     <option value="">Bank or cash account…</option>
-                                    {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                    <CashBankOptions accounts={paymentAccounts} />
                                 </select>
                                 {paymentAccounts.length === 0 && (
                                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>

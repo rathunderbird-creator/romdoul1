@@ -8,6 +8,8 @@ import { createRetryKeys } from '../utils/retryKey';
 import { callDbFunction, noticesOf } from '../utils/dbFunctions';
 import { fetchAll } from '../utils/fetchAll';
 import { isMissingTableError, errMessage } from '../utils/supabaseErrors';
+import type { MoneyMeta } from '../utils/currency';
+import { findTransactionIdsByMarker, resolveCashBankAccount, tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 
 // Stock, payments and the books for wholesale orders move inside the
 // database (migrations/add_wholesale_procurement_functions.sql): each save is
@@ -201,9 +203,19 @@ export const useWholesale = () => {
     // after the database saved it, the retry (same order, amount and details)
     // sends the same id and the database reports the earlier payment instead
     // of recording it again. More than the balance still owed is refused.
-    const recordCustomerPayment = useCallback(async (orderId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, receivedBy?: string, receivedInAccountId?: string, receivedInAccountName?: string) => {
+    // money: the riel received (amount is its USD); recorded on the payment,
+    // its Income row and its entry after the save — kept out of the retry
+    // signature, as it is a tag on the same payment.
+    const recordCustomerPayment = useCallback(async (orderId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, receivedBy?: string, receivedInAccountId?: string, receivedInAccountName?: string, money?: MoneyMeta) => {
         const signature = JSON.stringify([orderId, amount, paymentMethod, notes, paymentDate, receivedBy, receivedInAccountId, receivedInAccountName]);
         const [paymentId] = customerPaymentKeys.take(signature);
+        // No account picked: pick it here in the payment's currency, so a USD
+        // receipt never lands on a riel account (the database would pick by
+        // name otherwise; same rules).
+        if (!receivedInAccountId) {
+            const acc = await resolveCashBankAccount(receivedInAccountName || paymentMethod, { preferBank: true, currency: money?.currency });
+            if (acc) { receivedInAccountId = acc.id; receivedInAccountName = acc.account_name; }
+        }
         try {
             const result = await callDbFunction<{ already_recorded?: boolean }>('record_customer_payment', {
                 p_order_id: orderId,
@@ -217,6 +229,13 @@ export const useWholesale = () => {
                 p_payment_id: paymentId,
             }, 'Recording payments');
             customerPaymentKeys.release(signature);
+            if (money?.currency === 'KHR') {
+                // Best effort, never fails the payment (a store without
+                // add_khr_currency.sql skips it silently).
+                await tagRows('customer_payments', { ids: [paymentId] }, money);
+                const txIds = await findTransactionIdsByMarker('#WSP-' + paymentId.slice(0, 8), 'លក់ដុំ');
+                await tagTransactionsAndEntries(txIds, money);
+            }
             showNotices(showToast, result);
             showToast(result?.already_recorded ? 'This payment had already been saved — it was not recorded twice' : 'Payment recorded', 'success');
             await fetchWholesaleOrders(true);

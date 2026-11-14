@@ -11,6 +11,8 @@ import { outstandingReceipt, poReceiveMarker } from '../utils/receivePurchaseOrd
 import { callDbFunction } from '../utils/dbFunctions';
 import { fetchAll } from '../utils/fetchAll';
 import { fetchLedgerStartDate, isBeforeLedgerStart, purchaseOrderLedgerDay } from '../utils/ledgerStart';
+import { khrMeta, splitRiel, type MoneyMeta } from '../utils/currency';
+import { findTransactionIdsByMarker, resolveCashBankAccount, tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 
 const supplierPaymentGuard = createInFlightGuard();
 const supplierPaymentKeys = createRetryKeys();
@@ -655,9 +657,20 @@ export const useProcurement = () => {
     // database reports the earlier payment instead of paying twice. As
     // before, the amount isn't capped at the bill's balance here (the pages
     // that check it do so themselves).
-    const recordSupplierPayments = useCallback(async (supplierId: string, allocations: { poId: string; amount: number }[], paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string, paidFromAccountId?: string, paidFromAccountName?: string) => {
+    // money: the riel paid (the allocations are its USD); split over the
+    // bills in proportion and recorded on each payment, its Expense row and
+    // its entry after the save — kept out of the retry signature, as it is a
+    // tag on the same payments.
+    const recordSupplierPayments = useCallback(async (supplierId: string, allocations: { poId: string; amount: number }[], paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string, paidFromAccountId?: string, paidFromAccountName?: string, money?: MoneyMeta) => {
         const signature = JSON.stringify([supplierId, allocations.map(a => [a.poId, Number(a.amount)]), paymentMethod, notes, paymentDate, paidBy, paidFromAccountId, paidFromAccountName]);
         const paymentIds = supplierPaymentKeys.take(signature, allocations.length);
+        // No account picked: pick it here in the payment's currency, so a USD
+        // payment never comes out of a riel account (the database would pick
+        // by name otherwise; same rules).
+        if (!paidFromAccountId) {
+            const acc = await resolveCashBankAccount(paidFromAccountName || paymentMethod, { preferBank: false, currency: money?.currency });
+            if (acc) { paidFromAccountId = acc.id; paidFromAccountName = acc.account_name; }
+        }
         try {
             const result = await callDbFunction<{ already_recorded?: boolean }>('record_supplier_payments', {
                 p_supplier_id: supplierId,
@@ -670,6 +683,17 @@ export const useProcurement = () => {
                 p_account_name: paidFromAccountName || null,
             }, 'Recording supplier payments');
             supplierPaymentKeys.release(signature);
+            if (money?.currency === 'KHR') {
+                // Best effort, never fails the payment (a store without
+                // add_khr_currency.sql skips it silently).
+                const riel = splitRiel(money.original_amount, allocations.map(a => Number(a.amount)));
+                for (let i = 0; i < paymentIds.length; i++) {
+                    const meta = khrMeta(riel[i], money.exchange_rate);
+                    await tagRows('supplier_payments', { ids: [paymentIds[i]] }, meta);
+                    const txIds = await findTransactionIdsByMarker('#SPP-' + paymentIds[i].slice(0, 8), 'ទិញឥវ៉ាន់');
+                    await tagTransactionsAndEntries(txIds, meta);
+                }
+            }
             showToast(result?.already_recorded ? 'This payment had already been saved — it was not recorded twice' : 'Payment recorded successfully', 'success');
             await fetchPurchaseOrders(true);
             await fetchSupplierPayments(true);
@@ -685,8 +709,8 @@ export const useProcurement = () => {
     }, [showToast, fetchPurchaseOrders, fetchSupplierPayments]);
 
     // One bill.
-    const recordSupplierPayment = useCallback((poId: string, supplierId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string, paidFromAccountId?: string, paidFromAccountName?: string) =>
-        recordSupplierPayments(supplierId, [{ poId, amount }], paymentMethod, notes, paymentDate, paidBy, paidFromAccountId, paidFromAccountName),
+    const recordSupplierPayment = useCallback((poId: string, supplierId: string, amount: number, paymentMethod: string, notes: string, paymentDate?: string, paidBy?: string, paidFromAccountId?: string, paidFromAccountName?: string, money?: MoneyMeta) =>
+        recordSupplierPayments(supplierId, [{ poId, amount }], paymentMethod, notes, paymentDate, paidBy, paidFromAccountId, paidFromAccountName, money),
     [recordSupplierPayments]);
 
     // Supplier Bills: billing a delivery means giving its already-Received PO

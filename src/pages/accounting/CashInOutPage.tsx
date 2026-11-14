@@ -14,6 +14,7 @@ import type { ChartOfAccount } from '../../types';
 import { dayKeyFromDate, addDays, daysBetween } from '../../utils/dateRange';
 import { fetchAll } from '../../utils/fetchAll';
 import { fetchJournalLinesByEntry } from '../../utils/journalLines';
+import { isKhrAccountName } from '../../utils/currency';
 
 const fmt = (n: number): string => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const BLUE = '#3B82F6', RED = '#EF4444', GREEN = '#10B981';
@@ -406,7 +407,7 @@ const CashInOutPage: React.FC = () => {
 
                 {/* Summary cards (scoped to the current From/To + Account filters) */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                    <StatCard label="Cash On Hand" value={positionTotals.closing} color="var(--color-text-main)" />
+                    <StatCard label="Cash & Bank (all)" value={positionTotals.closing} color="var(--color-text-main)" />
                     <StatCard label="Cash In" value={positionTotals.cashIn} color={BLUE} />
                     <StatCard label="Cash Out" value={positionTotals.cashOut} color={RED} />
                     <StatCard label="Net Movement" value={positionTotals.net} color={positionTotals.net < 0 ? RED : BLUE} />
@@ -430,7 +431,11 @@ const CashInOutPage: React.FC = () => {
                                     ) : positionRows.map(r => (
                                         <tr key={r.account.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                             <td style={{ padding: '12px 20px' }}>
-                                                <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{r.account.account_name}</div>
+                                                <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>
+                                                    {r.account.account_name}
+                                                    {/* Booked in USD at each entry's rate: no riel balance yet. */}
+                                                    {isKhrAccountName(r.account.account_name) && <span style={{ fontWeight: 400, fontSize: '11px', color: 'var(--color-text-secondary)' }}> (USD value)</span>}
+                                                </div>
                                                 <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{r.account.account_code}</div>
                                             </td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right' }}>{amountText(r.opening)}</td>

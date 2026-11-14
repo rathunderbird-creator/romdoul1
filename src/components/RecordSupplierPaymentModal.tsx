@@ -3,6 +3,10 @@ import Modal from './Modal';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
 import { dayKeyFromDate } from '../utils/dateRange';
+import MoneyInput from './MoneyInput';
+import CashBankOptions from './CashBankOptions';
+import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
+import { accountCurrency, khrToUsd, usdToKhr, type MoneyMeta } from '../utils/currency';
 
 interface RecordSupplierPaymentModalProps {
     isOpen: boolean;
@@ -14,6 +18,8 @@ interface RecordSupplierPaymentModalProps {
         paidFromAccountId?: string;
         paidFromAccountName?: string;
         notes?: string;
+        // The riel paid (amount is its USD).
+        money?: MoneyMeta;
     }) => void | Promise<void>;
     // The bill's current outstanding balance — prefills Amount and the
     // quick-fill percent buttons.
@@ -43,9 +49,10 @@ const inputStyle: React.CSSProperties = {
 const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
     isOpen, onClose, onConfirm, remainingBalance, supplierName, title = 'Record Payment',
 }) => {
-    const { purchaseSettings } = useStore();
+    const { purchaseSettings, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
-    const [amount, setAmount] = useState<number | ''>('');
+    // Above the bill's balance is likely a typo (riel): warn, never block.
+    const field = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: remainingBalance > 0 ? remainingBalance : null });
     const [paymentDate, setPaymentDate] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
     const [accountId, setAccountId] = useState('');
@@ -67,15 +74,26 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
         if (initializedRef.current) return;
         initializedRef.current = true;
         const remaining = remainingBalance > 0 ? remainingBalance : 0;
-        setAmount(remaining || 0);
         setPaymentDate(dayKeyFromDate(new Date()));
         setPaymentMethod('Bank Transfer');
         setNotes('');
         const def = purchaseSettings.defaultPaymentAccountId;
-        setAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
+        const id = def && paymentAccounts.some(a => a.id === def) ? def : '';
+        setAccountId(id);
+        // A riel default account opens in riel.
+        const inRiel = accountCurrency(paymentAccounts.find(a => a.id === id)) === 'KHR';
+        field.reset(inRiel ? { amount: remaining ? usdToKhr(remaining, field.shopRate) : '', currency: 'KHR' } : { amount: remaining || 0, currency: 'USD' });
+        // field.reset follows the shop rate only.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, remainingBalance, purchaseSettings.defaultPaymentAccountId, paymentAccounts]);
 
-    const canRecord = Number(amount) > 0 && !(paymentAccounts.length > 0 && !accountId);
+    const coupling = useAccountCurrency(field, paymentAccounts, accountId, setAccountId);
+    const rate = Number(field.rate) > 0 ? Number(field.rate) : field.shopRate;
+    // Riel within 3 cents of the whole balance pays exactly the balance.
+    const amount = field.currency === 'KHR' && remainingBalance > 0 && Math.abs(khrToUsd(field.typed, rate) - remainingBalance) <= 0.03
+        ? remainingBalance : field.usd;
+
+    const canRecord = Number(amount) > 0 && !field.rateInvalid && !(paymentAccounts.length > 0 && !accountId);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title}>
@@ -95,23 +113,26 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
                     </div>
                 )}
                 <div>
-                    <label style={labelStyle}>Amount to Pay <span style={{ color: 'red' }}>*</span></label>
-                    <input
-                        type="number" min="0.01" step="0.01"
-                        value={amount}
-                        onChange={e => setAmount(parseFloat(e.target.value) || '')}
-                        style={{ ...inputStyle, fontSize: '16px', fontWeight: 600, border: `1px solid ${Number(amount) <= 0 ? 'red' : 'var(--color-border)'}` }}
+                    <MoneyInput
+                        field={field}
+                        label="Amount to Pay"
+                        required
+                        allowKhr
+                        onToggleCurrency={coupling.onToggleCurrency}
+                        khrUnavailableReason={coupling.khrUnavailableReason}
+                        labelStyle={labelStyle}
+                        inputStyle={{ ...inputStyle, fontSize: '16px', fontWeight: 600, border: `1px solid ${Number(amount) <= 0 ? 'red' : 'var(--color-border)'}` }}
                     />
                     {remainingBalance > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px' }}>
                             {QUICK_FILLS.map(({ label, pct, color }) => {
                                 const val = Math.round(remainingBalance * pct * 100) / 100;
-                                const active = Number(amount) === val;
+                                const active = Math.abs(Number(amount) - val) < 0.005;
                                 return (
                                     <button
                                         key={label}
                                         type="button"
-                                        onClick={() => setAmount(val)}
+                                        onClick={() => field.setAmount(String(field.currency === 'KHR' ? usdToKhr(val, rate) : val))}
                                         style={{
                                             padding: '8px 6px', fontSize: '12px', fontWeight: 700, borderRadius: '8px',
                                             border: `1px solid ${active ? color : 'var(--color-border)'}`,
@@ -146,11 +167,11 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
                     <label style={labelStyle}>Paid from {paymentAccounts.length > 0 && <span style={{ color: 'red' }}>*</span>}</label>
                     <select
                         value={accountId}
-                        onChange={e => setAccountId(e.target.value)}
+                        onChange={e => coupling.onAccountChange(e.target.value)}
                         style={{ ...inputStyle, cursor: 'pointer', border: `1px solid ${paymentAccounts.length > 0 && !accountId ? 'red' : 'var(--color-border)'}` }}
                     >
                         <option value="">Bank or cash account…</option>
-                        {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                        <CashBankOptions accounts={paymentAccounts} />
                     </select>
                     {paymentAccounts.length === 0 && (
                         <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
@@ -182,6 +203,7 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
                             // everything just typed. The caller closes on success only,
                             // same as the hand-rolled payment modal on Purchase Orders.
                             if (!canRecord || submittingRef.current) return;
+                            if (!field.confirmIfSuspicious()) return;
                             submittingRef.current = true;
                             setSubmitting(true);
                             const acc = paymentAccounts.find(a => a.id === accountId);
@@ -193,6 +215,7 @@ const RecordSupplierPaymentModal: React.FC<RecordSupplierPaymentModalProps> = ({
                                     paidFromAccountId: accountId || undefined,
                                     paidFromAccountName: acc?.account_name,
                                     notes: notes.trim() || undefined,
+                                    money: field.meta,
                                 });
                             } finally {
                                 submittingRef.current = false;

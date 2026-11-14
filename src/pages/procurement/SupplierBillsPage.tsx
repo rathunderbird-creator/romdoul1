@@ -29,6 +29,7 @@ import { dayKeyFromDate } from '../../utils/dateRange';
 import { nextBillNumber } from '../../utils/billNumber';
 import { fetchLedgerStartDate, isBeforeLedgerStart, purchaseOrderLedgerDay } from '../../utils/ledgerStart';
 import type { PurchaseOrder, SupplierPayment } from '../../types';
+import type { MoneyMeta } from '../../utils/currency';
 
 const fmtUsd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const fmtDate = (d?: string | null) => d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB') : '—';
@@ -296,10 +297,10 @@ const SupplierBillsPage = () => {
 
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const openPaymentModal = () => setIsPaymentModalOpen(true);
-    const handleConfirmPayment = async (data: { amount: number; paymentDate: string; paymentMethod: string; paidFromAccountId?: string; paidFromAccountName?: string; notes?: string }) => {
+    const handleConfirmPayment = async (data: { amount: number; paymentDate: string; paymentMethod: string; paidFromAccountId?: string; paidFromAccountName?: string; notes?: string; money?: MoneyMeta }) => {
         if (!viewPO) return;
         try {
-            await recordSupplierPayment(viewPO.id, viewPO.supplier_id, data.amount, data.paymentMethod, data.notes || '', data.paymentDate, currentUser?.name, data.paidFromAccountId, data.paidFromAccountName);
+            await recordSupplierPayment(viewPO.id, viewPO.supplier_id, data.amount, data.paymentMethod, data.notes || '', data.paymentDate, currentUser?.name, data.paidFromAccountId, data.paidFromAccountName, data.money);
             setIsPaymentModalOpen(false);
             await loadViewPayments(viewPO.id);
         } catch {
