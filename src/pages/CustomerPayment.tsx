@@ -1184,7 +1184,7 @@ const CustomerPaymentPage: React.FC = () => {
         XLSX.writeFile(wb, `Retail_Payments_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
-    const colCount = 11 + (hasNotesData ? 1 : 0);
+    const colCount = 12 + (hasNotesData ? 1 : 0); // + the filler column
     // Notes is only a column when some payment has notes.
     const rpColDefaults = useMemo(() => {
         const d = { ...RP_COLS };
@@ -1547,7 +1547,10 @@ const CustomerPaymentPage: React.FC = () => {
                     {/* Column resize grip rendered by useColumnWidths (same rule as Revenue/Expense). */}
                     <style>{`.pip-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; background: transparent; }
 .pip-resize-handle:hover { background: rgba(84, 105, 212, 0.3); }`}</style>
-                    <table style={{ width: totalWidth + RP_CHECKBOX_COL, minWidth: '100%', borderCollapse: 'collapse', fontSize: '14px', whiteSpace: 'nowrap', tableLayout: 'fixed' }}>
+                    {/* 100% wide with an unsized filler column last: a fixed-layout
+                        table never gets narrower than its sized columns, so it
+                        grows (and scrolls) once they add up past the screen. */}
+                    <table style={{ width: '100%', minWidth: totalWidth + RP_CHECKBOX_COL, borderCollapse: 'collapse', fontSize: '14px', whiteSpace: 'nowrap', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                                 <th style={{ ...thStyle, width: RP_CHECKBOX_COL, minWidth: RP_CHECKBOX_COL, maxWidth: RP_CHECKBOX_COL, padding: '14px 8px 14px 20px', boxSizing: 'border-box' }}>
@@ -1572,6 +1575,11 @@ const CustomerPaymentPage: React.FC = () => {
                                 {th('addedBy', 'Added by')}
                                 {th('status', 'Status')}
                                 {th('action', 'Action')}
+                                {/* Filler: takes whatever width is left on a wide screen,
+                                    so the sized columns keep exactly their widths (without
+                                    it the browser spreads the spare width over every
+                                    column, and dragging one moved the others). */}
+                                <th aria-hidden style={{ padding: 0 }} />
                             </tr>
                         </thead>
                         <tbody>
@@ -1692,6 +1700,7 @@ const CustomerPaymentPage: React.FC = () => {
                                                     )}
                                                 </div>
                                             </td>
+                                            <td aria-hidden style={{ padding: 0 }} />
                                         </tr>
                                     );
                                 })
