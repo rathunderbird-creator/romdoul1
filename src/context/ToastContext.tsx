@@ -34,11 +34,15 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return (
         <ToastContext.Provider value={{ showToast }}>
             {children}
+            {/* Bottom centre, clear of the page's own content (was the middle of
+                the screen, covering whatever was being worked on). Newest
+                message sits at the bottom. */}
             <div style={{
                 position: 'fixed',
-                top: '50%',
+                bottom: 'max(24px, env(safe-area-inset-bottom))',
                 left: '50%',
-                transform: 'translate(-50%, -50%)',
+                transform: 'translateX(-50%)',
+                maxWidth: 'calc(100vw - 32px)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '12px',
@@ -52,8 +56,8 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             </div>
             <style>{`
         @keyframes slideIn {
-          from { transform: scale(0.9); opacity: 0; }
-          to { transform: scale(1); opacity: 1; }
+          from { transform: translateY(12px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
         }
       `}</style>
         </ToastContext.Provider>
@@ -78,7 +82,7 @@ const ToastItem: React.FC<{ toast: Toast; onRemove: (id: string) => void }> = ({
             onMouseEnter={() => setIsPaused(true)}
             onMouseLeave={() => setIsPaused(false)}
             style={{
-                minWidth: '300px',
+                minWidth: 'min(300px, calc(100vw - 32px))',
                 padding: '16px',
                 borderRadius: '8px',
                 backgroundColor: 'var(--color-surface)',
