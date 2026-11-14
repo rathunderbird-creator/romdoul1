@@ -109,6 +109,9 @@ AS $$
 $$;
 
 -- First active cash/bank account whose lower-case name matches p_re.
+-- Riel accounts (KHR / riel / ៛ in the name) are never an automatic pick;
+-- add_khr_currency.sql installs this same body on stores that cannot
+-- re-run this pack.
 CREATE OR REPLACE FUNCTION wp_internal.wp_cash_bank_match(p_re TEXT)
 RETURNS UUID
 LANGUAGE sql
@@ -116,6 +119,7 @@ STABLE
 AS $$
     SELECT id FROM chart_of_accounts
      WHERE is_active AND account_type = 'Asset' AND account_name ~* '(cash|bank)'
+       AND account_name !~* '(\mkhr\M|riel|៛)'
        AND lower(account_name) ~ p_re
      ORDER BY COALESCE(account_code, '')
      LIMIT 1;

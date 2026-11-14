@@ -53,6 +53,38 @@ included, after products and sales. Same PGlite setup as auth-guards:
     npm i --no-save @electric-sql/pglite
     node tests/backup-restore.test.mjs
 
+## currency-utils.test.mjs
+
+Unit test of `src/utils/currency.ts` (riel payments: riel to USD rounded to
+cents, the 4,100 default shop rate, the wrong-amount warnings — the
+Romdoul2 $2 delivery fee typed as 8000 warns "៛8,000 = $1.95" — the list
+line "៛82,000 @ 4,100 = $20.00", the $0.03 snap to a fixed USD amount, the
+missing-column test the app's fallbacks use) and the currency rule of
+`src/utils/cashBankAccounts.ts`: on the Romdoul1 and Romdoul2/3 charts every
+USD pick and every payment-modal default is the same with and without the
+riel accounts 1002/1011, a riel pick needs `currency: 'KHR'`, and a USD pick
+never lands on a riel account. Transpiled on the fly with the repo's
+esbuild:
+
+    node tests/currency-utils.test.mjs
+
+## khr-currency.test.mjs
+
+Runs `migrations/add_khr_currency.sql` on the real stack
+(`tests/fifo-test-db.mjs`) after turning it back into a live store as it is
+today (no currency columns, no riel accounts, the pack's old
+`wp_cash_bank_match`). Runs it twice and checks the 12 columns, one
+`<table>_currency_check` each (EUR and KHR without an amount or rate
+refused), the two accounts (an existing 1002 left alone), that the
+automatic pick on a Romdoul2/3-like and a Romdoul1-like chart never lands
+on a riel account while an exact riel name still resolves, that a PdFee
+settled with no account debits 1000 Cash and not 1011, that the pack
+carries the same exclusion, and that a bare store without `wp_internal`
+loads the file. Same PGlite setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/khr-currency.test.mjs
+
 ## order-status-rules.test.mjs
 
 Unit test of `src/utils/orderStatusRules.ts` — the shared refusal rules the
