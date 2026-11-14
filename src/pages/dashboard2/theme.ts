@@ -1,6 +1,7 @@
 // Dashboard2 design tokens (spec §5). Inline styles everywhere in this
 // codebase, so tokens live here as constants rather than CSS variables.
 import type { CSSProperties } from 'react';
+import { formatAppDate } from '../../utils/appLocale';
 
 export const D2 = {
     bg: 'var(--color-bg)',
@@ -64,11 +65,12 @@ export const fmtInt = (v: number | null | undefined): string =>
     v === null || v === undefined || !Number.isFinite(v) ? '—' : new Intl.NumberFormat('en-US').format(v);
 
 // "Sep 7" / "Sep 7, 2026" from a YYYY-MM-DD key (parsed as a local day).
+// Month names follow the app's language (Khmer months in Khmer).
 export const fmtDay = (key: string, withYear = false): string => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
     if (!m) return key;
     const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    return d.toLocaleDateString('en-US', withYear ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' });
+    return formatAppDate(d, { year: withYear });
 };
 
 // "3h" / "2d 4h" for an age in hours.

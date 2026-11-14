@@ -110,7 +110,43 @@
     "userListUpdated": "User list updated",
     "failedToRefresh": "Failed to refresh data"
   },
+  "datePicker": {
+    "select": "Select Date Range",
+    "selectDates": "Select Dates",
+    "start": "Start",
+    "end": "End",
+    "cancel": "Cancel",
+    "apply": "Apply",
+    "presets": {
+      "Lifetime": "Lifetime",
+      "Today": "Today",
+      "Yesterday": "Yesterday",
+      "Last 7 days": "Last 7 days",
+      "This week": "This week",
+      "Last week": "Last week",
+      "Last 30 days": "Last 30 days",
+      "This month": "This month",
+      "Last month": "Last month"
+    },
+    "weekdays": [
+      "Su",
+      "Mo",
+      "Tu",
+      "We",
+      "Th",
+      "Fr",
+      "Sa"
+    ]
+  },
+  "common2": { "sort": "Sort" },
   "dashboard": {
+    "salesAndOrders": "Sales & Orders",
+    "soldHint": "Sold = Shipped + Delivered",
+    "unitsSoldHint": "Units sold (Shipped + Delivered), all products in this range",
+    "stockInQty": "Stock-In (Qty)",
+    "stockOutQty": "Stock-Out (Qty)",
+    "pagePerformance": "Page Performance",
+    "deliveryCost": "Cost",
     "title": "Dashboard",
     "subtitle": "Overview of your store performance",
     "refreshData": "Refresh Data",
@@ -305,7 +341,7 @@
     "unitsByStatus": "Units by status",
     "classicCards": "Classic dashboard cards",
     "getFileAllTime": "All time, awaiting settlement — opens the order list with the date filter cleared",
-    "pay": { "Unpaid": "Unpaid", "Deposit": "Deposit", "Paid": "Paid", "Cancel": "Cancel", "Get File": "Get File" },
+    "pay": { "Unpaid": "Unpaid", "Deposit": "Deposit", "Paid": "Paid", "Cancel": "Cancel", "Get File": "Get File", "PdFee": "PdFee" },
     "title": "Sales Dashboard",
     "subtitle": "Cash-on-delivery overview",
     "newOrder": "New Order",

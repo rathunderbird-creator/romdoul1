@@ -10,7 +10,6 @@ import { ShoppingBag, AlertTriangle, TrendingUp, CreditCard, Package, User, Truc
 import StatsCard from './StatsCard';
 import type { OrderListFilters } from '../utils/orderListFilters';
 import type { Sale, Product } from '../types';
-import { orderStatusLabel } from '../utils/orderStatusRules';
 
 export interface ClassicDashboardSectionsProps {
     orders: Sale[];                    // every order in the selected range
@@ -48,6 +47,13 @@ const getStatusStyle = (status: string): { color: string; bgColor: string } => {
 // fallback never fires) — compare against the key instead.
 const statusLabel = (status: string, t: (k: string) => string): string => {
     const key = `status.${status === 'Drafted' ? 'ordered' : status.toLowerCase()}`;
+    const label = t(key);
+    return label === key ? status : label;
+};
+
+// Translated payment-status label (Unpaid, Deposit, Paid, …).
+const payLabel = (status: string, t: (k: string) => string): string => {
+    const key = `dashboard2.pay.${status}`;
     const label = t(key);
     return label === key ? status : label;
 };
@@ -420,7 +426,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
             {/* Sales & Orders Overview */}
             <SectionHeader
                 icon={ShoppingBag}
-                title="Sales & Orders"
+                title={t('dashboard.salesAndOrders')}
                 extra={(() => {
                     const itemQty = (sale: Sale) => sale.items.reduce((x, i) => x + (i.quantity || 0), 0);
                     const totalQty = filteredSales.reduce((s, sale) => s + itemQty(sale), 0);
@@ -431,11 +437,11 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     const sdQty = sdSales.reduce((s, sale) => s + itemQty(sale), 0);
                     return (
                         <>
-                            <span title="Sold = Shipped + Delivered" style={{ fontSize: '12px', fontWeight: 600, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+                            <span title={t('dashboard.soldHint')} style={{ fontSize: '12px', fontWeight: 600, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
                                 {stats.totalSalesCount.toLocaleString()} {t('dashboard.orders')}
                                 <span style={{ color: '#059669', fontWeight: 700 }}> · {sdOrders.toLocaleString()} {t('dashboard.sold')}</span>
                             </span>
-                            <span title="Sold = Shipped + Delivered" style={{ fontSize: '12px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
+                            <span title={t('dashboard.soldHint')} style={{ fontSize: '12px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
                                 {totalQty.toLocaleString()} {t('orders.products')}
                                 <span style={{ color: '#059669' }}> · {sdQty.toLocaleString()} {t('dashboard.sold')}</span>
                             </span>
@@ -468,7 +474,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     return (
                         <StatsCard
                             key={idx}
-                            title={orderStatusLabel(stat.status)}
+                            title={statusLabel(stat.status, t)}
                             value={stat.count}
                             icon={Package}
                             color={color}
@@ -496,7 +502,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     return (
                         <StatsCard
                             key={idx}
-                            title={stat.status + ` ${t('dashboard.orders')}`}
+                            title={`${payLabel(stat.status, t)} ${t('dashboard.orders')}`}
                             value={stat.count}
                             icon={CreditCard}
                             color={color}
@@ -536,7 +542,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     onClick={onOpenInventory}
                 />
                 <StatsCard
-                    title="Stock-In (Qty)"
+                    title={t('dashboard.stockInQty')}
                     value={stockInCount}
                     icon={Package}
                     color="#059669"
@@ -544,7 +550,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     onClick={onOpenStockIn || onOpenInventory}
                 />
                 <StatsCard
-                    title="Stock-Out (Qty)"
+                    title={t('dashboard.stockOutQty')}
                     value={stockOutCount}
                     icon={Package}
                     color="#DC2626"
@@ -562,7 +568,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                     title={t('dashboard.topSellingProducts')}
                     count={topProducts.length}
                     extra={soldUnits > 0 ? (
-                        <span title="Units sold (Shipped + Delivered), all products in this range" style={{ fontSize: '12px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
+                        <span title={t('dashboard.unitsSoldHint')} style={{ fontSize: '12px', fontWeight: 700, padding: '2px 9px', borderRadius: '20px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
                             {soldUnits.toLocaleString()} {t('dashboard.sold')}
                         </span>
                     ) : null}
@@ -652,7 +658,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                 <div style={{ marginBottom: '32px' }}>
                     <SectionHeader
                         icon={Globe}
-                        title="Page Performance"
+                        title={t('dashboard.pagePerformance')}
                         count={pageStats.length}
                         action={
                             <select
@@ -726,7 +732,7 @@ const ClassicDashboardSections: React.FC<ClassicDashboardSectionsProps> = ({
                                         trend={
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                                 <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                                    ${carrier.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cost | <span style={{ color: '#E65F2B', fontWeight: 600 }}>{carrier.delivered} {t('dashboard.orders')}</span>
+                                                    ${carrier.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {t('dashboard.deliveryCost')} | <span style={{ color: '#E65F2B', fontWeight: 600 }}>{carrier.delivered} {t('dashboard.orders')}</span>
                                                 </div>
                                                 <StatusBadges statuses={carrier.statuses} t={t} />
                                             </div>
