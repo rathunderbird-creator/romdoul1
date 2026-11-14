@@ -4,6 +4,8 @@ import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { pickCashBankAccount } from '../utils/cashBankAccounts';
+import { isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
+import { tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 import { insertJournalLines } from '../utils/journalEntryLines';
 import { callDbFunction, noticesOf, rpcWithSession, resetGuardedSignatureCache } from '../utils/dbFunctions';
 import { setSessionAuth, registerSessionExpiredHandler } from '../utils/session';
@@ -64,6 +66,7 @@ interface ConfigState {
     taxRate?: number;
     currency?: string;
     khrExchangeRate?: number;
+    khrExchangeRateUpdatedAt?: string;
     logo?: string;
     telegramBotToken?: string;
     telegramChatId?: string;
@@ -98,7 +101,7 @@ const generateUUID = () => {
 // Sales Revenue account, plus the cash/bank account for a given (optional)
 // `depositAccountId`. When no id is given, falls back to an active Asset-type
 // account whose name matches /cash|bank/i.
-async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: string | null): Promise<{
+async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: string | null, currency?: Currency): Promise<{
     revenueAcc: { id: string; account_code: string; account_name: string; account_type: string } | undefined;
     cashAccId: string | undefined;
     pool: { id: string; account_code: string; account_name: string; account_type: string }[];
@@ -111,8 +114,38 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: st
         || pool.find(a => a.account_type === 'Revenue');
     // Revenue flow: an explicitly picked account wins, otherwise all revenue
     // lands in the bank account by default (see pickCashBankAccount).
-    const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy, { preferBank: true })?.id;
+    // A riel payment (currency 'KHR') picks among the riel accounts; any
+    // other never lands on one.
+    const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy, { preferBank: true, currency })?.id;
     return { revenueAcc, cashAccId, pool };
+}
+
+// The riel details to record with an order payment (updateOrder's opts):
+// which income category the money went to ('ថ្លៃដឹក' delivery fee,
+// 'កក់ប្រាក់' deposit, 'លក់រាយ' sale); all income rows when absent.
+export type OrderMoneyOpts = { money?: MoneyMeta & { category?: string } };
+
+// Tags the income rows set_order_payment returned (new ones and a corrected
+// one) and their journal entries with the riel details, or clears a row
+// that was riel when the correction is in USD. On a retried save whose rows
+// were already written (already_applied), the row is the retry id. Returns
+// the rows with the details merged in for the local cache. Never throws.
+async function tagOrderMoney(rows: Transaction[], money: MoneyMeta & { category?: string }, retryTxId?: string): Promise<Transaction[]> {
+    const { category, ...meta } = money;
+    const mine = rows.filter(r => !category || r.category === category);
+    const ids = mine.map(r => r.id);
+    if (!ids.length && retryTxId) ids.push(retryTxId);
+    if (!ids.length) return rows;
+    if (meta.currency === 'KHR') {
+        const res = await tagTransactionsAndEntries(ids, meta);
+        if (res !== 'tagged') return rows;
+        return rows.map(r => (ids.includes(r.id) ? { ...r, ...meta } : r));
+    }
+    // USD: only a row that was riel needs clearing (a correction).
+    const wasKhr = mine.filter(r => r.currency === 'KHR').map(r => r.id);
+    if (!wasKhr.length) return rows;
+    await tagTransactionsAndEntries(wasKhr, null, { clear: true });
+    return rows.map(r => (wasKhr.includes(r.id) ? { ...r, currency: null, original_amount: null, exchange_rate: null } : r));
 }
 
 const roundCents = (n: number) => Math.round(n * 100) / 100;
@@ -353,7 +386,8 @@ export async function postRetailSaleToLedger({
     reference,
     notes,
     orderId,
-    payBy
+    payBy,
+    currency
 }: {
     txId: string;
     amount: number;
@@ -372,10 +406,12 @@ export async function postRetailSaleToLedger({
     // The payment's method/account hint ('Bank', 'Cash', an account name, …)
     // — steers the cash/bank account when no depositAccountId was picked.
     payBy?: string | null;
+    // The payment's currency: a riel payment picks a riel account.
+    currency?: Currency;
 }): Promise<boolean> {
     return enqueueLedgerPost(async () => {
     try {
-        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy);
+        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency);
         if (revenueAcc && cashAccId) {
             // Read before anything is written. Deposits aren't a completed
             // sale yet — COGS books once, on the Paid-transition (RCP) entry.
@@ -465,7 +501,8 @@ export async function postOrFinalizeTransactionReceipt({
     reference,
     notes,
     orderId,
-    payBy
+    payBy,
+    money
 }: {
     txId: string;
     amount: number;
@@ -479,7 +516,11 @@ export async function postOrFinalizeTransactionReceipt({
     orderId?: string;
     // Method/account hint for the cash/bank side when no explicit account was picked.
     payBy?: string | null;
+    // The row's riel details: the account pick follows its currency and the
+    // entry is tagged with them.
+    money?: MoneyMeta | null;
 }): Promise<void> {
+    const currency = money?.currency;
     // select('*') so status is read where that column exists without failing where it doesn't.
     const { data: existing, error: findErr } = await supabase
         .from('journal_entries')
@@ -497,7 +538,7 @@ export async function postOrFinalizeTransactionReceipt({
         // Resolve the accounts (and COGS) BEFORE touching any existing lines —
         // if this fails, the entry's current (valid) lines must be left
         // untouched rather than deleted with nothing to replace them.
-        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy);
+        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency);
         if (!revenueAcc || !cashAccId) {
             throw new Error('Could not resolve a Sales Revenue account and a cash/bank account in the Chart of Accounts.');
         }
@@ -561,11 +602,13 @@ export async function postOrFinalizeTransactionReceipt({
         if (updErr) throw updErr;
         if (statusDropped) console.warn('Finalized the receipt, but this instance needs migrations/add_entry_status.sql to mark it Posted');
     } else {
-        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId, payBy });
+        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId, payBy, currency });
         if (!ok) {
             throw new Error('Could not create a Posted journal entry — check that the Chart of Accounts has an active Sales Revenue account and a cash/bank account.');
         }
     }
+
+    if (money?.currency === 'KHR') await tagRows('journal_entries', { referenceIds: ['TX-' + txId] }, money);
 
     // A deposit that covered the whole order never gets an RCP row to carry
     // COGS — posting that deposit IS the sale's finalization, so book the cost
@@ -2104,7 +2147,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 ...transaction,
                 id: generateUUID()
             };
-            const { data, error } = await supabase.from('transactions').insert([newTransaction]).select().single();
+            // A riel row carries currency / original_amount / exchange_rate;
+            // a store that has not run add_khr_currency.sql lacks those
+            // columns, so they are dropped and the insert retried.
+            let { data, error } = await supabase.from('transactions').insert([newTransaction]).select().single();
+            if (error && isMissingCurrencyColumnError(error)) {
+                ({ data, error } = await supabase.from('transactions').insert([stripCurrency(newTransaction)]).select().single());
+            }
             if (error) throw error;
             if (data) setTransactions(prev => [data, ...prev]);
         } catch (error) {
@@ -2115,7 +2164,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
         try {
-            const { data, error } = await supabase.from('transactions').update(updates).eq('id', id).select().single();
+            let { data, error } = await supabase.from('transactions').update(updates).eq('id', id).select().single();
+            if (error && isMissingCurrencyColumnError(error)) {
+                ({ data, error } = await supabase.from('transactions').update(stripCurrency(updates)).eq('id', id).select().single());
+            }
             if (error) throw error;
             if (data) setTransactions(prev => prev.map(t => t.id === id ? data : t));
         } catch (error) {
@@ -2500,7 +2552,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // nothing: no orphan income, no half order. The order keeps its
     // client-generated id; a retry after a lost reply re-sends the same id
     // and is reported as already created instead of creating a second order.
-    const addOnlineOrder = async (order: Omit<Sale, 'id'>): Promise<Sale> => {
+    const addOnlineOrder = async (order: Omit<Sale, 'id'>, opts?: { money?: MoneyMeta }): Promise<Sale> => {
         const signature = JSON.stringify({
             total: order.total,
             status: order.paymentStatus || '',
@@ -2555,7 +2607,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         paymentTxKeys.release('create:' + newSale.id);
 
         const res = (data || {}) as { already_created?: boolean; transactions?: Transaction[] };
-        const resTxs = res.transactions || [];
+        let resTxs = res.transactions || [];
+        // Riel received at checkout: tag the income row the function wrote
+        // (no journal entry exists yet at creation).
+        if (opts?.money?.currency === 'KHR') {
+            const ids = resTxs.length ? resTxs.map(t => t.id) : [txId, depTxId].filter(Boolean) as string[];
+            if (await tagRows('transactions', { ids }, opts.money) === 'tagged') {
+                resTxs = resTxs.map(t => ({ ...t, ...opts.money }));
+            }
+        }
         if (resTxs.length > 0) {
             const ids = resTxs.map(t => t.id);
             setTransactions(prev => [...resTxs, ...prev.filter(t => !ids.includes(t.id))]);
@@ -2947,7 +3007,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // a refusal (a stale screen, a payment or status changed elsewhere, a store
     // without the migration, a shipping status change the database refused) saves
     // nothing; a write that fails part-way leaves what was written before it.
-    const updateOrder = async (id: string, updates: Partial<Sale>): Promise<boolean> => {
+    const updateOrder = async (id: string, updates: Partial<Sale>, opts?: OrderMoneyOpts): Promise<boolean> => {
         // Find existing order BEFORE local update for checking status change
         let existingOrder = sales.find(s => s.id === id);
 
@@ -3206,6 +3266,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // second stale screen can't quietly lower the deposit under the
             // amounts already booked.
             if (updates.depositAmount !== undefined && paymentRow) pUpdates.expected_deposit_amount = Number(paymentRow.deposit_amount) || 0;
+            // Every save that books money names its cash/bank account. With
+            // none, the database picks one by name (wp_cash_bank_account); the
+            // same pick is made here instead, in the payment's currency, so a
+            // USD payment can never land on a riel account (1002/1011) even
+            // on a store whose server pick predates add_khr_currency.sql.
+            const target = (pUpdates.payment_status as string | undefined) ?? (paymentRow?.payment_status || undefined);
+            const booksMoney = pUpdates.payment_status === 'PdFee'
+                || (pUpdates.post_to_ledger === true && (target === 'Paid' || target === 'Deposit' || pUpdates.deposit_amount !== undefined));
+            if (booksMoney && !pUpdates.deposit_account_id) {
+                const hint = target === 'Deposit'
+                    ? ((pUpdates.deposit_method as string) || existingOrder?.depositMethod || '')
+                    : ((pUpdates.payment_method as string) || paymentRow?.payment_method || '');
+                try {
+                    const { cashAccId } = await resolveRetailLedgerAccounts(undefined, hint, opts?.money?.currency);
+                    if (cashAccId) pUpdates.deposit_account_id = cashAccId;
+                } catch (e) {
+                    console.warn('Could not resolve the cash/bank account; the database picks it:', e);
+                }
+            }
             const paySignature = 'pay:' + id + ':' + JSON.stringify(pUpdates);
             const [payTxId] = paymentTxKeys.take(paySignature);
             pUpdates.tx_id = payTxId;
@@ -3249,7 +3328,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 };
                 if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };
             }
-            const addedTxs = payRes.transactions_added || [];
+            let addedTxs = payRes.transactions_added || [];
+            // Riel details of the money this save booked (the function takes
+            // USD only): tag its income row(s) and their journal entries.
+            if (opts?.money) {
+                addedTxs = await tagOrderMoney(addedTxs, opts.money, payRes.already_applied ? payTxId : undefined);
+            }
             if (addedTxs.length > 0) {
                 const addedIds = addedTxs.map(t => t.id);
                 setTransactions(prev => [...addedTxs, ...prev.filter(t => !addedIds.includes(t.id))]);
@@ -4364,7 +4448,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateKhrExchangeRate = async (rate: number) => {
-        await updateConfigOps({ khrExchangeRate: { op: 'set', value: rate } });
+        await updateConfigOps({
+            khrExchangeRate: { op: 'set', value: rate },
+            khrExchangeRateUpdatedAt: { op: 'set', value: new Date().toISOString() },
+        });
     };
 
     const updateStoreProfile = async (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => {
@@ -4372,6 +4459,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const ops: ConfigOps = {};
         for (const [key, value] of Object.entries(data)) {
             if (value !== undefined) ops[key] = { op: 'set', value };
+        }
+        // The shop rate's "last changed" date (Settings shows it; it is
+        // reviewed monthly). Only when the rate really changes.
+        if (data.khrExchangeRate !== undefined && Number(data.khrExchangeRate) !== Number(config.khrExchangeRate)) {
+            ops.khrExchangeRateUpdatedAt = { op: 'set', value: new Date().toISOString() };
         }
         if (Object.keys(ops).length > 0) await updateConfigOps(ops);
     };
@@ -4576,7 +4668,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateTaxRate,
             currency: config.currency || 'USD ($)',
             updateCurrency,
-            khrExchangeRate: config.khrExchangeRate || 4100,
+            khrExchangeRate: shopRate(config.khrExchangeRate),
+            khrExchangeRateUpdatedAt: config.khrExchangeRateUpdatedAt || null,
             updateKhrExchangeRate,
             blockedCustomers: config.blockedCustomers || [],
             addBlockedCustomer,

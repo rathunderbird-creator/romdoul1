@@ -4,9 +4,10 @@ import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useHeader } from '../../context/HeaderContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { checkRate, DEFAULT_KHR_RATE, formatRate, shopRate } from '../../utils/currency';
 
 const GeneralSettings: React.FC = () => {
-    const { timezone, taxRate, currency, khrExchangeRate, updateStoreProfile } = useStore();
+    const { timezone, taxRate, currency, khrExchangeRate, khrExchangeRateUpdatedAt, updateStoreProfile } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
@@ -15,7 +16,7 @@ const GeneralSettings: React.FC = () => {
         timezone: '',
         taxRate: 0,
         currency: '',
-        khrExchangeRate: 4100
+        khrExchangeRate: DEFAULT_KHR_RATE
     });
 
     const originalStateRef = useRef<any>(null);
@@ -25,7 +26,7 @@ const GeneralSettings: React.FC = () => {
             timezone: timezone || 'Asia/Phnom_Penh',
             taxRate: taxRate || 0,
             currency: currency || 'USD ($)',
-            khrExchangeRate: khrExchangeRate || 4100
+            khrExchangeRate: shopRate(khrExchangeRate)
         };
         originalStateRef.current = originalState;
         setLocalState(originalState);
@@ -33,20 +34,31 @@ const GeneralSettings: React.FC = () => {
 
     const hasChanges = originalStateRef.current ? JSON.stringify(localState) !== JSON.stringify(originalStateRef.current) : false;
 
+    const rateCheck = checkRate(Number(localState.khrExchangeRate), shopRate(khrExchangeRate));
+
     const handleSave = useCallback(async () => {
+        // The shop rate converts every riel payment: never 0 or empty, and
+        // a figure far from the usual ~4,100 needs a confirm.
+        const rate = Math.round(Number(localState.khrExchangeRate));
+        const check = checkRate(rate, shopRate(khrExchangeRate));
+        if (check === 'invalid') {
+            showToast(t('settings.khrExchangeRateInvalid'), 'error');
+            return;
+        }
+        if (check && !window.confirm(`The rate ${formatRate(rate)} riel per dollar is far from the usual (now ${formatRate(shopRate(khrExchangeRate))}). Save it anyway?`)) return;
         try {
             await updateStoreProfile({
                 timezone: localState.timezone,
                 taxRate: localState.taxRate,
                 currency: localState.currency,
-                khrExchangeRate: localState.khrExchangeRate
+                khrExchangeRate: rate
             });
             showToast(t('settings.settingsSaved'), 'success');
         } catch (error) {
             console.error(error);
             showToast(t('settings.settingsFailed'), 'error');
         }
-    }, [localState, updateStoreProfile, showToast, t]);
+    }, [localState, khrExchangeRate, updateStoreProfile, showToast, t]);
 
     useEffect(() => {
         setHeaderContent({
@@ -112,12 +124,27 @@ const GeneralSettings: React.FC = () => {
                         <input
                             type="number"
                             value={localState.khrExchangeRate}
+                            min="1"
+                            step="1"
                             onChange={(e) => setLocalState({ ...localState, khrExchangeRate: Number(e.target.value) })}
                             className="search-input"
-                            style={{ width: '100%', padding: '12px' }}
+                            style={{ width: '100%', padding: '12px', borderColor: rateCheck === 'invalid' ? '#DC2626' : (rateCheck ? '#F59E0B' : undefined) }}
                         />
+                        {rateCheck === 'invalid' && (
+                            <p style={{ fontSize: '12px', color: '#DC2626', marginTop: '4px' }}>{t('settings.khrExchangeRateInvalid')}</p>
+                        )}
+                        {rateCheck && rateCheck !== 'invalid' && (
+                            <p style={{ fontSize: '12px', color: '#B45309', marginTop: '4px' }}>
+                                {formatRate(Number(localState.khrExchangeRate))} is far from the usual 3,500-4,700.
+                            </p>
+                        )}
                         <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
                             {t('settings.khrExchangeRateNote')}
+                        </p>
+                        <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                            {khrExchangeRateUpdatedAt
+                                ? `${t('settings.khrExchangeRateLastChanged')}: ${new Date(khrExchangeRateUpdatedAt).toLocaleDateString()}`
+                                : t('settings.khrExchangeRateNeverChanged')}
                         </p>
                     </div>
                 </div>

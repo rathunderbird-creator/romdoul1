@@ -52,6 +52,19 @@ export const CURRENCY_KEYS = ['currency', 'original_amount', 'exchange_rate'] as
 export const usdMeta = (usd: number): MoneyMeta => ({ currency: 'USD', original_amount: roundCents(usd), exchange_rate: 1 });
 export const khrMeta = (riel: number, rate: number): MoneyMeta => ({ currency: 'KHR', original_amount: Math.round(riel), exchange_rate: rate });
 
+// A riel amount split over USD parts in proportion (one supplier payment
+// over several bills): whole riel each, the last part takes the remainder so
+// the parts add up to the riel paid.
+export const splitRiel = (riel: number, usdParts: number[]): number[] => {
+    const total = usdParts.reduce((s, x) => s + (Number(x) || 0), 0);
+    const r = Math.round(riel);
+    if (usdParts.length === 0) return [];
+    if (!(total > 0)) return usdParts.map((_, i) => (i === usdParts.length - 1 ? r : 0));
+    const out = usdParts.map(x => Math.round(r * (Number(x) || 0) / total));
+    out[out.length - 1] = r - out.slice(0, -1).reduce((s, x) => s + x, 0);
+    return out;
+};
+
 const toNum = (v: string | number | null | undefined): number => {
     if (v === null || v === undefined) return NaN;
     if (typeof v === 'number') return v;

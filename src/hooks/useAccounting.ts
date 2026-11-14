@@ -4,6 +4,7 @@ import { fetchAll } from '../utils/fetchAll';
 import type { ChartOfAccount, JournalEntry, JournalEntryLine } from '../types';
 import { useToast } from '../context/ToastContext';
 import { fetchJournalLinesByEntry } from '../utils/journalLines';
+import { CURRENCY_KEYS, isMissingCurrencyColumnError } from '../utils/currency';
 
 export const useAccounting = () => {
     const { showToast } = useToast();
@@ -135,6 +136,14 @@ export const useAccounting = () => {
             // entry_number (caller-computed — see src/utils/journalEntryNumber.ts)
             // is purely additive; omit it entirely when the caller has none.
             if (entry.entry_number) entryPayload.entry_number = entry.entry_number;
+            // A riel entry (Revenue / Expense page, a riel payment imported to
+            // the ledger) keeps its riel amount and rate; the columns arrive
+            // with add_khr_currency.sql and are dropped where it hasn't run.
+            if (entry.currency) {
+                entryPayload.currency = entry.currency;
+                entryPayload.original_amount = entry.original_amount ?? null;
+                entryPayload.exchange_rate = entry.exchange_rate ?? null;
+            }
             // entry_number and status each arrive with their own migration
             // (add_journal_entry_number.sql / add_entry_status.sql). An instance
             // may have run neither, either, or both — retry dropping only the
@@ -143,7 +152,7 @@ export const useAccounting = () => {
             const attemptPayload: Record<string, unknown> = { ...entryPayload };
             let insertedEntry: JournalEntry | null | undefined;
             let entryError: { message?: string } | null | undefined;
-            for (let attempt = 0; attempt < 3; attempt++) {
+            for (let attempt = 0; attempt < 4; attempt++) {
                 ({ data: insertedEntry, error: entryError } = await supabase
                     .from('journal_entries')
                     .insert([attemptPayload])
@@ -152,6 +161,10 @@ export const useAccounting = () => {
                 if (!entryError) break;
                 const msg = entryError.message || '';
                 let stripped = false;
+                if (isMissingCurrencyColumnError(entryError) && 'currency' in attemptPayload) {
+                    for (const k of CURRENCY_KEYS) delete attemptPayload[k];
+                    stripped = true;
+                }
                 if (/entry_number/i.test(msg) && 'entry_number' in attemptPayload) { delete attemptPayload.entry_number; stripped = true; }
                 if (/status/i.test(msg) && 'status' in attemptPayload) { delete attemptPayload.status; stripped = true; }
                 if (!stripped) break;

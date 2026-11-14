@@ -451,8 +451,11 @@
     "generalConfig": "General Configuration",
     "currency": "Currency",
     "taxRate": "Tax Rate (%)",
-    "khrExchangeRate": "KHR Exchange Rate (៛)",
-    "khrExchangeRateNote": "This rate is used to display totals in Khmer Riel.",
+    "khrExchangeRate": "Shop exchange rate (៛ per $1)",
+    "khrExchangeRateNote": "Used to convert riel payments to USD and to show riel totals. Each riel payment keeps the rate it was entered with; changing this does not change past records. Review it monthly.",
+    "khrExchangeRateLastChanged": "Last changed",
+    "khrExchangeRateNeverChanged": "No change recorded yet",
+    "khrExchangeRateInvalid": "Enter a rate above 0.",
     "timezone": "Timezone",
     "timezoneNote": "Affects date display across the application.",
     "telegramNotifications": "Telegram Notifications",
@@ -701,5 +704,21 @@
     "logisticsUnset": "Courier fee and packaging aren't set, so profit and CPA targets leave them out. Set them once in the Defaults row of Unit Economics.",
     "setCosts": "Set costs",
     "saveFailed": "Couldn't save. Please try again."
+  },
+  "money": {
+    "usdLooksRiel": "{{asUsd}} looks like a riel amount ({{asKhr}} = {{asRielUsd}}).",
+    "khrLooksUsd": "{{asKhrTyped}} looks like a dollar amount ({{asUsd}} = {{asKhr}}).",
+    "rateOff": "Rate {{rate}} is far from the shop rate {{shop}}.",
+    "usdLooksRielConfirm": "You typed {{typed}} in a USD field.\n• As dollars: {{asUsd}}\n• As riel: {{asKhr}} = {{asRielUsd}} at {{rate}}\nOK books {{asUsd}}. Cancel to fix it.",
+    "khrLooksUsdConfirm": "You typed {{asKhrTyped}} in a riel field.\n• As riel: {{asKhrTyped}} = {{asRielUsd}}\n• As dollars: {{asUsd}} (= {{asKhr}})\nOK books {{asRielUsd}}. Cancel to fix it.",
+    "rateOffConfirm": "The rate {{rate}} riel per dollar is far from the usual (shop rate {{shop}}). Use it anyway?",
+    "rateInvalid": "Enter a riel rate above 0.",
+    "rate": "Rate ៛ per $1",
+    "itsRiel": "It's riel",
+    "itsDollars": "It's dollars",
+    "shopRate": "shop rate",
+    "setByAccount": "Set by the account picked",
+    "needKhrAccount": "Add a riel account first: run migrations/add_khr_currency.sql",
+    "rielGroup": "Riel (KHR)"
   }
 }
