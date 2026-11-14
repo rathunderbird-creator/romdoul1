@@ -18,6 +18,9 @@ import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber } from '../../utils/journalEntryNumber';
 import { useColumnWidths } from '../pageIncomePrediction/useColumnWidths';
 import type { ChartOfAccount } from '../../types';
+import MoneyInput from '../../components/MoneyInput';
+import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
+import { CURRENCY_KEYS, formatMoneyLine, isKhrAccountName, isKhrRow, isMissingCurrencyColumnError } from '../../utils/currency';
 
 const GREEN = '#10B981', RED = '#EF4444';
 // .in()/.delete() batch size for bulk unpost/delete — well under PostgREST's URL limit.
@@ -67,6 +70,10 @@ interface EntryRow {
     counterName: string;
     counterIds: string[];
     amount: number;
+    // The entry's riel details (add_khr_currency.sql): "៛82,000 @ 4,100".
+    currency?: string | null;
+    original_amount?: number | null;
+    exchange_rate?: number | null;
     status: string;
     ref: string;
     // Created by a payment flow (reference_id 'TX-…': retail receipts/deposits,
@@ -185,7 +192,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
-    const { currentUser, hasPermission } = useStore();
+    const { currentUser, hasPermission, khrExchangeRate } = useStore();
     // Unposting rewinds finalized books, so it stays admin-only — same gate
     // as Customer Payment's bulk Unpost.
     const isAdmin = currentUser?.roleId === 'admin';
@@ -198,7 +205,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const { widthStyle, resizeHandle, totalWidth } = useColumnWidths('rev_exp_entries', COL_DEFAULTS);
 
     const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
-    interface RawLine { entryId: string; accountId: string; debit: number; credit: number; date: string; description: string; lineDescription: string; status: string; ref: string; refId: string }
+    interface RawLine { entryId: string; accountId: string; debit: number; credit: number; date: string; description: string; lineDescription: string; status: string; ref: string; refId: string; currency: string | null; original_amount: number | null; exchange_rate: number | null }
     const [lines, setLines] = useState<RawLine[] | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [isFetching, setIsFetching] = useState(false);
@@ -232,9 +239,11 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     .from('chart_of_accounts').select('*').order('account_code', { ascending: true });
 
                 const PAGE = 1000;
+                // The entry's riel columns arrive with add_khr_currency.sql.
+                let withCurrency = true;
                 const loadPage = (from: number, withStatus: boolean, withEntryNumber: boolean, withLineDesc: boolean, withCount: boolean) => supabase
                     .from('journal_entry_lines')
-                    .select(`account_id, journal_entry_id, debit, credit${withLineDesc ? ', description' : ''}, entry:journal_entries!inner(date, description, reference_id${withEntryNumber ? ', entry_number' : ''}${withStatus ? ', status' : ''})`, withCount ? { count: 'exact' } : undefined)
+                    .select(`account_id, journal_entry_id, debit, credit${withLineDesc ? ', description' : ''}, entry:journal_entries!inner(date, description, reference_id${withEntryNumber ? ', entry_number' : ''}${withStatus ? ', status' : ''}${withCurrency ? ', currency, original_amount, exchange_rate' : ''})`, withCount ? { count: 'exact' } : undefined)
                     .order('id', { ascending: true })
                     .range(from, from + PAGE - 1);
 
@@ -247,6 +256,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 let withLineDesc = true;
                 // First page resolves the optional columns; the rest load in parallel.
                 let first = await loadPage(0, withStatus, withEntryNumber, withLineDesc, true);
+                if (first.error && isMissingCurrencyColumnError(first.error)) {
+                    withCurrency = false;
+                    first = await loadPage(0, withStatus, withEntryNumber, withLineDesc, true);
+                }
                 if (first.error && /entry_number/i.test(first.error.message || '')) {
                     withEntryNumber = false;
                     first = await loadPage(0, withStatus, withEntryNumber, withLineDesc, true);
@@ -265,7 +278,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 }
                 if (first.error) throw first.error;
 
-                type Row = { account_id: unknown; journal_entry_id: unknown; debit: unknown; credit: unknown; description?: unknown; entry: { date?: unknown; description?: unknown; status?: unknown; reference_id?: unknown; entry_number?: unknown } | null };
+                type Row = { account_id: unknown; journal_entry_id: unknown; debit: unknown; credit: unknown; description?: unknown; entry: { date?: unknown; description?: unknown; status?: unknown; reference_id?: unknown; entry_number?: unknown; currency?: unknown; original_amount?: unknown; exchange_rate?: unknown } | null };
                 // The fully dynamic select string defeats supabase-js's
                 // literal-type parser, so the rows arrive untyped.
                 const pages: Row[][] = [(first.data || []) as unknown as Row[]];
@@ -299,6 +312,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     // showing their reference_id.
                     ref: String(l.entry?.entry_number || l.entry?.reference_id || ''),
                     refId: String(l.entry?.reference_id || ''),
+                    currency: l.entry?.currency ? String(l.entry.currency) : null,
+                    original_amount: l.entry?.original_amount === null || l.entry?.original_amount === undefined ? null : Number(l.entry.original_amount),
+                    exchange_rate: l.entry?.exchange_rate === null || l.entry?.exchange_rate === undefined ? null : Number(l.entry.exchange_rate),
                 }));
                 if (!alive) return;
                 setAccounts(accs || []);
@@ -326,7 +342,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     // (credit card / payable) for expenses. Cash-named accounts first.
     const counterAccounts = useMemo(() => {
         const pool = accounts.filter(a => a.is_active && (a.account_type === 'Asset' || (mode === 'expense' && a.account_type === 'Liability')));
-        return [...pool].sort((a, b) => Number(/cash|bank/i.test(b.account_name)) - Number(/cash|bank/i.test(a.account_name)) || a.account_code.localeCompare(b.account_code));
+        // USD cash/bank first, then the riel ones, then everything else.
+        const rank = (a: ChartOfAccount) => (/cash|bank/i.test(a.account_name) ? (isKhrAccountName(a.account_name) ? 1 : 0) : 2);
+        return [...pool].sort((a, b) => rank(a) - rank(b) || a.account_code.localeCompare(b.account_code));
     }, [accounts, mode]);
 
     // ── Form ──
@@ -334,7 +352,12 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const [description, setDescription] = useState('');
     const [accountId, setAccountId] = useState('');
     const [counterId, setCounterId] = useState('');
-    const [amount, setAmount] = useState('');
+    // The amount: USD, or riel when the Received Into / Paid From account is
+    // a riel one (or the toggle says so). No plausible maximum here, only
+    // the riel-shaped rule (an expense can be large).
+    const field = useMoneyField({ shopRate: khrExchangeRate });
+    // Clearing after a save keeps the currency (the account is still picked).
+    const setAmount = (v: string) => field.setAmount(v);
     // Both Revenue and Expense entries default to Draft (reviewed before
     // posting), not straight to Posted.
     const defaultEntryStatus: 'Posted' | 'Draft' = 'Draft';
@@ -365,8 +388,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mainAccounts, counterAccounts]);
 
-    const amountNum = Math.round((Number(amount) || 0) * 100) / 100;
-    const canSave = !isSaving && amountNum > 0 && !!accountId && !!counterId && !!date;
+    const coupling = useAccountCurrency(field, counterAccounts, counterId, setCounterId);
+    const amountNum = field.usd;
+    const canSave = !isSaving && amountNum > 0 && !field.rateInvalid && !!accountId && !!counterId && !!date;
 
     // ── Edit an existing entry: the form switches into edit mode. Entries made
     // here are always two balanced lines, so those are fully editable; an entry
@@ -432,7 +456,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             setAccountId(main.accountId);
             setCounterId(counter.accountId);
         }
-        setAmount(row.amount.toFixed(2));
+        // A riel entry reopens in riel, at the rate it was entered with.
+        if (isKhrRow(row)) field.reset({ amount: Number(row.original_amount), currency: 'KHR', rate: Number(row.exchange_rate) });
+        else field.reset({ amount: row.amount.toFixed(2), currency: 'USD' });
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -441,12 +467,19 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         setIsSaving(true);
         try {
             const accName = accountById.get(accountId)?.account_name || cfg.title;
+            if (editSimple && !field.confirmIfSuspicious()) { setIsSaving(false); return; }
             const headerPayload: Record<string, unknown> = {
                 date,
                 description: description.trim() || defaultDescription(mode, accName),
                 status: entryStatus,
+                // The amount is only rewritten for a two-line entry.
+                ...(editSimple ? field.meta : {}),
             };
             let { error } = await supabase.from('journal_entries').update(headerPayload).eq('id', editingEntry.entryId);
+            if (error && isMissingCurrencyColumnError(error)) {
+                for (const k of CURRENCY_KEYS) delete headerPayload[k];
+                ({ error } = await supabase.from('journal_entries').update(headerPayload).eq('id', editingEntry.entryId));
+            }
             if (error && /status/i.test(error.message || '')) {
                 const noStatus = { ...headerPayload };
                 delete noStatus.status;
@@ -497,6 +530,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const handleSave = async () => {
         if (!canSave) return;
         if (editingEntry) { await handleUpdate(); return; }
+        if (!field.confirmIfSuspicious()) return;
         setIsSaving(true);
         try {
             const accName = accountById.get(accountId)?.account_name || cfg.title;
@@ -513,7 +547,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             // null (missing migration) just omits it, like the sibling pages.
             const entryNumber = await nextJournalEntryNumber(cfg.refPrefix, date);
             await saveJournalEntry(
-                { date, description: description.trim() || defaultDescription(mode, accName), reference_id: reference.trim() || `${cfg.refPrefix}-${Date.now()}`, status: entryStatus, ...(entryNumber ? { entry_number: entryNumber } : {}) },
+                { date, description: description.trim() || defaultDescription(mode, accName), reference_id: reference.trim() || `${cfg.refPrefix}-${Date.now()}`, status: entryStatus, ...(entryNumber ? { entry_number: entryNumber } : {}), ...field.meta },
                 entryLines
             );
             setAmount('');
@@ -572,6 +606,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 counterName: counterIds.map(id => accountById.get(id)?.account_name || '?').join(', ') || '—',
                 counterIds,
                 amount,
+                currency: entryLines[0].currency,
+                original_amount: entryLines[0].original_amount,
+                exchange_rate: entryLines[0].exchange_rate,
                 status: entryLines[0].status,
                 ref: entryLines[0].ref,
                 isSystem: entryLines[0].refId.startsWith('TX-'),
@@ -1082,14 +1119,17 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 <option value="Draft">Draft</option>
                             </select>
                         </div>
-                        <div>
-                            <label style={labelStyle}>Amount (USD)</label>
-                            <input
-                                type="number" min="0.01" step="0.01" placeholder="0.00" value={amount}
-                                onChange={e => setAmount(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+                        <div onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') handleSave(); }}>
+                            <MoneyInput
+                                field={field}
+                                label="Amount"
+                                allowKhr
+                                placeholder={field.currency === 'KHR' ? '0' : '0.00'}
+                                onToggleCurrency={coupling.onToggleCurrency}
+                                khrUnavailableReason={coupling.khrUnavailableReason}
                                 disabled={!!editingEntry && !editSimple}
-                                style={inputStyle}
+                                labelStyle={labelStyle}
+                                inputStyle={{ ...inputStyle, fontSize: inputStyle.fontSize, fontWeight: 400 }}
                             />
                         </div>
                         <div>
@@ -1100,7 +1140,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         </div>
                         <div>
                             <label style={labelStyle}>{cfg.counterLabel}</label>
-                            <select value={counterId} onChange={e => setCounterId(e.target.value)} disabled={!!editingEntry && !editSimple} style={{ ...inputStyle, cursor: 'pointer' }}>
+                            <select value={counterId} onChange={e => coupling.onAccountChange(e.target.value)} disabled={!!editingEntry && !editSimple} style={{ ...inputStyle, cursor: 'pointer' }}>
                                 {mode === 'expense' ? (
                                     <>
                                         <optgroup label="Cash / bank / other assets">
@@ -1139,7 +1179,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                     <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: cfg.color, marginBottom: '4px' }}>Journal Entry Preview</div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-main)' }}>
                                         <span className="d2-khmer">Dr. {drName}</span>
-                                        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(amountNum)}</span>
+                                        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(amountNum)}{field.currency === 'KHR' && <span style={{ fontWeight: 500, color: 'var(--color-text-secondary)' }}> ({formatMoneyLine({ amount: amountNum, ...field.meta })})</span>}</span>
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0 2px', fontSize: '13px', color: 'var(--color-text-main)' }}>
                                         <span className="d2-khmer" style={{ paddingLeft: '18px' }}>Cr. {crName}</span>
@@ -1332,7 +1372,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         {r.isSystem ? <SystemChip /> : <ManualChip />}
                                     </span>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
-                                        <span style={{ fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.amount)}</span>
+                                        <span style={{ fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums' }} title={isKhrRow(r) ? formatMoneyLine(r) : undefined}>{fmt(r.amount)}{isKhrRow(r) && <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(r)}</span>}</span>
                                         {canEdit(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} />}
                                         <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} />
                                         <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} />
@@ -1412,7 +1452,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         <td className="d2-khmer" style={{ ...widthStyle('description'), padding: '14px 20px', color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description || '—'}</td>
                                         <td className="d2-khmer" style={{ ...widthStyle('account'), padding: '14px 20px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }} title={r.accountName}>{accountLink(r.accountName, r.accountIds)}</td>
                                         <td className="d2-khmer" style={{ ...widthStyle('counter'), padding: '14px 20px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }} title={r.counterName}>{accountLink(r.counterName, r.counterIds)}</td>
-                                        <td style={{ ...widthStyle('amount'), padding: '14px 20px', textAlign: 'right', fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fmt(r.amount)}</td>
+                                        <td style={{ ...widthStyle('amount'), padding: '14px 20px', textAlign: 'right', fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={isKhrRow(r) ? formatMoneyLine(r) : undefined}>{fmt(r.amount)}{isKhrRow(r) && <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(r)}</div>}</td>
                                         <td style={{ ...widthStyle('status'), padding: '14px 20px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                                                 <StatusChip status={r.status} />

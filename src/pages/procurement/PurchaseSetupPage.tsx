@@ -29,6 +29,8 @@ import { supabase } from '../../lib/supabase';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import DataImportModal from '../../components/DataImportModal';
 import type { PurchaseSettings, PurchasePaymentTerm, PurchaseOpeningBalance, FallsDueType } from '../../types';
+import CashBankOptions from '../../components/CashBankOptions';
+import { isKhrAccountName } from '../../utils/currency';
 
 type TabKey = 'defaults' | 'terms' | 'opening';
 
@@ -432,7 +434,8 @@ const PurchaseSetupPage: React.FC = () => {
                                 onChange={e => setDraft(d => ({ ...d, defaultPaymentAccountId: e.target.value || undefined }))}
                                 style={{ ...inputStyle, cursor: 'pointer' }}>
                                 <option value="">Bank or cash account…</option>
-                                {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                {/* A riel account as the default opens the payment forms in riel. */}
+                                <CashBankOptions accounts={paymentAccounts} label={a => `${a.account_code} · ${a.account_name}${isKhrAccountName(a.account_name) ? ' (riel)' : ''}`} />
                             </select>
                         </div>
                     </div>

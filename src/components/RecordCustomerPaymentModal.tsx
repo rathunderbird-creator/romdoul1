@@ -3,6 +3,10 @@ import Modal from './Modal';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
 import { dayKeyFromDate } from '../utils/dateRange';
+import MoneyInput from './MoneyInput';
+import CashBankOptions from './CashBankOptions';
+import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
+import { accountCurrency, khrToUsd, usdToKhr, type MoneyMeta } from '../utils/currency';
 
 interface RecordCustomerPaymentModalProps {
     isOpen: boolean;
@@ -14,6 +18,8 @@ interface RecordCustomerPaymentModalProps {
         receivedInAccountId?: string;
         receivedInAccountName?: string;
         notes?: string;
+        // The riel received (amount is its USD).
+        money?: MoneyMeta;
     }) => void | Promise<void>;
     // The order's current outstanding balance — prefills Amount and the
     // quick-fill percent buttons.
@@ -43,9 +49,11 @@ const inputStyle: React.CSSProperties = {
 const RecordCustomerPaymentModal: React.FC<RecordCustomerPaymentModalProps> = ({
     isOpen, onClose, onConfirm, remainingBalance, customerName, title = 'Record Payment',
 }) => {
-    const { wholesaleSettings } = useStore();
+    const { wholesaleSettings, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
-    const [amount, setAmount] = useState<number | ''>('');
+    // The balance caps the payment (the database refuses more), so a figure
+    // above it is a typo (riel); the warning says so before the refusal.
+    const field = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: remainingBalance > 0 ? remainingBalance : null });
     const [paymentDate, setPaymentDate] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
     const [accountId, setAccountId] = useState('');
@@ -67,18 +75,29 @@ const RecordCustomerPaymentModal: React.FC<RecordCustomerPaymentModalProps> = ({
         if (initializedRef.current) return;
         initializedRef.current = true;
         const remaining = remainingBalance > 0 ? remainingBalance : 0;
-        setAmount(remaining || 0);
         setPaymentDate(dayKeyFromDate(new Date()));
         setPaymentMethod('Bank Transfer');
         setNotes('');
         const def = wholesaleSettings.defaultPaymentAccountId;
-        setAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
+        const id = def && paymentAccounts.some(a => a.id === def) ? def : '';
+        setAccountId(id);
+        // A riel default account opens in riel.
+        const inRiel = accountCurrency(paymentAccounts.find(a => a.id === id)) === 'KHR';
+        field.reset(inRiel ? { amount: remaining ? usdToKhr(remaining, field.shopRate) : '', currency: 'KHR' } : { amount: remaining || 0, currency: 'USD' });
+        // field.reset follows the shop rate only.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, remainingBalance, wholesaleSettings.defaultPaymentAccountId, paymentAccounts]);
+
+    const coupling = useAccountCurrency(field, paymentAccounts, accountId, setAccountId);
+    const rate = Number(field.rate) > 0 ? Number(field.rate) : field.shopRate;
+    // Riel within 3 cents of the whole balance settles exactly the balance.
+    const amount = field.currency === 'KHR' && remainingBalance > 0 && Math.abs(khrToUsd(field.typed, rate) - remainingBalance) <= 0.03
+        ? remainingBalance : field.usd;
 
     // More than the balance would over-credit the receivable (the database
     // refuses it too).
     const overBalance = remainingBalance > 0 && Number(amount) > remainingBalance + 0.005;
-    const canRecord = Number(amount) > 0 && !overBalance && !(paymentAccounts.length > 0 && !accountId);
+    const canRecord = Number(amount) > 0 && !overBalance && !field.rateInvalid && !(paymentAccounts.length > 0 && !accountId);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title}>
@@ -98,12 +117,15 @@ const RecordCustomerPaymentModal: React.FC<RecordCustomerPaymentModalProps> = ({
                     </div>
                 )}
                 <div>
-                    <label style={labelStyle}>Amount to Pay <span style={{ color: 'red' }}>*</span></label>
-                    <input
-                        type="number" min="0.01" step="0.01"
-                        value={amount}
-                        onChange={e => setAmount(parseFloat(e.target.value) || '')}
-                        style={{ ...inputStyle, fontSize: '16px', fontWeight: 600, border: `1px solid ${Number(amount) <= 0 || overBalance ? 'red' : 'var(--color-border)'}` }}
+                    <MoneyInput
+                        field={field}
+                        label="Amount to Pay"
+                        required
+                        allowKhr
+                        onToggleCurrency={coupling.onToggleCurrency}
+                        khrUnavailableReason={coupling.khrUnavailableReason}
+                        labelStyle={labelStyle}
+                        inputStyle={{ ...inputStyle, fontSize: '16px', fontWeight: 600, border: `1px solid ${Number(amount) <= 0 || overBalance ? 'red' : 'var(--color-border)'}` }}
                     />
                     {overBalance && (
                         <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '6px' }}>
@@ -114,12 +136,12 @@ const RecordCustomerPaymentModal: React.FC<RecordCustomerPaymentModalProps> = ({
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px' }}>
                             {QUICK_FILLS.map(({ label, pct, color }) => {
                                 const val = Math.round(remainingBalance * pct * 100) / 100;
-                                const active = Number(amount) === val;
+                                const active = Math.abs(Number(amount) - val) < 0.005;
                                 return (
                                     <button
                                         key={label}
                                         type="button"
-                                        onClick={() => setAmount(val)}
+                                        onClick={() => field.setAmount(String(field.currency === 'KHR' ? usdToKhr(val, rate) : val))}
                                         style={{
                                             padding: '8px 6px', fontSize: '12px', fontWeight: 700, borderRadius: '8px',
                                             border: `1px solid ${active ? color : 'var(--color-border)'}`,
@@ -156,11 +178,11 @@ const RecordCustomerPaymentModal: React.FC<RecordCustomerPaymentModalProps> = ({
                     <select
                         className="d2-khmer"
                         value={accountId}
-                        onChange={e => setAccountId(e.target.value)}
+                        onChange={e => coupling.onAccountChange(e.target.value)}
                         style={{ ...inputStyle, cursor: 'pointer', border: `1px solid ${paymentAccounts.length > 0 && !accountId ? 'red' : 'var(--color-border)'}` }}
                     >
                         <option value="">Bank or cash account…</option>
-                        {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                        <CashBankOptions accounts={paymentAccounts} />
                     </select>
                     {paymentAccounts.length === 0 && (
                         <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
@@ -191,6 +213,7 @@ const RecordCustomerPaymentModal: React.FC<RecordCustomerPaymentModalProps> = ({
                             // here unconditionally would hide that failure and discard
                             // everything just typed.
                             if (!canRecord || submittingRef.current) return;
+                            if (!field.confirmIfSuspicious()) return;
                             submittingRef.current = true;
                             setSubmitting(true);
                             const acc = paymentAccounts.find(a => a.id === accountId);
@@ -202,6 +225,7 @@ const RecordCustomerPaymentModal: React.FC<RecordCustomerPaymentModalProps> = ({
                                     receivedInAccountId: accountId || undefined,
                                     receivedInAccountName: acc?.account_name,
                                     notes: notes.trim() || undefined,
+                                    money: field.meta,
                                 });
                             } finally {
                                 submittingRef.current = false;

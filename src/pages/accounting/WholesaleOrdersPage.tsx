@@ -10,6 +10,7 @@ import { useMobile } from '../../hooks/useMobile';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup, SwipeRow } from '../../components/MobileFilterKit';
 import DateRangePicker from '../../components/DateRangePicker';
 import { RecordCustomerPaymentModal } from '../../components';
+import type { MoneyMeta } from '../../utils/currency';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -279,12 +280,12 @@ const WholesaleOrdersPage: React.FC = () => {
 
     const openPay = (o: WholesaleOrder) => { setPayOrder(o); };
 
-    const handleConfirmPayment = async (data: { amount: number; paymentDate: string; paymentMethod: string; receivedInAccountId?: string; receivedInAccountName?: string; notes?: string }) => {
+    const handleConfirmPayment = async (data: { amount: number; paymentDate: string; paymentMethod: string; receivedInAccountId?: string; receivedInAccountName?: string; notes?: string; money?: MoneyMeta }) => {
         if (!payOrder || savingRef.current) return;
         savingRef.current = true;
         setSaving(true);
         try {
-            await recordCustomerPayment(payOrder.id, data.amount, data.paymentMethod, data.notes || '', data.paymentDate, currentUser?.name, data.receivedInAccountId, data.receivedInAccountName);
+            await recordCustomerPayment(payOrder.id, data.amount, data.paymentMethod, data.notes || '', data.paymentDate, currentUser?.name, data.receivedInAccountId, data.receivedInAccountName, data.money);
             setPayOrder(null);
         } catch { /* hook toasts */ } finally { savingRef.current = false; setSaving(false); }
     };

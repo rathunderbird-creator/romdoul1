@@ -5,18 +5,24 @@ import { Modal } from '../../components';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
+import MoneyInput from '../../components/MoneyInput';
+import { useMoneyField } from '../../hooks/useMoneyField';
+import { formatMoneyLine, isKhrRow } from '../../utils/currency';
 
 const PaymentsPage: React.FC = () => {
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
-    const { transactions, addTransaction, deleteTransaction, refreshData } = useStore();
+    const { transactions, addTransaction, deleteTransaction, refreshData, khrExchangeRate } = useStore();
     const { showToast } = useToast();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     
     // Form state
     const [date, setDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
-    const [amount, setAmount] = useState<number | string>('');
+    // USD or riel (converted at the shop rate, editable); warns on a
+    // riel-sized figure typed as dollars.
+    const field = useMoneyField({ shopRate: khrExchangeRate });
+    const setAmount = (v: string) => field.reset({ amount: v, currency: 'USD' });
     const [category, setCategory] = useState('');
     const [description, setDescription] = useState('');
     const [payBy, setPayBy] = useState('Cash');
@@ -41,15 +47,17 @@ const PaymentsPage: React.FC = () => {
     }, [transactions]);
 
     const handleSave = async () => {
-        if (!amount || Number(amount) <= 0) {
+        if (!(field.usd > 0) || field.rateInvalid) {
             showToast('Please enter a valid amount', 'error');
             return;
         }
+        if (!field.confirmIfSuspicious()) return;
 
         try {
             const newPayment = {
                 type: 'Expense' as const,
-                amount: Number(amount),
+                amount: field.usd,
+                ...field.meta,
                 category: category || 'General Payment',
                 description,
                 date: new Date(date).toISOString(),
@@ -129,7 +137,7 @@ const PaymentsPage: React.FC = () => {
                                 <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{payment.pay_by || '—'}</span>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                                     <span style={{ fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>
-                                        ${payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        ${payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}{isKhrRow(payment) && <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(payment)}</div>}
                                     </span>
                                     <Trash2 size={15} color="#EF4444" style={{ cursor: 'pointer' }} onClick={() => handleDelete(payment.id)} />
                                 </span>
@@ -167,7 +175,7 @@ const PaymentsPage: React.FC = () => {
                                         {payment.pay_by || '—'}
                                     </td>
                                     <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>
-                                        ${payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        ${payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}{isKhrRow(payment) && <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(payment)}</div>}
                                     </td>
                                     <td style={{ ...tdStyle, textAlign: 'right' }}>
                                         <button
@@ -199,17 +207,7 @@ const PaymentsPage: React.FC = () => {
                         />
                     </div>
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Amount ($)</label>
-                        <input 
-                            type="number" 
-                            className="search-input" 
-                            style={{ width: '100%' }}
-                            placeholder="0.00"
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            min="0"
-                            step="0.01"
-                        />
+                        <MoneyInput field={field} label="Amount" allowKhr placeholder={field.currency === 'KHR' ? '0' : '0.00'} />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                         <div>

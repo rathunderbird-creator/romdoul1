@@ -21,6 +21,7 @@ import { useColumnWidths } from '../pageIncomePrediction/useColumnWidths';
 import '../pageIncomePrediction/pageIncomePrediction.css';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import type { JournalEntry, JournalEntryLine } from '../../types';
+import { CURRENCY_KEYS, isKhrRow, isMissingCurrencyColumnError, type MoneyMeta, type MoneyRow } from '../../utils/currency';
 
 // Height of every control in the filter bar (the Area dropdown and the Print / Export buttons are 36px).
 const FILTER_H = 36;
@@ -83,6 +84,8 @@ interface ImportCandidate {
     debitLabel: string;
     creditId: string;
     creditLabel: string;
+    // A riel payment's riel amount and rate, carried onto its entry.
+    money?: MoneyMeta | null;
 }
 
 // Posted (soft blue) / Draft (amber) chip, as in the reference design.
@@ -210,7 +213,9 @@ const JournalEntriesPage = () => {
             // skipped between pages.
             const txs = await fetchAll<Raw>((from, to) => supabase
                 .from('transactions')
-                .select('id, date, type, category, amount, description, pay_by')
+                // '*' so a riel row's currency / original_amount / exchange_rate
+                // come along where add_khr_currency.sql has run.
+                .select('*')
                 .order('date', { ascending: true })
                 .order('id', { ascending: true })
                 .range(from, to), 1000, { label: 'JournalEntriesPage.prepareImport transactions' });
@@ -240,7 +245,11 @@ const JournalEntriesPage = () => {
             // flows use, so an import lands in the same account a direct post
             // would have. Revenue (wholesale receipts) defaults to the bank
             // account; outflows (supplier payments, payroll) stay method-aware.
-            const cashFor = (payBy: string, isRevenue: boolean) => pickCashBankAccount(pool, payBy, { preferBank: isRevenue });
+            // A riel payment lands on a riel account (its USD pick when the
+            // store has none yet); a USD one never does.
+            const cashFor = (payBy: string, isRevenue: boolean, currency: 'USD' | 'KHR') =>
+                (currency === 'KHR' ? pickCashBankAccount(pool, payBy, { preferBank: isRevenue, currency: 'KHR' }) : undefined)
+                || pickCashBankAccount(pool, payBy, { preferBank: isRevenue, currency: 'USD' });
 
             // The ledger starts at this store's opening stock count; older
             // operations stay in Income & Expense (see utils/ledgerStart.ts).
@@ -259,7 +268,8 @@ const JournalEntriesPage = () => {
                 else if (desc.includes('#PAY-')) { source = 'Payroll'; main = payrollExp; isExpense = true; }
                 else continue; // an Income & Expense row — stays out of the ledger
                 if (isBeforeLedgerStart(String(t.date).slice(0, 10), start)) { beforeStart++; continue; }
-                const cash = cashFor(String(t.pay_by || ''), source === 'Wholesale receipt');
+                const money = isKhrRow(t as MoneyRow) ? { currency: 'KHR' as const, original_amount: Number(t.original_amount), exchange_rate: Number(t.exchange_rate) } : null;
+                const cash = cashFor(String(t.pay_by || ''), source === 'Wholesale receipt', money ? 'KHR' : 'USD');
                 const amount = Math.round((Number(t.amount) || 0) * 100) / 100;
                 if (!main || !cash || amount <= 0) { skipped++; continue; }
                 candidates.push({
@@ -272,6 +282,7 @@ const JournalEntriesPage = () => {
                     debitLabel: isExpense ? main.account_name : cash.account_name,
                     creditId: isExpense ? cash.id : main.id,
                     creditLabel: isExpense ? cash.account_name : main.account_name,
+                    money,
                 });
             }
             setImportPreview({ candidates, skipped, beforeStart, start });
@@ -306,7 +317,13 @@ const JournalEntriesPage = () => {
                     status: 'Draft'
                 };
                 if (entryNumber) payload.entry_number = entryNumber;
+                if (c.money) Object.assign(payload, c.money);
                 let { data: entry, error } = await supabase.from('journal_entries').insert([payload]).select().single();
+                // The riel columns arrive with add_khr_currency.sql.
+                if (error && isMissingCurrencyColumnError(error)) {
+                    for (const k of CURRENCY_KEYS) delete payload[k];
+                    ({ data: entry, error } = await supabase.from('journal_entries').insert([payload]).select().single());
+                }
                 // entry_number arrives with migrations/add_journal_entry_number.sql;
                 // until an instance has run it, import the entry without it.
                 if (error && /entry_number/i.test(error.message || '')) {

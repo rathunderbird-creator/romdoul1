@@ -14,6 +14,7 @@ import { fetchAll } from '../../utils/fetchAll';
 import { RecordCustomerPaymentModal } from '../../components';
 import Modal from '../../components/Modal';
 import type { CustomerPayment } from '../../types';
+import { formatMoneyLine, isKhrRow, type MoneyMeta } from '../../utils/currency';
 
 const fmtUsd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const fmtDate = (d?: string | null) => d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB') : '—';
@@ -173,10 +174,10 @@ const WholesalePaymentsPage: React.FC = () => {
     const payTargetOutstanding = payTarget ? (payTarget.total_amount || 0) - (payTarget.amount_paid || 0) : 0;
     const closePayFlow = () => { setIsPicking(false); setIsPaymentModalOpen(false); setPayTargetId(''); };
 
-    const handleConfirmPayment = async (data: { amount: number; paymentDate: string; paymentMethod: string; receivedInAccountId?: string; receivedInAccountName?: string; notes?: string }) => {
+    const handleConfirmPayment = async (data: { amount: number; paymentDate: string; paymentMethod: string; receivedInAccountId?: string; receivedInAccountName?: string; notes?: string; money?: MoneyMeta }) => {
         if (!payTarget) return;
         try {
-            await recordCustomerPayment(payTarget.id, data.amount, data.paymentMethod, data.notes || '', data.paymentDate, undefined, data.receivedInAccountId, data.receivedInAccountName);
+            await recordCustomerPayment(payTarget.id, data.amount, data.paymentMethod, data.notes || '', data.paymentDate, undefined, data.receivedInAccountId, data.receivedInAccountName, data.money);
             closePayFlow();
         } catch {
             // toast handled in hook
@@ -313,7 +314,7 @@ const WholesalePaymentsPage: React.FC = () => {
                                         <td style={{ padding: '12px 20px', fontSize: '12px', color: 'var(--color-text-main)', fontWeight: 600 }}>{referenceOf.get(p.id) || '—'}</td>
                                         <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(p.payment_date)}</td>
                                         <td className="d2-khmer" style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{p.wholesale_order?.customer_name || '—'}</td>
-                                        <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(p.amount)}</td>
+                                        <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(p.amount)}{isKhrRow(p) && <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(p)}</div>}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(0)}</td>
                                         <td style={{ padding: '12px 20px' }}>{statusChip(paymentStatus.get(p.id) || 'Draft')}</td>
                                         <td style={{ padding: '8px 12px', textAlign: 'right' }}>
@@ -396,7 +397,7 @@ const WholesalePaymentsPage: React.FC = () => {
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '12px 0', borderTop: '1px solid var(--color-border)' }}>
                             <span style={{ fontWeight: 700 }}>Amount</span>
-                            <span style={{ fontWeight: 800, fontSize: '18px', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(viewPayment.amount)}</span>
+                            <span style={{ fontWeight: 800, fontSize: '18px', fontVariantNumeric: 'tabular-nums' }}>{isKhrRow(viewPayment) ? formatMoneyLine(viewPayment) : fmtUsd(viewPayment.amount)}</span>
                         </div>
                     </div>
                 </Modal>

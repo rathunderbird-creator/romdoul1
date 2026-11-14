@@ -15,6 +15,8 @@ import { supabase } from '../lib/supabase';
 import { getShippingCoColor } from '../utils/orderUtils';
 import { dayKeyFromDate } from '../utils/dateRange';
 import { fetchAll } from '../utils/fetchAll';
+import { amountWarningLine, amountWarningText, checkKhrAmount, checkRate, checkUsdAmount, formatMoneyLine, isKhrRow, khrMeta, khrToUsd, shopRate, usdMeta } from '../utils/currency';
+import { roundCents } from '../utils/money';
 
 // Safari fails on "YYYY-MM-DD HH:MM:SS" (needs "T" instead of space)
 const parseDate = (dateStr: string) => {
@@ -25,7 +27,9 @@ const parseDate = (dateStr: string) => {
 };
 
 const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
-    const { addTransaction, updateTransaction, deleteTransaction, deleteTransactions, currentUser, refreshData, hasPermission, shippingCompanies, sales, paymentMethods } = useStore();
+    const { addTransaction, updateTransaction, deleteTransaction, deleteTransactions, currentUser, refreshData, hasPermission, shippingCompanies, sales, paymentMethods, khrExchangeRate } = useStore();
+    // The shop rate (Settings), pre-filled wherever a riel amount is entered.
+    const shopRateStr = String(shopRate(khrExchangeRate));
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
     const location = useLocation();
@@ -302,7 +306,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         type: 'Expense' as 'Income' | 'Expense',
         amount: '',
         currency: 'USD' as 'USD' | 'KHR',
-        exchangeRate: '4100',
+        exchangeRate: shopRateStr,
         category: '',
         description: '',
         shipping_co: '',
@@ -493,6 +497,9 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             Description: t.description || '',
             'Pay By': t.pay_by || '',
             Amount: Number(t.amount) * (t.type === 'Expense' ? -1 : 1),
+            // A riel row's riel amount and the rate it used.
+            'Original (KHR)': isKhrRow(t) ? Number(t.original_amount) : '',
+            Rate: isKhrRow(t) ? Number(t.exchange_rate) : '',
             'Added By': (t as any).added_by || (t as any).addedBy || ''
         }));
         rows.push({});
@@ -545,7 +552,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             type: 'Expense',
             amount: '',
             currency: 'USD',
-            exchangeRate: '4100',
+            exchangeRate: shopRateStr,
             category: '',
             description: '',
             shipping_co: '',
@@ -560,9 +567,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         setEditingTransaction(t);
         setFormData({
             type: t.type,
-            amount: t.amount.toString(),
-            currency: 'USD',
-            exchangeRate: '4100',
+            // A riel row reopens in riel, at the rate it was saved with.
+            amount: isKhrRow(t) ? String(t.original_amount) : t.amount.toString(),
+            currency: isKhrRow(t) ? 'KHR' : 'USD',
+            exchangeRate: isKhrRow(t) ? String(t.exchange_rate) : shopRateStr,
             category: t.category || '',
             description: t.description || '',
             shipping_co: t.shipping_co || '',
@@ -581,21 +589,35 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             return;
         }
 
-        let finalAmount = Number(formData.amount);
+        const entered = Number(formData.amount);
+        let finalAmount = roundCents(entered);
+        let money = usdMeta(finalAmount);
         if (formData.currency === 'KHR') {
             const rate = Number(formData.exchangeRate);
             if (!rate || isNaN(rate) || rate <= 0) {
                 alert('Please enter a valid exchange rate');
                 return;
             }
-            finalAmount = finalAmount / rate;
+            // Rounded to cents (older rows kept the raw division, e.g.
+            // 1041.219512…); the riel amount and rate are kept with it.
+            finalAmount = khrToUsd(entered, rate);
+            money = khrMeta(entered, rate);
+            const rateWarn = checkRate(rate, shopRate(khrExchangeRate));
+            if (rateWarn && rateWarn !== 'invalid' && !window.confirm(amountWarningText(rateWarn))) return;
         }
+        // A riel-sized figure typed as dollars (or the other way round) asks
+        // first, showing both readings.
+        const warn = formData.currency === 'KHR'
+            ? checkKhrAmount(entered, { rate: Number(formData.exchangeRate) })
+            : checkUsdAmount(entered, { rate: shopRate(khrExchangeRate) });
+        if (warn && !window.confirm(amountWarningText(warn))) return;
 
         try {
             if (editingTransaction) {
                 await updateTransaction(editingTransaction.id, {
                     type: formData.type,
                     amount: finalAmount,
+                    ...money,
                     category: formData.category,
                     description: formData.description,
                     shipping_co: formData.shipping_co || null,
@@ -606,6 +628,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                 await addTransaction({
                     type: formData.type,
                     amount: finalAmount,
+                    ...money,
                     category: formData.category,
                     description: formData.description,
                     shipping_co: formData.shipping_co || null,
@@ -672,8 +695,12 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
     const txnAmountValid = Number(formData.amount) > 0;
     const txnRateValid = formData.currency === 'USD' || Number(formData.exchangeRate) > 0;
     const txnUsdPreview = formData.currency === 'KHR' && txnAmountValid && txnRateValid
-        ? Number(formData.amount) / Number(formData.exchangeRate)
+        ? khrToUsd(Number(formData.amount), Number(formData.exchangeRate))
         : null;
+    // The wrong-amount warning, live under the field.
+    const txnWarning = !txnAmountValid ? null : (formData.currency === 'KHR'
+        ? checkKhrAmount(Number(formData.amount), { rate: Number(formData.exchangeRate) })
+        : checkUsdAmount(Number(formData.amount), { rate: shopRate(khrExchangeRate) }));
     const canSaveTxn = txnAmountValid && txnRateValid;
 
     if (!hasPermission('manage_income_expense')) {
@@ -1135,6 +1162,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 </span>
                                                 <span style={{ color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', fontWeight: 'bold', fontSize: '15px' }}>
                                                     {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    {isKhrRow(t) && <div style={{ fontSize: '10px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(t)}</div>}
                                                 </span>
                                             </div>
                                             {!isExpanded && (
@@ -1325,6 +1353,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                         </td>
                                         <td style={{ padding: '10px 12px', fontSize: '14px', fontWeight: 600, color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', textAlign: 'right' }}>
                                             {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {isKhrRow(t) && <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(t)}</div>}
                                         </td>
                                         <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
@@ -1630,7 +1659,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                     }}
                                 >USD</button>
                                 <button
-                                    onClick={() => setFormData({ ...formData, currency: 'KHR' })}
+                                    onClick={() => setFormData({ ...formData, currency: 'KHR', exchangeRate: Number(formData.exchangeRate) > 0 ? formData.exchangeRate : shopRateStr })}
                                     style={{
                                         padding: '4px 12px',
                                         borderRadius: '4px',
@@ -1700,6 +1729,11 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         </div>
                     </div>
 
+                    {txnWarning && (
+                        <div role="alert" style={{ fontSize: '12px', color: '#B45309', marginTop: '-8px', padding: '8px 12px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.55)', borderRadius: '8px' }}>
+                            {amountWarningLine(txnWarning)}
+                        </div>
+                    )}
                     {txnUsdPreview !== null && (
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '-8px', display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: '8px' }}>
                             <DollarSign size={13} style={{ color: 'var(--color-primary)' }} />

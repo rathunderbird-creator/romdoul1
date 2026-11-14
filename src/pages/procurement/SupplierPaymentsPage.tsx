@@ -19,6 +19,10 @@ import DateRangePicker from '../../components/DateRangePicker';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import { fetchAll } from '../../utils/fetchAll';
 import type { SupplierPayment, PurchaseOrder } from '../../types';
+import MoneyInput from '../../components/MoneyInput';
+import CashBankOptions from '../../components/CashBankOptions';
+import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
+import { accountCurrency, formatMoneyLine, isKhrRow } from '../../utils/currency';
 
 const fmtUsd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const fmtDate = (d?: string | null) => d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB') : '—';
@@ -56,7 +60,7 @@ const PRINT_CSS = `
 
 const SupplierPaymentsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
-    const { purchaseSettings } = useStore();
+    const { purchaseSettings, khrExchangeRate } = useStore();
     const { showToast } = useToast();
     const {
         purchaseOrders, supplierPayments, isLoading,
@@ -267,12 +271,14 @@ const SupplierPaymentsPage: React.FC = () => {
     const [isPayOpen, setIsPayOpen] = useState(false);
     const [paySupplierId, setPaySupplierId] = useState('');
     const [payDate, setPayDate] = useState('');
-    const [payAmount, setPayAmount] = useState('');
     const [payAccountId, setPayAccountId] = useState('');
     const [payMethod, setPayMethod] = useState('Bank transfer');
     const [payReference, setPayReference] = useState('');
-    const [payCurrency, setPayCurrency] = useState<'USD' | 'KHR'>('USD');
-    const [payRate, setPayRate] = useState('1');
+    // The amount, in USD or riel at a rate pre-filled with the shop rate
+    // (Settings) — before, a KHR amount kept the rate 1, so ៛82,000 was
+    // booked as $82,000.
+    const payField = useMoneyField({ shopRate: khrExchangeRate });
+    const payCoupling = useAccountCurrency(payField, paymentAccounts, payAccountId, setPayAccountId);
     const [payNotes, setPayNotes] = useState('');
     const [paySaving, setPaySaving] = useState(false);
     // Stops a second click that lands before the disabled button re-renders.
@@ -290,12 +296,7 @@ const SupplierPaymentsPage: React.FC = () => {
     }, [paySupplier]);
 
     // The books are kept in USD — a KHR amount converts at the given rate.
-    const payUsdAmount = useMemo(() => {
-        const entered = Number(payAmount) || 0;
-        if (payCurrency !== 'KHR') return entered;
-        const rate = Number(payRate);
-        return rate > 0 ? Math.round((entered / rate) * 100) / 100 : 0;
-    }, [payAmount, payCurrency, payRate]);
+    const payUsdAmount = payField.usd;
 
     const appliedTotal = useMemo(
         () => Math.round(payBills.reduce((s, po) => s + (Number(allocations[po.id]) || 0), 0) * 100) / 100,
@@ -318,24 +319,24 @@ const SupplierPaymentsPage: React.FC = () => {
     const openPay = () => {
         setPaySupplierId('');
         setPayDate(dayKeyFromDate(new Date()));
-        setPayAmount('');
         setPayMethod('Bank transfer');
         setPayReference('');
-        setPayCurrency('USD');
-        setPayRate('1');
         setPayNotes('');
         setAllocations({});
         const def = purchaseSettings.defaultPaymentAccountId;
-        setPayAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
+        const id = def && paymentAccounts.some(a => a.id === def) ? def : '';
+        setPayAccountId(id);
+        // A riel default account opens in riel.
+        payField.reset({ amount: '', currency: accountCurrency(paymentAccounts.find(a => a.id === id)) });
         setIsPayOpen(true);
     };
 
     const submitPayment = async () => {
         if (!paySupplier) { showToast('Choose a supplier', 'error'); return; }
-        const entered = Number(payAmount);
+        const entered = payField.typed;
         if (!entered || entered <= 0) { showToast('Enter a valid amount', 'error'); return; }
-        const rate = Number(payRate);
-        if (payCurrency === 'KHR' && (!rate || rate <= 0)) { showToast('Enter the KHR exchange rate', 'error'); return; }
+        const rate = Number(payField.rate);
+        if (payField.currency === 'KHR' && payField.rateInvalid) { showToast('Enter the KHR exchange rate', 'error'); return; }
         const usd = payUsdAmount;
         for (const po of payBills) {
             if ((Number(allocations[po.id]) || 0) > po.outstanding + 0.005) {
@@ -349,10 +350,13 @@ const SupplierPaymentsPage: React.FC = () => {
             return;
         }
         if (paymentAccounts.length > 0 && !payAccountId) { showToast('Choose the account this payment is paid from', 'error'); return; }
+        if (!payField.confirmIfSuspicious()) return;
         const acc = paymentAccounts.find(a => a.id === payAccountId);
+        // The riel text stays in the notes too (a store without the
+        // currency columns keeps it there only).
         const note = [
             payReference.trim() ? `Ref: ${payReference.trim()}` : '',
-            payCurrency === 'KHR' ? `KHR ${entered.toLocaleString()} @ ${rate}` : '',
+            payField.currency === 'KHR' ? `KHR ${entered.toLocaleString()} @ ${rate}` : '',
             payNotes.trim(),
         ].filter(Boolean).join(' · ');
         if (paySavingRef.current) return;
@@ -363,7 +367,7 @@ const SupplierPaymentsPage: React.FC = () => {
             const slices = payBills
                 .map(po => ({ poId: po.id, amount: Math.round((Number(allocations[po.id]) || 0) * 100) / 100 }))
                 .filter(s => s.amount > 0);
-            await recordSupplierPayments(paySupplierId, slices, payMethod, note, payDate, undefined, payAccountId || undefined, acc?.account_name);
+            await recordSupplierPayments(paySupplierId, slices, payMethod, note, payDate, undefined, payAccountId || undefined, acc?.account_name, payField.meta);
             setIsPayOpen(false);
         } catch {
             // toast handled in hook
@@ -398,7 +402,7 @@ const SupplierPaymentsPage: React.FC = () => {
                 fmtDate(p.payment_date),
                 p.supplier?.name || '—',
                 poById.get(p.purchase_order_id)?.invoice_number || poShortId(p.purchase_order_id),
-                money(p.amount),
+                isKhrRow(p) ? formatMoneyLine(p) : money(p.amount),
                 money(0),
                 paymentStatus.get(p.id) || 'Draft',
             ]),
@@ -517,7 +521,7 @@ const SupplierPaymentsPage: React.FC = () => {
                                         <td style={{ padding: '12px 20px', fontSize: '12px', color: 'var(--color-text-main)', fontWeight: 600 }}>{referenceOf.get(p.id) || '—'}</td>
                                         <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(p.payment_date)}</td>
                                         <td className="d2-khmer" style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{p.supplier?.name || '—'}</td>
-                                        <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(p.amount)}</td>
+                                        <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(p.amount)}{isKhrRow(p) && <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(p)}</div>}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(0)}</td>
                                         <td style={{ padding: '12px 20px' }}>{statusChip(paymentStatus.get(p.id) || 'Draft')}</td>
                                         <td style={{ padding: '8px 12px', textAlign: 'right' }}>
@@ -555,16 +559,22 @@ const SupplierPaymentsPage: React.FC = () => {
                             <label style={labelStyle}>Payment date <span style={{ color: '#ef4444' }}>*</span></label>
                             <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} style={inputStyle} />
                         </div>
-                        <div>
-                            <label style={labelStyle}>Amount <span style={{ color: '#ef4444' }}>*</span></label>
-                            <input type="number" min="0.01" step="0.01" value={payAmount} onChange={e => setPayAmount(e.target.value)} style={inputStyle} />
-                        </div>
                     </div>
+                    <MoneyInput
+                        field={payField}
+                        label="Amount"
+                        required
+                        allowKhr
+                        onToggleCurrency={payCoupling.onToggleCurrency}
+                        khrUnavailableReason={payCoupling.khrUnavailableReason}
+                        labelStyle={labelStyle}
+                        inputStyle={inputStyle}
+                    />
                     <div>
                         <label style={labelStyle}>Paid from <span style={{ color: '#ef4444' }}>*</span></label>
-                        <select className="d2-khmer" value={payAccountId} onChange={e => setPayAccountId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                        <select className="d2-khmer" value={payAccountId} onChange={e => payCoupling.onAccountChange(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                             <option value="">Bank or cash account…</option>
-                            {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
+                            <CashBankOptions accounts={paymentAccounts} label={a => `${a.account_code} — ${a.account_name}`} />
                         </select>
                         {paymentAccounts.length === 0 && (
                             <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
@@ -584,19 +594,6 @@ const SupplierPaymentsPage: React.FC = () => {
                         <div>
                             <label style={labelStyle}>Reference</label>
                             <input type="text" placeholder="Cheque or transfer no." value={payReference} onChange={e => setPayReference(e.target.value)} style={inputStyle} />
-                        </div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                        <div>
-                            <label style={labelStyle}>Currency</label>
-                            <select value={payCurrency} onChange={e => { const c = e.target.value as 'USD' | 'KHR'; setPayCurrency(c); if (c === 'USD') setPayRate('1'); }} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                <option value="USD">USD</option>
-                                <option value="KHR">KHR</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style={labelStyle}>Exchange rate</label>
-                            <input type="number" min="0" step="any" value={payRate} onChange={e => setPayRate(e.target.value)} style={inputStyle} />
                         </div>
                     </div>
                     {paySupplier && (
@@ -679,7 +676,7 @@ const SupplierPaymentsPage: React.FC = () => {
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '12px 0', borderTop: '1px solid var(--color-border)' }}>
                             <span style={{ fontWeight: 700 }}>Amount</span>
-                            <span style={{ fontWeight: 800, fontSize: '18px', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(viewPayment.amount)}</span>
+                            <span style={{ fontWeight: 800, fontSize: '18px', fontVariantNumeric: 'tabular-nums' }}>{isKhrRow(viewPayment) ? formatMoneyLine(viewPayment) : fmtUsd(viewPayment.amount)}</span>
                         </div>
                         {canPost(viewPayment) && (
                             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

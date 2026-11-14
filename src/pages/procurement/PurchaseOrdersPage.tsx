@@ -13,6 +13,10 @@ import DateRangePicker from '../../components/DateRangePicker';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import { poReceiveMarker } from '../../utils/receivePurchaseOrder';
 import { supabase } from '../../lib/supabase';
+import MoneyInput from '../../components/MoneyInput';
+import CashBankOptions from '../../components/CashBankOptions';
+import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
+import { accountCurrency, khrToUsd, usdToKhr } from '../../utils/currency';
 
 // Height of every control in the desktop filter toolbar, so the row lines up.
 const FILTER_H = 34;
@@ -48,7 +52,7 @@ const PAYMENT_FILTER_OPTIONS = ['Unpaid', 'Partial', 'Paid'] as const;
 
 const PurchaseOrdersPage = () => {
     const { setHeaderContent } = useHeader();
-    const { products, receivePurchaseOrder, currentUser, addProduct, purchaseSettings } = useStore();
+    const { products, receivePurchaseOrder, currentUser, addProduct, purchaseSettings, khrExchangeRate } = useStore();
     const { showToast } = useToast();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment, deleteSupplierPayment, saveSupplier } = useProcurement();
     const { accounts, fetchAccounts } = useAccounting();
@@ -237,9 +241,17 @@ const PurchaseOrdersPage = () => {
     const [payingPOId, setPayingPOId] = useState('');
     const [payingSupplierId, setPayingSupplierId] = useState('');
     const [payingPORemaining, setPayingPORemaining] = useState<number>(0);
-    const [paymentAmount, setPaymentAmount] = useState<number | ''>('');
     const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
     const [payingAccountId, setPayingAccountId] = useState('');
+    // The payment amount, USD or riel (coupled to "Paid from"); above the
+    // PO's balance it warns (likely riel typed as dollars).
+    const payField = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: payingPORemaining > 0 ? payingPORemaining : null });
+    const payCoupling = useAccountCurrency(payField, paymentAccounts, payingAccountId, setPayingAccountId);
+    const payRate = Number(payField.rate) > 0 ? Number(payField.rate) : payField.shopRate;
+    // Riel within 3 cents of the whole balance pays exactly the balance.
+    const paymentAmount = payField.currency === 'KHR' && payingPORemaining > 0 && Math.abs(khrToUsd(payField.typed, payRate) - payingPORemaining) <= 0.03
+        ? payingPORemaining : payField.usd;
+    const setPaymentAmount = (usd: number) => payField.setAmount(String(payField.currency === 'KHR' ? usdToKhr(usd, payRate) : usd));
     const [paymentDate, setPaymentDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
     const [paymentNotes, setPaymentNotes] = useState('');
 
@@ -450,18 +462,22 @@ const PurchaseOrdersPage = () => {
         setPayingSupplierId(po.supplier_id);
         const remaining = (po.total_amount || 0) - (po.amount_paid || 0);
         setPayingPORemaining(remaining > 0 ? remaining : 0);
-        setPaymentAmount(remaining > 0 ? remaining : 0);
         setPaymentMethod('Bank Transfer');
         setPaymentDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
         setPaymentNotes('');
         // Purchase Setup's default payment account prefills "Paid from".
         const def = purchaseSettings.defaultPaymentAccountId;
-        setPayingAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
+        const id = def && paymentAccounts.some(a => a.id === def) ? def : '';
+        setPayingAccountId(id);
+        // A riel default account opens in riel.
+        const inRiel = accountCurrency(paymentAccounts.find(a => a.id === id)) === 'KHR';
+        const due = remaining > 0 ? remaining : 0;
+        payField.reset(inRiel ? { amount: due ? usdToKhr(due, payField.shopRate) : '', currency: 'KHR' } : { amount: due, currency: 'USD' });
         setIsPaymentModalOpen(true);
     };
 
     const handleSavePayment = async () => {
-        if (!paymentAmount) return;
+        if (!paymentAmount || payField.rateInvalid) return;
         // Guard (FIN-1): never book a payment on a PO that is not Received —
         // the DB function record_supplier_payments debits A/P only when the
         // PO's receive entry exists, otherwise it books the amount as purchase
@@ -479,9 +495,10 @@ const PurchaseOrdersPage = () => {
             showToast('Choose the account this payment is paid from', 'error');
             return;
         }
+        if (!payField.confirmIfSuspicious()) return;
         try {
             const acc = paymentAccounts.find(a => a.id === payingAccountId);
-            await recordSupplierPayment(payingPOId, payingSupplierId, Number(paymentAmount), paymentMethod, paymentNotes, paymentDate, currentUser?.name, payingAccountId || undefined, acc?.account_name);
+            await recordSupplierPayment(payingPOId, payingSupplierId, Number(paymentAmount), paymentMethod, paymentNotes, paymentDate, currentUser?.name, payingAccountId || undefined, acc?.account_name, payField.meta);
             setIsPaymentModalOpen(false);
         } catch (error) {
             // Error handled in hook
@@ -1790,8 +1807,15 @@ const PurchaseOrdersPage = () => {
 
                             {/* Amount Input */}
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Amount to Pay *</label>
-                                <input type="number" className="input-field" style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', fontSize: '16px', fontWeight: 600, border: '1px solid var(--color-border)' }} value={paymentAmount} onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || '')} min="0" step="0.01" />
+                                <MoneyInput
+                                    field={payField}
+                                    label="Amount to Pay"
+                                    required
+                                    allowKhr
+                                    onToggleCurrency={payCoupling.onToggleCurrency}
+                                    khrUnavailableReason={payCoupling.khrUnavailableReason}
+                                    inputStyle={{ padding: '12px 14px', borderRadius: '10px', fontSize: '16px', fontWeight: 600 }}
+                                />
                                 {payingPORemaining > 0 && (
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px' }}>
                                         {[
@@ -1805,8 +1829,8 @@ const PurchaseOrdersPage = () => {
                                                 onClick={() => setPaymentAmount(Math.round(payingPORemaining * btn.pct * 100) / 100)} 
                                                 style={{ 
                                                     padding: '8px 6px', fontSize: '12px', fontWeight: 700, border: '1px solid var(--color-border)', borderRadius: '8px',
-                                                    background: Number(paymentAmount) === Math.round(payingPORemaining * btn.pct * 100) / 100 ? btn.color : 'var(--color-bg)',
-                                                    color: Number(paymentAmount) === Math.round(payingPORemaining * btn.pct * 100) / 100 ? 'white' : btn.color,
+                                                    background: Math.abs(Number(paymentAmount) - Math.round(payingPORemaining * btn.pct * 100) / 100) < 0.005 ? btn.color : 'var(--color-bg)',
+                                                    color: Math.abs(Number(paymentAmount) - Math.round(payingPORemaining * btn.pct * 100) / 100) < 0.005 ? 'white' : btn.color,
                                                     cursor: 'pointer', transition: 'all 0.2s',
                                                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
                                                 }}
@@ -1842,10 +1866,10 @@ const PurchaseOrdersPage = () => {
                                     className="input-field d2-khmer"
                                     style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)' }}
                                     value={payingAccountId}
-                                    onChange={(e) => setPayingAccountId(e.target.value)}
+                                    onChange={(e) => payCoupling.onAccountChange(e.target.value)}
                                 >
                                     <option value="">Bank or cash account…</option>
-                                    {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                    <CashBankOptions accounts={paymentAccounts} />
                                 </select>
                                 {paymentAccounts.length === 0 && (
                                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
@@ -1864,7 +1888,7 @@ const PurchaseOrdersPage = () => {
                         {/* Payment Footer */}
                         <div style={{ padding: '18px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px', background: 'rgba(0,0,0,0.01)' }}>
                             <button className="secondary-button" onClick={() => setIsPaymentModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
-                            <button className="primary-button" onClick={handleSavePayment} disabled={!paymentAmount || paymentAmount <= 0} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button className="primary-button" onClick={handleSavePayment} disabled={!paymentAmount || paymentAmount <= 0 || payField.rateInvalid} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <CheckCircle2 size={16} /> Record Payment
                             </button>
                         </div>

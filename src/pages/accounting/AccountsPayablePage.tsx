@@ -10,6 +10,10 @@ import { Modal } from '../../components';
 import { useToast } from '../../context/ToastContext';
 import type { PurchaseOrder } from '../../types';
 import { useMobile } from '../../hooks/useMobile';
+import MoneyInput from '../../components/MoneyInput';
+import CashBankOptions from '../../components/CashBankOptions';
+import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
+import { accountCurrency, khrToUsd, usdToKhr } from '../../utils/currency';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 
@@ -39,11 +43,10 @@ const AccountsPayablePage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const navigate = useNavigate();
-    const { currentUser } = useStore();
+    const { currentUser, khrExchangeRate } = useStore();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, recordSupplierPayment } = useProcurement();
 
     const [payPO, setPayPO] = useState<PurchaseOrder | null>(null);
-    const [payAmount, setPayAmount] = useState<number | string>('');
     const [payMethod, setPayMethod] = useState('Cash');
     const [payAccountId, setPayAccountId] = useState('');
     const [payNote, setPayNote] = useState('');
@@ -67,6 +70,11 @@ const AccountsPayablePage: React.FC = () => {
         () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
         [accounts]
     );
+    // The amount, USD or riel (coupled to "Paid from"); above the bill's
+    // balance it warns (likely riel typed as dollars).
+    const payBalance = payPO ? Math.max(0, (payPO.total_amount || 0) - (payPO.amount_paid || 0)) : 0;
+    const payField = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: payBalance || null });
+    const payCoupling = useAccountCurrency(payField, paymentAccounts, payAccountId, setPayAccountId);
 
     useEffect(() => {
         setHeaderContent({
@@ -162,12 +170,16 @@ const AccountsPayablePage: React.FC = () => {
 
     const openPay = (po: PurchaseOrder & { outstanding: number }) => {
         setPayPO(po);
-        setPayAmount(po.outstanding.toFixed(2));
         setPayMethod('Cash');
         setPayNote('');
         // Purchase Setup's default payment account prefills "Paid from".
         const def = purchaseSettings.defaultPaymentAccountId;
-        setPayAccountId(def && paymentAccounts.some(a => a.id === def) ? def : '');
+        const id = def && paymentAccounts.some(a => a.id === def) ? def : '';
+        setPayAccountId(id);
+        // A riel default account opens in riel.
+        payField.reset(accountCurrency(paymentAccounts.find(a => a.id === id)) === 'KHR'
+            ? { amount: usdToKhr(po.outstanding, payField.shopRate), currency: 'KHR' }
+            : { amount: po.outstanding.toFixed(2), currency: 'USD' });
     };
 
     const submitPayment = async () => {
@@ -180,13 +192,17 @@ const AccountsPayablePage: React.FC = () => {
             showToast('This purchase order has not been received yet — receive the goods first, then record the payment.', 'error');
             return;
         }
-        const amount = Number(payAmount);
+        // Riel within 3 cents of the whole balance pays exactly the balance.
+        const rate = Number(payField.rate) > 0 ? Number(payField.rate) : payField.shopRate;
+        const amount = payField.currency === 'KHR' && Math.abs(khrToUsd(payField.typed, rate) - payBalance) <= 0.03 ? payBalance : payField.usd;
         if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+        if (payField.rateInvalid) { showToast('Enter a riel rate above 0', 'error'); return; }
         if (paymentAccounts.length > 0 && !payAccountId) { showToast('Choose the account this payment is paid from', 'error'); return; }
+        if (!payField.confirmIfSuspicious()) return;
         setSaving(true);
         try {
             const acc = paymentAccounts.find(a => a.id === payAccountId);
-            await recordSupplierPayment(payPO.id, payPO.supplier_id, amount, payMethod, payNote, undefined, currentUser?.name, payAccountId || undefined, acc?.account_name);
+            await recordSupplierPayment(payPO.id, payPO.supplier_id, amount, payMethod, payNote, undefined, currentUser?.name, payAccountId || undefined, acc?.account_name, payField.meta);
             setPayPO(null);
         } catch {
             /* hook already toasts */
@@ -328,10 +344,14 @@ const AccountsPayablePage: React.FC = () => {
                             {supplierName(payPO.supplier_id)} · {payPO.invoice_number || `PO-${payPO.id.slice(0, 8)}`}
                             <div style={{ marginTop: '4px', color: '#EF4444', fontWeight: 600 }}>Balance: {fmt((payPO.total_amount || 0) - (payPO.amount_paid || 0))}</div>
                         </div>
-                        <div>
-                            <label style={labelStyle}>Amount ($)</label>
-                            <input type="number" className="search-input" style={{ width: '100%' }} value={payAmount} onChange={e => setPayAmount(e.target.value)} min="0" step="0.01" />
-                        </div>
+                        <MoneyInput
+                            field={payField}
+                            label="Amount"
+                            allowKhr
+                            onToggleCurrency={payCoupling.onToggleCurrency}
+                            khrUnavailableReason={payCoupling.khrUnavailableReason}
+                            labelStyle={labelStyle}
+                        />
                         <div>
                             <label style={labelStyle}>Payment Method</label>
                             <select className="search-input" style={{ width: '100%' }} value={payMethod} onChange={e => setPayMethod(e.target.value)}>
@@ -340,9 +360,9 @@ const AccountsPayablePage: React.FC = () => {
                         </div>
                         <div>
                             <label style={labelStyle}>Paid from *</label>
-                            <select className="search-input d2-khmer" style={{ width: '100%' }} value={payAccountId} onChange={e => setPayAccountId(e.target.value)}>
+                            <select className="search-input d2-khmer" style={{ width: '100%' }} value={payAccountId} onChange={e => payCoupling.onAccountChange(e.target.value)}>
                                 <option value="">Bank or cash account…</option>
-                                {paymentAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                <CashBankOptions accounts={paymentAccounts} />
                             </select>
                             {paymentAccounts.length === 0 && (
                                 <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
