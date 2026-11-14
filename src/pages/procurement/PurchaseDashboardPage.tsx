@@ -348,6 +348,8 @@ const PurchaseDashboardPage: React.FC = () => {
                         <PayableTile label="Due in 7 days" value={payable.within7} color={AMBER} />
                         <PayableTile label="Due in 30 days" value={payable.within30} color={BLUE} />
                     </div>
+                    {/* Scrolls sideways once a column is dragged wider (the card clips overflow). */}
+                    <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
@@ -362,6 +364,7 @@ const PurchaseDashboardPage: React.FC = () => {
                             <tr style={{ borderTop: '1px solid var(--color-border)', fontWeight: 700 }}><td style={{ padding: '8px 0', color: 'var(--color-text-main)' }}>Outstanding</td><td style={{ padding: '8px 0', textAlign: 'right' }}>{fmt(payable.outstanding)}</td></tr>
                         </tbody>
                     </table>
+                    </div>
                     <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '10px' }}>
                         Days payable outstanding: {dpo === null ? '—' : `${Math.round(dpo)} days`} — what you owe, in days of buying.
                     </div>

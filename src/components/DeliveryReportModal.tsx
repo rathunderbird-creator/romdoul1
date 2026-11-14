@@ -218,7 +218,7 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
             <span style={{ marginLeft: '10px', fontSize: '14px' }}>Generating report...</span>
           </div>
         ) : report ? (
-          <div id="delivery-report-print-area" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div id="delivery-report-print-area" data-resize="off" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {/* Report Header */}
             <div style={{ textAlign: 'center', paddingBottom: '12px', borderBottom: '1px solid var(--color-border)' }}>
               <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text-main)' }}>Delivery Tracking Report</h2>

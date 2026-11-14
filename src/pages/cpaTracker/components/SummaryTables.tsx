@@ -24,12 +24,11 @@ function SummaryTable<R extends Measures>({ title, cols, rows, totals, rowKey, o
             <div style={{ padding: '12px 16px', fontWeight: 800, fontSize: 14, borderBottom: '1px solid var(--color-border)' }}>{title}</div>
             <div style={{ overflowX: 'auto' }}>
                 <table className="spreadsheet-table" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width, minWidth: '100%', border: 'none' }}>
-                    <colgroup>{cols.map(c => <col key={c.key} style={{ width: c.width }} />)}</colgroup>
                     <thead>
                         <tr>
                             {cols.map((c, i) => (
                                 <th key={c.key} scope="col" className={i === 0 ? 'pip-sticky-first' : undefined}
-                                    style={{ ...thStyle, position: i === 0 ? 'sticky' : undefined, textAlign: c.align || 'right', color: c.color || thStyle.color }}>
+                                    style={{ ...thStyle, width: c.width, position: i === 0 ? 'sticky' : undefined, textAlign: c.align || 'right', color: c.color || thStyle.color }}>
                                     {t(`cpaTracker.columns.${c.key}`)}
                                 </th>
                             ))}

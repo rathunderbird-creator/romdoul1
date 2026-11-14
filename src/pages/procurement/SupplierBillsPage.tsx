@@ -634,6 +634,8 @@ const SupplierBillsPage = () => {
                             <span>{statusChip(viewStatus)}</span>
                         </div>
                         <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
+                            {/* Scrolls sideways once a column is dragged wider (the card clips overflow). */}
+                            <div style={{ overflowX: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                                 <thead>
                                     <tr style={{ background: 'var(--color-bg)' }}>
@@ -662,6 +664,7 @@ const SupplierBillsPage = () => {
                                     </tr>
                                 </tfoot>
                             </table>
+                            </div>
                         </div>
 
                         <div>

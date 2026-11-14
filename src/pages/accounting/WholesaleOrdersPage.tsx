@@ -1024,6 +1024,8 @@ const WholesaleOrdersPage: React.FC = () => {
                                         <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewOrder.items?.length || 0}</span>
                                     </h4>
                                     <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                                        {/* Scrolls sideways once a column is dragged wider (the card clips overflow). */}
+                                        <div style={{ overflowX: 'auto' }}>
                                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                             <thead>
                                                 <tr style={{ background: 'var(--color-bg)' }}>
@@ -1046,6 +1048,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                                 ))}
                                             </tbody>
                                         </table>
+                                        </div>
                                     </div>
                                 </div>
 

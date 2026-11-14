@@ -113,7 +113,6 @@ const UnitEconomicsTable: React.FC<UnitEconomicsTableProps> = ({ rows, defaults,
     return (
         <div className="glass-panel" style={{ border: '1px solid var(--color-border)', borderRadius: 16, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 300px)', minHeight: 200 }}>
             <table className="spreadsheet-table" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width, minWidth: '100%', border: 'none' }}>
-                <colgroup>{COLS.map(c => <col key={c.key} style={{ width: c.width }} />)}</colgroup>
                 <thead>
                     <tr>
                         {COLS.map((c, i) => {
@@ -124,7 +123,7 @@ const UnitEconomicsTable: React.FC<UnitEconomicsTableProps> = ({ rows, defaults,
                                     title={help.startsWith('cpaTracker.') ? undefined : help}
                                     aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined}
                                     onClick={() => handleSort(c.key)}
-                                    style={{ ...thStyle, textAlign: c.align || 'right', color: active ? ACCENT : (c.color || thStyle.color), cursor: 'pointer', userSelect: 'none' }}>
+                                    style={{ ...thStyle, width: c.width, textAlign: c.align || 'right', color: active ? ACCENT : (c.color || thStyle.color), cursor: 'pointer', userSelect: 'none' }}>
                                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                                         {t(`cpaTracker.columns.${c.key}`)}
                                         {active

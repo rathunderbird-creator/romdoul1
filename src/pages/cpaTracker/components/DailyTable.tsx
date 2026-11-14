@@ -181,7 +181,6 @@ const DailyTable: React.FC<DailyTableProps> = ({ days, totals, editable, t, lang
     return (
         <div className="glass-panel" style={{ overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 16, padding: 0, maxHeight: isMobile ? '70vh' : 'calc(100vh - 330px)', minHeight: 200, position: 'relative' }}>
             <table className="spreadsheet-table" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: COLS.reduce((s, c) => s + widthOf(c.key, c.width, isMobile), 0), minWidth: '100%' }}>
-                <colgroup>{COLS.map(c => <col key={c.key} style={{ width: widthOf(c.key, c.width, isMobile) }} />)}</colgroup>
                 <thead>
                     <tr>
                         {COLS.map(c => {
@@ -189,7 +188,7 @@ const DailyTable: React.FC<DailyTableProps> = ({ days, totals, editable, t, lang
                             return (
                                 <th key={c.key} scope="col" className={c.key === 'item' ? 'pip-sticky-first' : undefined}
                                     title={help.startsWith('cpaTracker.') ? undefined : help}
-                                    style={{ ...thStyle, textAlign: c.align || 'right', color: c.color || thStyle.color }}>
+                                    style={{ ...thStyle, width: widthOf(c.key, c.width, isMobile), textAlign: c.align || 'right', color: c.color || thStyle.color }}>
                                     {t(`cpaTracker.columns.${c.key}`)}
                                 </th>
                             );

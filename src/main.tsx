@@ -6,6 +6,10 @@ import './index.css'
 import App from './App.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import UpdateBanner from './components/UpdateBanner.tsx'
+import { installResizableTables } from './utils/resizableTables'
+
+// Every table's columns can be dragged wider/narrower (widths kept per browser).
+installResizableTables();
 
 // Global anti-double-click / fast-click handler
 document.addEventListener('click', (e) => {
