@@ -448,8 +448,11 @@
     "generalConfig": "ការកំណត់ទូទៅ",
     "currency": "រូបិយប័ណ្ណ",
     "taxRate": "អត្រាពន្ធ (%)",
-    "khrExchangeRate": "អត្រាប្តូរប្រាក់រៀល (៛)",
-    "khrExchangeRateNote": "អត្រានេះត្រូវបានប្រើដើម្បីបង្ហាញចំនួនសរុបជារៀលខ្មែរ។",
+    "khrExchangeRate": "អត្រាប្តូរប្រាក់ហាង (៛ ក្នុង $1)",
+    "khrExchangeRateNote": "ប្រើសម្រាប់ប្តូរការបង់ប្រាក់ជារៀលទៅជាដុល្លារ និងបង្ហាញចំនួនសរុបជារៀល។ ការបង់ប្រាក់ជារៀលនីមួយៗរក្សាអត្រាដែលបានប្រើពេលបញ្ចូល ការប្តូរអត្រានេះមិនប្តូរកំណត់ត្រាចាស់ទេ។ សូមពិនិត្យរៀងរាល់ខែ។",
+    "khrExchangeRateLastChanged": "ប្តូរចុងក្រោយ",
+    "khrExchangeRateNeverChanged": "មិនទាន់មានកំណត់ត្រាការប្តូរ",
+    "khrExchangeRateInvalid": "សូមបញ្ចូលអត្រាធំជាង 0។",
     "timezone": "តំបន់ពេលវេលា",
     "timezoneNote": "ប៉ះពាល់ដល់ការបង្ហាញកាលបរិច្ឆេទនៅទូទាំងកម្មវិធី។",
     "telegramNotifications": "ការជូនដំណឹង Telegram",
@@ -698,5 +701,21 @@
     "logisticsUnset": "មិនទាន់កំណត់ថ្លៃអ្នកដឹក និងថ្លៃវេចខ្ចប់ ដូច្នេះប្រាក់ចំណេញ និង CPA គោលដៅមិនទាន់គិតបញ្ចូល។ កំណត់ម្តងក្នុងជួរលំនាំដើម នៃថ្លៃដើម & គោលដៅ។",
     "setCosts": "កំណត់ថ្លៃ",
     "saveFailed": "រក្សាទុកមិនបានសម្រេច។ សូមព្យាយាមម្តងទៀត។"
+  },
+  "money": {
+    "usdLooksRiel": "{{asUsd}} មើលទៅដូចចំនួនរៀល ({{asKhr}} = {{asRielUsd}})។",
+    "khrLooksUsd": "{{asKhrTyped}} មើលទៅដូចចំនួនដុល្លារ ({{asUsd}} = {{asKhr}})។",
+    "rateOff": "អត្រា {{rate}} ខុសឆ្ងាយពីអត្រាហាង {{shop}}។",
+    "usdLooksRielConfirm": "អ្នកបានវាយ {{typed}} ក្នុងប្រអប់ដុល្លារ។\n• ជាដុល្លារ៖ {{asUsd}}\n• ជារៀល៖ {{asKhr}} = {{asRielUsd}} តាមអត្រា {{rate}}\nOK កត់ត្រា {{asUsd}}។ Cancel ដើម្បីកែ។",
+    "khrLooksUsdConfirm": "អ្នកបានវាយ {{asKhrTyped}} ក្នុងប្រអប់រៀល។\n• ជារៀល៖ {{asKhrTyped}} = {{asRielUsd}}\n• ជាដុល្លារ៖ {{asUsd}} (= {{asKhr}})\nOK កត់ត្រា {{asRielUsd}}។ Cancel ដើម្បីកែ។",
+    "rateOffConfirm": "អត្រា {{rate}} រៀលក្នុងមួយដុល្លារ ខុសពីធម្មតា (អត្រាហាង {{shop}})។ ប្រើវាដែរឬទេ?",
+    "rateInvalid": "សូមបញ្ចូលអត្រារៀលធំជាង 0។",
+    "rate": "អត្រា ៛ ក្នុង $1",
+    "itsRiel": "ជារៀល",
+    "itsDollars": "ជាដុល្លារ",
+    "shopRate": "អត្រាហាង",
+    "setByAccount": "កំណត់ដោយគណនីដែលបានជ្រើស",
+    "needKhrAccount": "សូមបន្ថែមគណនីរៀលជាមុនសិន៖ ដំណើរការ migrations/add_khr_currency.sql",
+    "rielGroup": "រៀល (KHR)"
   }
 }

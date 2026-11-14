@@ -106,6 +106,10 @@ export interface Restock {
     note?: string;
 }
 
+export type MoneyCurrency = 'USD' | 'KHR';
+// A payment's riel details (src/utils/currency.ts MoneyMeta).
+export type MoneyRecord = { currency: MoneyCurrency; original_amount: number; exchange_rate: number };
+
 export interface Transaction {
     id: string;
     type: 'Income' | 'Expense';
@@ -117,6 +121,11 @@ export interface Transaction {
     created_at?: string;
     shipping_co?: string | null;
     pay_by?: string | null;
+    // Riel (KHR) payment: the riel amount entered and the rate used
+    // (migrations/add_khr_currency.sql). NULL/absent = USD.
+    currency?: MoneyCurrency | null;
+    original_amount?: number | null;
+    exchange_rate?: number | null;
 }
 
 export interface StaffAttendance {
@@ -176,7 +185,7 @@ export interface StoreContextType {
     updateCart: (items: CartItem[]) => void;
     clearCart: () => void;
     processSale: (paymentMethod: Sale['paymentMethod'], discount?: number, customer?: Sale['customer']) => Promise<Sale | undefined>;
-    addOnlineOrder: (order: Omit<Sale, 'id'>) => Promise<Sale>;
+    addOnlineOrder: (order: Omit<Sale, 'id'>, opts?: { money?: MoneyRecord }) => Promise<Sale>;
     // Resolves false when the change was refused or failed (the user has been told; nothing of it was written).
     updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string, opts?: { skipDispatchGuard?: boolean; shownStatus?: string; expectedStatus?: string; onRefused?: (message: string) => void; customer?: { name?: string; phone?: string } }) => Promise<boolean>;
     // Returns the created product (null on failure) so callers can select it.
@@ -184,7 +193,9 @@ export interface StoreContextType {
     updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
     deleteProduct: (id: string) => Promise<void>;
     deleteProducts: (ids: string[]) => Promise<void>;
-    updateOrder: (id: string, updates: Partial<Sale>) => Promise<boolean>; // false: not everything was saved (the user has been told why)
+    // opts.money: the riel details of the money this save books (the
+    // income row and its journal entry are tagged after the save).
+    updateOrder: (id: string, updates: Partial<Sale>, opts?: { money?: MoneyRecord & { category?: string } }) => Promise<boolean>; // false: not everything was saved (the user has been told why)
     updateOrders: (ids: string[], updates: Partial<Sale>) => Promise<void>;
     deleteOrders: (ids: string[]) => Promise<void>;
     restoreOrders: (ids: string[]) => Promise<void>;
@@ -307,6 +318,9 @@ export interface StoreContextType {
     currency: string;
     updateCurrency: (currency: string) => void;
     khrExchangeRate: number;
+    // ISO time the shop rate was last changed (null: never, e.g. Romdoul2
+    // still on the 4,100 default).
+    khrExchangeRateUpdatedAt: string | null;
     updateKhrExchangeRate: (rate: number) => void;
     updateStoreAddress: (address: string) => void; // Keep for backward compatibility or refactor
     updateStoreProfile: (data: { storeName?: string; email?: string; phone?: string; storeAddress?: string; timezone?: string; taxRate?: number; currency?: string; khrExchangeRate?: number; logo?: string; telegramBotToken?: string; telegramChatId?: string }) => Promise<void>;
@@ -576,6 +590,11 @@ export interface JournalEntry {
     // Posted (final) or Draft; needs migrations/add_entry_status.sql.
     status?: string;
     created_at?: string;
+    // Riel (KHR) payment: the riel amount entered and the rate used
+    // (migrations/add_khr_currency.sql). NULL/absent = USD.
+    currency?: MoneyCurrency | null;
+    original_amount?: number | null;
+    exchange_rate?: number | null;
     lines?: JournalEntryLine[];
 }
 
@@ -635,6 +654,11 @@ export interface SupplierPayment {
     notes?: string;
     paid_from_account_id?: string; // chart-of-accounts cash/bank account (migrations/add_supplier_payment_account.sql)
     created_at?: string;
+    // Riel (KHR) payment: the riel amount entered and the rate used
+    // (migrations/add_khr_currency.sql). NULL/absent = USD.
+    currency?: MoneyCurrency | null;
+    original_amount?: number | null;
+    exchange_rate?: number | null;
     // Joined field for UI
     supplier?: Supplier;
 }
@@ -661,6 +685,11 @@ export interface CustomerPayment {
     notes?: string;
     received_in_account_id?: string; // chart-of-accounts cash/bank account (migrations/add_customer_payment_account.sql)
     created_at?: string;
+    // Riel (KHR) payment: the riel amount entered and the rate used
+    // (migrations/add_khr_currency.sql). NULL/absent = USD.
+    currency?: MoneyCurrency | null;
+    original_amount?: number | null;
+    exchange_rate?: number | null;
     // Joined field for UI (Wholesale Payments) — wholesale_orders has no
     // direct customer FK, customer_name/invoice_number live on the order.
     wholesale_order?: WholesaleOrder;

@@ -55,6 +55,11 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
 };
 
+// The translator when a LanguageProvider is above, else undefined (shared
+// form fields that also render in the dev previews).
+// eslint-disable-next-line react-refresh/only-export-components -- a hook next to its context, like useLanguage below.
+export const useOptionalLanguage = (): LanguageContextType | undefined => useContext(LanguageContext);
+
 export const useLanguage = (): LanguageContextType => {
     const context = useContext(LanguageContext);
     if (!context) {

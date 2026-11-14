@@ -37,6 +37,11 @@ check('shopRate 4000 → 4000', m.shopRate(4000) === 4000);
 check('formatKhr', m.formatKhr(82000) === '៛82,000');
 check('formatUsd', m.formatUsd(1041.2) === '$1,041.20' && m.formatUsd(-2) === '-$2.00');
 
+const sp = m.splitRiel(82000, [10, 5, 5]);
+check('splitRiel in proportion, adds up', sp.join(',') === '41000,20500,20500', sp);
+const sp2 = m.splitRiel(100000, [1, 1, 1]);
+check('splitRiel remainder on the last part', sp2.reduce((s, x) => s + x, 0) === 100000 && sp2[2] === 33334, sp2);
+
 // ── warnings ──
 const w1 = m.checkUsdAmount(8000, { rate: 4100, maxPlausibleUsd: 15 });
 check('8000 in a USD delivery fee → usd-looks-riel, ៛8,000 = $1.95', w1 && w1.kind === 'usd-looks-riel' && w1.asRielUsd === 1.95, w1);
