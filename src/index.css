@@ -792,6 +792,15 @@ body.sidebar-ocean {
   color: var(--modern-sidebar-text-hover);
 }
 
+/* Khmer has no capital letters, so the small uppercase label style above
+   made the main menu read smaller than its sub-menu items: in Khmer the main
+   menu uses the sub-menu size (.msidebar-item, 13px) with no letter spacing. */
+html[lang="km"] .msidebar-group {
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 /* The section that holds the current page: a bolder, darker label — text
    only, no background — so the active section reads at a glance. */
 .msidebar-group.active-section {

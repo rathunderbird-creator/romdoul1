@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import en from '../i18n/en.json';
 import km from '../i18n/km.json';
 
@@ -29,6 +29,14 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const saved = localStorage.getItem('pos_language');
         return (saved === 'km' || saved === 'en') ? saved : 'en';
     });
+
+    // <html lang> follows the language picked, so CSS can adjust for Khmer
+    // (e.g. html[lang="km"] menu labels: Khmer has no capitals, so the small
+    // uppercase English style reads too small) and screen readers and the
+    // browser know the page's language.
+    useEffect(() => {
+        document.documentElement.lang = language;
+    }, [language]);
 
     const setLanguage = useCallback((lang: Language) => {
         setLanguageState(lang);
