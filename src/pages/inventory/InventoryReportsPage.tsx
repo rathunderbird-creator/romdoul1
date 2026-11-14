@@ -504,6 +504,8 @@ const InventoryReportsPage: React.FC = () => {
                         {warehouseCaveat}
                         {costBasisNote}
                         <div style={{ ...cardStyle, overflow: 'hidden' }}>
+                            {/* Scrolls sideways once a column is dragged wider (the card clips overflow). */}
+                            <div style={{ overflowX: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
@@ -536,6 +538,7 @@ const InventoryReportsPage: React.FC = () => {
                                     </tfoot>
                                 )}
                             </table>
+                            </div>
                         </div>
                     </>
                 )}
@@ -597,7 +600,7 @@ const InventoryReportsPage: React.FC = () => {
 
                                     <div style={{ ...cardStyle, overflow: 'hidden' }}>
                                         <div style={{ padding: '14px 16px 4px', fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Inventory (1300) against the layers</div>
-                                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                                        <table data-resize="off" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                             <tbody>
                                                 {recon.map(row => (
                                                     <tr key={row.label} style={{ borderTop: row.strong ? '2px solid var(--color-border)' : '1px solid var(--color-border)' }}>

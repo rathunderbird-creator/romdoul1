@@ -493,7 +493,8 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
             </Section>
 
             <Section title="Items" icon={<Package size={13} aria-hidden />}>
-                <div style={{ border: `1px solid ${D2.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                {/* Scrolls (not clips) once a column is dragged wider than the drawer. */}
+                <div style={{ border: `1px solid ${D2.border}`, borderRadius: 8, overflow: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                         <thead>
                             <tr style={{ background: '#f9fafb' }}>

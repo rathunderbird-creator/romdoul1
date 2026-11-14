@@ -49,12 +49,11 @@ const WeeklyTable: React.FC<WeeklyTableProps> = ({ weeks, totals, t, language, o
     return (
         <div className="glass-panel" style={{ border: '1px solid var(--color-border)', borderRadius: 16, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 340px)', minHeight: 200, position: 'relative' }}>
             <table className="spreadsheet-table" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width, minWidth: '100%', border: 'none' }}>
-                <colgroup>{COLS.map(c => <col key={c.key} style={{ width: c.width }} />)}</colgroup>
                 <thead>
                     <tr>
                         {COLS.map((c, i) => (
                             <th key={c.key} scope="col" className={i === 0 ? 'pip-sticky-first' : undefined}
-                                style={{ ...thStyle, textAlign: c.align || 'right', color: c.color || thStyle.color }}>
+                                style={{ ...thStyle, width: c.width, textAlign: c.align || 'right', color: c.color || thStyle.color }}>
                                 {t(`cpaTracker.columns.${c.key}`)}
                             </th>
                         ))}

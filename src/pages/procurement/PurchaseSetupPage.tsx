@@ -492,6 +492,8 @@ const PurchaseSetupPage: React.FC = () => {
                     </div>
 
                     <div style={{ ...cardStyle, overflow: 'hidden' }}>
+                        {/* Scrolls sideways once a column is dragged wider (the card clips overflow). */}
+                        <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
@@ -524,6 +526,7 @@ const PurchaseSetupPage: React.FC = () => {
                                 })}
                             </tbody>
                         </table>
+                        </div>
                     </div>
                 </div>
             )}

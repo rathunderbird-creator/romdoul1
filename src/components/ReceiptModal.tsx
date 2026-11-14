@@ -98,7 +98,7 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
                 )}
             </div>
 
-            <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse', marginBottom: '16px', marginTop: '16px' }}>
+            <table data-resize="off" style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse', marginBottom: '16px', marginTop: '16px' }}>
                 <thead>
                     <tr style={{ borderBottom: '1px solid #eee' }}>
                         <th style={{ textAlign: 'left', padding: '3px 0' }}>Item</th>

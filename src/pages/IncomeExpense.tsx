@@ -129,18 +129,22 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         if (isMobile) return;
         const bar = commandBarRef.current;
         const wrap = tableWrapRef.current;
+        // The table can grow past its min width once a column is dragged wider
+        // (utils/resizableTables); the wrapper must then scroll, not clip.
+        const table = wrap?.querySelector('table');
         const measure = () => {
             // offsetHeight/clientWidth are in the element's own CSS px (the
             // units `top` and min-width use) even inside the zoomed body,
             // unlike getBoundingClientRect which is scaled by the zoom.
             setHeaderTop(bar ? bar.offsetHeight : 0);
-            setTableFits(!wrap || wrap.clientWidth >= TABLE_MIN_WIDTH);
+            setTableFits(!wrap || wrap.clientWidth >= Math.max(TABLE_MIN_WIDTH, table ? table.offsetWidth : 0));
         };
         measure();
         if (typeof ResizeObserver === 'undefined') return;
         const ro = new ResizeObserver(measure);
         if (bar) ro.observe(bar);
         if (wrap) ro.observe(wrap);
+        if (table) ro.observe(table);
         return () => ro.disconnect();
     }, [isMobile]);
 
