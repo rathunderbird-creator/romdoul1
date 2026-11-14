@@ -1402,7 +1402,12 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                     </>
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: totalWidth + (canUseCheckbox ? CHECKBOX_COL : 0), minWidth: '100%', borderCollapse: 'collapse', fontSize: '14px', tableLayout: 'fixed' }}>
+                        {/* 100% wide with an unsized filler column last: the spare width
+                            on a wide screen goes to the filler, so the sized columns keep
+                            exactly their widths (spread over every column, dragging one
+                            moved the others). A fixed-layout table never gets narrower
+                            than its sized columns, so it scrolls once they pass the screen. */}
+                        <table style={{ width: '100%', minWidth: totalWidth + (canUseCheckbox ? CHECKBOX_COL : 0), borderCollapse: 'collapse', fontSize: '14px', tableLayout: 'fixed' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                                     {canUseCheckbox && (
@@ -1433,6 +1438,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                             {resizeHandle(c.key)}
                                         </th>
                                     ))}
+                                    <th aria-hidden style={{ padding: 0 }} />
                                 </tr>
                             </thead>
                             <tbody>
@@ -1473,6 +1479,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                 {canDelete(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} aria-label="Delete entry" />}
                                             </span>
                                         </td>
+                                        <td aria-hidden style={{ padding: 0 }} />
                                     </tr>
                                 ))}
                             </tbody>
@@ -1482,7 +1489,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         {`Total — ${filteredRows.length} ${filteredRows.length === 1 ? 'entry' : 'entries'}${filtersActive ? ' (filtered)' : ''}`}
                                     </td>
                                     <td style={{ padding: '14px 20px', textAlign: 'right', color: cfg.color, fontVariantNumeric: 'tabular-nums' }}>{fmt(filteredTotal)}</td>
-                                    <td colSpan={2}></td>
+                                    <td colSpan={3}></td>
                                 </tr>
                             </tfoot>
                         </table>
