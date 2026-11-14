@@ -104,8 +104,9 @@ const CollectionChart: React.FC<CollectionChartProps> = ({ series, onOpenOrders,
         );
     };
 
-    // Legend text in ink (recharts defaults to the series colour, which is hard to read for amber).
-    const legendLabel = (value: string) => <span style={{ color: D2.ink, fontWeight: 600 }}>{value}</span>;
+    // Legend text in ink (recharts defaults to the series colour, which is hard
+    // to read for amber): set by CSS below. A formatter returning an element
+    // made recharts label each legend icon "[object Object] legend icon".
 
     const header = (
         <SectionHeader
@@ -139,6 +140,8 @@ const CollectionChart: React.FC<CollectionChartProps> = ({ series, onOpenOrders,
                             {t('dashboard2.noRows')}
                         </div>
                     ) : (
+                        <div className="d2-collection-chart">
+                        <style>{`.d2-collection-chart .recharts-legend-item-text { color: ${D2.ink} !important; font-weight: 600; }`}</style>
                         <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
                             <BarChart
                                 data={series}
@@ -176,7 +179,6 @@ const CollectionChart: React.FC<CollectionChartProps> = ({ series, onOpenOrders,
                                     align="right"
                                     iconType="circle"
                                     iconSize={8}
-                                    formatter={legendLabel}
                                     wrapperStyle={{ fontSize: 11, paddingBottom: 6 }}
                                 />
                                 <Bar
@@ -202,6 +204,7 @@ const CollectionChart: React.FC<CollectionChartProps> = ({ series, onOpenOrders,
                                 />
                             </BarChart>
                         </ResponsiveContainer>
+                        </div>
                     )}
                 </div>
 

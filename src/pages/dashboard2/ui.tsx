@@ -3,6 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import { ArrowUp, ArrowDown, ChevronsUpDown, ChevronDown, ChevronRight, TrendingUp, TrendingDown, AlertCircle, RefreshCw } from 'lucide-react';
 import { D2, cardStyle, tabular, fmtPct, PASSIVE_OPACITY } from './theme';
+import { useOptionalLanguage } from '../../context/LanguageContext';
 
 // ─── Persistence helpers ──────────────────────────────────────────────────
 
@@ -208,6 +209,8 @@ export function sortRows<T>(rows: T[], columns: Column<T>[], sort: SortState | n
 
 export function SortableTable<T>({ columns, rows, rowKey, sort, onSort, onRowClick, rowLabel, emptyText, caption, maxHeight }: SortableTableProps<T>) {
     const sorted = sortRows(rows, columns, sort);
+    const lang = useOptionalLanguage();
+    const sortTitle = (() => { const v = lang?.t('common2.sort'); return v && v !== 'common2.sort' ? v : 'Sort'; })();
     const toggle = (key: string) => {
         if (!sort || sort.key !== key) onSort({ key, direction: 'desc' });
         else if (sort.direction === 'desc') onSort({ key, direction: 'asc' });
@@ -225,7 +228,7 @@ export function SortableTable<T>({ columns, rows, rowKey, sort, onSort, onRowCli
                             return (
                                 <th key={col.key} scope="col" aria-sort={col.sortValue ? ariaSort : undefined} style={{ textAlign: col.align || 'left', width: col.width, minWidth: col.minWidth }}>
                                     {col.sortValue ? (
-                                        <button type="button" onClick={() => toggle(col.key)} title="Sort" style={{ color: active ? D2.blue : undefined, justifyContent: col.align === 'right' ? 'flex-end' : 'flex-start', width: '100%' }}>
+                                        <button type="button" onClick={() => toggle(col.key)} title={sortTitle} style={{ color: active ? D2.blue : undefined, justifyContent: col.align === 'right' ? 'flex-end' : 'flex-start', width: '100%' }}>
                                             {col.header}
                                             {active ? (sort!.direction === 'asc' ? <ArrowUp size={12} aria-hidden /> : <ArrowDown size={12} aria-hidden />) : <ChevronsUpDown size={12} aria-hidden style={{ opacity: 0.35 }} />}
                                         </button>

@@ -4,6 +4,8 @@ import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-reac
 import { useMobile } from '../hooks/useMobile';
 import { RANGE_PRESETS, resolveRangePreset, type RangePreset } from '../utils/dateRangePresets';
 import { bodyZoom } from '../utils/bodyZoom';
+import { useOptionalLanguage } from '../context/LanguageContext';
+import { formatAppDate, formatAppMonth } from '../utils/appLocale';
 
 interface DateRangePickerProps {
     value: { start: string; end: string };
@@ -25,6 +27,13 @@ interface DateRangePickerProps {
 type Preset = RangePreset | 'Custom Range';
 
 const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, className, style, compact = false, height = 42 }) => {
+    // Labels and dates in the app's language (English where a key is missing).
+    const lang = useOptionalLanguage();
+    const tx = (key: string, en: string) => {
+        const v = lang?.t(key);
+        return v && v !== key ? v : en;
+    };
+    const language = lang?.language;
     const [isOpen, setIsOpen] = useState(false);
 
     // Helper to parse "YYYY-MM-DD" as local midnight date
@@ -166,14 +175,14 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
                         <ChevronLeft size={16} />
                     </button>
                     <span style={{ fontWeight: 600 }}>
-                        {currentMonthDate.toLocaleString('default', { month: 'short', year: 'numeric' })}
+                        {formatAppMonth(currentMonthDate, language)}
                     </span>
                     <button onClick={() => setViewDate(new Date(year, month + 1, 1))} className="icon-button">
                         <ChevronRight size={16} />
                     </button>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', fontSize: '12px', textAlign: 'center', marginBottom: '4px', color: 'var(--color-text-secondary)' }}>
-                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => <div key={d}>{d}</div>)}
+                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d, i) => <div key={d}>{tx(`datePicker.weekdays.${i}`, d)}</div>)}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
                     {blanks.map((_, i) => <div key={`blank-${i}`} />)}
@@ -275,7 +284,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
             {/* Mobile Header */}
             {isMobile && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Select Dates</h3>
+                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{tx('datePicker.selectDates', 'Select Dates')}</h3>
                     <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}>&times;</button>
                 </div>
             )}
@@ -308,7 +317,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
                                 cursor: 'pointer', fontSize: '12px'
                             }}
                         >
-                            {preset.label}
+                            {tx(`datePicker.presets.${preset.label}`, preset.label)}
                         </button>
                     ))}
                     <button
@@ -338,7 +347,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
 
                     <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', flexShrink: 0 }}>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                            {startDate ? startDate.toLocaleDateString() : 'Start'} - {endDate ? endDate.toLocaleDateString() : 'End'}
+                            {startDate ? formatAppDate(startDate, { year: true }, language) : tx('datePicker.start', 'Start')} - {endDate ? formatAppDate(endDate, { year: true }, language) : tx('datePicker.end', 'End')}
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
                             <button
@@ -348,7 +357,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
                                     background: 'transparent', cursor: 'pointer', fontSize: '13px'
                                 }}
                             >
-                                Cancel
+                                {tx('datePicker.cancel', 'Cancel')}
                             </button>
                             <button
                                 onClick={handleApply}
@@ -357,7 +366,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
                                     background: '#10B981', color: 'white', cursor: 'pointer', fontSize: '13px', fontWeight: 500
                                 }}
                             >
-                                Apply
+                                {tx('datePicker.apply', 'Apply')}
                             </button>
                         </div>
                     </div>
@@ -369,7 +378,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
     const getFormattedDate = (dateStr: string) => {
         const date = parseLocalDate(dateStr);
         if (!date) return '';
-        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        return formatAppDate(date, { year: true }, language);
     };
 
     const isActive = Boolean(value.start || value.end);
@@ -389,7 +398,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, clas
                     width: '100%',
                     justifyContent: 'center'
                 }}
-                title="Select Date Range"
+                title={tx('datePicker.select', 'Select Date Range')}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <CalendarIcon size={18} />
