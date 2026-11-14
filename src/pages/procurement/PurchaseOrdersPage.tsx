@@ -1028,7 +1028,9 @@ const PurchaseOrdersPage = () => {
                     {/* Vertical scroll cap makes the sticky header/footer stick to
                         THIS container while long lists scroll under them. */}
                     <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(var(--vh-full) - 240px)' }}>
-                    <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
+                    {/* data-resize="own": this table has its own column resize (handleResizeStart),
+                        so the global resizable-tables grips stay off it. */}
+                    <table data-resize="own" className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                         <thead>
                             <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
                                 {PO_COLUMNS.map(col => {
@@ -1080,6 +1082,11 @@ const PurchaseOrdersPage = () => {
                                         </th>
                                     );
                                 })}
+                                {/* Filler: takes whatever width is left on a wide screen,
+                                    so the sized columns keep exactly their widths (without
+                                    it the browser spreads the spare width over every
+                                    column, and dragging one moved the others). */}
+                                <th aria-hidden style={{ padding: 0, position: 'sticky', top: 0, zIndex: 10, background: 'var(--color-surface)', boxShadow: 'inset 0 -1px 0 var(--color-border)' }} />
                             </tr>
                         </thead>
                         <tbody>
@@ -1209,6 +1216,7 @@ const PurchaseOrdersPage = () => {
                                                 </button>
                                             </div>
                                         </td>
+                                        <td aria-hidden style={{ padding: 0 }} />
                                     </tr>
                                 );
                             })}
@@ -1241,6 +1249,7 @@ const PurchaseOrdersPage = () => {
                                     }
                                     return <td key={col.key} style={base} />;
                                 })}
+                                <td aria-hidden style={{ padding: 0, position: 'sticky', bottom: 0, zIndex: 10, background: 'var(--color-bg)', boxShadow: 'inset 0 2px 0 var(--color-border)' }} />
                             </tr>
                         </tfoot>
                     </table>
@@ -1554,6 +1563,8 @@ const PurchaseOrdersPage = () => {
                                         <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewPO.items?.length || 0}</span>
                                     </h4>
                                     <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                                        {/* Scrolls sideways once a column is dragged wider (the card clips overflow). */}
+                                        <div style={{ overflowX: 'auto' }}>
                                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                             <thead>
                                                 <tr style={{ background: 'rgba(0,0,0,0.025)' }}>
@@ -1576,6 +1587,7 @@ const PurchaseOrdersPage = () => {
                                                 ))}
                                             </tbody>
                                         </table>
+                                        </div>
                                     </div>
                                 </div>
 

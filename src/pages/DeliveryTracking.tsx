@@ -1338,10 +1338,16 @@ const DeliveryTracking: React.FC = () => {
             <div className="glass-panel" style={{ overflow: 'visible', maxHeight: 'calc(var(--vh-full) - 260px)' }}> {/* changed overflow to visible for dropdowns if needed, or better keep auto but manage dropdown z-index/portal */}
                 {/* Reverting to auto for scrolling, custom dropdown handles inline */}
                 <div style={{ overflow: 'auto', maxHeight: 'calc(var(--vh-full) - 260px)' }}>
+                    {/* 100% wide with an unsized filler column last and min-width = the sum of the
+                        sized columns: a fixed-layout table spreads spare width over every column
+                        otherwise, so dragging one column moved the others. Own resize grips, so
+                        the global table-resize module skips it (data-resize="own"). */}
                     <table
                         className="spreadsheet-table"
+                        data-resize="own"
                         style={{
-                            minWidth: '100%',
+                            width: '100%',
+                            minWidth: 40 + allColumns.filter(col => visibleColumns.includes(col.id)).reduce((sum, col) => sum + (columnWidths[col.id] || 150), 0),
                             whiteSpace: 'nowrap',
                             borderCollapse: 'separate',
                             borderSpacing: 0,
@@ -1421,7 +1427,7 @@ const DeliveryTracking: React.FC = () => {
                                         </th>
                                     );
                                 })}
-                                <th style={{ width: '100%', minWidth: 'auto', background: '#e5e7eb', borderBottom: '1px solid var(--color-border)' }}></th>
+                                <th aria-hidden style={{ padding: 0, background: '#e5e7eb', borderBottom: '1px solid var(--color-border)' }}></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1535,7 +1541,7 @@ const DeliveryTracking: React.FC = () => {
                                     {visibleColumns.includes('remark') && <td style={{ width: `var(--col-delivery-remark-width, ${columnWidths.remark}px)` }}>
                                         <EditableRemark order={order} updateOrder={updateOrder} />
                                     </td>}
-                                    <td style={{ width: '100%', minWidth: 'auto' }}></td>
+                                    <td aria-hidden style={{ padding: 0 }}></td>
                                 </tr>
                             ))}
                         </tbody>
@@ -1564,7 +1570,7 @@ const DeliveryTracking: React.FC = () => {
                                     );
                                     return <td key={colId} style={style}></td>;
                                 })}
-                                <td style={{ width: '100%', minWidth: 'auto', background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}></td>
+                                <td aria-hidden style={{ padding: 0, background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}></td>
                             </tr>
                         </tfoot>
                     </table>

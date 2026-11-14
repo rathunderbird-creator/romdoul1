@@ -853,9 +853,14 @@ const IncomePrediction: React.FC = () => {
 
             {/* Spreadsheet Table - Full height */}
             <div className="glass-panel" style={{ overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: '16px', flex: 1, minHeight: 0 }}>
-                <table className="spreadsheet-table" style={{ minWidth: '920px', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: effectiveWidths.reduce((a, b) => a + b, 0) }}>
+                {/* 100% wide with an unsized filler column last: the spare width on a
+                    wide screen goes to the filler, so the sized columns keep exactly
+                    their widths (spread over every column, dragging one moved the
+                    others). Scrolls once the sized columns pass the panel. */}
+                <table className="spreadsheet-table" data-resize="own" style={{ width: '100%', minWidth: effectiveWidths.reduce((a, b) => a + b, 0), borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
                     <colgroup>
                         {effectiveWidths.map((w, i) => <col key={i} style={{ width: `${w}px` }} />)}
+                        <col />
                     </colgroup>
                     <thead style={{ position: 'sticky', top: 0, zIndex: 4 }}>
                         <tr style={{ background: 'var(--color-surface)' }}>
@@ -887,6 +892,7 @@ const IncomePrediction: React.FC = () => {
                             <th className="prediction-th" style={{ borderBottom: '2px solid var(--color-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                                 Action{resizeHandle(8)}
                             </th>
+                            <th aria-hidden style={{ padding: 0, borderBottom: '2px solid var(--color-border)' }} />
                         </tr>
                     </thead>
                     <tbody>
@@ -1012,6 +1018,7 @@ const IncomePrediction: React.FC = () => {
                                                 </button>
                                             )}
                                         </td>
+                                        <td aria-hidden style={{ padding: 0 }} />
                                     </tr>
                                 );
                             })
@@ -1046,6 +1053,7 @@ const IncomePrediction: React.FC = () => {
                                     ${fmt(totals.profit)}
                                 </td>
                                 <td style={{ bottom: 'auto', background: 'var(--color-surface)' }}></td>
+                                <td aria-hidden style={{ bottom: 'auto', padding: 0, background: 'var(--color-surface)' }} />
                             </tr>
                             {/* Profit highlight row */}
                             <tr style={{
@@ -1074,6 +1082,8 @@ const IncomePrediction: React.FC = () => {
                                 }}>
                                     ${fmt(totals.profit)}
                                 </td>
+                                {/* Action column (empty here, as before) + the filler. */}
+                                <td colSpan={2} aria-hidden style={{ bottom: 'auto', padding: 0, background: 'transparent', boxShadow: 'none' }} />
                             </tr>
                         </tfoot>
                     )}

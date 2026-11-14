@@ -1074,7 +1074,11 @@ const JournalEntriesPage = () => {
                     )
                 ) : (
                 <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: totalWidth + 32, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                {/* 100% wide with an unsized filler column last: the spare width on a
+                    wide screen goes to the filler, so the sized columns keep exactly
+                    their widths (spread over every column, dragging one moved the
+                    others). Scrolls once the sized columns pass the screen. */}
+                <table data-resize="own" style={{ width: '100%', minWidth: totalWidth + 32, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                             <th style={{ padding: '14px 8px 14px 20px', width: '32px' }}>
@@ -1095,13 +1099,14 @@ const JournalEntriesPage = () => {
                             <th style={{ ...widthStyle('credits'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>Credits{resizeHandle('credits')}</th>
                             <th style={{ ...widthStyle('status'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Status{resizeHandle('status')}</th>
                             <th style={{ ...widthStyle('actions'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Actions{resizeHandle('actions')}</th>
+                            <th aria-hidden style={{ padding: 0 }} />
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading entries...</td></tr>
+                            <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading entries...</td></tr>
                         ) : filteredEntries.length === 0 ? (
-                            <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No entries found</td></tr>
+                            <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No entries found</td></tr>
                         ) : (
                             visibleEntries.map(entry => {
                                 const t = entryTotals(entry);
@@ -1154,6 +1159,7 @@ const JournalEntriesPage = () => {
                                                 {canDeleteRow && <ActionBtn icon={Trash2} label="Delete" onClick={() => handleDelete(entry)} color="#ef4444" />}
                                             </span>
                                         </td>
+                                        <td aria-hidden style={{ padding: 0 }} />
                                     </tr>
                                 );
                             })

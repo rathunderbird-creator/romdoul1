@@ -80,6 +80,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, t, language, i
                 <td style={{ ...widthStyle('grossProfit'), textAlign: 'right', padding: '8px 12px', fontWeight: 700, fontSize: 13, color: day.grossProfit > 0.005 ? '#8B5CF6' : day.grossProfit < -0.005 ? '#EF4444' : 'var(--color-text-secondary)', background: day.grossProfit !== 0 ? `rgba(${day.grossProfit > 0 ? '139,92,246' : '239,68,68'},0.04)` : undefined }}>
                     {day.grossProfit !== 0 ? fmtMoney(day.grossProfit) : '-'}
                 </td>
+                <td aria-hidden style={{ padding: 0 }} />
             </tr>
         );
     };
@@ -95,7 +96,11 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, t, language, i
 
     return (
         <div ref={wrapRef} className="glass-panel" style={{ overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 16, padding: 0, flex: isMobile ? undefined : 1, minHeight: 0, maxHeight: isMobile ? '70vh' : undefined, position: 'relative' }}>
-            <table className="spreadsheet-table" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: totalWidth, minWidth: '100%' }}>
+            {/* 100% wide with an unsized filler column last: the spare width on a
+                wide screen goes to the filler, so the sized columns keep exactly their
+                widths (spread over every column, dragging one moved the others).
+                Scrolls once the sized columns pass the panel. */}
+            <table className="spreadsheet-table" data-resize="own" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: '100%', minWidth: totalWidth }}>
                 <thead>
                     <tr style={{ background: 'var(--color-surface)' }}>
                         {header('day', t('productPrediction.columns.day'))}
@@ -105,6 +110,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, t, language, i
                         {header('revenue', t('productPrediction.columns.revenue'))}
                         {header('cogs', t('productPrediction.columns.cogs'))}
                         {header('grossProfit', t('productPrediction.columns.grossProfit'))}
+                        <th aria-hidden style={{ ...thStyle, padding: 0, background: 'var(--color-surface)' }} />
                     </tr>
                 </thead>
                 <tbody>{ledger.days.map(renderRow)}</tbody>
@@ -117,6 +123,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, t, language, i
                         {footCell('revenue', fmtMoney(totals.revenue), '#10B981')}
                         {footCell('cogs', fmtMoney(totals.cogs), '#EF4444')}
                         {footCell('grossProfit', fmtMoney(totals.grossProfit), netColor)}
+                        <td aria-hidden style={{ bottom: 'auto', padding: 0, background: 'var(--color-surface)' }} />
                     </tr>
                     <tr>
                         <td colSpan={6} className="pip-sticky-first" style={{ fontWeight: 800, fontSize: 14, padding: 14, color: netColor, background: netBg, borderBottomLeftRadius: 16 }}>
@@ -125,6 +132,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, t, language, i
                         <td style={{ textAlign: 'right', fontWeight: 800, fontSize: 17, padding: 14, color: netColor, background: netBg, borderBottomRightRadius: 16 }}>
                             {fmtMoney(totals.grossProfit)}
                         </td>
+                        <td aria-hidden style={{ padding: 0, background: netBg }} />
                     </tr>
                 </tfoot>
             </table>

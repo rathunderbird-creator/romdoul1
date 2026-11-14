@@ -22,16 +22,14 @@
     position: relative;
 }
 .om2-table {
-    /* min-width, not width: with table-layout:fixed, a hard width:100% caps
-       the table exactly at the container's width, so once the resizable
-       columns' widths sum to more than that, the browser proportionally
-       SHRINKS every column to force-fit — which is what made resizing feel
-       like it fought back and clipped the two widest headers (Customer,
-       Product) down to no visible text. min-width lets the table grow past
-       100% instead, so .om2-table-wrap's overflow:auto scrolls horizontally
-       the same way the classic Orders table (.spreadsheet-table) already
-       does with its own resizable columns. */
-    min-width: 100%;
+    /* 100% wide, with an inline min-width = the sum of the sized columns
+       (OrdersTable.tsx) and an unsized filler column last. On a wide screen
+       the spare width goes to the filler, so every sized column keeps exactly
+       its width (with only min-width:100% the browser spread the spare width
+       over every column, so dragging one moved the others). Once the columns
+       add up past the container, the min-width makes the table grow instead
+       of shrinking them to fit, and .om2-table-wrap scrolls horizontally. */
+    width: 100%;
     border-collapse: separate;
     border-spacing: 0;
     font-size: 13px;

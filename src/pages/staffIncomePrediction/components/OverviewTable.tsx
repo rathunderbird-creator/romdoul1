@@ -233,6 +233,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
                 {cell('margin', <span style={{ fontWeight: 600, color: row.margin === null ? 'var(--color-text-secondary)' : signColor(row.margin) }}>{fmtPct(row.margin)}</span>)}
                 {cell('target', targetCellContent(row, t))}
                 {cell('projected', <span title={proj.title} style={{ fontWeight: 700, color: proj.muted ? 'var(--color-text-secondary)' : signColor(row.projection.grossProfit || 0) }}>{proj.text}</span>)}
+                <td aria-hidden style={{ padding: 0 }} />
             </tr>
         );
     };
@@ -246,7 +247,11 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
 
     return (
         <div className="glass-panel" style={{ overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 16, padding: 0, flex: '0 1 auto', minHeight: 0 }}>
-            <table className="spreadsheet-table" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: totalWidth, minWidth: '100%' }}>
+            {/* 100% wide with an unsized filler column last: the spare width on a
+                wide screen goes to the filler, so the sized columns keep exactly their
+                widths (spread over every column, dragging one moved the others).
+                Scrolls once the sized columns pass the panel. */}
+            <table className="spreadsheet-table" data-resize="own" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: '100%', minWidth: totalWidth }}>
                 <thead>
                     <tr style={{ background: 'var(--color-surface)' }}>
                         {header('staff', t('staffPrediction.columns.staff'))}
@@ -259,6 +264,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
                         {header('margin', t('staffPrediction.columns.margin'))}
                         {header('target', t('staffPrediction.columns.target'), targetHeaderTitle)}
                         {header('projected', t('staffPrediction.columns.projected'))}
+                        <th aria-hidden style={{ ...thStyle, padding: 0, background: 'var(--color-surface)' }} />
                     </tr>
                 </thead>
                 <tbody>{displayRows.map(renderRow)}</tbody>
@@ -274,6 +280,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
                         {footCell('margin', fmtPct(totals.margin), totals.margin === null ? undefined : signColor(totals.margin))}
                         {footCell('target', totals.monthlyTarget === null ? '—' : <span title={`${targetText(totals)} — ${t('staffPrediction.targetedOnly')}`}>{targetText(totals)}</span>)}
                         {footCell('projected', <span title={totalsProj.title}>{totalsProj.text}</span>, totalsProj.muted ? 'var(--color-text-secondary)' : signColor(totals.projection.grossProfit || 0))}
+                        <td aria-hidden style={{ padding: 0, background: 'var(--color-surface)' }} />
                     </tr>
                 </tfoot>
             </table>

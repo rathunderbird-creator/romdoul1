@@ -393,8 +393,15 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
             }}>
                 <table
                     className="spreadsheet-table deleted-orders-table"
+                    data-resize="own"
                     style={{
-                        minWidth: '100%',
+                        // 100% wide, never narrower than the sized columns (the calc
+                        // follows the live --del-col-*-width vars while dragging), with
+                        // an unsized filler column last that takes the spare width.
+                        // Without it a wide screen spread the spare width over every
+                        // column and dragging one moved the others.
+                        width: '100%',
+                        minWidth: `calc(40px${columns.map(col => ` + ${getColWidth(col.id, col.width)}`).join('')})`,
                         whiteSpace: 'nowrap',
                         tableLayout: 'fixed',
                         borderCollapse: 'separate',
@@ -449,7 +456,8 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                                     />
                                 </th>
                             ))}
-                            <th style={{ width: '100%', minWidth: 'auto', background: '#e5e7eb', borderBottom: '1px solid var(--color-border)' }}></th>
+                            {/* Filler: unsized, takes whatever width is left (see the table style). */}
+                            <th aria-hidden style={{ padding: 0, background: '#e5e7eb', borderBottom: '1px solid var(--color-border)' }}></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -619,7 +627,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                                             </div>
                                         </td>
 
-                                        <td style={{ width: '100%', minWidth: 'auto' }}></td>
+                                        <td aria-hidden style={{ padding: 0 }}></td>
                                     </tr>
                                 );
                             })

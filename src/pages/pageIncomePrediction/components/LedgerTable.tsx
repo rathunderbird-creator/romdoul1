@@ -123,6 +123,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, canEdit, t, la
                 <td style={{ ...widthStyle('contribution'), textAlign: 'right', padding: '8px 12px', fontWeight: 700, fontSize: 13, color: day.contribution > 0.005 ? '#8B5CF6' : day.contribution < -0.005 ? '#EF4444' : 'var(--color-text-secondary)', background: day.contribution !== 0 ? `rgba(${day.contribution > 0 ? '139,92,246' : '239,68,68'},0.04)` : undefined }}>
                     {day.contribution !== 0 ? fmtMoney(day.contribution) : '-'}
                 </td>
+                <td aria-hidden style={{ padding: 0 }} />
             </tr>
         );
     };
@@ -141,7 +142,11 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, canEdit, t, la
 
     return (
         <div ref={wrapRef} className="glass-panel" style={{ overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 16, padding: 0, flex: isMobile ? undefined : 1, minHeight: 0, maxHeight: isMobile ? '70vh' : undefined, position: 'relative' }}>
-            <table className="spreadsheet-table" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: totalWidth, minWidth: '100%' }}>
+            {/* 100% wide with an unsized filler column last: the spare width on a
+                wide screen goes to the filler, so the sized columns keep exactly their
+                widths (spread over every column, dragging one moved the others).
+                Scrolls once the sized columns pass the panel. */}
+            <table className="spreadsheet-table" data-resize="own" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: '100%', minWidth: totalWidth }}>
                 <thead>
                     <tr style={{ background: 'var(--color-surface)' }}>
                         {header('day', t('pagePrediction.columns.day'))}
@@ -152,6 +157,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, canEdit, t, la
                         {header('shipping', t('pagePrediction.columns.shipping'))}
                         {header('boost', t('pagePrediction.columns.boost'))}
                         {header('contribution', t('pagePrediction.columns.contribution'))}
+                        <th aria-hidden style={{ ...thStyle, padding: 0, background: 'var(--color-surface)' }} />
                     </tr>
                 </thead>
                 <tbody>{ledger.days.map(renderRow)}</tbody>
@@ -165,6 +171,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, canEdit, t, la
                         {footCell('shipping', fmtMoney(totals.shipping), '#EF4444')}
                         {footCell('boost', fmtMoney(totals.boost), '#F59E0B')}
                         {footCell('contribution', fmtMoney(totals.contribution), netColor)}
+                        <td aria-hidden style={{ bottom: 'auto', padding: 0, background: 'var(--color-surface)' }} />
                     </tr>
                     <tr>
                         <td colSpan={7} className="pip-sticky-first" style={{ fontWeight: 800, fontSize: 14, padding: 14, color: netColor, background: netBg, borderBottomLeftRadius: 16 }}>
@@ -173,6 +180,7 @@ const LedgerTable: React.FC<LedgerTableProps> = ({ ledger, range, canEdit, t, la
                         <td style={{ textAlign: 'right', fontWeight: 800, fontSize: 17, padding: 14, color: netColor, background: netBg, borderBottomRightRadius: 16 }}>
                             {fmtMoney(totals.contribution)}
                         </td>
+                        <td aria-hidden style={{ padding: 0, background: netBg }} />
                     </tr>
                 </tfoot>
             </table>

@@ -248,6 +248,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, now, t, isMobile,
                 {cell('avgPrice', <span style={{ color: row.avgPrice === null ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>{row.avgPrice === null ? '—' : fmtMoney(row.avgPrice)}</span>)}
                 {cell('avgCost', <span style={{ color: row.avgCost === null ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>{row.avgCost === null ? '—' : fmtMoney(row.avgCost)}</span>)}
                 {cell('projected', <span title={proj.title} style={{ fontWeight: 700, color: proj.muted ? 'var(--color-text-secondary)' : signColor(row.projection.grossProfit || 0) }}>{proj.text}</span>)}
+                <td aria-hidden style={{ padding: 0 }} />
             </tr>
         );
     };
@@ -263,7 +264,11 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, now, t, isMobile,
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0, flex: '0 1 auto' }}>
             <div>{searchBox}</div>
             <div className="glass-panel" style={{ overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 16, padding: 0, flex: '0 1 auto', minHeight: 0 }}>
-                <table className="spreadsheet-table" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: totalWidth, minWidth: '100%' }}>
+                {/* 100% wide with an unsized filler column last: the spare width on a
+                    wide screen goes to the filler, so the sized columns keep exactly their
+                    widths (spread over every column, dragging one moved the others).
+                    Scrolls once the sized columns pass the panel. */}
+                <table className="spreadsheet-table" data-resize="own" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: '100%', minWidth: totalWidth }}>
                     <thead>
                         <tr style={{ background: 'var(--color-surface)' }}>
                             {header('product', t('productPrediction.columns.product'))}
@@ -278,11 +283,12 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, now, t, isMobile,
                             {header('avgPrice', t('productPrediction.columns.avgPrice'))}
                             {header('avgCost', t('productPrediction.columns.avgCost'))}
                             {header('projected', t('productPrediction.columns.projected'))}
+                            <th aria-hidden style={{ ...thStyle, padding: 0, background: 'var(--color-surface)' }} />
                         </tr>
                     </thead>
                     <tbody>
                         {displayRows.length === 0 ? (
-                            <tr><td colSpan={COLUMNS.length} style={{ textAlign: 'center', padding: '24px 10px', color: 'var(--color-text-secondary)', fontSize: 13 }}>{t('productPrediction.noMatch')}</td></tr>
+                            <tr><td colSpan={COLUMNS.length + 1} style={{ textAlign: 'center', padding: '24px 10px', color: 'var(--color-text-secondary)', fontSize: 13 }}>{t('productPrediction.noMatch')}</td></tr>
                         ) : displayRows.map(renderRow)}
                     </tbody>
                     <tfoot>
@@ -299,6 +305,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, now, t, isMobile,
                             {footCell('avgPrice', totals.avgPrice === null ? '—' : fmtMoney(totals.avgPrice))}
                             {footCell('avgCost', totals.avgCost === null ? '—' : fmtMoney(totals.avgCost))}
                             {footCell('projected', <span title={totalsProj.title}>{totalsProj.text}</span>, totalsProj.muted ? 'var(--color-text-secondary)' : signColor(totals.projection.grossProfit || 0))}
+                            <td aria-hidden style={{ padding: 0, background: 'var(--color-surface)' }} />
                         </tr>
                     </tfoot>
                 </table>
