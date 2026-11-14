@@ -708,6 +708,7 @@
     "rateOff": "អត្រា {{rate}} ខុសឆ្ងាយពីអត្រាហាង {{shop}}។",
     "usdLooksRielConfirm": "អ្នកបានវាយ {{typed}} ក្នុងប្រអប់ដុល្លារ។\n• ជាដុល្លារ៖ {{asUsd}}\n• ជារៀល៖ {{asKhr}} = {{asRielUsd}} តាមអត្រា {{rate}}\nOK កត់ត្រា {{asUsd}}។ Cancel ដើម្បីកែ។",
     "khrLooksUsdConfirm": "អ្នកបានវាយ {{asKhrTyped}} ក្នុងប្រអប់រៀល។\n• ជារៀល៖ {{asKhrTyped}} = {{asRielUsd}}\n• ជាដុល្លារ៖ {{asUsd}} (= {{asKhr}})\nOK កត់ត្រា {{asRielUsd}}។ Cancel ដើម្បីកែ។",
+    "fixedBooksConfirm": "OK កត់ត្រា {{booked}} (ចំនួនត្រូវបង់) ហើយកត់ទុក {{typed}} ជាមួយ។ Cancel ដើម្បីកែ។",
     "rateOffConfirm": "អត្រា {{rate}} រៀលក្នុងមួយដុល្លារ ខុសពីធម្មតា (អត្រាហាង {{shop}})។ ប្រើវាដែរឬទេ?",
     "rateInvalid": "សូមបញ្ចូលអត្រារៀលធំជាង 0។",
     "rate": "អត្រា ៛ ក្នុង $1",

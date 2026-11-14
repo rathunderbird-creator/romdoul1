@@ -211,10 +211,13 @@ export const useWholesale = () => {
         const [paymentId] = customerPaymentKeys.take(signature);
         // No account picked: pick it here in the payment's currency, so a USD
         // receipt never lands on a riel account (the database would pick by
-        // name otherwise; same rules).
+        // name otherwise; same rules). Only the id is filled: the name stays
+        // as the caller gave it, because the database writes the Income row's
+        // pay_by from it (falling back to the method), and an account name
+        // there would show one bank as two (PR #229).
         if (!receivedInAccountId) {
             const acc = await resolveCashBankAccount(receivedInAccountName || paymentMethod, { preferBank: true, currency: money?.currency });
-            if (acc) { receivedInAccountId = acc.id; receivedInAccountName = acc.account_name; }
+            if (acc) receivedInAccountId = acc.id;
         }
         try {
             const result = await callDbFunction<{ already_recorded?: boolean }>('record_customer_payment', {

@@ -164,7 +164,7 @@ const MoneyInput: React.FC<MoneyInputProps> = ({
                                 {tx('money.itsRiel', "It's riel")} → {formatKhr(field.warning.typed)} = {formatUsd(field.warning.asRielUsd)}
                             </button>
                         )}
-                        {field.warning?.kind === 'khr-looks-usd' && !toggleLocked && (
+                        {field.warning?.kind === 'khr-looks-usd' && allowKhr && !toggleLocked && (
                             <button type="button" onClick={() => reread('USD')}
                                 style={warnBtn}>
                                 {tx('money.itsDollars', "It's dollars")} → {formatUsd(field.warning.asUsd)}

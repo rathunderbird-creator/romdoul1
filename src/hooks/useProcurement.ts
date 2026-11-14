@@ -667,9 +667,13 @@ export const useProcurement = () => {
         // No account picked: pick it here in the payment's currency, so a USD
         // payment never comes out of a riel account (the database would pick
         // by name otherwise; same rules).
+        // Only the id is filled: the name stays as the caller gave it, because
+        // the database writes the Expense row's pay_by from it (falling back
+        // to the method), and an account name there would show one bank as
+        // two (PR #229).
         if (!paidFromAccountId) {
             const acc = await resolveCashBankAccount(paidFromAccountName || paymentMethod, { preferBank: false, currency: money?.currency });
-            if (acc) { paidFromAccountId = acc.id; paidFromAccountName = acc.account_name; }
+            if (acc) paidFromAccountId = acc.id;
         }
         try {
             const result = await callDbFunction<{ already_recorded?: boolean }>('record_supplier_payments', {
