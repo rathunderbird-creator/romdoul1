@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <!-- Dev-only: the riel (KHR) money forms with a mock store and a fixed
+       chart of accounts, for checking them without logging in.
+       ?chart=r1 | r1khr | r2 | r2khr, ?form=delivery | deposit | settle |
+       receipt | finalize | wholesale | supplier | settings | money.
+       Not part of the production build (Vite only builds index.html). -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>KHR currency preview</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/dev/khrCurrency-preview.tsx"></script>
+</body>
+
+</html>
