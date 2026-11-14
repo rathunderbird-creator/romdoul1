@@ -3,7 +3,7 @@
 // scroll container in place of virtualization (order volumes here are small
 // enough that a plain scrolling <table> is the right mitigation — see the
 // "known limitation" note returned with this component).
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, startTransition } from 'react';
 import { ArrowUp, ArrowDown, ChevronsUpDown, Eye, Copy, Check, Printer, Flag } from 'lucide-react';
 import { D2, tabular, fmtMoney, fmtInt } from '../../dashboard2/theme';
 import { useLocalStorageState } from '../../dashboard2/ui';
@@ -15,6 +15,7 @@ import { getPaymentLogo, getPaymentColor } from '../../../utils/payment';
 import { getShippingLogo } from '../../../utils/shipping';
 import { getShippingCoColor } from '../../../utils/orderUtils';
 import { orderStatusLabel } from '../../../utils/orderStatusRules';
+import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../../../utils/liveColumnResize';
 
 export interface OrdersTableProps {
     orders: Order[];
@@ -193,21 +194,23 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
     // the DOM so 25-250 rows don't re-render per pixel, and only commits to
     // state (which persists to localStorage) on mouseup.
     const [columnWidths, setColumnWidths] = useLocalStorageState<Record<string, number>>('om2_column_widths', {});
-    const resizeDragRef = useRef<{ startX: number; startWidth: number; colKey: string } | null>(null);
+    const resizeDragRef = useRef<{ startX: number; startWidth: number; colKey: string; live?: LiveResize } | null>(null);
 
     const handleResizeMove = useCallback((e: MouseEvent) => {
         const drag = resizeDragRef.current;
         if (!drag) return;
-        const width = Math.max(MIN_COL_WIDTH, drag.startWidth + (e.clientX - drag.startX));
-        document.documentElement.style.setProperty(`--om2-col-${drag.colKey}-width`, `${width}px`);
+        const width = Math.max(MIN_COL_WIDTH, drag.startWidth + liveDelta(drag.live, e.clientX - drag.startX));
+        // Straight onto the header cell, once per frame: utils/liveColumnResize.
+        showLiveWidth(drag.live, width);
     }, []);
 
     const handleResizeEnd = useCallback((e: MouseEvent) => {
         const drag = resizeDragRef.current;
         if (!drag) return;
-        const width = Math.max(MIN_COL_WIDTH, drag.startWidth + (e.clientX - drag.startX));
-        setColumnWidths(prev => ({ ...prev, [drag.colKey]: width }));
-        document.documentElement.style.removeProperty(`--om2-col-${drag.colKey}-width`);
+        const width = Math.round(Math.max(MIN_COL_WIDTH, drag.startWidth + liveDelta(drag.live, e.clientX - drag.startX)));
+        endLiveResize(drag.live, width);
+        // Saving re-renders every row: a background update, so release doesn't freeze the page.
+        startTransition(() => setColumnWidths(prev => ({ ...prev, [drag.colKey]: width })));
         resizeDragRef.current = null;
         document.removeEventListener('mousemove', handleResizeMove);
         document.removeEventListener('mouseup', handleResizeEnd);
@@ -219,7 +222,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
         e.preventDefault();
         e.stopPropagation();
         const startWidth = columnWidths[colKey] || DEFAULT_COL_WIDTH[colKey] || 150;
-        resizeDragRef.current = { startX: e.clientX, startWidth, colKey };
+        resizeDragRef.current = { startX: e.clientX, startWidth, colKey, live: beginLiveResize(e.currentTarget as Element) };
         document.addEventListener('mousemove', handleResizeMove);
         document.addEventListener('mouseup', handleResizeEnd);
         document.body.style.cursor = 'col-resize';

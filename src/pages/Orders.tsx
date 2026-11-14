@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, lazy } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, lazy, startTransition } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
@@ -40,6 +40,7 @@ import { useAccounting } from '../hooks/useAccounting';
 import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
 import * as XLSX from 'xlsx';
 import type { Sale, CartItem } from '../types';
+import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../utils/liveColumnResize';
 
 type SortConfig = {
     key: string;
@@ -1292,15 +1293,13 @@ const Orders: React.FC = () => {
     useEffect(() => {
         localStorage.setItem('pos_column_widths', JSON.stringify(columnWidths));
     }, [columnWidths]);
-    const [resizingCol, setResizingCol] = useState<string | null>(null);
-    const resizeRef = React.useRef<{ startX: number; startWidth: number; colId: string } | null>(null);
+    const resizeRef = React.useRef<{ startX: number; startWidth: number; colId: string; live?: LiveResize } | null>(null);
 
     const startResize = (e: React.MouseEvent, colId: string) => {
         e.preventDefault();
         e.stopPropagation();
         const currentWidth = columnWidths[colId] || (e.currentTarget.parentElement?.getBoundingClientRect().width ?? 150);
-        resizeRef.current = { startX: e.clientX, startWidth: currentWidth, colId };
-        setResizingCol(colId);
+        resizeRef.current = { startX: e.clientX, startWidth: currentWidth, colId, live: beginLiveResize(e.currentTarget as Element) };
         document.addEventListener('mousemove', handleGlobalMouseMove);
         document.addEventListener('mouseup', handleGlobalMouseUp);
         document.body.style.cursor = 'col-resize';
@@ -1308,27 +1307,25 @@ const Orders: React.FC = () => {
 
     const handleGlobalMouseMove = React.useCallback((e: MouseEvent) => {
         if (!resizeRef.current) return;
-        const { startX, startWidth, colId } = resizeRef.current;
-        const diff = e.clientX - startX;
-        const newWidth = Math.max(50, startWidth + diff);
-        // Fast DOM update avoiding React re-render of 100 rows
-        document.documentElement.style.setProperty(`--col-${colId}-width`, `${newWidth}px`);
+        const { startX, startWidth, live } = resizeRef.current;
+        const newWidth = Math.max(50, startWidth + liveDelta(live, e.clientX - startX));
+        // Straight onto the header cell, once per frame (no re-render, and no
+        // page-wide CSS variable restyling every row): utils/liveColumnResize.
+        showLiveWidth(live, newWidth);
     }, []);
 
     const handleGlobalMouseUp = React.useCallback((e: MouseEvent) => {
         if (!resizeRef.current) return;
-        const { startX, startWidth, colId } = resizeRef.current;
-        const diff = e.clientX - startX;
-        const newWidth = Math.max(50, startWidth + diff);
+        const { startX, startWidth, colId, live } = resizeRef.current;
+        const newWidth = Math.round(Math.max(50, startWidth + liveDelta(live, e.clientX - startX)));
+        endLiveResize(live, newWidth);
 
         // Save to state/localStorage only on mouse up
-        setColumnWidths(prev => ({ ...prev, [colId]: newWidth }));
+        // Saving re-renders every row: a background update, so release doesn't freeze the page.
+        startTransition(() => setColumnWidths(prev => ({ ...prev, [colId]: newWidth })));
 
-        // Clean up CSS var so React state takes over
-        document.documentElement.style.removeProperty(`--col-${colId}-width`);
 
         resizeRef.current = null;
-        setResizingCol(null);
         document.removeEventListener('mousemove', handleGlobalMouseMove);
         document.removeEventListener('mouseup', handleGlobalMouseUp);
         document.body.style.cursor = '';
@@ -1373,8 +1370,8 @@ const Orders: React.FC = () => {
 
         if (resizeRef.current && resizeRef.current.colId === colId) {
             document.documentElement.style.removeProperty(`--col-${colId}-width`);
+            endLiveResize(resizeRef.current.live, finalWidth);
             resizeRef.current = null;
-            setResizingCol(null);
             document.removeEventListener('mousemove', handleGlobalMouseMove);
             document.removeEventListener('mouseup', handleGlobalMouseUp);
             document.body.style.cursor = '';
@@ -3970,7 +3967,7 @@ const Orders: React.FC = () => {
                                                             width: `var(--col-${colId}-width, ${width ? `${width}px` : '150px'})`,
                                                             minWidth: `var(--col-${colId}-width, ${width ? `${width}px` : '150px'})`,
                                                             overflow: 'visible',
-                                                            borderRight: resizingCol === colId ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                            borderRight: '1px solid var(--color-border)', // highlighted while dragging by utils/liveColumnResize
                                                             transition: 'border-color 0.1s',
                                                             padding: 0,
                                                             position: 'sticky',

@@ -261,6 +261,7 @@ const startDrag = (e: PointerEvent, table: HTMLTableElement, cell: HTMLTableCell
     let idx = -1;
     let zoom = 1;
     let startW = 0;
+    let frame = 0;
     try { grip.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
 
     const onMove = (ev: PointerEvent) => {
@@ -283,14 +284,25 @@ const startDrag = (e: PointerEvent, table: HTMLTableElement, cell: HTMLTableCell
         }
         if (!st) return;
         st.widths[idx] = Math.max(Math.min(MIN_WIDTH, startW), Math.round(startW + dx / zoom));
-        apply(table, st);
+        // At most one layout per frame, however fast the pointer events come.
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+            frame = 0;
+            if (ended || !st) return;
+            apply(table, st);
+            // Our own style writes are not page changes: drop them so the
+            // observer doesn't rescan every table on every drag step.
+            observer?.takeRecords();
+        });
     };
     // Ends the drag however it ends: released, cancelled, capture lost (the
     // grip was re-rendered away), or the window lost focus mid-drag.
     const end = () => {
         if (ended) return;
         ended = true;
-        grip.removeEventListener('pointermove', onMove);
+        if (frame) cancelAnimationFrame(frame);
+        frame = 0;
+        if (moved && st) apply(table, st);
         window.removeEventListener('pointermove', onMove);
         grip.removeEventListener('pointerup', end);
         grip.removeEventListener('pointercancel', end);
@@ -307,7 +319,8 @@ const startDrag = (e: PointerEvent, table: HTMLTableElement, cell: HTMLTableCell
             save(tableKey(table, st.cells), widths);
         }
     };
-    grip.addEventListener('pointermove', onMove);
+    // One move listener: captured pointer events are targeted at the grip and
+    // bubble to window (a listener on both ran every step twice).
     window.addEventListener('pointermove', onMove);
     grip.addEventListener('pointerup', end);
     grip.addEventListener('pointercancel', end);
@@ -390,6 +403,7 @@ const schedule = () => {
 };
 
 let installed = false;
+let observer: MutationObserver | null = null;
 export function installResizableTables() {
     if (installed || typeof window === 'undefined') return;
     installed = true;
@@ -398,7 +412,7 @@ export function installResizableTables() {
     // schedule another scan forever. Attribute changes that matter (a header
     // gaining colspan, data-resize toggled, a hidden tab shown via class or
     // style) are watched too, but only on tables and their header cells.
-    const observer = new MutationObserver(records => {
+    observer = new MutationObserver(records => {
         for (const r of records) {
             if (r.type === 'childList') {
                 const relevant = [...Array.from(r.addedNodes), ...Array.from(r.removedNodes)]
@@ -416,7 +430,7 @@ export function installResizableTables() {
         }
     });
     const start = () => {
-        observer.observe(document.body, {
+        observer?.observe(document.body, {
             childList: true, subtree: true,
             attributes: true, attributeFilter: ['colspan', 'rowspan', 'data-resize', 'class', 'style', 'hidden', 'open'],
         });
