@@ -3913,8 +3913,15 @@ const Orders: React.FC = () => {
                             <>
                                 <table
                                     className="spreadsheet-table"
+                                    data-resize="own"
                                     style={{
-                                        minWidth: '100%',
+                                        // 100% wide, never narrower than the sized columns (the
+                                        // calc follows the live --col-*-width vars while dragging),
+                                        // with an unsized filler column last that takes the spare
+                                        // width. Without it a wide screen spread the spare width
+                                        // over every column and dragging one moved the others.
+                                        width: '100%',
+                                        minWidth: `calc(40px${allColumns.filter(col => visibleColumns.includes(col.id)).map(col => ` + var(--col-${col.id}-width, ${columnWidths[col.id] ? `${columnWidths[col.id]}px` : '150px'})`).join('')})`,
                                         whiteSpace: 'nowrap',
                                         tableLayout: 'fixed',
                                         borderCollapse: 'separate',
@@ -4029,7 +4036,8 @@ const Orders: React.FC = () => {
                                                     </th>
                                                 );
                                             })}
-                                            <th style={{ width: '100%', minWidth: 'auto', background: 'var(--table-head)', borderBottom: '1px solid var(--color-border)' }}></th>
+                                            {/* Filler: unsized, takes whatever width is left (see the table style). */}
+                                            <th aria-hidden style={{ padding: 0, background: 'var(--table-head)', borderBottom: '1px solid var(--color-border)' }}></th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -4470,7 +4478,7 @@ const Orders: React.FC = () => {
                                                             default: return <td key={colId} style={cellStyle}>-</td>;
                                                         }
                                                     })}
-                                                    <td style={{ width: '100%', minWidth: 'auto' }}></td>
+                                                    <td aria-hidden style={{ padding: 0 }}></td>
                                                 </tr>
                                             );
                                         })}
@@ -4519,7 +4527,7 @@ const Orders: React.FC = () => {
 
                                                 return <td key={colId} style={commonStyle}></td>;
                                             })}
-                                            <td style={{ width: '100%', minWidth: 'auto', background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}></td>
+                                            <td aria-hidden style={{ padding: 0, background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}></td>
                                         </tr>
                                     </tfoot>
                                 </table>

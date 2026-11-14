@@ -290,6 +290,11 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
     const showCustomer = visibleColumns.includes('customer');
     const middleColumns = MIDDLE_COLUMNS.filter(key => visibleColumns.includes(key));
     const showActions = visibleColumns.includes('actions');
+    // The table is 100% wide but never narrower than its sized columns (see
+    // .om2-table): checkbox + Customer + middle columns + Actions.
+    const colPx = (key: string) => columnWidths[key] || DEFAULT_COL_WIDTH[key] || 150;
+    const columnsWidth = 40 + (showCustomer ? colPx('customer') : 0)
+        + middleColumns.reduce((sum, key) => sum + colPx(key), 0) + (showActions ? 90 : 0);
 
     const from = totalCount === 0 ? 0 : (filters.page - 1) * filters.pageSize + 1;
     const to = Math.min(filters.page * filters.pageSize, totalCount);
@@ -309,7 +314,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                 onScroll={handleScroll}
                 style={{ background: D2.card, border: `1px solid ${D2.border}`, borderRadius: D2.radius, maxHeight: 'calc(var(--vh-full) - 260px)' }}
             >
-                <table className="om2-table" style={{ tableLayout: 'fixed' }}>
+                <table className="om2-table" data-resize="own" style={{ tableLayout: 'fixed', minWidth: columnsWidth }}>
                     <thead>
                         <tr>
                             <th scope="col" className="om2-col-frozen-1" style={{ width: 40, minWidth: 40, maxWidth: 40 }}>
@@ -348,6 +353,9 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                             {showActions && (
                                 <th scope="col" style={{ width: 90, minWidth: 90, maxWidth: 90, textAlign: 'right' }}>Actions</th>
                             )}
+                            {/* Filler: takes the spare width on a wide screen, so the
+                                sized columns keep exactly their widths. */}
+                            <th aria-hidden style={{ padding: 0 }} />
                         </tr>
                     </thead>
                     <tbody>
@@ -508,6 +516,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({ orders, totalCount, filters, 
                                             </div>
                                         </td>
                                     )}
+                                    <td aria-hidden style={{ padding: 0 }} />
                                 </tr>
                             );
                         })}

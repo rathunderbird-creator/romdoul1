@@ -261,6 +261,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
                 {cell('contribution', <span style={{ fontWeight: 700, fontSize: 13, color: signColor(row.contribution) }}>{fmtMoney(row.contribution)}</span>, { background: row.contribution !== 0 ? `rgba(${row.contribution > 0 ? '139,92,246' : '239,68,68'},0.04)` : undefined })}
                 {cell('margin', <span style={{ fontWeight: 600, color: row.margin === null ? 'var(--color-text-secondary)' : signColor(row.margin) }}>{fmtPct(row.margin)}</span>)}
                 {cell('projected', <span title={proj.title} style={{ fontWeight: 700, color: proj.muted ? 'var(--color-text-secondary)' : signColor(row.projection.contribution || 0) }}>{proj.text}</span>)}
+                <td aria-hidden style={{ padding: 0 }} />
             </tr>
         );
     };
@@ -276,7 +277,11 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
         // Sized to its rows (a handful of pages), scrolling only once it would
         // overflow the page — unlike the daily ledger, which fills the height.
         <div className="glass-panel" style={{ overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 16, padding: 0, flex: '0 1 auto', minHeight: 0 }}>
-            <table className="spreadsheet-table" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: totalWidth, minWidth: '100%' }}>
+            {/* 100% wide with an unsized filler column last: the spare width on a
+                wide screen goes to the filler, so the sized columns keep exactly their
+                widths (spread over every column, dragging one moved the others).
+                Scrolls once the sized columns pass the panel. */}
+            <table className="spreadsheet-table" data-resize="own" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: '100%', minWidth: totalWidth }}>
                 <thead>
                     <tr style={{ background: 'var(--color-surface)' }}>
                         {header('page', t('pagePrediction.columns.page'))}
@@ -292,6 +297,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
                         {header('contribution', t('pagePrediction.columns.contribution'))}
                         {header('margin', t('pagePrediction.columns.margin'))}
                         {header('projected', projectedHeader)}
+                        <th aria-hidden style={{ ...thStyle, padding: 0, background: 'var(--color-surface)' }} />
                     </tr>
                 </thead>
                 <tbody>{displayRows.map(renderRow)}</tbody>
@@ -310,6 +316,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ result, t, isMobile, onOp
                         {footCell('contribution', fmtMoney(totals.contribution), signColor(totals.contribution))}
                         {footCell('margin', fmtPct(totals.margin), totals.margin === null ? undefined : signColor(totals.margin))}
                         {footCell('projected', <span title={totalsProj.title}>{totalsProj.text}</span>, totalsProj.muted ? 'var(--color-text-secondary)' : signColor(totals.projection.contribution || 0))}
+                        <td aria-hidden style={{ padding: 0, background: 'var(--color-surface)' }} />
                     </tr>
                 </tfoot>
             </table>
