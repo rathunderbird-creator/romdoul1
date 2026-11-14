@@ -53,6 +53,11 @@ const CFG = {
     },
 };
 
+// Description used when the field is left empty. Expense: "Expense - Advertising
+// Expense" (owner's format); Revenue keeps "Revenue: <account>".
+const defaultDescription = (mode: 'revenue' | 'expense', accountName: string): string =>
+    mode === 'expense' ? `Expense - ${accountName}` : `Revenue: ${accountName}`;
+
 interface EntryRow {
     entryId: string;
     date: string;
@@ -438,7 +443,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             const accName = accountById.get(accountId)?.account_name || cfg.title;
             const headerPayload: Record<string, unknown> = {
                 date,
-                description: description.trim() || `${cfg.title}: ${accName}`,
+                description: description.trim() || defaultDescription(mode, accName),
                 status: entryStatus,
             };
             let { error } = await supabase.from('journal_entries').update(headerPayload).eq('id', editingEntry.entryId);
@@ -508,7 +513,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             // null (missing migration) just omits it, like the sibling pages.
             const entryNumber = await nextJournalEntryNumber(cfg.refPrefix, date);
             await saveJournalEntry(
-                { date, description: description.trim() || `${cfg.title}: ${accName}`, reference_id: reference.trim() || `${cfg.refPrefix}-${Date.now()}`, status: entryStatus, ...(entryNumber ? { entry_number: entryNumber } : {}) },
+                { date, description: description.trim() || defaultDescription(mode, accName), reference_id: reference.trim() || `${cfg.refPrefix}-${Date.now()}`, status: entryStatus, ...(entryNumber ? { entry_number: entryNumber } : {}) },
                 entryLines
             );
             setAmount('');
@@ -1113,7 +1118,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                         <div style={{ gridColumn: '1 / -1' }}>
                             <label style={labelStyle}>Description (optional)</label>
                             <input
-                                type="text" className="d2-khmer" placeholder={`e.g. ${mode === 'revenue' ? 'Speaker repair service' : 'Office rent for October'}`}
+                                type="text" className="d2-khmer" placeholder={accountById.get(accountId)?.account_name
+                                    ? `Default: ${defaultDescription(mode, accountById.get(accountId)?.account_name || '')}`
+                                    : `e.g. ${mode === 'revenue' ? 'Speaker repair service' : 'Office rent for October'}`}
                                 value={description} onChange={e => setDescription(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
                                 style={inputStyle}
