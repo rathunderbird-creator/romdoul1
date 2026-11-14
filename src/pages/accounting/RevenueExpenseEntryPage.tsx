@@ -369,11 +369,14 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     const [reference, setReference] = useState(newReference);
     useEffect(() => { setReference(newReference()); }, [newReference]);
 
-    // Picks "Bank Account (ABA)" specifically when it exists, else the same
-    // cash/bank-first pick this page already used as a fallback.
+    // Picks the dollar ABA bank account ("Bank Account ABA (USD)", formerly
+    // "Bank Account (ABA)") when it exists — by "aba" in the name, never the
+    // riel one — else the first dollar account, else the same cash/bank-first
+    // pick this page already used as a fallback.
     const defaultCounterId = () => {
-        const aba = counterAccounts.find(a => a.account_name.trim().toLowerCase() === 'bank account (aba)');
-        return aba?.id || counterAccounts[0]?.id || '';
+        const usd = counterAccounts.filter(a => !isKhrAccountName(a.account_name));
+        const aba = usd.find(a => /\baba\b/i.test(a.account_name));
+        return aba?.id || usd[0]?.id || counterAccounts[0]?.id || '';
     };
 
     // Default the selects once accounts arrive (counterId only — accountId's
@@ -413,7 +416,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     // useState initial value only applies once, to whichever page loaded
     // first, and Cash on Hand (a valid counter account in BOTH modes) would
     // otherwise survive a switch into Expense looking "still valid" instead
-    // of re-defaulting to Bank Account (ABA).
+    // of re-defaulting to the ABA (USD) bank account.
     useEffect(() => {
         setEditingEntry(null);
         setEditSimple(true);

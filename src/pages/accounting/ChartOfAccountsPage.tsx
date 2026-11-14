@@ -12,7 +12,7 @@ import { fetchPostedLedgerLines } from '../../utils/fetchPostedLedgerLines';
 const SAMPLE_ACCOUNTS = [
     { account_code: '100', account_name: 'Current Assets', account_type: 'Asset', is_active: true },
     { account_code: '1000', account_name: 'Cash on Hand', account_type: 'Asset', is_active: true },
-    { account_code: '1010', account_name: 'Bank Account (ABA)', account_type: 'Asset', is_active: true },
+    { account_code: '1010', account_name: 'Bank Account ABA (USD)', account_type: 'Asset', is_active: true },
     { account_code: '1020', account_name: 'Bank Account (Acleda)', account_type: 'Asset', is_active: true },
     { account_code: '1200', account_name: 'Accounts Receivable', account_type: 'Asset', is_active: true },
     { account_code: '1300', account_name: 'Inventory', account_type: 'Asset', is_active: true },

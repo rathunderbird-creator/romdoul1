@@ -1,6 +1,6 @@
 // Dev-only preview: open http://localhost:5173/dev/khrCurrency.html while
 // `npm run dev` is running. ?chart= picks the chart of accounts the forms see
-// (r1: 1001 Petty Cash + 1010 Bank Account (ABA); r2: 1000 Cash only; the
+// (r1: 1001 Petty Cash + 1010 Bank Account ABA (USD); r2: 1000 Cash only; the
 // *khr variants add 1002 Cash on Hand (KHR) + 1011 Bank Account ABA (KHR)),
 // ?form= the form (delivery, deposit, settle, receipt, finalize, wholesale,
 // supplier, settings, money, shipping = Select Shipping Company popup;
@@ -37,7 +37,7 @@ const form = params.get('form') || 'delivery';
 
 const acct = (id: string, code: string, name: string, type = 'Asset') =>
     ({ id, account_code: code, account_name: name, account_type: type, is_active: true, description: null, sub_type: null, created_at: '' });
-const R1 = [acct('00000000-0000-0000-0000-000000001001', '1001', 'Petty Cash'), acct('00000000-0000-0000-0000-000000001010', '1010', 'Bank Account (ABA)')];
+const R1 = [acct('00000000-0000-0000-0000-000000001001', '1001', 'Petty Cash'), acct('00000000-0000-0000-0000-000000001010', '1010', 'Bank Account ABA (USD)')];
 const R2 = [acct('00000000-0000-0000-0000-000000001000', '1000', 'Cash')];
 const KHR = [acct('00000000-0000-0000-0000-000000001002', '1002', 'Cash on Hand (KHR)'), acct('00000000-0000-0000-0000-000000001011', '1011', 'Bank Account ABA (KHR)')];
 const OTHER = [acct('00000000-0000-0000-0000-000000001200', '1200', 'Accounts Receivable'), acct('00000000-0000-0000-0000-000000004000', '4000', 'Sales Revenue', 'Revenue')];
