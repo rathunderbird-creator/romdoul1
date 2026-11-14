@@ -21,6 +21,11 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
     // Company popup instead, the natural point in the workflow to record it.
     const depositNum = sale.depositAmount || 0;
     const remainingAmount = Math.max(0, sale.total - depositNum);
+    // Items minus TOTAL (a discount, or an extra charge when negative) — e.g.
+    // a riel remaining typed in the Select Shipping Company popup — so the
+    // printed lines add up to the TOTAL.
+    const itemsSum = (sale.items || []).reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0);
+    const adjustment = Math.round((itemsSum - sale.total) * 100) / 100;
     const khrBase = depositNum > 0 ? remainingAmount : sale.total;
     const displayKhr = (sale.customKhrAmount !== undefined && sale.customKhrAmount !== null
         ? Math.round(sale.customKhrAmount)
@@ -113,6 +118,12 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
             </table>
 
             <div style={{ borderTop: '2px solid #000', paddingTop: '12px', marginBottom: '24px' }}>
+                {Math.abs(adjustment) > 0.005 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
+                        <span>{adjustment > 0 ? 'Discount' : 'Extra charge'}</span>
+                        <span>{adjustment > 0 ? '−' : '+'}${Math.abs(adjustment).toFixed(2)}</span>
+                    </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'normal', fontSize: '16px' }}>
                     <span>TOTAL</span>
                     <span>${sale.total.toFixed(2)}</span>

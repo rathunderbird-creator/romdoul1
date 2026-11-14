@@ -31,7 +31,8 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
 import { mapSaleEntity } from '../utils/mapper';
-import { accountCurrency, khrMeta, shopRate, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { accountCurrency, khrMeta, khrToUsd, shopRate, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { roundCents } from '../utils/money';
 import MoneyInput from '../components/MoneyInput';
 import CashBankOptions from '../components/CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
@@ -123,6 +124,12 @@ const ShippingModalComponent: React.FC<{
     // '' = auto-compute from the total/deposit — stays live until the user
     // types a KHR figure of their own, same pattern the Receipt used to have.
     const [customKhr, setCustomKhr] = useState<string>('');
+    // The riel figure was typed in this opening. On an unpaid order it then
+    // sets what is owed: Remaining USD = riel ÷ shop rate, and the order total
+    // becomes deposit + that, the difference from the items going into the
+    // order's discount (negative = charged extra). An override saved earlier
+    // and left alone changes nothing.
+    const [khrEdited, setKhrEdited] = useState(false);
     // Save is in flight (see the Save handler).
     const [saving, setSaving] = useState(false);
     const savingRef = useRef(false);
@@ -159,27 +166,43 @@ const ShippingModalComponent: React.FC<{
             // the popup shows (and re-saves) the same figure the receipt is
             // actually printing — '' only when there truly is no override.
             setCustomKhr(order.customKhrAmount !== undefined && order.customKhrAmount !== null ? String(order.customKhrAmount) : '');
+            setKhrEdited(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, order, shippingCompanies, paymentAccounts]);
 
     if (!order) return null;
 
-    const computedTotal = itemsTotal;
+    const rate = shopRate(khrExchangeRate);
+    const isPaidOrder = ['Paid', 'Settled', 'Paid/Settled'].includes(order.paymentStatus || '');
     const depositNum = depositField.usd;
     const depositChanged = Math.abs(depositNum - (order.depositAmount || 0)) > 0.0001;
     // A changed deposit on an unpaid order is booked (Deposit flow below), so
     // it needs the account it went into.
-    const depositBooks = depositChanged && depositNum > 0 && !['Paid', 'Settled', 'Paid/Settled'].includes(order.paymentStatus || '');
-    const remainingAmount = Math.max(0, computedTotal - depositNum);
+    const depositBooks = depositChanged && depositNum > 0 && !isPaidOrder;
+    const savedDiscount = Number(order.discount) || 0;
+    const typedKhr = customKhr !== '' ? Number(customKhr) : NaN;
+    // The riel typed here sets the money (unpaid orders only: a paid order's
+    // money is already booked, so there it stays a receipt figure).
+    const khrSetsMoney = khrEdited && !isPaidOrder && Number.isFinite(typedKhr) && typedKhr >= 0;
+    const remainingAmount = khrSetsMoney
+        ? khrToUsd(typedKhr, rate)
+        : Math.max(0, roundCents(itemsTotal - savedDiscount) - depositNum);
+    const computedTotal = khrSetsMoney ? roundCents(depositNum + remainingAmount) : roundCents(itemsTotal - savedDiscount);
+    const discount = roundCents(itemsTotal - computedTotal);
+    const totalChanged = Math.abs(computedTotal - (Number(order.total) || 0)) > 0.005;
     const khrBase = depositNum > 0 ? remainingAmount : computedTotal;
-    const displayKhr = customKhr !== '' ? customKhr : Math.round(khrBase * shopRate(khrExchangeRate)).toString();
+    const displayKhr = customKhr !== '' ? customKhr : Math.round(khrBase * rate).toString();
 
-    const updateItem = (idx: number, patch: Partial<CartItem>) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
-    const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
+    // Editing the items drops a riel figure typed here, so the total follows
+    // the items again (and the riel is recomputed from it).
+    const itemsEdited = () => { if (khrEdited) { setKhrEdited(false); setCustomKhr(''); } };
+    const updateItem = (idx: number, patch: Partial<CartItem>) => { itemsEdited(); setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it)); };
+    const removeItem = (idx: number) => { itemsEdited(); setItems(prev => prev.filter((_, i) => i !== idx)); };
     const addItem = () => {
         const p = activeProducts[0];
         if (!p) { showToast('No active products to add', 'error'); return; }
+        itemsEdited();
         setItems(prev => [...prev, { ...p, quantity: 1 }]);
     };
 
@@ -346,7 +369,19 @@ const ShippingModalComponent: React.FC<{
                     >
                         + Add Item
                     </button>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', borderTop: '2px solid var(--color-text-main)', paddingTop: '8px' }}>
+                    {Math.abs(discount) > 0.005 && (
+                        <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', borderTop: '2px solid var(--color-text-main)', paddingTop: '8px' }}>
+                                <span>Subtotal</span>
+                                <span>${itemsTotal.toFixed(2)}</span>
+                            </div>
+                            <div data-shipping-discount style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px', marginBottom: '6px', color: discount > 0 ? '#059669' : '#B45309' }}>
+                                <span>{discount > 0 ? 'Discount' : 'Extra charge'}</span>
+                                <span>{discount > 0 ? '−' : '+'}${Math.abs(discount).toFixed(2)}</span>
+                            </div>
+                        </>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', borderTop: Math.abs(discount) > 0.005 ? '1px dashed var(--color-border)' : '2px solid var(--color-text-main)', paddingTop: '8px' }}>
                         <span>TOTAL</span>
                         <span>${computedTotal.toFixed(2)}</span>
                     </div>
@@ -376,8 +411,8 @@ const ShippingModalComponent: React.FC<{
                         </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginTop: '6px', borderTop: '1px dashed var(--color-border)', paddingTop: '6px' }}>
-                        <span>REMAINING AMOUNT</span>
-                        <span>${remainingAmount.toFixed(2)}</span>
+                        <span>REMAINING USD($)</span>
+                        <span data-remaining-usd>${remainingAmount.toFixed(2)}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: '13px', marginTop: '6px' }}>
                         <span>{depositNum > 0 ? 'REMAINING KH(៛)' : 'TOTAL KH(៛)'}</span>
@@ -385,7 +420,7 @@ const ShippingModalComponent: React.FC<{
                             <input
                                 type="number"
                                 value={displayKhr}
-                                onChange={(e) => setCustomKhr(e.target.value)}
+                                onChange={(e) => { setCustomKhr(e.target.value); setKhrEdited(true); }}
                                 style={{ width: '90px', textAlign: 'right', border: '1px dashed var(--color-border)', borderRadius: '4px', padding: '2px 4px', fontSize: '13px', fontWeight: 700, outline: 'none' }}
                                 onClick={(e) => (e.target as HTMLInputElement).select()}
                             />
@@ -424,6 +459,12 @@ const ShippingModalComponent: React.FC<{
                             }
                             // Only a changed deposit is checked (an old one was already accepted).
                             if (depositChanged && !depositField.confirmIfSuspicious()) return;
+                            // A riel figure far from the items (a typo like 4100 for
+                            // 41000) would rewrite the total: ask first.
+                            if (khrSetsMoney && totalChanged && Math.abs(discount) > Math.max(0.5, itemsTotal * 0.1)
+                                && !window.confirm(`${depositNum > 0 ? 'Remaining' : 'Total'} ៛${Math.round(typedKhr).toLocaleString()} @ ${rate.toLocaleString()} = $${remainingAmount.toFixed(2)}.\n`
+                                    + `The order total changes from $${(Number(order.total) || 0).toFixed(2)} to $${computedTotal.toFixed(2)} `
+                                    + `(${discount > 0 ? 'discount' : 'extra charge'} $${Math.abs(discount).toFixed(2)} on items of $${itemsTotal.toFixed(2)}).\n\nOK saves it. Cancel to fix it.`)) return;
                             savingRef.current = true;
                             setSaving(true);
                             try {
@@ -433,9 +474,15 @@ const ShippingModalComponent: React.FC<{
                                 if (shippingAddress !== (order.customer?.address || '')) {
                                     updates.customer = { ...order.customer, address: shippingAddress } as any;
                                 }
-                                if (JSON.stringify(items) !== JSON.stringify(order.items || [])) {
-                                    updates.items = items;
+                                const itemsChanged = JSON.stringify(items) !== JSON.stringify(order.items || []);
+                                if (itemsChanged) updates.items = items;
+                                // The total is rewritten only when this opening changed it
+                                // (items edited, or the riel typed on an unpaid order), so
+                                // an older order whose total never matched its items is
+                                // left as it was.
+                                if (itemsChanged || (khrSetsMoney && totalChanged)) {
                                     updates.total = computedTotal;
+                                    if (Math.abs(discount - savedDiscount) > 0.005) updates.discount = discount;
                                 }
                                 let money: MoneyMeta | undefined;
                                 if (depositChanged) {
