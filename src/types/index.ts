@@ -43,6 +43,22 @@ export interface Customer {
     page?: string;
 }
 
+// A deposit or payment a Salesman entered, not yet confirmed as received
+// (persisted: sales.payment_claim, migrations/add_payment_claim.sql). The
+// order stays Unpaid with nothing booked until Admin, Customer Care or an
+// Accountant confirms it on the Orders page.
+export interface PaymentClaim {
+    status: 'Deposit' | 'Paid';
+    amount: number;          // USD
+    method?: string;
+    date?: string;           // YYYY-MM-DD
+    by?: string;
+    at: string;              // ISO time
+    currency?: 'USD' | 'KHR';
+    original_amount?: number;
+    exchange_rate?: number;
+}
+
 export interface Sale {
     id: string;
     items: CartItem[];
@@ -61,6 +77,7 @@ export interface Sale {
     depositDate?: string;
     depositMethod?: string;
     depositAccountId?: string; // chart-of-accounts cash/bank account the settlement is deposited into (persisted: sales.deposit_account_id)
+    paymentClaim?: PaymentClaim | null;
     customKhrAmount?: number; // manual override for the receipt's TOTAL/REMAINING KH(៛); undefined = computed live from the exchange rate (persisted: sales.custom_khr_amount)
     depositAccountName?: string; // transient, UI-only: resolved account name passed through updateOrder() for the income transaction's "Pay by" — never persisted to the sales table itself
     receiptReference?: string; // transient, UI-only: cheque/transfer reference passed through updateOrder() for the income transaction — never persisted to the sales table
@@ -186,6 +203,9 @@ export interface StoreContextType {
     clearCart: () => void;
     processSale: (paymentMethod: Sale['paymentMethod'], discount?: number, customer?: Sale['customer']) => Promise<Sale | undefined>;
     addOnlineOrder: (order: Omit<Sale, 'id'>, opts?: { money?: MoneyRecord }) => Promise<Sale>;
+    // Whether this store can hold a Salesman's unconfirmed payment
+    // (migrations/add_payment_claim.sql has been run).
+    paymentClaimsReady: () => Promise<boolean>;
     // Resolves false when the change was refused or failed (the user has been told; nothing of it was written).
     updateOrderStatus: (id: string, status: NonNullable<Sale['shipping']>['status'], trackingNumber?: string, shippingCompany?: string, opts?: { skipDispatchGuard?: boolean; shownStatus?: string; expectedStatus?: string; onRefused?: (message: string) => void; customer?: { name?: string; phone?: string } }) => Promise<boolean>;
     // Returns the created product (null on failure) so callers can select it.

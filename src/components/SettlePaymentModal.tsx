@@ -36,6 +36,11 @@ interface SettlePaymentModalProps {
     khrExpected?: number;
     initialMethod?: string;
     initialDate?: string;
+    // Start from initialMethod rather than Bank (a Salesman's payment being
+    // confirmed: the method they entered).
+    preferInitialMethod?: boolean;
+    // A riel payment being confirmed: start on a riel account, at this rate.
+    preferRiel?: { rate?: number };
     title?: string;
     description?: string;
 }
@@ -46,6 +51,8 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     onConfirm,
     initialMethod,
     initialDate,
+    preferInitialMethod = false,
+    preferRiel,
     amountDue,
     khrExpected,
     title = "Settle Payment",
@@ -88,7 +95,8 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
             // Bank is the default Pay By — settlements normally arrive by bank
             // transfer from the shipping company (still changeable in the dropdown).
             const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
-            setSelectedMethod(bankMethod || initialMethod || paymentMethods[0] || 'Cash');
+            const fromInitial = preferInitialMethod && initialMethod && paymentMethods.includes(initialMethod) ? initialMethod : '';
+            setSelectedMethod(fromInitial || bankMethod || initialMethod || paymentMethods[0] || 'Cash');
             setSettleDate(initialDate ? (/^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : dayKeyFromDate(new Date(initialDate))) : localYMD());
             setDepositAccountId('');
         }
@@ -97,7 +105,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
         // method the user already changed. The account default has its own
         // effect below for exactly that reason.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, initialMethod, initialDate, paymentMethods]);
+    }, [isOpen, initialMethod, initialDate, paymentMethods, preferInitialMethod]);
 
     // Seed the account default once the accounts arrive — but never overwrite
     // a pick the user already made.
@@ -106,17 +114,18 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
         setDepositAccountId(prev => {
             if (prev && paymentAccounts.some(a => a.id === prev)) return prev;
             // Bank is the default Deposited into account too, same idea as Pay
-            // By; never a riel account by default.
-            return defaultCashBankAccountId(paymentAccounts);
+            // By; never a riel account by default, except when confirming a
+            // payment taken in riel.
+            return (preferRiel ? defaultCashBankAccountId(paymentAccounts, { currency: 'KHR' }) : '') || defaultCashBankAccountId(paymentAccounts);
         });
-    }, [isOpen, paymentAccounts]);
+    }, [isOpen, paymentAccounts, preferRiel]);
 
     // Riel prefill on open: what the shop expected to collect, else the
     // amount due at the shop rate.
     useEffect(() => {
         if (!isOpen) return;
         const expected = khrExpected && khrExpected > 0 ? Math.round(khrExpected) : (amountDue ? usdToKhr(amountDue, rielField.shopRate) : '');
-        rielField.reset({ amount: expected, currency: 'KHR' });
+        rielField.reset({ amount: expected, currency: 'KHR', ...(preferRiel?.rate ? { rate: preferRiel.rate } : {}) });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, khrExpected, amountDue]);
 

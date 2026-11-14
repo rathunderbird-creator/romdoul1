@@ -21,6 +21,12 @@ interface MobileOrderCardProps {
     onUpdatePaymentStatus: (id: string, status: any) => void;
     canEdit: boolean;
     isAdmin?: boolean;
+    // A Salesman's unconfirmed deposit/payment (gray) and who may confirm it.
+    canConfirmPayments?: boolean;
+    isSalesman?: boolean;
+    claimTitle?: string;
+    claimDisabledOptions?: string[];
+    salesmanDisabledOptions?: string[];
     canRestock?: boolean;
     /** Carrier tracking page for this order's tracking ID (opens in a new tab). */
     trackingUrl?: string | null;
@@ -42,6 +48,11 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
     onUpdatePaymentStatus,
     canEdit,
     isAdmin = false,
+    canConfirmPayments = false,
+    isSalesman = false,
+    claimTitle,
+    claimDisabledOptions = [],
+    salesmanDisabledOptions,
     canRestock = true,
     trackingUrl = null,
     carrierStatus = null
@@ -203,9 +214,16 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                         <span className={`moc-tag shipping-${shippingStatus}`}>
                             {orderStatusLabel(order.shipping?.status || 'Drafted')}
                         </span>
-                        <span className={`moc-tag ${getPayBadgeClass()}`}>
-                            {payStatus === 'Get File' ? 'File' : payStatus}
-                        </span>
+                        {claimTitle && order.paymentClaim ? (
+                            // A Salesman's deposit/payment, not confirmed yet: gray.
+                            <span className="moc-tag" title={claimTitle} style={{ background: '#F3F4F6', color: '#6B7280', border: '1px solid #D1D5DB' }}>
+                                {order.paymentClaim.status}?
+                            </span>
+                        ) : (
+                            <span className={`moc-tag ${getPayBadgeClass()}`}>
+                                {payStatus === 'Get File' ? 'File' : payStatus}
+                            </span>
+                        )}
                         {order.salesman && <span className="moc-tag tag-salesman">{order.salesman}</span>}
                         {order.customer?.page && <span className="moc-tag tag-page">{order.customer.page}</span>}
                         <span className="moc-total-amount" style={{ color: isCancelled ? '#9CA3AF' : (isPaidOrSettle ? '#059669' : '#DC2626') }}>
@@ -308,13 +326,16 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                 </div>
                                 <div className="moc-status-control">
                                     <PaymentStatusBadge
-                                        status={order.paymentStatus || 'Unpaid'}
+                                        status={claimTitle && order.paymentClaim ? order.paymentClaim.status : (order.paymentStatus || 'Unpaid')}
+                                        unconfirmed={claimTitle}
                                         onChange={(newStatus) => onUpdatePaymentStatus(order.id, newStatus)}
                                         // Admins bypass the lock so they can correct mistakes
                                         // (e.g. un-mark a wrong Paid); the store cleans up the
                                         // logged income when leaving Paid.
-                                        readOnly={!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid'))}
-                                        disabledOptions={isAdmin ? [] : ['Cancel']}
+                                        readOnly={claimTitle
+                                            ? !canConfirmPayments
+                                            : (!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid')))}
+                                        disabledOptions={claimTitle ? claimDisabledOptions : [...(isAdmin ? [] : ['Cancel']), ...(salesmanDisabledOptions ?? (isSalesman ? ['Deposit', 'Paid', 'PdFee'] : []))]}
                                     />
                                 </div>
                             </div>

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { X, Wallet, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
-import type { Sale } from '../types';
+import type { PaymentClaim, Sale } from '../types';
 import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
@@ -18,12 +18,15 @@ interface DepositModalProps {
     // Payment Tracking opts into the "Deposited into" account field (Orders'
     // Record Deposit popup stays exactly as-is without it).
     showDepositAccount?: boolean;
+    // A Salesman's unconfirmed deposit on this order: the form starts from
+    // what they entered (amount, riel, method, date) for the confirmer to check.
+    claim?: PaymentClaim;
 }
 
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
 // Records the upfront deposit for a retail order (rest is collected via COD).
-const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, showDepositAccount = false }) => {
+const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, showDepositAccount = false, claim }) => {
     const { paymentMethods, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
     // A deposit is less than the order total, so above it is a typo (riel).
@@ -50,16 +53,22 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
         if (order) {
             setSubmitted(false);
             const bank = paymentMethods.find(m => m.toLowerCase().includes('bank'));
-            setMethod(order.depositMethod || bank || paymentMethods[0] || 'Bank');
-            setDate(order.depositDate ? order.depositDate.slice(0, 10) : today());
+            const fromClaim = claim && !(order.depositAmount && order.depositAmount > 0) ? claim : undefined;
+            setMethod(order.depositMethod || (fromClaim?.method && paymentMethods.includes(fromClaim.method) ? fromClaim.method : '') || bank || paymentMethods[0] || 'Bank');
+            setDate(order.depositDate ? order.depositDate.slice(0, 10) : (fromClaim?.date || today()));
             // Bank is the default Deposited into account too, same idea as Pay
-            // By above; never a riel account by default.
-            const accountId = defaultCashBankAccountId(paymentAccounts, { preferredId: order.depositAccountId });
+            // By above; never a riel account by default (a deposit the Salesman
+            // took in riel starts on a riel account, when there is one).
+            const claimRiel = fromClaim?.currency === 'KHR' && (fromClaim.original_amount || 0) > 0;
+            const accountId = (claimRiel && showDepositAccount ? defaultCashBankAccountId(paymentAccounts, { currency: 'KHR' }) : '')
+                || defaultCashBankAccountId(paymentAccounts, { preferredId: order.depositAccountId });
             setDepositAccountId(accountId);
-            const prev = order.depositAmount && order.depositAmount > 0 ? order.depositAmount : '';
+            const prev = order.depositAmount && order.depositAmount > 0 ? order.depositAmount : (fromClaim ? fromClaim.amount : '');
             const inRiel = showDepositAccount && accountCurrency(paymentAccounts.find(a => a.id === accountId)) === 'KHR';
             field.reset(inRiel
-                ? { amount: prev === '' ? '' : usdToKhr(Number(prev), field.shopRate), currency: 'KHR' }
+                ? (claimRiel
+                    ? { amount: fromClaim!.original_amount!, currency: 'KHR', rate: fromClaim!.exchange_rate || field.shopRate }
+                    : { amount: prev === '' ? '' : usdToKhr(Number(prev), field.shopRate), currency: 'KHR' })
                 : { amount: prev, currency: 'USD' });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,6 +103,11 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
 
                 {/* Body */}
                 <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {claim && !(order.depositAmount && order.depositAmount > 0) && (
+                        <div style={{ fontSize: '12px', color: '#374151', background: '#F3F4F6', border: '1px solid #D1D5DB', borderRadius: '8px', padding: '8px 10px' }}>
+                            Confirming the deposit {claim.by ? `${claim.by} ` : ''}entered{claim.date ? ` on ${claim.date}` : ''}. Check it arrived, correct anything that differs, then save: that books it.
+                        </div>
+                    )}
                     <div>
                         <MoneyInput
                             field={field}
