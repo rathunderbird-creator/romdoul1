@@ -1106,5 +1106,39 @@ ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS cogs_short_qty NUMERI
 ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS cogs_backfill BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS unit_cost NUMERIC;
 
+
+-- Riel (KHR) payments (see add_khr_currency.sql): NULL currency = USD; a
+-- KHR row keeps its riel amount and the rate it used.
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS currency TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS original_amount NUMERIC;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC;
+ALTER TABLE customer_payments ADD COLUMN IF NOT EXISTS currency TEXT;
+ALTER TABLE customer_payments ADD COLUMN IF NOT EXISTS original_amount NUMERIC;
+ALTER TABLE customer_payments ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC;
+ALTER TABLE supplier_payments ADD COLUMN IF NOT EXISTS currency TEXT;
+ALTER TABLE supplier_payments ADD COLUMN IF NOT EXISTS original_amount NUMERIC;
+ALTER TABLE supplier_payments ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC;
+ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS currency TEXT;
+ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS original_amount NUMERIC;
+ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC;
+DO $$
+DECLARE t TEXT;
+BEGIN
+    FOREACH t IN ARRAY ARRAY['transactions','customer_payments','supplier_payments','journal_entries'] LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                        WHERE conname = t || '_currency_check' AND conrelid = ('public.' || t)::regclass) THEN
+            EXECUTE format(
+                'ALTER TABLE public.%I ADD CONSTRAINT %I CHECK ('
+                || 'currency IS NULL OR currency = ''USD'' '
+                || 'OR (currency = ''KHR'' AND original_amount IS NOT NULL AND COALESCE(exchange_rate, 0) > 0))',
+                t, t || '_currency_check');
+        END IF;
+    END LOOP;
+END $$;
+INSERT INTO chart_of_accounts (account_code, account_name, account_type, description, sub_type) VALUES
+('1002', 'Cash on Hand (KHR)', 'Asset', 'Riel cash, booked in USD at the rate of each entry', 'Current Asset'),
+('1011', 'Bank Account ABA (KHR)', 'Asset', 'Riel bank account, booked in USD at the rate of each entry', 'Current Asset')
+ON CONFLICT (account_code) DO NOTHING;
+
 -- Make PostgREST pick everything up immediately.
 NOTIFY pgrst, 'reload schema';
