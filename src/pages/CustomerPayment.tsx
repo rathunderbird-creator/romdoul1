@@ -1199,8 +1199,11 @@ const CustomerPaymentPage: React.FC = () => {
             {resizeHandle(key)}
         </th>
     );
-    const cell = (key: string, extra?: React.CSSProperties): React.CSSProperties =>
-        ({ ...tdStyle, ...widthStyle(key), overflow: 'hidden', textOverflow: 'ellipsis', ...extra });
+    // Body cells carry no width: a fixed-layout table takes every column's
+    // width from the header row, and 2,400 cells re-reading a width variable
+    // on each drag step made resizing sluggish. (The key names the column.)
+    const cell = (_key: string, extra?: React.CSSProperties): React.CSSProperties =>
+        ({ ...tdStyle, overflow: 'hidden', textOverflow: 'ellipsis', ...extra });
     const hiddenCount = deletedOrderTxIds.size;
     const statValue = (v: React.ReactNode) => showStats ? v : '—';
     const countLabel = (n: number) => showStats ? `${n.toLocaleString()} record${n === 1 ? '' : 's'}` : undefined;

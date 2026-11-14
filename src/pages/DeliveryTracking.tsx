@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, startTransition } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useHeader } from '../context/HeaderContext';
@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { getOperatorForPhone, formatPhoneDisplay } from '../utils/telecom';
 import { getShippingLogo } from '../utils/shipping';
+import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../utils/liveColumnResize';
 
 const getStatusBorderColor = (s: string) => {
     switch (s) {
@@ -381,28 +382,26 @@ const DeliveryTracking: React.FC = () => {
         localStorage.setItem('delivery_column_widths', JSON.stringify(columnWidths));
     }, [columnWidths]);
 
-    const [resizingCol, setResizingCol] = useState<string | null>(null);
-    const resizeRef = React.useRef<{ startX: number; startWidth: number; colId: string } | null>(null);
+    const resizeRef = React.useRef<{ startX: number; startWidth: number; colId: string; live?: LiveResize } | null>(null);
 
     const handleGlobalMouseMove = React.useCallback((e: MouseEvent) => {
         if (!resizeRef.current) return;
-        const { startX, startWidth, colId } = resizeRef.current;
-        const diff = e.clientX - startX;
-        const newWidth = Math.max(15, startWidth + diff);
-        document.documentElement.style.setProperty(`--col-delivery-${colId}-width`, `${newWidth}px`);
+        const { startX, startWidth, live } = resizeRef.current;
+        const newWidth = Math.max(15, startWidth + liveDelta(live, e.clientX - startX));
+        // Straight onto the header cell, once per frame (no re-render, and no
+        // page-wide CSS variable restyling every row): utils/liveColumnResize.
+        showLiveWidth(live, newWidth);
     }, []);
 
     const handleGlobalMouseUp = React.useCallback((e: MouseEvent) => {
         if (!resizeRef.current) return;
-        const { startX, startWidth, colId } = resizeRef.current;
-        const diff = e.clientX - startX;
-        const newWidth = Math.max(15, startWidth + diff);
+        const { startX, startWidth, colId, live } = resizeRef.current;
+        const newWidth = Math.round(Math.max(15, startWidth + liveDelta(live, e.clientX - startX)));
+        endLiveResize(live, newWidth);
 
-        setColumnWidths(prev => ({ ...prev, [colId]: newWidth }));
-        document.documentElement.style.removeProperty(`--col-delivery-${colId}-width`);
-
+        // Saving re-renders every row: a background update, so release doesn't freeze the page.
+        startTransition(() => setColumnWidths(prev => ({ ...prev, [colId]: newWidth })));
         resizeRef.current = null;
-        setResizingCol(null);
         document.removeEventListener('mousemove', handleGlobalMouseMove);
         document.removeEventListener('mouseup', handleGlobalMouseUp);
         document.body.style.cursor = '';
@@ -412,8 +411,7 @@ const DeliveryTracking: React.FC = () => {
         e.preventDefault();
         e.stopPropagation();
         const currentWidth = columnWidths[colId] || 150;
-        resizeRef.current = { startX: e.clientX, startWidth: currentWidth, colId };
-        setResizingCol(colId);
+        resizeRef.current = { startX: e.clientX, startWidth: currentWidth, colId, live: beginLiveResize(e.currentTarget as Element) };
         document.addEventListener('mousemove', handleGlobalMouseMove);
         document.addEventListener('mouseup', handleGlobalMouseUp);
         document.body.style.cursor = 'col-resize';
@@ -467,8 +465,8 @@ const DeliveryTracking: React.FC = () => {
 
         if (resizeRef.current && resizeRef.current.colId === colId) {
             document.documentElement.style.removeProperty(`--col-delivery-${colId}-width`);
+            endLiveResize(resizeRef.current.live, finalWidth);
             resizeRef.current = null;
-            setResizingCol(null);
             document.removeEventListener('mousemove', handleGlobalMouseMove);
             document.removeEventListener('mouseup', handleGlobalMouseUp);
             document.body.style.cursor = '';
@@ -1389,7 +1387,7 @@ const DeliveryTracking: React.FC = () => {
                                                 width: `var(--col-delivery-${colId}-width, ${width}px)`,
                                                 minWidth: `var(--col-delivery-${colId}-width, ${width}px)`,
                                                 overflow: 'visible',
-                                                borderRight: resizingCol === colId ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                borderRight: '1px solid var(--color-border)', // highlighted while dragging by utils/liveColumnResize
                                                 transition: 'border-color 0.1s',
                                                 padding: 0,
                                                 position: 'sticky',

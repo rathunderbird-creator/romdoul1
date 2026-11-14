@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, startTransition } from 'react';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../context/StoreContext';
 import { RefreshCw, ArrowLeft, RefreshCcw, Search, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -14,6 +14,7 @@ import { getShippingCoColor } from '../utils/orderUtils';
 import { mapSaleEntity } from '../utils/mapper';
 import { fetchAll } from '../utils/fetchAll';
 import type { Sale } from '../types';
+import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../utils/liveColumnResize';
 
 const getStatusBorderColor = (s: string) => {
     switch (s) {
@@ -43,8 +44,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
         const saved = localStorage.getItem('deleted_orders_column_widths');
         return saved ? JSON.parse(saved) : {};
     });
-    const [resizingCol, setResizingCol] = useState<string | null>(null);
-    const resizeRef = React.useRef<{ startX: number; startWidth: number; colId: string } | null>(null);
+    const resizeRef = React.useRef<{ startX: number; startWidth: number; colId: string; live?: LiveResize } | null>(null);
 
     const { restoreOrders } = useStore();
     const navigate = useNavigate();
@@ -215,8 +215,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
         e.preventDefault();
         e.stopPropagation();
         const currentWidth = columnWidths[colId] || (e.currentTarget.parentElement?.getBoundingClientRect().width ?? 150);
-        resizeRef.current = { startX: e.clientX, startWidth: currentWidth, colId };
-        setResizingCol(colId);
+        resizeRef.current = { startX: e.clientX, startWidth: currentWidth, colId, live: beginLiveResize(e.currentTarget as Element) };
         document.addEventListener('mousemove', handleGlobalMouseMove);
         document.addEventListener('mouseup', handleGlobalMouseUp);
         document.body.style.cursor = 'col-resize';
@@ -224,21 +223,21 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
 
     const handleGlobalMouseMove = React.useCallback((e: MouseEvent) => {
         if (!resizeRef.current) return;
-        const { startX, startWidth, colId } = resizeRef.current;
-        const diff = e.clientX - startX;
-        const newWidth = Math.max(50, startWidth + diff);
-        document.documentElement.style.setProperty(`--del-col-${colId}-width`, `${newWidth}px`);
+        const { startX, startWidth, live } = resizeRef.current;
+        const newWidth = Math.max(50, startWidth + liveDelta(live, e.clientX - startX));
+        // Straight onto the header cell, once per frame (no re-render, and no
+        // page-wide CSS variable restyling every row): utils/liveColumnResize.
+        showLiveWidth(live, newWidth);
     }, []);
 
     const handleGlobalMouseUp = React.useCallback((e: MouseEvent) => {
         if (!resizeRef.current) return;
-        const { startX, startWidth, colId } = resizeRef.current;
-        const diff = e.clientX - startX;
-        const newWidth = Math.max(50, startWidth + diff);
-        setColumnWidths(prev => ({ ...prev, [colId]: newWidth }));
-        document.documentElement.style.removeProperty(`--del-col-${colId}-width`);
+        const { startX, startWidth, colId, live } = resizeRef.current;
+        const newWidth = Math.round(Math.max(50, startWidth + liveDelta(live, e.clientX - startX)));
+        endLiveResize(live, newWidth);
+        // Saving re-renders every row: a background update, so release doesn't freeze the page.
+        startTransition(() => setColumnWidths(prev => ({ ...prev, [colId]: newWidth })));
         resizeRef.current = null;
-        setResizingCol(null);
         document.removeEventListener('mousemove', handleGlobalMouseMove);
         document.removeEventListener('mouseup', handleGlobalMouseUp);
         document.body.style.cursor = '';
@@ -433,7 +432,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                                         width: getColWidth(col.id, col.width),
                                         minWidth: getColWidth(col.id, col.width),
                                         overflow: 'hidden',
-                                        borderRight: resizingCol === col.id ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                        borderRight: '1px solid var(--color-border)', // highlighted while dragging by utils/liveColumnResize
                                         transition: 'border-color 0.1s',
                                         padding: 0,
                                         position: 'sticky',
