@@ -361,11 +361,12 @@ const CustomerPaymentPage: React.FC = () => {
         state: 'loading' | 'ready' | 'error';
         byTx: Map<string, LedgerStatus>;
         debitAccountByTx: Map<string, string>; // existing entry's cash/bank account
+        entryTx: Map<string, string>; // journal entry id -> its payment (transactions.id)
         refreshError: boolean;
         // Instance never ran add_entry_status.sql: every entry reads as Posted
         // and unposting can't work, so the Unpost button must not be offered.
         statusMissing: boolean;
-    }>({ state: 'loading', byTx: new Map(), debitAccountByTx: new Map(), refreshError: false, statusMissing: false });
+    }>({ state: 'loading', byTx: new Map(), debitAccountByTx: new Map(), entryTx: new Map(), refreshError: false, statusMissing: false });
     const [ledgerNonce, setLedgerNonce] = useState(0);
 
     useEffect(() => {
@@ -419,10 +420,12 @@ const CustomerPaymentPage: React.FC = () => {
                 }
                 const byTx = new Map<string, LedgerStatus>();
                 const debitAccountByTx = new Map<string, string>();
+                const entryTx = new Map<string, string>();
                 for (const je of rows) {
                     const ref = je.reference_id || '';
                     if (!ref.startsWith('TX-')) continue;
                     const txId = ref.slice(3);
+                    if (je.id) entryTx.set(String(je.id), txId);
                     if (byTx.get(txId) !== 'Posted') byTx.set(txId, je.status === 'Draft' ? 'Draft' : 'Posted');
                     // The entry's cash side only — an RCP entry also carries a COGS
                     // debit, which must never become the "Deposited into" prefill.
@@ -430,7 +433,7 @@ const CustomerPaymentPage: React.FC = () => {
                         && l.account?.account_type === 'Asset' && /cash|bank/i.test(l.account?.account_name || ''));
                     if (debit && !debitAccountByTx.has(txId)) debitAccountByTx.set(txId, debit.account_id);
                 }
-                if (!cancelled) setLedger({ state: 'ready', byTx, debitAccountByTx, refreshError: false, statusMissing });
+                if (!cancelled) setLedger({ state: 'ready', byTx, debitAccountByTx, entryTx, refreshError: false, statusMissing });
             } catch (err) {
                 console.error('Failed to load ledger status for customer payments:', err);
                 if (!cancelled) setLedger(prev => prev.state === 'ready' ? { ...prev, refreshError: true } : { ...prev, state: 'error' });
@@ -438,6 +441,104 @@ const CustomerPaymentPage: React.FC = () => {
         })();
         return () => { cancelled = true; };
     }, [ledgerNonce]);
+
+    // Account column: the cash/bank account each payment's entry debits (the
+    // account the money actually went into). Read after the Status column is
+    // ready and without holding it up, and only the cash/bank lines (about one
+    // per entry): the page on screen first, then every loaded payment in the
+    // background (Search and Export use it too).
+    const [cashAccountByTx, setCashAccountByTx] = useState<Map<string, string>>(new Map());
+    const [cashAccountNames, setCashAccountNames] = useState<Map<string, string> | null>(null);
+    const [accountsDone, setAccountsDone] = useState(false);
+    const requestedEntriesRef = useRef(new Set<string>());
+    const accountGenRef = useRef(0);
+    useEffect(() => {
+        let cancelled = false;
+        supabase.from('chart_of_accounts').select('id, account_code, account_type, account_name').then(({ data, error }) => {
+            if (cancelled) return;
+            if (error) { console.error('Failed to load the chart of accounts for the Account column:', error); setCashAccountNames(new Map()); return; }
+            const cash = ((data || []) as { id: string; account_code: string | null; account_type: string | null; account_name: string | null }[])
+                .filter(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name || ''));
+            setCashAccountNames(new Map(cash.map(a => [a.id, a.account_name || a.account_code || '?'])));
+        });
+        return () => { cancelled = true; };
+    }, [ledgerNonce]);
+    // A reloaded ledger starts the column over.
+    useEffect(() => {
+        accountGenRef.current++;
+        requestedEntriesRef.current = new Set();
+        setCashAccountByTx(new Map());
+        setAccountsDone(false);
+    }, [ledger.entryTx]);
+    const fetchCashAccounts = useCallback(async (entryIds: string[]) => {
+        const gen = accountGenRef.current;
+        const cashIds = cashAccountNames ? [...cashAccountNames.keys()] : [];
+        if (entryIds.length === 0 || cashIds.length === 0) return;
+        const { data, error } = await supabase.from('journal_entry_lines')
+            .select('journal_entry_id, account_id, debit')
+            .in('journal_entry_id', entryIds).in('account_id', cashIds).gt('debit', 0);
+        if (error) throw error;
+        if (gen !== accountGenRef.current) return;
+        const pairs: [string, string][] = [];
+        for (const l of (data || []) as { journal_entry_id: string; account_id: string }[]) {
+            const tx = ledger.entryTx.get(String(l.journal_entry_id));
+            if (tx) pairs.push([tx, l.account_id]);
+        }
+        if (pairs.length > 0) setCashAccountByTx(prev => {
+            const next = new Map(prev);
+            for (const [tx, acc] of pairs) if (!next.has(tx)) next.set(tx, acc);
+            return next;
+        });
+    }, [cashAccountNames, ledger.entryTx]);
+    // Entries not asked for yet, for these payments.
+    const takeEntries = useCallback((txIds: Set<string>) => {
+        const out: string[] = [];
+        for (const [e, tx] of ledger.entryTx) {
+            if (txIds.has(tx) && !requestedEntriesRef.current.has(e)) { requestedEntriesRef.current.add(e); out.push(e); }
+        }
+        return out;
+    }, [ledger.entryTx]);
+    // Background: every loaded payment, 6 requests at a time. The workers
+    // start after a tick, so the visible page (effect further down) goes first.
+    useEffect(() => {
+        if (ledger.state !== 'ready' || !cashAccountNames) return;
+        let cancelled = false;
+        const gen = accountGenRef.current;
+        const loaded = new Set(allRetailPayments.map(r => String(r.id)));
+        (async () => {
+            await Promise.resolve();
+            const pending = takeEntries(loaded);
+            const batches: string[][] = [];
+            for (let i = 0; i < pending.length; i += 200) batches.push(pending.slice(i, i + 200));
+            let next = 0;
+            const worker = async () => {
+                while (!cancelled && next < batches.length) {
+                    const b = batches[next++];
+                    try { await fetchCashAccounts(b); } catch (err) {
+                        console.error("Failed to load payments' cash/bank accounts:", err);
+                        b.forEach(e => requestedEntriesRef.current.delete(e));
+                    }
+                }
+            };
+            await Promise.all(Array.from({ length: 6 }, worker));
+            if (!cancelled && gen === accountGenRef.current) setAccountsDone(true);
+        })();
+        return () => { cancelled = true; };
+    }, [ledger.state, cashAccountNames, allRetailPayments, takeEntries, fetchCashAccounts]);
+    const accountNameOf = useCallback((r: CustomerPaymentRow): string | null => {
+        const id = cashAccountByTx.get(String(r.id)) || ledger.debitAccountByTx.get(String(r.id));
+        return id ? (cashAccountNames?.get(id) || null) : null;
+    }, [cashAccountByTx, cashAccountNames, ledger.debitAccountByTx]);
+    // Method shows just Bank or Cash: from the account the money went into
+    // when there is one, else from the saved Method (QR / ABA / transfer =
+    // Bank; Cash / COD = Cash). The saved Method stays in the tooltip.
+    const bankOrCashOf = useCallback((r: CustomerPaymentRow): 'Bank' | 'Cash' | '' => {
+        const name = accountNameOf(r);
+        if (name) return /bank/i.test(name) ? 'Bank' : 'Cash';
+        const m = (r.pay_by || '').trim();
+        if (!m) return '';
+        return /cash|cod/i.test(m) && !/bank/i.test(m) ? 'Cash' : 'Bank';
+    }, [accountNameOf]);
 
     // Rows posted in this session, so they flip to Posted immediately.
     const [postedIds, setPostedIds] = useState<Set<string>>(new Set());
@@ -769,10 +870,10 @@ const CustomerPaymentPage: React.FC = () => {
             if (shippingFilter !== 'All' && (r.shipping_co || '') !== shippingFilter) return false;
             if (statusFilter !== 'All' && statusOf(r.id) !== statusFilter) return false;
             if (!term) return true;
-            return [r.description, r.customer_phone, r.shipping_co, r.pay_by, referenceOf(r), r.notes]
+            return [r.description, r.customer_phone, r.shipping_co, r.pay_by, bankOrCashOf(r), accountNameOf(r), referenceOf(r), r.notes]
                 .some(v => (v || '').toLowerCase().includes(term));
         });
-    }, [sortedPayments, searchTerm, typeFilter, shippingFilter, statusFilter, statusOf, dateRange, referenceOf]);
+    }, [sortedPayments, searchTerm, typeFilter, shippingFilter, statusFilter, statusOf, dateRange, referenceOf, bankOrCashOf, accountNameOf]);
 
     const stats = useMemo(() => {
         const s = { total: 0, count: 0, paid: 0, paidCount: 0, deposit: 0, depositCount: 0, draft: 0, draftCount: 0 };
@@ -796,6 +897,19 @@ const CustomerPaymentPage: React.FC = () => {
     const totalPages = Math.max(1, Math.ceil(filteredPayments.length / pageSize));
     const page = Math.min(currentPage, totalPages);
     const pageRows = filteredPayments.slice((page - 1) * pageSize, page * pageSize);
+    // The page on screen gets its accounts first (one request for 200 rows).
+    const pageKey = pageRows.map(r => r.id).join(',');
+    useEffect(() => {
+        if (ledger.state !== 'ready' || !cashAccountNames || !pageKey) return;
+        const ids = takeEntries(new Set(pageKey.split(',')));
+        for (let i = 0; i < ids.length; i += 200) {
+            const b = ids.slice(i, i + 200);
+            fetchCashAccounts(b).catch(err => {
+                console.error("Failed to load payments' cash/bank accounts:", err);
+                b.forEach(e => requestedEntriesRef.current.delete(e));
+            });
+        }
+    }, [pageKey, ledger.state, cashAccountNames, takeEntries, fetchCashAccounts]);
 
     // ── Bulk Post Now / bulk Delete ──
     // A checkbox selects any row regardless of status — Delete applies to any
@@ -1054,7 +1168,8 @@ const CustomerPaymentPage: React.FC = () => {
             'Shipping Co': r.shipping_co || '',
             'Payment Type': isDepositRow(r) ? 'Deposit' : 'Paid',
             Amount: Number(r.amount || 0),
-            Method: r.pay_by || '',
+            Method: bankOrCashOf(r),
+            Account: accountNameOf(r) || '',
             Reference: referenceOf(r),
             Notes: r.notes || '',
             'Added by': r.added_by || '',
@@ -1068,7 +1183,7 @@ const CustomerPaymentPage: React.FC = () => {
         XLSX.writeFile(wb, `Retail_Payments_${dayKeyFromDate(new Date())}.xlsx`);
     };
 
-    const colCount = 10 + (hasNotesData ? 1 : 0);
+    const colCount = 11 + (hasNotesData ? 1 : 0);
     const hiddenCount = deletedOrderTxIds.size;
     const statValue = (v: React.ReactNode) => showStats ? v : '—';
     const countLabel = (n: number) => showStats ? `${n.toLocaleString()} record${n === 1 ? '' : 's'}` : undefined;
@@ -1432,6 +1547,7 @@ const CustomerPaymentPage: React.FC = () => {
                                 <th style={thStyle}>Payment Type</th>
                                 <th style={thStyle}>Amount</th>
                                 <th style={thStyle}>Method</th>
+                                <th style={thStyle}>Account</th>
                                 {hasNotesData && <th style={thStyle}>Notes</th>}
                                 <th style={thStyle}>Added by</th>
                                 <th style={thStyle}>Status</th>
@@ -1478,7 +1594,9 @@ const CustomerPaymentPage: React.FC = () => {
                                     const canPost = known && status === 'Draft' && !posting && !preStart;
                                     const orderId = orderIdByTxId.get(r.id);
                                     const customerLabel = [r.description || '—', r.customer_phone, r.shipping_co].filter(Boolean).join(' - ');
-                                    const PaymentIcon = getPaymentIcon(r.pay_by);
+                                    const method = bankOrCashOf(r);
+                                    const accountName = accountNameOf(r);
+                                    const PaymentIcon = method ? getPaymentIcon(method) : null;
                                     return (
                                         <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-surface)', transition: 'background 0.2s' }}>
                                             <td style={{ ...tdStyle, padding: '14px 8px 14px 20px' }}>
@@ -1499,12 +1617,23 @@ const CustomerPaymentPage: React.FC = () => {
                                                 {formatAmount(r.amount)}
                                                 {isKhrRow(r) && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{formatMoneyLine(r)}</div>}
                                             </td>
-                                            <td style={tdStyle}>
+                                            <td style={tdStyle} title={r.pay_by ? `Saved as: ${r.pay_by}` : undefined}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    <span style={{ color: getPaymentColor(r.pay_by) }}>{r.pay_by || '—'}</span>
-                                                    {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(r.pay_by)} />}
+                                                    <span style={{ color: getPaymentColor(method) }}>{method || '—'}</span>
+                                                    {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(method)} />}
                                                 </div>
                                             </td>
+                                            {(() => {
+                                                // '…' while this payment's entry is still being read;
+                                                // '—' when it has no entry (set when it is posted).
+                                                const waiting = !accountName && known && ledger.byTx.has(String(r.id)) && !accountsDone;
+                                                return (
+                                                    <td style={{ ...tdStyle, color: accountName ? undefined : 'var(--color-text-muted)' }}
+                                                        title={accountName ? undefined : waiting ? 'Loading…' : 'No ledger entry yet: the account is set when it is posted'}>
+                                                        {accountName || (waiting || !known ? '…' : '—')}
+                                                    </td>
+                                                );
+                                            })()}
                                             {hasNotesData && (
                                                 <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: '240px' }}>{r.notes || '—'}</td>
                                             )}
