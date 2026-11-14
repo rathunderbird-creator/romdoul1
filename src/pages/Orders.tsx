@@ -31,7 +31,12 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
 import { mapSaleEntity } from '../utils/mapper';
-import { amountWarningLine, amountWarningText, checkUsdAmount, shopRate } from '../utils/currency';
+import { accountCurrency, khrMeta, shopRate, usdToKhr, type MoneyMeta } from '../utils/currency';
+import MoneyInput from '../components/MoneyInput';
+import CashBankOptions from '../components/CashBankOptions';
+import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
+import { useAccounting } from '../hooks/useAccounting';
+import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
 import * as XLSX from 'xlsx';
 import type { Sale, CartItem } from '../types';
 
@@ -101,7 +106,20 @@ const ShippingModalComponent: React.FC<{
     const [shippingCustomerCare, setShippingCustomerCare] = useState<string>('');
     const [isShippingPointSelectorOpen, setIsShippingPointSelectorOpen] = useState(false);
     const [items, setItems] = useState<CartItem[]>([]);
-    const [deposit, setDeposit] = useState<string>('0');
+    // The deposit is a money field like the Deposit modal's: dollars or riel
+    // (the ៛ side follows the "Deposited into" account), pre-filled rate, and
+    // the wrong-amount warning. A deposit is less than the order total.
+    const itemsTotal = items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0);
+    const depositField = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: itemsTotal > 0 ? itemsTotal : null });
+    const { accounts, fetchAccounts } = useAccounting();
+    const [depositAccountId, setDepositAccountId] = useState('');
+    useEffect(() => { if (isOpen) fetchAccounts(); }, [isOpen, fetchAccounts]);
+    // Cash/bank ledger accounts, same filter as the Deposit modal's field.
+    const paymentAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
+        [accounts]
+    );
+    const depositCoupling = useAccountCurrency(depositField, paymentAccounts, depositAccountId, setDepositAccountId);
     // '' = auto-compute from the total/deposit — stays live until the user
     // types a KHR figure of their own, same pattern the Receipt used to have.
     const [customKhr, setCustomKhr] = useState<string>('');
@@ -128,27 +146,34 @@ const ShippingModalComponent: React.FC<{
             setShippingAddress(order.customer?.address || '');
             setShippingCustomerCare(order.customerCare || '');
             setItems((order.items || []).map(i => ({ ...i })));
-            setDeposit((order.depositAmount || 0).toString());
+            // Never a riel account by default; a deposit already taken into a
+            // riel account reopens in riel (same as the Deposit modal).
+            const accountId = defaultCashBankAccountId(paymentAccounts, { preferredId: order.depositAccountId });
+            setDepositAccountId(accountId);
+            const prev = order.depositAmount || 0;
+            const inRiel = prev > 0 && accountCurrency(paymentAccounts.find(a => a.id === accountId)) === 'KHR';
+            depositField.reset(inRiel
+                ? { amount: usdToKhr(prev, depositField.shopRate), currency: 'KHR' }
+                : { amount: prev, currency: 'USD' });
             // Pre-fill from whatever override is already saved, so reopening
             // the popup shows (and re-saves) the same figure the receipt is
             // actually printing — '' only when there truly is no override.
             setCustomKhr(order.customKhrAmount !== undefined && order.customKhrAmount !== null ? String(order.customKhrAmount) : '');
         }
-    }, [isOpen, order, shippingCompanies]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, order, shippingCompanies, paymentAccounts]);
 
     if (!order) return null;
 
-    const computedTotal = items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0);
-    const depositNum = parseFloat(deposit) || 0;
+    const computedTotal = itemsTotal;
+    const depositNum = depositField.usd;
+    const depositChanged = Math.abs(depositNum - (order.depositAmount || 0)) > 0.0001;
+    // A changed deposit on an unpaid order is booked (Deposit flow below), so
+    // it needs the account it went into.
+    const depositBooks = depositChanged && depositNum > 0 && !['Paid', 'Settled', 'Paid/Settled'].includes(order.paymentStatus || '');
     const remainingAmount = Math.max(0, computedTotal - depositNum);
     const khrBase = depositNum > 0 ? remainingAmount : computedTotal;
     const displayKhr = customKhr !== '' ? customKhr : Math.round(khrBase * shopRate(khrExchangeRate)).toString();
-    // The deposit is money received (booked as កក់ប្រាក់ with its DEP entry),
-    // and it sits next to the riel figure: a riel-sized number, or one above
-    // the order total, warns under the field and asks before saving.
-    const depositWarning = depositNum !== (order.depositAmount || 0)
-        ? checkUsdAmount(depositNum, { rate: shopRate(khrExchangeRate), maxPlausibleUsd: computedTotal > 0 ? computedTotal : null })
-        : null;
 
     const updateItem = (idx: number, patch: Partial<CartItem>) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
     const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
@@ -325,22 +350,29 @@ const ShippingModalComponent: React.FC<{
                         <span>TOTAL</span>
                         <span>${computedTotal.toFixed(2)}</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', marginTop: '6px' }}>
-                        <span>Deposit</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span>$</span>
-                            <input
-                                type="number"
-                                value={deposit}
-                                onChange={(e) => setDeposit(e.target.value)}
-                                style={{ width: '80px', textAlign: 'right', border: '1px dashed var(--color-border)', borderRadius: '4px', padding: '2px 4px', fontSize: '13px', outline: 'none' }}
-                                onClick={(e) => (e.target as HTMLInputElement).select()}
-                            />
-                        </div>
+                    <div style={{ marginTop: '8px', fontSize: '13px' }}>
+                        <MoneyInput
+                            field={depositField}
+                            label="Deposit"
+                            allowKhr
+                            placeholder={depositField.currency === 'KHR' ? 'e.g. 8000' : 'e.g. 2.00'}
+                            onToggleCurrency={depositCoupling.onToggleCurrency}
+                            khrUnavailableReason={depositCoupling.khrUnavailableReason}
+                            labelStyle={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}
+                            inputStyle={{ width: '100%', padding: '6px 8px', borderRadius: '6px', fontSize: '13px', border: '1px dashed var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', boxSizing: 'border-box', textAlign: 'right' }}
+                        />
                     </div>
-                    {depositWarning && (
-                        <div data-money-warning role="alert" style={{ marginTop: '4px', fontSize: '12px', color: '#B45309', textAlign: 'right' }}>
-                            {amountWarningLine(depositWarning)}
+                    {depositBooks && paymentAccounts.length > 0 && (
+                        <div style={{ marginTop: '8px', fontSize: '13px' }}>
+                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}>Deposited into *</label>
+                            <select
+                                value={depositAccountId}
+                                onChange={e => depositCoupling.onAccountChange(e.target.value)}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', fontSize: '13px', border: `1px solid ${!depositAccountId ? '#DC2626' : 'var(--color-border)'}`, background: 'var(--color-surface)', color: 'var(--color-text-main)', outline: 'none' }}
+                            >
+                                <option value="">Bank or cash account…</option>
+                                <CashBankOptions accounts={paymentAccounts} />
+                            </select>
                         </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginTop: '6px', borderTop: '1px dashed var(--color-border)', paddingTop: '6px' }}>
@@ -386,7 +418,12 @@ const ShippingModalComponent: React.FC<{
                             // running is ignored (the ref answers at once; the state
                             // disables the button).
                             if (savingRef.current) return;
-                            if (depositWarning && !window.confirm(amountWarningText(depositWarning))) return;
+                            if (depositBooks && paymentAccounts.length > 0 && !depositAccountId) {
+                                showToast('Choose the account the deposit went into', 'error');
+                                return;
+                            }
+                            // Only a changed deposit is checked (an old one was already accepted).
+                            if (depositChanged && !depositField.confirmIfSuspicious()) return;
                             savingRef.current = true;
                             setSaving(true);
                             try {
@@ -400,7 +437,8 @@ const ShippingModalComponent: React.FC<{
                                     updates.items = items;
                                     updates.total = computedTotal;
                                 }
-                                if (depositNum !== (order.depositAmount || 0)) {
+                                let money: MoneyMeta | undefined;
+                                if (depositChanged) {
                                     updates.depositAmount = depositNum;
                                     if (depositNum > 0) updates.depositDate = new Date().toISOString().split('T')[0];
                                     // A deposit typed here is money received, the same as in
@@ -414,6 +452,15 @@ const ShippingModalComponent: React.FC<{
                                         updates.expectedPaymentStatus = order.paymentStatus;
                                         updates.amountReceived = depositNum;
                                         updates.postToLedger = true;
+                                        // The account only (no name): the name would become the
+                                        // row's Pay By ("one bank shown as two", PR #229).
+                                        if (depositAccountId) updates.depositAccountId = depositAccountId;
+                                        // A top-up books only the difference over the deposit
+                                        // already taken, so its riel is the difference too.
+                                        const prevUsd = order.depositAmount && order.depositAmount > 0 ? order.depositAmount : 0;
+                                        money = depositField.meta.currency === 'KHR' && prevUsd > 0
+                                            ? khrMeta(Math.max(0, depositField.meta.original_amount - usdToKhr(prevUsd, depositField.meta.exchange_rate, 1)), depositField.meta.exchange_rate)
+                                            : depositField.meta;
                                     }
                                 }
                                 // '' means "no override, keep computing it live" — that's the
@@ -427,7 +474,7 @@ const ShippingModalComponent: React.FC<{
 
                                 // An edit that didn't fully save (already explained) must not
                                 // go on to ship the order with the old items.
-                                if (Object.keys(updates).length > 0 && !(await updateOrder(order.id, updates))) return;
+                                if (Object.keys(updates).length > 0 && !(await updateOrder(order.id, updates, money ? { money: { ...money, category: 'កក់ប្រាក់' } } : undefined))) return;
                                 // false: refused or changed elsewhere, nothing moved (already explained).
                                 // shownStatus: the status the popup was opened from — if the
                                 // order has moved on since (shipped from another device), the
@@ -5078,6 +5125,9 @@ const Orders: React.FC = () => {
     );
 };
 
+// Named export for the dev preview (src/dev/khrCurrency-preview.tsx).
+// eslint-disable-next-line react-refresh/only-export-components
+export { ShippingModalComponent };
 export default Orders;
 
 

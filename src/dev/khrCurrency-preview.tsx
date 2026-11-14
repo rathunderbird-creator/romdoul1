@@ -3,7 +3,8 @@
 // (r1: 1001 Petty Cash + 1010 Bank Account (ABA); r2: 1000 Cash only; the
 // *khr variants add 1002 Cash on Hand (KHR) + 1011 Bank Account ABA (KHR)),
 // ?form= the form (delivery, deposit, settle, receipt, finalize, wholesale,
-// supplier, settings, money).
+// supplier, settings, money, shipping = Select Shipping Company popup;
+// ?dep= sets that order's existing deposit).
 //
 // The chart is answered locally (never read from the live store), every
 // store write is a no-op that logs, and blockDbWrites refuses every non-GET
@@ -27,6 +28,7 @@ import RecordSupplierPaymentModal from '../components/RecordSupplierPaymentModal
 import MoneyInput from '../components/MoneyInput';
 import GeneralSettings from '../pages/settings/GeneralSettings';
 import { useMoneyField } from '../hooks/useMoneyField';
+import { ShippingModalComponent } from '../pages/Orders';
 import type { Sale } from '../types';
 
 const params = new URLSearchParams(location.search);
@@ -80,12 +82,15 @@ const base: Record<string, unknown> = {
     purchaseSettings: { defaultPaymentAccountId: params.get('def') || '' },
     hasPermission: () => true,
     updateStoreProfile: logWrite('updateStoreProfile'),
+    shippingCompanies: ['J&T', 'VET'], customerCare: ['Dev'], products: [],
+    updateOrder: (...args: unknown[]) => { show('updateOrder', args); return Promise.resolve(true); },
+    updateOrderStatus: (...args: unknown[]) => { show('updateOrderStatus', args); return Promise.resolve(true); },
 };
 const mockStore = new Proxy(base, { get: (t, k: string) => (k in t ? t[k] : () => undefined) });
 
 const order = {
-    id: 'dev-order', total: 20, depositAmount: 0, amountReceived: 0, paymentStatus: params.get('pdfee') ? 'PdFee' : 'Unpaid',
-    items: [], date: new Date().toISOString(), customer: { name: 'Dev Customer', phone: '012345678' },
+    id: 'dev-order', total: 20, depositAmount: Number(params.get('dep') || 0), amountReceived: 0, paymentStatus: params.get('pdfee') ? 'PdFee' : 'Unpaid',
+    items: [{ id: 'p1', name: 'Speaker', price: 20, quantity: 1 }], date: new Date().toISOString(), customer: { name: 'Dev Customer', phone: '012345678' },
     customKhrAmount: params.get('khr') ? Number(params.get('khr')) : undefined,
 } as unknown as Sale;
 
@@ -113,6 +118,7 @@ const Forms = () => {
         case 'supplier': return open ? <RecordSupplierPaymentModal isOpen onClose={close} remainingBalance={250} supplierName="Dev Supplier" onConfirm={d => show('supplier', d)} /> : null;
         case 'settings': return <GeneralSettings />;
         case 'money': return <FreeMoney />;
+        case 'shipping': return <ShippingModalComponent isOpen={open} onClose={close} order={order} />;
         default: return <DeliveryFeeModal order={open ? order : null} onClose={close} onConfirm={d => show('deliveryFee', d)} />;
     }
 };
