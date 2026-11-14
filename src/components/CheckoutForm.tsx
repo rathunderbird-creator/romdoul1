@@ -11,6 +11,7 @@ import { useLocationTree } from '../hooks/useLocationTree';
 import { findByName, locLabel, pickerOptions } from '../utils/locationTree';
 
 import { sendTelegramOrderNotification } from '../utils/telegram';
+import { amountWarningLine, amountWarningText, checkKhrAmount, checkUsdAmount, formatKhr, formatRate, formatUsd, khrMeta, resolveMoney, shopRate, usdToKhr } from '../utils/currency';
 
 interface CheckoutFormProps {
     cartItems: CartItem[];
@@ -51,6 +52,12 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
     const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
     const { showToast } = useToast();
+    const rate = shopRate(khrExchangeRate);
+    // Amount received typed in riel: the riel figure is kept here and the
+    // USD (at the shop rate, snapped to the total when within 3 cents) goes
+    // to formData.amountReceived, so the deposit / paid logic stays in USD.
+    const [rielMode, setRielMode] = useState(false);
+    const [rielTyped, setRielTyped] = useState<string>('');
 
     const isMobile = useMobile();
 
@@ -466,6 +473,15 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             const total = Math.max(0, subtotal - discount);
 
             const amountReceivedVal = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
+            // A riel-sized number in the dollar field (or the other way
+            // round) asks first, showing both readings.
+            if (!formData.paymentAfterDelivery) {
+                const w = rielMode
+                    ? checkKhrAmount(Number(rielTyped) || 0, { rate })
+                    : checkUsdAmount(amountReceivedVal, { rate, maxPlausibleUsd: total });
+                if (w && !window.confirm(amountWarningText(w))) return;
+            }
+            const money = rielMode && !formData.paymentAfterDelivery && Number(rielTyped) > 0 ? khrMeta(Number(rielTyped), rate) : undefined;
 
             // Partial payment = deposit. Enforced here at save time regardless of
             // what the dropdown shows, so the table always marks it Deposit.
@@ -524,7 +540,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             };
 
             if (orderToEdit) {
-                const saved = await updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date, expectedPaymentStatus: orderToEdit.paymentStatus, expectedShippingStatus: orderToEdit.shipping?.status || 'Pending' });
+                const saved = await updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date, expectedPaymentStatus: orderToEdit.paymentStatus, expectedShippingStatus: orderToEdit.shipping?.status || 'Pending' },
+                    money ? { money: { ...money, category: effectivePaymentStatus === 'Deposit' ? 'កក់ប្រាក់' : 'លក់រាយ' } } : undefined);
                 if (!saved) {
                     // Refused or only partly saved (e.g. the status change was refused);
                     // the reason has been shown. Keep the form open, and no status
@@ -552,7 +569,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     }
                 }
             } else {
-                const createdSale = await addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() });
+                const createdSale = await addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() }, money ? { money } : undefined);
                 // We need the current sales to calculate sequence
                 const sequenceNumber = (sales.filter(s => new Date(s.date).toDateString() === new Date(createdSale.date).toDateString()).length) + 1;
                 
@@ -1094,7 +1111,27 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             </div>
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>ប្រាក់ទទួលបាន ($)</label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+                                        ប្រាក់ទទួលបាន ({rielMode ? '៛' : '$'})
+                                        <span style={{ display: 'inline-flex', border: '1px solid var(--color-border)', borderRadius: '6px', overflow: 'hidden' }}>
+                                            {(['USD', 'KHR'] as const).map(c => (
+                                                <button
+                                                    key={c}
+                                                    type="button"
+                                                    disabled={formData.paymentAfterDelivery}
+                                                    aria-pressed={(c === 'KHR') === rielMode}
+                                                    onClick={() => {
+                                                        const toRiel = c === 'KHR';
+                                                        if (toRiel === rielMode) return;
+                                                        const usdNow = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
+                                                        setRielMode(toRiel);
+                                                        setRielTyped(toRiel && usdNow > 0 ? String(usdToKhr(usdNow, rate)) : '');
+                                                    }}
+                                                    style={{ padding: '2px 8px', fontSize: '11px', fontWeight: 600, border: 'none', cursor: 'pointer', background: (c === 'KHR') === rielMode ? 'var(--color-primary)' : 'transparent', color: (c === 'KHR') === rielMode ? '#fff' : 'var(--color-text-secondary)' }}
+                                                >{c === 'KHR' ? '៛' : '$'}</button>
+                                            ))}
+                                        </span>
+                                    </label>
                                     <span style={{ fontSize: '11px', color: 'var(--color-primary)', cursor: 'pointer', opacity: formData.paymentAfterDelivery ? 0.5 : 1 }} onClick={() => {
                                         if (formData.paymentAfterDelivery) return;
                                         // Fill the DISCOUNTED total (not the raw subtotal) and run the
@@ -1107,6 +1144,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         if (['Unpaid', 'Paid', 'Deposit'].includes(status)) {
                                             if (status === 'Deposit') status = totalNow > 0 ? 'Paid' : 'Unpaid';
                                         }
+                                        if (rielMode) setRielTyped(String(usdToKhr(totalNow, rate)));
                                         setFormData({ ...formData, amountReceived: totalNow, paymentStatus: status });
                                     }}>ដាក់ពេញ</span>
                                 </div>
@@ -1114,15 +1152,22 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     type="number"
                                     className="search-input"
                                     style={{ width: '100%', padding: '10px 12px', background: formData.paymentAfterDelivery ? 'var(--color-bg)' : 'white' }}
-                                    value={formData.amountReceived}
+                                    step={rielMode ? '100' : '0.01'}
+                                    value={rielMode ? rielTyped : formData.amountReceived}
+                                    placeholder={rielMode ? 'e.g. 82000' : undefined}
                                     onChange={e => {
-                                        const val = e.target.value;
+                                        const raw = e.target.value;
+                                        const subtotalNow = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                                        const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
+                                        // In riel: the USD at the shop rate, the total when within 3 cents.
+                                        if (rielMode) setRielTyped(raw);
+                                        const val = rielMode
+                                            ? (raw === '' ? '' : String(resolveMoney({ amount: raw, currency: 'KHR', rate, snapToUsd: totalNow }).usd))
+                                            : raw;
                                         const num = val === '' ? 0 : Number(val);
                                         // Partial amount auto-detects as a deposit; clearing or
                                         // filling it flips back (only among Unpaid/Paid/Deposit —
                                         // Get File and Cancel are never overridden).
-                                        const subtotalNow = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                                        const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
                                         let status = formData.paymentStatus;
                                         if (!formData.paymentAfterDelivery && ['Unpaid', 'Paid', 'Deposit'].includes(status)) {
                                             if (num > 0 && num < totalNow) status = 'Deposit';
@@ -1132,6 +1177,27 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     }}
                                     disabled={formData.paymentAfterDelivery}
                                 />
+                                {(() => {
+                                    if (formData.paymentAfterDelivery) return null;
+                                    const usdNow = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
+                                    const subtotalNow = cartItems.reduce((s, i) => s + (i.price * i.quantity), 0);
+                                    const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
+                                    const w = rielMode ? checkKhrAmount(Number(rielTyped) || 0, { rate }) : checkUsdAmount(usdNow, { rate, maxPlausibleUsd: totalNow });
+                                    return (
+                                        <>
+                                            {rielMode && Number(rielTyped) > 0 && (
+                                                <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '6px 0 0 0' }}>
+                                                    {formatKhr(Number(rielTyped))} @ {formatRate(rate)} = {formatUsd(usdNow)}
+                                                </p>
+                                            )}
+                                            {w && (
+                                                <p role="alert" style={{ fontSize: '11px', color: '#B45309', margin: '6px 0 0 0', fontWeight: 600 }}>
+                                                    {amountWarningLine(w)}
+                                                </p>
+                                            )}
+                                        </>
+                                    );
+                                })()}
                                 {(() => {
                                     const num = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
                                     const subtotalNow = cartItems.reduce((s, i) => s + (i.price * i.quantity), 0);
@@ -1249,7 +1315,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '600', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
                             <span>សរុបជាប្រាក់រៀល (KHR)</span>
-                            <span>{(total * khrExchangeRate).toLocaleString()} ៛</span>
+                            <span>{formatKhr(total * rate)}</span>
                         </div>
                     </div>
                 </div>

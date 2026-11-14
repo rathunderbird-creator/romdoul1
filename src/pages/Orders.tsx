@@ -31,6 +31,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
 import { mapSaleEntity } from '../utils/mapper';
+import { shopRate } from '../utils/currency';
 import * as XLSX from 'xlsx';
 import type { Sale, CartItem } from '../types';
 
@@ -141,7 +142,7 @@ const ShippingModalComponent: React.FC<{
     const depositNum = parseFloat(deposit) || 0;
     const remainingAmount = Math.max(0, computedTotal - depositNum);
     const khrBase = depositNum > 0 ? remainingAmount : computedTotal;
-    const displayKhr = customKhr !== '' ? customKhr : Math.round(khrBase * (khrExchangeRate || 4100)).toString();
+    const displayKhr = customKhr !== '' ? customKhr : Math.round(khrBase * shopRate(khrExchangeRate)).toString();
 
     const updateItem = (idx: number, patch: Partial<CartItem>) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
     const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
@@ -4827,7 +4828,9 @@ const Orders: React.FC = () => {
                     onClose={() => { setIsPaymentMethodModalOpen(false); setPaymentMethodTargetOrder(null); }}
                     initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.settleDate || undefined}
-                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName }) => {
+                    amountDue={Math.max(0, paymentMethodTargetOrder.total - (paymentMethodTargetOrder.depositAmount || 0))}
+                    khrExpected={paymentMethodTargetOrder.customKhrAmount}
+                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, money }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
                         updates.amountReceived = paymentMethodTargetOrder.total;
@@ -4838,7 +4841,9 @@ const Orders: React.FC = () => {
                         // reaches the ledger unless someone also records it on
                         // Customer Payment.
                         updates.postToLedger = true;
-                        updateOrder(paymentMethodTargetOrder.id, updates);
+                        // Riel received: the order's USD is booked, the riel
+                        // amount and rate ride along on the income row.
+                        updateOrder(paymentMethodTargetOrder.id, updates, money ? { money: { ...money, category: 'លក់រាយ' } } : undefined);
                     }}
                 />
             )}
@@ -4870,7 +4875,7 @@ const Orders: React.FC = () => {
                 order={depositTargetOrder}
                 onClose={() => setDepositTargetOrder(null)}
                 showDepositAccount
-                onConfirm={({ amount, method, date, depositAccountId, depositAccountName }) => {
+                onConfirm={({ amount, method, date, depositAccountId, depositAccountName, money }) => {
                     if (!depositTargetOrder) return;
                     updateOrder(depositTargetOrder.id, {
                         paymentStatus: 'Deposit',
@@ -4891,7 +4896,7 @@ const Orders: React.FC = () => {
                         postToLedger: true,
                         depositAccountId,
                         depositAccountName
-                    });
+                    }, { money: { ...money, category: 'កក់ប្រាក់' } });
                     setDepositTargetOrder(null);
                 }}
             />
@@ -4899,7 +4904,7 @@ const Orders: React.FC = () => {
             <DeliveryFeeModal
                 order={deliveryFeeTargetOrder}
                 onClose={() => setDeliveryFeeTargetOrder(null)}
-                onConfirm={({ amount, method, date, depositAccountId, depositAccountName }) => {
+                onConfirm={({ amount, method, date, depositAccountId, depositAccountName, money }) => {
                     if (!deliveryFeeTargetOrder) return;
                     updateOrder(deliveryFeeTargetOrder.id, {
                         paymentStatus: 'PdFee',
@@ -4909,7 +4914,7 @@ const Orders: React.FC = () => {
                         amountReceived: amount,
                         depositAccountId,
                         depositAccountName
-                    });
+                    }, { money: { ...money, category: 'ថ្លៃដឹក' } });
                     setDeliveryFeeTargetOrder(null);
                 }}
             />
