@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { formatKhr } from '../utils/currency';
 import { Search, ShoppingCart, Trash2, X, User as UserIcon, Banknote } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import ProductCard from './ProductCard';
@@ -411,7 +412,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'flex-end', paddingTop: '20px', borderTop: '2px dashed rgba(0,0,0,0.05)' }}>
                                     <div>
                                         <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-muted)', display: 'block' }}>TOTAL</span>
-                                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{(finalTotal * khrExchangeRate).toLocaleString()} ៛</span>
+                                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{formatKhr(finalTotal * khrExchangeRate)}</span>
                                     </div>
                                     <span style={{ fontSize: '32px', fontWeight: 900, color: 'var(--color-primary)', lineHeight: 1 }}>${finalTotal.toFixed(2)}</span>
                                 </div>

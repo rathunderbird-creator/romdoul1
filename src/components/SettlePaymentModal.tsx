@@ -3,6 +3,11 @@ import Modal from './Modal';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
 import { dayKeyFromDate } from '../utils/dateRange';
+import MoneyInput from './MoneyInput';
+import CashBankOptions from './CashBankOptions';
+import { useMoneyField } from '../hooks/useMoneyField';
+import { counterpartAccount, defaultCashBankAccountId } from '../utils/cashBankAccounts';
+import { accountCurrency, formatUsd, isKhrAccountName, usdToKhr, type MoneyMeta } from '../utils/currency';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
 // (not 24h) so a daylight-saving change can't land on the wrong date.
@@ -20,7 +25,15 @@ interface SettlePaymentModalProps {
     // updateOrder so settling also books the receipt, instead of leaving the
     // entry for a later manual Record Receipt on Customer Payment. They stay
     // optional: an instance with no cash/bank accounts settles without them.
-    onConfirm: (data: { paymentMethod: string; settleDate: string; depositAccountId?: string; depositAccountName?: string }) => void;
+    // money: the riel received, when the settlement came in riel (the order's
+    // USD is still what is booked; the riel amount and rate are recorded
+    // with it).
+    onConfirm: (data: { paymentMethod: string; settleDate: string; depositAccountId?: string; depositAccountName?: string; money?: MoneyMeta }) => void;
+    // What this settlement books in USD (total − deposit), and the riel the
+    // shop expected to collect (sales.custom_khr_amount) — both optional;
+    // without amountDue the riel option is not offered.
+    amountDue?: number;
+    khrExpected?: number;
     initialMethod?: string;
     initialDate?: string;
     title?: string;
@@ -33,10 +46,14 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     onConfirm,
     initialMethod,
     initialDate,
+    amountDue,
+    khrExpected,
     title = "Settle Payment",
     description = "Please confirm the settle date and payment method."
 }) => {
-    const { paymentMethods } = useStore();
+    const { paymentMethods, khrExchangeRate } = useStore();
+    // The riel actually received (only when the account / toggle says riel).
+    const rielField = useMoneyField({ shopRate: khrExchangeRate, snapToUsd: amountDue ?? null, init: { currency: 'KHR' } });
     const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
@@ -86,11 +103,23 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
         if (!isOpen || paymentAccounts.length === 0) return;
         setDepositAccountId(prev => {
             if (prev && paymentAccounts.some(a => a.id === prev)) return prev;
-            // Bank is the default Deposited into account too, same idea as Pay By.
-            const bankAccount = paymentAccounts.find(a => a.account_name.toLowerCase().includes('bank'));
-            return bankAccount?.id || paymentAccounts[0]?.id || '';
+            // Bank is the default Deposited into account too, same idea as Pay
+            // By; never a riel account by default.
+            return defaultCashBankAccountId(paymentAccounts);
         });
     }, [isOpen, paymentAccounts]);
+
+    // Riel prefill on open: what the shop expected to collect, else the
+    // amount due at the shop rate.
+    useEffect(() => {
+        if (!isOpen) return;
+        const expected = khrExpected && khrExpected > 0 ? Math.round(khrExpected) : (amountDue ? usdToKhr(amountDue, rielField.shopRate) : '');
+        rielField.reset({ amount: expected, currency: 'KHR' });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, khrExpected, amountDue]);
+
+    const inRiel = amountDue !== undefined && accountCurrency(paymentAccounts.find(a => a.id === depositAccountId)) === 'KHR';
+    const hasKhrAccounts = paymentAccounts.some(a => isKhrAccountName(a.account_name));
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title}>
@@ -156,6 +185,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                         value={depositAccountId}
                         onChange={(e) => setDepositAccountId(e.target.value)}
                         disabled={!accountsLoaded}
+                        data-testid="settle-account"
                         style={{
                             width: '100%', padding: '10px', borderRadius: '8px',
                             border: `1px solid ${accountsLoaded && paymentAccounts.length > 0 && !depositAccountId ? '#DC2626' : 'var(--color-border)'}`,
@@ -164,9 +194,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                         }}
                     >
                         <option value="">{accountsLoaded ? 'Bank or cash account…' : 'Loading accounts…'}</option>
-                        {paymentAccounts.map(a => (
-                            <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>
-                        ))}
+                        <CashBankOptions accounts={paymentAccounts} />
                     </select>
                     <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
                         {!accountsLoaded
@@ -175,7 +203,27 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                                 ? 'Settling also books the receipt to this account as a Draft journal entry.'
                                 : 'No cash or bank accounts in the Chart of Accounts yet — the settlement saves without a ledger entry account.'}
                     </p>
+                    {amountDue !== undefined && hasKhrAccounts && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = counterpartAccount(paymentAccounts, depositAccountId, inRiel ? 'USD' : 'KHR');
+                                if (next) setDepositAccountId(next.id);
+                            }}
+                            style={{ marginTop: '6px', background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                        >
+                            {inRiel ? 'Received in dollars instead' : 'Received in riel (៛)?'}
+                        </button>
+                    )}
                 </div>
+                {inRiel && amountDue !== undefined && (
+                    <div>
+                        <MoneyInput field={rielField} label="Riel received" required />
+                        <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                            Books the order's {formatUsd(amountDue)}; the riel amount and rate are recorded with it.
+                        </p>
+                    </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
                     <button
                         onClick={onClose}
@@ -190,11 +238,13 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                     {(() => {
                         // An account is required only when there is one to pick —
                         // and nothing confirms before the accounts have loaded.
-                        const valid = accountsLoaded && !submitted && !(paymentAccounts.length > 0 && !depositAccountId);
+                        const valid = accountsLoaded && !submitted && !(paymentAccounts.length > 0 && !depositAccountId)
+                            && !(inRiel && (!(rielField.typed > 0) || rielField.rateInvalid));
                         return (
                             <button
                                 onClick={() => {
                                     if (!valid) return;
+                                    if (inRiel && !rielField.confirmIfSuspicious()) return;
                                     setSubmitted(true);
                                     // Ensure time is preserved, or just set to noon if we only care about the date
                                     // Default behavior for <input type="date"> is YYYY-MM-DD
@@ -203,6 +253,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                                         settleDate: new Date(settleDate).toISOString(),
                                         depositAccountId: depositAccountId || undefined,
                                         depositAccountName: paymentAccounts.find(a => a.id === depositAccountId)?.account_name,
+                                        money: inRiel ? rielField.meta : undefined,
                                     });
                                     onClose();
                                 }}

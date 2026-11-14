@@ -20,7 +20,8 @@ import { fetchAll } from '../utils/fetchAll';
 import { addDays, dayKeyFromDate, parseDay } from '../utils/dateRange';
 import { getShippingCoColor } from '../utils/orderUtils';
 import { getPaymentIcon, getPaymentColor } from '../utils/payment';
-import { pickCashBankAccount } from '../utils/cashBankAccounts';
+import { pickCashBankAccount, sortCashBankForPicker } from '../utils/cashBankAccounts';
+import { formatMoneyLine, isKhrAccountName, isKhrRow } from '../utils/currency';
 import { DateRangePicker, StatsCard, RecordReceiptModal, OrderDetailsModal } from '../components';
 import { fetchLedgerStartDate, isBeforeLedgerStart, formatLedgerStart } from '../utils/ledgerStart';
 import type { Transaction, Customer } from '../types';
@@ -639,7 +640,9 @@ const CustomerPaymentPage: React.FC = () => {
             orderId: orderIdByTxId.get(tx.id),
             // The modal's picked method beats the row's stored one — the post
             // should land where the user just said the money went.
-            payBy: paymentMethod || tx.pay_by
+            payBy: paymentMethod || tx.pay_by,
+            // A riel payment's entry carries its riel amount and rate.
+            money: isKhrRow(tx) ? { currency: 'KHR', original_amount: Number(tx.original_amount), exchange_rate: Number(tx.exchange_rate) } : null,
         }).then(async () => {
             setPostedIds(s => new Set(s).add(tx.id));
             // A corrected Payment Date or Method moves the payment row itself too
@@ -909,8 +912,14 @@ const CustomerPaymentPage: React.FC = () => {
             if (existing) return existing;
             // Revenue posting: an exact account-name Method is honored,
             // anything else defaults to the bank account — see
-            // pickCashBankAccount's preferBank.
-            return pickCashBankAccount(accounts, r.pay_by, { preferBank: true })?.id;
+            // pickCashBankAccount's preferBank. A riel payment goes to a riel
+            // account (its USD pick when the store has none yet); a USD one
+            // never does.
+            if (isKhrRow(r)) {
+                return (pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'KHR' })
+                    || pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'USD' }))?.id;
+            }
+            return pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'USD' })?.id;
         };
         let ok = 0;
         let moved = 0;
@@ -928,6 +937,7 @@ const CustomerPaymentPage: React.FC = () => {
                     notes,
                     orderId: orderIdByTxId.get(r.id),
                     payBy: r.pay_by,
+                    money: isKhrRow(r) ? { currency: 'KHR', original_amount: Number(r.original_amount), exchange_rate: Number(r.exchange_rate) } : null,
                 });
                 ok++;
                 setPostedIds(prev => new Set(prev).add(r.id));
@@ -1361,7 +1371,12 @@ const CustomerPaymentPage: React.FC = () => {
                                 <label style={labelStyle}>Deposited into</label>
                                 <select value={bulkPostForm.accountId} onChange={e => setBulkPostForm(f => f && { ...f, accountId: e.target.value })} style={inputStyle}>
                                     <option value="">Auto — each payment's own account</option>
-                                    {bulkAccounts.map(a => <option key={a.id} value={a.id}>{a.account_name}</option>)}
+                                    {sortCashBankForPicker(bulkAccounts).filter(a => !isKhrAccountName(a.account_name)).map(a => <option key={a.id} value={a.id}>{a.account_name}</option>)}
+                                    {bulkAccounts.some(a => isKhrAccountName(a.account_name)) && (
+                                        <optgroup label="Riel (KHR)">
+                                            {sortCashBankForPicker(bulkAccounts).filter(a => isKhrAccountName(a.account_name)).map(a => <option key={a.id} value={a.id}>{a.account_name}</option>)}
+                                        </optgroup>
+                                    )}
                                 </select>
                             </div>
                             <div style={{ marginBottom: '18px' }}>
@@ -1480,7 +1495,10 @@ const CustomerPaymentPage: React.FC = () => {
                                             <td style={tdStyle}>{formatDate(r.date)}</td>
                                             <td style={tdStyle}>{customerLabel}</td>
                                             <td style={tdStyle}><TypeBadge category={r.category} /></td>
-                                            <td style={{ ...tdStyle, color: '#059669' }}>{formatAmount(r.amount)}</td>
+                                            <td style={{ ...tdStyle, color: '#059669' }} title={isKhrRow(r) ? formatMoneyLine(r) : undefined}>
+                                                {formatAmount(r.amount)}
+                                                {isKhrRow(r) && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{formatMoneyLine(r)}</div>}
+                                            </td>
                                             <td style={tdStyle}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                     <span style={{ color: getPaymentColor(r.pay_by) }}>{r.pay_by || '—'}</span>
@@ -1579,6 +1597,7 @@ const CustomerPaymentPage: React.FC = () => {
                     initialDate={localYMD(postTarget.date)}
                     initialDepositAccountId={ledger.debitAccountByTx.get(postTarget.id)}
                     depositAccountHint={postTarget.pay_by || undefined}
+                    finalizeRow={postTarget}
                     title="Record Receipt"
                     description="Confirm the payment date and the account it was deposited into to post this payment to the ledger."
                     onConfirm={handlePostNowConfirm}

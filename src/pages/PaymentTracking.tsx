@@ -1570,7 +1570,7 @@ const PaymentTracking: React.FC = () => {
                     order={paymentMethodTargetOrder}
                     initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.settleDate || undefined}
-                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, amountReceived, receiptReference, receiptNotes }) => {
+                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, amountReceived, receiptReference, receiptNotes, money }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
                         // updateOrder's Paid branch treats amountReceived as the order's
@@ -1585,7 +1585,9 @@ const PaymentTracking: React.FC = () => {
                         updates.depositAccountId = depositAccountId;
                         updates.depositAccountName = depositAccountName;
                         updates.postToLedger = true;
-                        updateOrder(paymentMethodTargetOrder.id, updates);
+                        // A riel receipt: its riel amount and rate ride along on
+                        // the income row and its RCP entry.
+                        updateOrder(paymentMethodTargetOrder.id, updates, money ? { money: { ...money, category: 'លក់រាយ' } } : undefined);
                     }}
                 />
             )}
@@ -1595,7 +1597,7 @@ const PaymentTracking: React.FC = () => {
                 order={depositTargetOrder}
                 onClose={() => setDepositTargetOrder(null)}
                 showDepositAccount
-                onConfirm={({ amount, method, date, depositAccountId, depositAccountName }) => {
+                onConfirm={({ amount, method, date, depositAccountId, depositAccountName, money }) => {
                     if (!depositTargetOrder) return;
                     updateOrder(depositTargetOrder.id, {
                         paymentStatus: 'Deposit',
@@ -1607,7 +1609,7 @@ const PaymentTracking: React.FC = () => {
                         postToLedger: true,
                         depositAccountId,
                         depositAccountName
-                    });
+                    }, { money: { ...money, category: 'កក់ប្រាក់' } });
                     setDepositTargetOrder(null);
                 }}
             />
@@ -1616,7 +1618,7 @@ const PaymentTracking: React.FC = () => {
             <DeliveryFeeModal
                 order={deliveryFeeTargetOrder}
                 onClose={() => setDeliveryFeeTargetOrder(null)}
-                onConfirm={({ amount, method, date, depositAccountId, depositAccountName }) => {
+                onConfirm={({ amount, method, date, depositAccountId, depositAccountName, money }) => {
                     if (!deliveryFeeTargetOrder) return;
                     updateOrder(deliveryFeeTargetOrder.id, {
                         paymentStatus: 'PdFee',
@@ -1626,7 +1628,7 @@ const PaymentTracking: React.FC = () => {
                         amountReceived: amount,
                         depositAccountId,
                         depositAccountName
-                    });
+                    }, { money: { ...money, category: 'ថ្លៃដឹក' } });
                     setDeliveryFeeTargetOrder(null);
                 }}
             />

@@ -3,11 +3,21 @@ import { X, Truck, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
 import type { Sale } from '../types';
+import MoneyInput from './MoneyInput';
+import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
+import CashBankOptions from './CashBankOptions';
+import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
+import { accountCurrency, usdToKhr, type MoneyMeta } from '../utils/currency';
+
+// The most a delivery fee plausibly is, in USD: above it the field warns
+// (the Romdoul2 incident: a $2 fee typed as 8000 riel was booked as $8,000).
+const DELIVERY_FEE_MAX_PLAUSIBLE_USD = 15;
 
 interface DeliveryFeeModalProps {
     order: Sale | null;
     onClose: () => void;
-    onConfirm: (fee: { amount: number; method: string; date: string; depositAccountId?: string; depositAccountName?: string }) => void;
+    // amount is USD; money carries the riel amount and rate when paid in riel.
+    onConfirm: (fee: { amount: number; method: string; date: string; depositAccountId?: string; depositAccountName?: string; money: MoneyMeta }) => void;
 }
 
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -16,9 +26,9 @@ const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset
 // 'PdFee') — the order itself isn't fulfilled, but the customer paid for
 // delivery, and that gets booked straight to Revenue (not the order total).
 const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onConfirm }) => {
-    const { paymentMethods } = useStore();
+    const { paymentMethods, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
-    const [amount, setAmount] = useState<number | string>('');
+    const field = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: DELIVERY_FEE_MAX_PLAUSIBLE_USD });
     const [method, setMethod] = useState('');
     const [date, setDate] = useState(today());
     const [depositAccountId, setDepositAccountId] = useState('');
@@ -36,20 +46,30 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
         if (order) {
             // Re-opening an already-PdFee order (to correct it) prefills from
             // the same generic fields Paid/Deposit already reuse for this.
-            setAmount(order.paymentStatus === 'PdFee' && order.amountReceived ? order.amountReceived : '');
             const bank = paymentMethods.find(m => m.toLowerCase().includes('bank'));
             setMethod(order.paymentStatus === 'PdFee' && order.paymentMethod ? order.paymentMethod : (bank || paymentMethods[0] || 'Bank'));
             setDate(order.paymentStatus === 'PdFee' && order.settleDate ? order.settleDate.slice(0, 10) : today());
-            const bankAccount = paymentAccounts.find(a => a.account_name.toLowerCase().includes('bank'));
-            setDepositAccountId(order.paymentStatus === 'PdFee' && order.depositAccountId ? order.depositAccountId : (bankAccount?.id || paymentAccounts[0]?.id || ''));
+            // Bank first, as the Pay By above; never a riel account by default.
+            const accountId = defaultCashBankAccountId(paymentAccounts, {
+                preferredId: order.paymentStatus === 'PdFee' ? order.depositAccountId : undefined,
+            });
+            setDepositAccountId(accountId);
+            // A correction of a fee in a riel account reopens in riel.
+            const cur = accountCurrency(paymentAccounts.find(a => a.id === accountId));
+            const prev = order.paymentStatus === 'PdFee' && order.amountReceived ? order.amountReceived : '';
+            field.reset(cur === 'KHR'
+                ? { amount: prev === '' ? '' : usdToKhr(Number(prev), field.shopRate), currency: 'KHR' }
+                : { amount: prev, currency: 'USD' });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [order, paymentAccounts]);
 
+    const coupling = useAccountCurrency(field, paymentAccounts, depositAccountId, setDepositAccountId);
+
     if (!order) return null;
 
-    const amt = Number(amount) || 0;
-    const valid = amt > 0 && !(paymentAccounts.length > 0 && !depositAccountId);
+    const amt = field.usd;
+    const valid = amt > 0 && !field.rateInvalid && !(paymentAccounts.length > 0 && !depositAccountId);
 
     return (
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
@@ -72,10 +92,18 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
 
                 {/* Body */}
                 <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    <div>
-                        <label style={labelStyle}>Delivery Fee Amount ($) *</label>
-                        <input type="number" autoFocus min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} style={{ ...inputStyle, fontSize: '16px', fontWeight: 600 }} placeholder="e.g. 1.50" />
-                    </div>
+                    <MoneyInput
+                        field={field}
+                        label="Delivery Fee Amount"
+                        required
+                        autoFocus
+                        allowKhr
+                        placeholder={field.currency === 'KHR' ? 'e.g. 8000' : 'e.g. 1.50'}
+                        onToggleCurrency={coupling.onToggleCurrency}
+                        khrUnavailableReason={coupling.khrUnavailableReason}
+                        labelStyle={labelStyle}
+                        inputStyle={inputStyle}
+                    />
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
                             <label style={labelStyle}>Pay By</label>
@@ -92,13 +120,11 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
                         <label style={labelStyle}>Received into *</label>
                         <select
                             value={depositAccountId}
-                            onChange={e => setDepositAccountId(e.target.value)}
+                            onChange={e => coupling.onAccountChange(e.target.value)}
                             style={{ ...inputStyle, border: `1px solid ${paymentAccounts.length > 0 && !depositAccountId ? '#DC2626' : 'var(--color-border)'}` }}
                         >
                             <option value="">Bank or cash account…</option>
-                            {paymentAccounts.map(a => (
-                                <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>
-                            ))}
+                            <CashBankOptions accounts={paymentAccounts} />
                         </select>
                         {paymentAccounts.length === 0 && (
                             <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
@@ -118,13 +144,17 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
                         className="primary-button"
                         disabled={!valid}
                         onClick={() => {
+                            // A dollar field given a riel-sized figure (or the
+                            // other way round) asks first, showing both readings.
+                            if (!field.confirmIfSuspicious()) return;
                             const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
                             onConfirm({
                                 amount: amt,
                                 method,
                                 date,
                                 depositAccountId: depositAccountId || undefined,
-                                depositAccountName
+                                depositAccountName,
+                                money: field.meta,
                             });
                         }}
                         style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, background: '#0E7490', opacity: valid ? 1 : 0.5, cursor: valid ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}

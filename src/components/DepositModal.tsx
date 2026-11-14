@@ -3,11 +3,18 @@ import { X, Wallet, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
 import type { Sale } from '../types';
+import MoneyInput from './MoneyInput';
+import CashBankOptions from './CashBankOptions';
+import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
+import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
+import { accountCurrency, khrMeta, usdToKhr, type MoneyMeta } from '../utils/currency';
 
 interface DepositModalProps {
     order: Sale | null;
     onClose: () => void;
-    onConfirm: (deposit: { amount: number; method: string; date: string; depositAccountId?: string; depositAccountName?: string }) => void;
+    // amount is USD; money carries the riel amount and rate when paid in riel
+    // (for a top-up: the riel of the top-up only, as only that is booked).
+    onConfirm: (deposit: { amount: number; method: string; date: string; depositAccountId?: string; depositAccountName?: string; money: MoneyMeta }) => void;
     // Payment Tracking opts into the "Deposited into" account field (Orders'
     // Record Deposit popup stays exactly as-is without it).
     showDepositAccount?: boolean;
@@ -17,9 +24,10 @@ const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset
 
 // Records the upfront deposit for a retail order (rest is collected via COD).
 const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, showDepositAccount = false }) => {
-    const { paymentMethods } = useStore();
+    const { paymentMethods, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
-    const [amount, setAmount] = useState<number | string>('');
+    // A deposit is less than the order total, so above it is a typo (riel).
+    const field = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: order?.total || null });
     const [method, setMethod] = useState('');
     const [date, setDate] = useState(today());
     const [depositAccountId, setDepositAccountId] = useState('');
@@ -41,22 +49,29 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
     useEffect(() => {
         if (order) {
             setSubmitted(false);
-            setAmount(order.depositAmount && order.depositAmount > 0 ? order.depositAmount : '');
             const bank = paymentMethods.find(m => m.toLowerCase().includes('bank'));
             setMethod(order.depositMethod || bank || paymentMethods[0] || 'Bank');
             setDate(order.depositDate ? order.depositDate.slice(0, 10) : today());
-            // Bank is the default Deposited into account too, same idea as Pay By above.
-            const bankAccount = paymentAccounts.find(a => a.account_name.toLowerCase().includes('bank'));
-            setDepositAccountId(order.depositAccountId || bankAccount?.id || paymentAccounts[0]?.id || '');
+            // Bank is the default Deposited into account too, same idea as Pay
+            // By above; never a riel account by default.
+            const accountId = defaultCashBankAccountId(paymentAccounts, { preferredId: order.depositAccountId });
+            setDepositAccountId(accountId);
+            const prev = order.depositAmount && order.depositAmount > 0 ? order.depositAmount : '';
+            const inRiel = showDepositAccount && accountCurrency(paymentAccounts.find(a => a.id === accountId)) === 'KHR';
+            field.reset(inRiel
+                ? { amount: prev === '' ? '' : usdToKhr(Number(prev), field.shopRate), currency: 'KHR' }
+                : { amount: prev, currency: 'USD' });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [order, paymentAccounts]);
 
+    const coupling = useAccountCurrency(field, showDepositAccount ? paymentAccounts : [], depositAccountId, setDepositAccountId);
+
     if (!order) return null;
 
-    const amt = Number(amount) || 0;
+    const amt = field.usd;
     const remaining = Math.max(0, (order.total || 0) - amt);
-    const valid = amt > 0 && amt < (order.total || 0) && !submitted && !(showDepositAccount && paymentAccounts.length > 0 && !depositAccountId);
+    const valid = amt > 0 && amt < (order.total || 0) && !submitted && !field.rateInvalid && !(showDepositAccount && paymentAccounts.length > 0 && !depositAccountId);
 
     return (
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
@@ -80,8 +95,18 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
                 {/* Body */}
                 <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div>
-                        <label style={labelStyle}>Deposit Amount ($) *</label>
-                        <input type="number" autoFocus min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} style={{ ...inputStyle, fontSize: '16px', fontWeight: 600 }} placeholder="e.g. 2.00" />
+                        <MoneyInput
+                            field={field}
+                            label="Deposit Amount"
+                            required
+                            autoFocus
+                            allowKhr
+                            placeholder={field.currency === 'KHR' ? 'e.g. 8000' : 'e.g. 2.00'}
+                            onToggleCurrency={coupling.onToggleCurrency}
+                            khrUnavailableReason={coupling.khrUnavailableReason}
+                            labelStyle={labelStyle}
+                            inputStyle={inputStyle}
+                        />
                         {amt > 0 && (
                             <div style={{ marginTop: '6px', fontSize: '12px', color: amt >= (order.total || 0) ? '#DC2626' : 'var(--color-text-secondary)' }}>
                                 {amt >= (order.total || 0)
@@ -107,13 +132,11 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
                             <label style={labelStyle}>Deposited into *</label>
                             <select
                                 value={depositAccountId}
-                                onChange={e => setDepositAccountId(e.target.value)}
+                                onChange={e => coupling.onAccountChange(e.target.value)}
                                 style={{ ...inputStyle, border: `1px solid ${paymentAccounts.length > 0 && !depositAccountId ? '#DC2626' : 'var(--color-border)'}` }}
                             >
                                 <option value="">Bank or cash account…</option>
-                                {paymentAccounts.map(a => (
-                                    <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>
-                                ))}
+                                <CashBankOptions accounts={paymentAccounts} />
                             </select>
                             {paymentAccounts.length === 0 && (
                                 <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
@@ -134,12 +157,20 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
                         className="primary-button"
                         disabled={!valid}
                         onClick={() => {
+                            if (!field.confirmIfSuspicious()) return;
                             setSubmitted(true);
                             const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
+                            // A top-up books only the difference over the deposit
+                            // already taken, so its riel is the difference too.
+                            const prevUsd = order.depositAmount && order.depositAmount > 0 ? order.depositAmount : 0;
+                            const money = field.meta.currency === 'KHR' && prevUsd > 0
+                                ? khrMeta(Math.max(0, field.meta.original_amount - usdToKhr(prevUsd, field.meta.exchange_rate, 1)), field.meta.exchange_rate)
+                                : field.meta;
                             onConfirm({
                                 amount: amt,
                                 method,
                                 date,
+                                money,
                                 ...(showDepositAccount ? { depositAccountId: depositAccountId || undefined, depositAccountName } : {})
                             });
                         }}

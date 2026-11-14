@@ -4,6 +4,11 @@ import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
 import type { Sale } from '../types';
 import { dayKeyFromDate } from '../utils/dateRange';
+import MoneyInput from './MoneyInput';
+import CashBankOptions from './CashBankOptions';
+import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
+import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
+import { formatMoneyLine, isKhrRow, type MoneyMeta, type MoneyRow } from '../utils/currency';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
 // (not 24h) so a daylight-saving change can't land on the wrong date.
@@ -24,6 +29,8 @@ interface RecordReceiptModalProps {
         amountReceived: number;
         receiptReference?: string;
         receiptNotes?: string;
+        // The riel received (not in finalizeMode: that amount is fixed).
+        money?: MoneyMeta;
     }) => void;
     // Single order this receipt is being recorded against — fixes the
     // customer and drives the amount-received default/remaining-balance math.
@@ -37,6 +44,10 @@ interface RecordReceiptModalProps {
     // Finalizing an already-recorded payment: the amount is fixed to order.total
     // and there is no method or remaining balance to edit.
     finalizeMode?: boolean;
+    // finalizeMode: the recorded payment row, shown as "៛82,000 @ 4,100 =
+    // $20.00" when it was riel, and steering the default account to a riel
+    // account then.
+    finalizeRow?: MoneyRow | null;
     title?: string;
     description?: string;
 }
@@ -51,16 +62,16 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     initialDepositAccountId,
     depositAccountHint,
     finalizeMode = false,
+    finalizeRow,
     title = "Record Receipt",
     description = "Please confirm the settle date and payment method."
 }) => {
-    const { paymentMethods } = useStore();
+    const { paymentMethods, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
     // The user's explicit "Deposited into" pick; '' falls back to the default below.
     const [chosenAccountId, setChosenAccountId] = useState<string>('');
-    const [amountReceived, setAmountReceived] = useState<number>(0);
     const [receiptReference, setReceiptReference] = useState<string>('');
     const [receiptNotes, setReceiptNotes] = useState<string>('');
     const [accountsLoaded, setAccountsLoaded] = useState(false);
@@ -78,6 +89,10 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
         [accounts]
     );
 
+    // The balance still due; a figure above it is a typo (riel).
+    const due = Math.max(0, order.total - (order.depositAmount || order.amountReceived || 0));
+    const field = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: due || null });
+
     // Initialize once per open, so accounts arriving later never wipe the user's edits.
     useEffect(() => {
         if (!isOpen) { initializedRef.current = false; return; }
@@ -91,29 +106,34 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
         setChosenAccountId('');
         // Default to the order's outstanding balance — an order that already
         // took a deposit defaults to the remainder, not the whole total again.
-        setAmountReceived(finalizeMode ? order.total : Math.max(0, order.total - (order.depositAmount || order.amountReceived || 0)));
+        field.reset({ amount: finalizeMode ? order.total : due, currency: 'USD' });
         setReceiptReference('');
         setReceiptNotes('');
+        // field.reset follows the shop rate only; the rest are this open's inputs.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, initialMethod, initialDate, paymentMethods, finalizeMode, order.total, order.depositAmount, order.amountReceived]);
 
     // Default "Deposited into" until the user picks one: the preferred id, then
     // a name match on the hint (a cash method picks the cash account), then Bank.
-    const defaultAccountId = useMemo(() => {
-        const hint = (depositAccountHint || '').trim().toLowerCase();
-        const preferred = (initialDepositAccountId && paymentAccounts.find(a => a.id === initialDepositAccountId))
-            || (hint ? paymentAccounts.find(a => a.account_name.toLowerCase() === hint) : undefined)
-            || (hint.includes('cash') ? paymentAccounts.find(a => /cash/i.test(a.account_name)) : undefined)
-            || paymentAccounts.find(a => a.account_name.toLowerCase().includes('bank'))
-            || paymentAccounts[0];
-        return preferred?.id || '';
-    }, [paymentAccounts, initialDepositAccountId, depositAccountHint]);
+    // In the payment's currency: a USD receipt never opens on a riel account;
+    // a riel row being finalized opens on a riel one when the store has one.
+    const rowIsKhr = finalizeMode && isKhrRow(finalizeRow);
+    const defaultAccountId = useMemo(() => defaultCashBankAccountId(paymentAccounts, {
+        preferredId: initialDepositAccountId,
+        hint: depositAccountHint,
+        cashHint: true,
+        currency: rowIsKhr ? 'KHR' : 'USD',
+    }) || (rowIsKhr ? defaultCashBankAccountId(paymentAccounts, { hint: depositAccountHint, cashHint: true }) : ''),
+    [paymentAccounts, initialDepositAccountId, depositAccountHint, rowIsKhr]);
     const depositAccountId = chosenAccountId || defaultAccountId;
+    const coupling = useAccountCurrency(field, paymentAccounts, depositAccountId, setChosenAccountId);
+    const amountReceived = finalizeMode ? order.total : field.usd;
 
     // A prior deposit already reduced the balance — leave it out of "remaining"
     // too, or a fully-settling receipt would still show a bogus balance.
     const remainingBalance = Math.max(0, order.total - (order.depositAmount || 0) - (amountReceived || 0));
     const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(settleDate);
-    const canRecord = accountsLoaded && dateValid && amountReceived > 0 && !(paymentAccounts.length > 0 && !depositAccountId);
+    const canRecord = accountsLoaded && dateValid && amountReceived > 0 && !(!finalizeMode && field.rateInvalid) && !(paymentAccounts.length > 0 && !depositAccountId);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title}>
@@ -166,28 +186,27 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     </div>
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Amount received <span style={{ color: 'red' }}>*</span></label>
+                    {finalizeMode && <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Amount received <span style={{ color: 'red' }}>*</span></label>}
                     {finalizeMode ? (
                         <div style={{
                             width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
                             background: 'var(--color-bg)', color: 'var(--color-text-main)', fontSize: '14px', fontWeight: 600,
                             boxSizing: 'border-box'
                         }}>
-                            ${Number(order.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {finalizeRow && isKhrRow(finalizeRow)
+                                ? formatMoneyLine(finalizeRow)
+                                : `$${Number(order.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                         </div>
                     ) : (
-                        <input
-                            type="number"
-                            min="0.01"
-                            step="0.01"
-                            value={amountReceived}
-                            onChange={(e) => setAmountReceived(parseFloat(e.target.value) || 0)}
-                            style={{
-                                width: '100%', padding: '10px', borderRadius: '8px',
-                                border: `1px solid ${amountReceived <= 0 ? 'red' : 'var(--color-border)'}`,
-                                background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
-                                outline: 'none', boxSizing: 'border-box'
-                            }}
+                        <MoneyInput
+                            field={field}
+                            label="Amount received"
+                            required
+                            allowKhr
+                            onToggleCurrency={coupling.onToggleCurrency}
+                            khrUnavailableReason={coupling.khrUnavailableReason}
+                            labelStyle={{ color: 'var(--color-text-main)' }}
+                            inputStyle={{ fontSize: '14px', fontWeight: 400, borderRadius: '8px', padding: '10px', border: `1px solid ${amountReceived <= 0 ? 'red' : 'var(--color-border)'}` }}
                         />
                     )}
                 </div>
@@ -229,7 +248,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     <select
                         value={depositAccountId}
                         disabled={!accountsLoaded}
-                        onChange={(e) => setChosenAccountId(e.target.value)}
+                        onChange={(e) => (finalizeMode ? setChosenAccountId(e.target.value) : coupling.onAccountChange(e.target.value))}
                         style={{
                             width: '100%', padding: '10px', borderRadius: '8px',
                             border: `1px solid ${paymentAccounts.length > 0 && !depositAccountId ? 'red' : 'var(--color-border)'}`,
@@ -238,9 +257,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                         }}
                     >
                         <option value="">Bank or cash account…</option>
-                        {paymentAccounts.map(a => (
-                            <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>
-                        ))}
+                        <CashBankOptions accounts={paymentAccounts} />
                     </select>
                     {!accountsLoaded ? (
                         <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
@@ -284,6 +301,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     <button
                         onClick={() => {
                             if (!canRecord) return;
+                            if (!finalizeMode && !field.confirmIfSuspicious()) return;
                             const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
                             onConfirm({
                                 paymentMethod: selectedMethod,
@@ -292,7 +310,8 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                                 depositAccountName,
                                 amountReceived,
                                 receiptReference: receiptReference.trim() || undefined,
-                                receiptNotes: receiptNotes.trim() || undefined
+                                receiptNotes: receiptNotes.trim() || undefined,
+                                money: finalizeMode ? undefined : field.meta,
                             });
                             onClose();
                         }}
