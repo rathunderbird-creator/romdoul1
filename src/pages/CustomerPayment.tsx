@@ -26,6 +26,7 @@ import { DateRangePicker, StatsCard, RecordReceiptModal, OrderDetailsModal } fro
 import { fetchLedgerStartDate, isBeforeLedgerStart, formatLedgerStart } from '../utils/ledgerStart';
 import type { Transaction, Customer } from '../types';
 import { fetchJournalLinesByEntry } from '../utils/journalLines';
+import { useColumnWidths } from './pageIncomePrediction/useColumnWidths';
 
 // The cash/bank accounts offered by the bulk Post Now popup, with enough of
 // the chart row for pickCashBankAccount to match a payment's Method against.
@@ -1184,6 +1185,22 @@ const CustomerPaymentPage: React.FC = () => {
     };
 
     const colCount = 11 + (hasNotesData ? 1 : 0);
+    // Notes is only a column when some payment has notes.
+    const rpColDefaults = useMemo(() => {
+        const d = { ...RP_COLS };
+        if (!hasNotesData) delete d.notes;
+        return d;
+    }, [hasNotesData]);
+    const { widthStyle, resizeHandle, totalWidth } = useColumnWidths('retail_payment_cols', rpColDefaults);
+    // Header cell with its drag grip; the cell clips instead of growing.
+    const th = (key: string, label: string) => (
+        <th style={{ ...thStyle, ...widthStyle(key), position: 'relative', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {label}
+            {resizeHandle(key)}
+        </th>
+    );
+    const cell = (key: string, extra?: React.CSSProperties): React.CSSProperties =>
+        ({ ...tdStyle, ...widthStyle(key), overflow: 'hidden', textOverflow: 'ellipsis', ...extra });
     const hiddenCount = deletedOrderTxIds.size;
     const statValue = (v: React.ReactNode) => showStats ? v : '—';
     const countLabel = (n: number) => showStats ? `${n.toLocaleString()} record${n === 1 ? '' : 's'}` : undefined;
@@ -1527,10 +1544,13 @@ const CustomerPaymentPage: React.FC = () => {
             {/* Table */}
             <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', whiteSpace: 'nowrap' }}>
+                    {/* Column resize grip rendered by useColumnWidths (same rule as Revenue/Expense). */}
+                    <style>{`.pip-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; background: transparent; }
+.pip-resize-handle:hover { background: rgba(84, 105, 212, 0.3); }`}</style>
+                    <table style={{ width: totalWidth + RP_CHECKBOX_COL, minWidth: '100%', borderCollapse: 'collapse', fontSize: '14px', whiteSpace: 'nowrap', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                <th style={{ ...thStyle, width: '34px', padding: '14px 8px 14px 20px' }}>
+                                <th style={{ ...thStyle, width: RP_CHECKBOX_COL, minWidth: RP_CHECKBOX_COL, maxWidth: RP_CHECKBOX_COL, padding: '14px 8px 14px 20px', boxSizing: 'border-box' }}>
                                     <input
                                         type="checkbox"
                                         checked={allPageSelected}
@@ -1541,17 +1561,17 @@ const CustomerPaymentPage: React.FC = () => {
                                         style={{ cursor: pageSelectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
                                     />
                                 </th>
-                                <th style={thStyle}>Reference</th>
-                                <th style={thStyle}>Date</th>
-                                <th style={thStyle}>Customer</th>
-                                <th style={thStyle}>Payment Type</th>
-                                <th style={thStyle}>Amount</th>
-                                <th style={thStyle}>Method</th>
-                                <th style={thStyle}>Account</th>
-                                {hasNotesData && <th style={thStyle}>Notes</th>}
-                                <th style={thStyle}>Added by</th>
-                                <th style={thStyle}>Status</th>
-                                <th style={thStyle}>Action</th>
+                                {th('ref', 'Reference')}
+                                {th('date', 'Date')}
+                                {th('customer', 'Customer')}
+                                {th('type', 'Payment Type')}
+                                {th('amount', 'Amount')}
+                                {th('method', 'Method')}
+                                {th('account', 'Account')}
+                                {hasNotesData && th('notes', 'Notes')}
+                                {th('addedBy', 'Added by')}
+                                {th('status', 'Status')}
+                                {th('action', 'Action')}
                             </tr>
                         </thead>
                         <tbody>
@@ -1599,7 +1619,7 @@ const CustomerPaymentPage: React.FC = () => {
                                     const PaymentIcon = method ? getPaymentIcon(method) : null;
                                     return (
                                         <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-surface)', transition: 'background 0.2s' }}>
-                                            <td style={{ ...tdStyle, padding: '14px 8px 14px 20px' }}>
+                                            <td style={{ ...tdStyle, width: RP_CHECKBOX_COL, padding: '14px 8px 14px 20px', boxSizing: 'border-box' }}>
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedIds.has(r.id)}
@@ -1609,15 +1629,15 @@ const CustomerPaymentPage: React.FC = () => {
                                                     style={{ cursor: posting ? 'not-allowed' : 'pointer' }}
                                                 />
                                             </td>
-                                            <td style={tdStyle}>{referenceOf(r)}</td>
-                                            <td style={tdStyle}>{formatDate(r.date)}</td>
-                                            <td style={tdStyle}>{customerLabel}</td>
-                                            <td style={tdStyle}><TypeBadge category={r.category} /></td>
-                                            <td style={{ ...tdStyle, color: '#059669' }} title={isKhrRow(r) ? formatMoneyLine(r) : undefined}>
+                                            <td style={cell('ref')} title={referenceOf(r)}>{referenceOf(r)}</td>
+                                            <td style={cell('date')}>{formatDate(r.date)}</td>
+                                            <td style={cell('customer')} title={customerLabel}>{customerLabel}</td>
+                                            <td style={cell('type')}><TypeBadge category={r.category} /></td>
+                                            <td style={cell('amount', { color: '#059669' })} title={isKhrRow(r) ? formatMoneyLine(r) : undefined}>
                                                 {formatAmount(r.amount)}
                                                 {isKhrRow(r) && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{formatMoneyLine(r)}</div>}
                                             </td>
-                                            <td style={tdStyle} title={r.pay_by ? `Saved as: ${r.pay_by}` : undefined}>
+                                            <td style={cell('method')} title={r.pay_by ? `Saved as: ${r.pay_by}` : undefined}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                     <span style={{ color: getPaymentColor(method) }}>{method || '—'}</span>
                                                     {PaymentIcon && <PaymentIcon size={14} color={getPaymentColor(method)} />}
@@ -1628,18 +1648,18 @@ const CustomerPaymentPage: React.FC = () => {
                                                 // '—' when it has no entry (set when it is posted).
                                                 const waiting = !accountName && known && ledger.byTx.has(String(r.id)) && !accountsDone;
                                                 return (
-                                                    <td style={{ ...tdStyle, color: accountName ? undefined : 'var(--color-text-muted)' }}
-                                                        title={accountName ? undefined : waiting ? 'Loading…' : 'No ledger entry yet: the account is set when it is posted'}>
+                                                    <td style={cell('account', { color: accountName ? undefined : 'var(--color-text-muted)' })}
+                                                        title={accountName || (waiting ? 'Loading…' : 'No ledger entry yet: the account is set when it is posted')}>
                                                         {accountName || (waiting || !known ? '…' : '—')}
                                                     </td>
                                                 );
                                             })()}
                                             {hasNotesData && (
-                                                <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: '240px' }}>{r.notes || '—'}</td>
+                                                <td style={cell('notes', { whiteSpace: 'normal' })}>{r.notes || '—'}</td>
                                             )}
-                                            <td style={tdStyle}>{r.added_by || '—'}</td>
-                                            <td style={tdStyle}><StatusChip status={known ? status : 'Unknown'} /></td>
-                                            <td style={tdStyle}>
+                                            <td style={cell('addedBy')} title={r.added_by || undefined}>{r.added_by || '—'}</td>
+                                            <td style={cell('status')}><StatusChip status={known ? status : 'Unknown'} /></td>
+                                            <td style={cell('action')}>
                                                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                                     <button
                                                         onClick={() => setPostTarget(r)}
@@ -1741,6 +1761,16 @@ const CustomerPaymentPage: React.FC = () => {
         </div>
     );
 };
+
+// Drag-resizable desktop columns (same grip as Revenue/Expense), widths kept
+// per browser in localStorage. Defaults fit a full RCP-YYYYMMDD-NNN reference,
+// a "name - phone - shipping co" customer, a riel amount's second line, and
+// the Post Now + View buttons.
+const RP_COLS: Record<string, number> = {
+    ref: 180, date: 120, customer: 300, type: 130, amount: 160, method: 110,
+    account: 210, notes: 240, addedBy: 140, status: 110, action: 190,
+};
+const RP_CHECKBOX_COL = 62;
 
 // Same style tokens as Journal Entries' table — generous padding, non-uppercase
 // 600-weight headers, border/background carried on the row rather than per-cell.
