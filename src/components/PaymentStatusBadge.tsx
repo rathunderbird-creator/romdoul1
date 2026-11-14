@@ -9,9 +9,12 @@ interface PaymentStatusBadgeProps {
     readOnly?: boolean;
     disabledOptions?: string[];
     bold?: boolean;
+    // A Salesman's deposit/payment not yet confirmed as received: the status
+    // shows in gray (with this tooltip) until someone confirms it.
+    unconfirmed?: string;
 }
 
-const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [], bold = true }) => {
+const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [], bold = true, unconfirmed }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
@@ -33,7 +36,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
         }
     };
 
-    const style = getStatusStyle(status);
+    const style = unconfirmed ? { bg: '#F3F4F6', color: '#6B7280', border: '#D1D5DB' } : getStatusStyle(status);
 
     const badgeStyle: React.CSSProperties = {
         display: 'inline-flex',
@@ -88,7 +91,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
 
     return (
         <div style={{ position: 'relative', display: 'inline-block', width: '100%' }} ref={dropdownRef}>
-            <div className="status-badge" style={badgeStyle} onClick={handleToggle} title={status === 'PdFee' ? 'Paid for Delivery Fee' : undefined}>
+            <div className="status-badge" data-unconfirmed={unconfirmed ? '' : undefined} style={badgeStyle} onClick={handleToggle} title={unconfirmed || (status === 'PdFee' ? 'Paid for Delivery Fee' : undefined)}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{status}</span>
                 {!readOnly && <ChevronDown size={14} style={{ marginLeft: '4px', opacity: 0.7, flexShrink: 0 }} />}
             </div>

@@ -4,7 +4,7 @@ import { useStore, normalizePhone } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
 import ConfigModal from './ConfigModal';
-import type { Sale, CartItem } from '../types';
+import type { Sale, CartItem, PaymentClaim } from '../types';
 import LazyAvatar from './LazyAvatar';
 import ShippingPointSelector from './ShippingPointSelector';
 import { useLocationTree } from '../hooks/useLocationTree';
@@ -50,7 +50,7 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 };
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
+    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, paymentClaimsReady, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
     const { showToast } = useToast();
     const rate = shopRate(khrExchangeRate);
     // Amount received typed in riel: the riel figure is kept here and the
@@ -497,6 +497,43 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     ? ('Paid' as const)
                     : formData.paymentStatus);
 
+            // A Salesman's deposit or payment is not booked: the order saves Unpaid
+            // and what they entered waits on it until Admin, Customer Care or an
+            // Accountant confirms it on the Orders page (where it shows in gray).
+            // Only for an order that has nothing booked yet; on a store that
+            // hasn't run migrations/add_payment_claim.sql it is booked as before.
+            // A Salesman can't pick the status, so it comes from the amount: all
+            // of it is Paid, part of it a Deposit.
+            const isSalesman = currentUser?.roleId === 'salesman';
+            const claimStatus: 'Deposit' | 'Paid' | null = isSalesman
+                ? (!formData.paymentAfterDelivery && amountReceivedVal > 0 && !['Get File', 'Cancel'].includes(formData.paymentStatus)
+                    ? (total > 0 && amountReceivedVal >= total ? 'Paid' : 'Deposit')
+                    : null)
+                : (effectivePaymentStatus === 'Deposit' || effectivePaymentStatus === 'Paid' ? effectivePaymentStatus : null);
+            const claimsOn = isSalesman && await paymentClaimsReady();
+            const asClaim = claimsOn
+                && claimStatus !== null
+                && (!orderToEdit || orderToEdit.paymentStatus === 'Unpaid');
+            // A Salesman's new order with nothing to claim (no amount) is saved
+            // Unpaid: never booked, even if a stale status says Deposit/Paid.
+            const salesmanUnbooked = claimsOn && !asClaim
+                && (
+                    // nothing to claim on an order with nothing booked
+                    ((!orderToEdit || orderToEdit.paymentStatus === 'Unpaid') && (effectivePaymentStatus === 'Deposit' || effectivePaymentStatus === 'Paid'))
+                    // an order already booked: a Salesman's edit (items,
+                    // address) leaves its payment exactly as it is
+                    || (!!orderToEdit && orderToEdit.paymentStatus !== 'Unpaid')
+                );
+            const paymentClaim: PaymentClaim | undefined = asClaim && claimStatus ? {
+                status: claimStatus,
+                amount: Math.round(amountReceivedVal * 100) / 100,
+                ...(formData.paymentMethod ? { method: formData.paymentMethod } : {}),
+                date: new Date().toLocaleDateString('en-CA'),
+                by: currentUser?.name || 'Salesman',
+                at: new Date().toISOString(),
+                ...(money ? { currency: 'KHR' as const, original_amount: money.original_amount, exchange_rate: money.exchange_rate } : {}),
+            } : undefined;
+
             setIsSubmitting(true);
 
             const cleanCity = formData.city ? formData.city.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim() : '';
@@ -539,9 +576,23 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 }
             };
 
+            if (paymentClaim || salesmanUnbooked) {
+                // Nothing is booked: the payment fields stay as they are (an
+                // Unpaid order), the claim rides along for confirmation.
+                const od = orderData as Partial<Sale>;
+                delete od.paymentStatus;
+                delete od.amountReceived;
+                delete od.settleDate;
+                delete od.depositAmount;
+                delete od.depositDate;
+                delete od.depositMethod;
+                if (orderToEdit) delete od.paymentMethod;
+                if (paymentClaim) od.paymentClaim = paymentClaim;
+            }
+
             if (orderToEdit) {
                 const saved = await updateOrder(orderToEdit.id, { ...orderData, date: formData.date || orderToEdit.date, expectedPaymentStatus: orderToEdit.paymentStatus, expectedShippingStatus: orderToEdit.shipping?.status || 'Pending' },
-                    money ? { money: { ...money, category: effectivePaymentStatus === 'Deposit' ? 'កក់ប្រាក់' : 'លក់រាយ' } } : undefined);
+                    money && !paymentClaim ? { money: { ...money, category: effectivePaymentStatus === 'Deposit' ? 'កក់ប្រាក់' : 'លក់រាយ' } } : undefined);
                 if (!saved) {
                     // Refused or only partly saved (e.g. the status change was refused);
                     // the reason has been shown. Keep the form open, and no status
@@ -569,11 +620,15 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     }
                 }
             } else {
-                const createdSale = await addOnlineOrder({ ...orderData, date: formData.date || new Date().toISOString() }, money ? { money } : undefined);
+                const createdSale = await addOnlineOrder({ ...(paymentClaim || salesmanUnbooked ? { paymentStatus: 'Unpaid' as const, amountReceived: 0 } : {}), ...orderData, date: formData.date || new Date().toISOString() }, money && !paymentClaim && !salesmanUnbooked ? { money } : undefined);
                 // We need the current sales to calculate sequence
                 const sequenceNumber = (sales.filter(s => new Date(s.date).toDateString() === new Date(createdSale.date).toDateString()).length) + 1;
                 
-                showToast('Order created', 'success');
+                // From what was saved: if attaching the claim failed, the store
+                // already said so and dropped it.
+                showToast(createdSale.paymentClaim
+                    ? `Order created. The ${createdSale.paymentClaim.status === 'Paid' ? 'payment' : 'deposit'} of $${createdSale.paymentClaim.amount.toFixed(2)} waits for Admin, Customer Care or an Accountant to confirm it.`
+                    : 'Order created', 'success');
 
                 // Send Telegram Notification
                 if (telegramConfigs && telegramConfigs.length > 0) {
@@ -1193,6 +1248,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             {w && (
                                                 <p role="alert" style={{ fontSize: '11px', color: '#B45309', margin: '6px 0 0 0', fontWeight: 600 }}>
                                                     {amountWarningLine(w)}
+                                                </p>
+                                            )}
+                                            {currentUser?.roleId === 'salesman' && usdNow > 0 && (!orderToEdit || orderToEdit.paymentStatus === 'Unpaid') && (
+                                                <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '6px 0 0 0' }}>
+                                                    Admin, Customer Care or an Accountant confirms this payment on the Orders page before it counts as received.
                                                 </p>
                                             )}
                                         </>

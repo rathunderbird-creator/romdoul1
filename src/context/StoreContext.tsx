@@ -2569,6 +2569,31 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             date: order.date || new Date().toISOString()
         };
         pendingOrderIds.set(signature, { id: newSale.id, at: nowMs });
+        // Safety net (the order form already does this): a Salesman's order is
+        // created with nothing booked; a deposit/payment rides as a claim.
+        if (currentUser?.roleId === 'salesman' && !newSale.paymentClaim
+            && (BOOKING_STATUSES.includes(newSale.paymentStatus || '') || (newSale.depositAmount || 0) > 0)
+            && await paymentClaimsReady()) {
+            const amount = Math.round(((newSale.paymentStatus === 'Deposit' ? newSale.depositAmount : newSale.amountReceived) || newSale.depositAmount || newSale.amountReceived || 0) * 100) / 100;
+            if (amount > 0) {
+                newSale.paymentClaim = {
+                    status: newSale.total > 0 && amount >= newSale.total ? 'Paid' : 'Deposit',
+                    amount,
+                    ...((newSale.paymentMethod || newSale.depositMethod) ? { method: String(newSale.paymentMethod || newSale.depositMethod) } : {}),
+                    date: new Date().toLocaleDateString('en-CA'),
+                    by: currentUser?.name || 'Salesman',
+                    at: new Date().toISOString(),
+                    ...(opts?.money?.currency === 'KHR' ? { currency: 'KHR' as const, original_amount: opts.money.original_amount, exchange_rate: opts.money.exchange_rate } : {}),
+                };
+            }
+            if (opts) opts = { ...opts, money: undefined };
+            newSale.paymentStatus = 'Unpaid';
+            newSale.amountReceived = 0;
+            newSale.depositAmount = 0;
+            newSale.depositDate = undefined;
+            newSale.depositMethod = undefined;
+            newSale.settleDate = undefined;
+        }
         const [txId, depTxId] = paymentTxKeys.take('create:' + newSale.id, 2);
 
         const { data, error } = await rpcWithSession('create_retail_order', {
@@ -2605,6 +2630,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
         pendingOrderIds.delete(signature);
         paymentTxKeys.release('create:' + newSale.id);
+        // A Salesman's deposit/payment: the order was created Unpaid (nothing
+        // booked); what they entered waits on the order for confirmation.
+        if (newSale.paymentClaim) {
+            const { error: claimErr } = await supabase.from('sales').update({ payment_claim: newSale.paymentClaim }).eq('id', newSale.id);
+            if (claimErr) {
+                console.error('Order created, but the unconfirmed payment could not be saved:', claimErr);
+                alert(`The order was created, but the ${newSale.paymentClaim.status === 'Paid' ? 'payment' : 'deposit'} of $${newSale.paymentClaim.amount.toFixed(2)} could not be attached for confirmation. Tell Admin, Customer Care or an Accountant to record it on the Orders page.`);
+                newSale.paymentClaim = undefined;
+            }
+        }
 
         const res = (data || {}) as { already_created?: boolean; transactions?: Transaction[] };
         let resTxs = res.transactions || [];
@@ -2684,6 +2719,45 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const { error } = await supabase.rpc('order_payment_functions_ready');
         if (error && isRpcMissingError(error)) return false;
         if (!error) paymentFunctionsReadyRef.current = true;
+        return true;
+    };
+
+    // A Salesman never books money: on a store that holds payment claims, a
+    // save that would book a deposit or payment (Deposit/Paid, a larger deposit
+    // or received amount, or a ledger posting) is refused here, whatever page
+    // it came from (Bulk Edit, Payment Tracking, Orders Management 2, the
+    // order form). Their deposit/payment goes on the order form, where it waits
+    // as a claim for Admin, Customer Care or an Accountant to confirm.
+    const SALESMAN_NO_BOOKING_MESSAGE = 'Only Admin, Customer Care or an Accountant can record money as received.\n\nEnter the deposit or payment on the order form instead: it waits there (gray on the Orders page) for them to confirm.';
+    // PdFee books the delivery fee as income, so it counts too.
+    const BOOKING_STATUSES = ['Deposit', 'Paid', 'Settled', 'Paid/Settled', 'PdFee'];
+    const salesmanBooksMoney = (u: Partial<Sale>, ex?: Sale): boolean => {
+        const status = (u.paymentStatus as string | undefined) ?? (ex?.paymentStatus as string | undefined);
+        if (u.paymentStatus && BOOKING_STATUSES.includes(u.paymentStatus) && u.paymentStatus !== ex?.paymentStatus) return true;
+        if (u.depositAmount !== undefined && u.depositAmount > (ex?.depositAmount || 0) + 0.005) return true;
+        if (u.amountReceived !== undefined && status && BOOKING_STATUSES.includes(status) && u.amountReceived > (ex?.amountReceived || 0) + 0.005) return true;
+        if (u.postToLedger === true) return true;
+        return false;
+    };
+
+    // Whether this store has run migrations/add_payment_claim.sql (the column
+    // that holds a Salesman's unconfirmed deposit/payment). Until it has, a
+    // Salesman's payment is booked immediately, as before. A yes is cached for
+    // the session; a no for two minutes (the owner may run it meanwhile).
+    // Only a missing column counts as no: any other error (network, expired
+    // session) answers yes, so a hiccup never lets a Salesman book money.
+    const paymentClaimsReadyRef = useRef<{ ready: boolean; missingAt: number }>({ ready: false, missingAt: 0 });
+    const paymentClaimsReady = async (): Promise<boolean> => {
+        const st = paymentClaimsReadyRef.current;
+        if (st.ready) return true;
+        if (st.missingAt && Date.now() - st.missingAt < 120_000) return false;
+        const { error } = await supabase.from('sales').select('payment_claim').limit(1);
+        if (!error) { st.ready = true; return true; }
+        const msg = `${(error as { code?: string }).code || ''} ${error.message || ''}`;
+        if (/42703|PGRST204|payment_claim/i.test(msg) && /does not exist|schema cache|could not find|42703|PGRST204/i.test(msg)) {
+            st.missingAt = Date.now();
+            return false;
+        }
         return true;
     };
 
@@ -3018,6 +3092,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
 
+        if (currentUser?.roleId === 'salesman' && salesmanBooksMoney(updates, existingOrder) && await paymentClaimsReady()) {
+            alert(SALESMAN_NO_BOOKING_MESSAGE);
+            setSalesUpdatedAt(Date.now());
+            return false;
+        }
+
         // The stock-movement block at the end keys off the status BEFORE this update.
         // The local cache can be stale: the status badges run updateOrderStatus (which
         // owns stock + ledger) and then this function for payment side-effects with
@@ -3244,6 +3324,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // change saves nothing at all, and a refused payment leaves a
         // completed, consistent shipping change (never a claimed payment
         // without its stock move).
+        // Set once a non-Unpaid payment status has been saved: clears a
+        // Salesman's unconfirmed payment claim with the sales row below.
+        let clearClaimAfterPayment = false;
         if (hasPaymentFields()) {
             const pUpdates: Record<string, unknown> = {};
             if (updates.paymentStatus !== undefined) pUpdates.payment_status = updates.paymentStatus;
@@ -3345,6 +3428,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (payRes.notices && payRes.notices.length > 0) {
                 alert(payRes.notices.join('\n'));
             }
+            // A payment status other than Unpaid has now been saved (Deposit/Paid
+            // confirming a Salesman's claim, or Get File/PdFee/Cancel replacing
+            // it): any claim on the order is done. Decided here, after the save
+            // succeeded and from what was saved; checked against the database
+            // (not only the cached order, which may predate the claim).
+            const savedStatus = (freshPayment?.paymentStatus as string | undefined) ?? (pUpdates.payment_status as string | undefined);
+            if (updates.paymentClaim === undefined && savedStatus && savedStatus !== 'Unpaid'
+                && (existingOrder?.paymentClaim || await paymentClaimsReady())) {
+                clearClaimAfterPayment = true;
+            }
             // The columns the function saved are not re-sent below; the local
             // cache takes them from the values it returned.
             delete updates.paymentStatus;
@@ -3412,6 +3505,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.customerCare !== undefined) dbUpdates.customer_care = updates.customerCare;
         if (updates.remark !== undefined) dbUpdates.remark = updates.remark;
         if (updates.customKhrAmount !== undefined) dbUpdates.custom_khr_amount = updates.customKhrAmount;
+        // A Salesman's unconfirmed payment (set), or its confirmation (null).
+        if (updates.paymentClaim !== undefined) dbUpdates.payment_claim = updates.paymentClaim;
+        // A payment status was saved above (see clearClaimAfterPayment): the
+        // claim is done. A refused payment returned earlier and keeps it.
+        else if (clearClaimAfterPayment) {
+            dbUpdates.payment_claim = null;
+            setSales(prev => prev.map(sale => sale.id === id ? { ...sale, paymentClaim: null } : sale));
+        }
         // The payment columns (payment_status, amounts, dates, methods) are
         // written by set_order_payment above, never here: an unconditional
         // write could overwrite a payment recorded elsewhere since.
@@ -3511,6 +3612,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const updateOrders = async (ids: string[], updates: Partial<Sale>): Promise<void> => {
+        if (currentUser?.roleId === 'salesman' && salesmanBooksMoney(updates) && await paymentClaimsReady()) {
+            alert(SALESMAN_NO_BOOKING_MESSAGE);
+            return;
+        }
         try {
             // Fetch missing orders from DB for accurate transaction logging
             const missingIds = ids.filter(id => !sales.find(s => s.id === id));
@@ -4585,6 +4690,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             deleteTransaction,
             deleteTransactions,
             addOnlineOrder,
+            paymentClaimsReady,
             updateOrderStatus,
             updateOrder,
             updateOrders,

@@ -868,10 +868,49 @@ const Orders: React.FC = () => {
 
     const isAdmin = currentUser?.roleId === 'admin';
     const canEdit = hasPermission('manage_orders');
+    // A Salesman's deposit/payment waits on the order (gray) until one of
+    // these confirms it was received; a Salesman can't book money here.
+    const canConfirmPayments = ['admin', 'customer_care', 'accountant'].includes(currentUser?.roleId || '');
+    const isSalesmanUser = currentUser?.roleId === 'salesman';
     const canManage = hasPermission('manage_orders');
     // Grantable per role in Roles & Permissions (admins always pass).
     const canUseCheckbox = hasPermission('use_checkbox');
     const canRestock = hasPermission('restock_orders');
+
+    // A claim is open for confirming while nothing is booked on the order and
+    // its goods haven't come back (Drafted is fine: a Salesman's new orders are
+    // Drafted). Then only the confirmers may act, and only on the claim:
+    // Deposit/Paid confirm it, Unpaid removes it; the other statuses stay
+    // admin-only as before.
+    const claimOpen = (order: Sale) => !!order.paymentClaim && (order.paymentStatus || 'Unpaid') === 'Unpaid'
+        && (isAdmin || !['ReStock', 'Returned', 'Cancelled'].includes(order.shipping?.status || ''));
+    const claimDisabledOptions = (order: Sale): string[] => isAdmin ? [] : [
+        'Cancel',
+        // Get File / PdFee move the shipping status: still admin-only on the
+        // orders where the badge was locked before (a Salesman's new orders
+        // are Drafted).
+        ...(['Drafted', 'ReStock', 'Returned', 'Cancelled'].includes(order.shipping?.status || '') ? ['Get File', 'PdFee'] : []),
+    ];
+    // A Salesman books no money here (PdFee books the delivery fee).
+    const salesmanDisabled = isSalesmanUser ? ['Deposit', 'Paid', 'PdFee'] : [];
+
+    // What the gray Pay Status says on hover.
+    const claimTooltip = (c: NonNullable<Sale['paymentClaim']>) =>
+        `Not confirmed yet: ${c.status} $${Number(c.amount || 0).toFixed(2)}`
+        + (c.currency === 'KHR' && c.original_amount ? ` (៛${Math.round(c.original_amount).toLocaleString()})` : '')
+        + `${c.method ? ` by ${c.method}` : ''}, entered by ${c.by || 'a Salesman'}${c.date ? ` on ${c.date}` : ''}.`
+        + ` Admin, Customer Care or Accountant: pick ${c.status} to confirm it was received (that books it), or Unpaid to remove it.`;
+
+    // Picking Unpaid on an order with an unconfirmed payment removes the claim
+    // (nothing was booked, so nothing else changes). True = handled here.
+    const rejectClaimIfUnpaid = (order: Sale, newStatus: string): boolean => {
+        if (!claimOpen(order) || newStatus !== 'Unpaid') return false;
+        const c = order.paymentClaim!;
+        if (window.confirm(`Remove the unconfirmed ${c.status.toLowerCase()} of $${Number(c.amount || 0).toFixed(2)} entered by ${c.by || 'the Salesman'}? The order stays Unpaid.`)) {
+            updateOrder(order.id, { paymentClaim: null });
+        }
+        return true;
+    };
 
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
@@ -2539,6 +2578,12 @@ const Orders: React.FC = () => {
                     await updateOrders(allowedIds, updates);
                 }
             } else if (field === 'paymentStatus') {
+                // A Salesman books no money (the store refuses it order by
+                // order); say so once instead of once per selected order.
+                if (isSalesmanUser && ['Deposit', 'Paid', 'Settled', 'PdFee'].includes(value)) {
+                    alert('Only Admin, Customer Care or an Accountant can record money as received.\n\nEnter the deposit or payment on the order form instead: it waits there (gray on the Orders page) for them to confirm.');
+                    return;
+                }
                 const now = new Date().toISOString();
                 const saveOne = (id: string) => {
                     const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
@@ -2572,6 +2617,9 @@ const Orders: React.FC = () => {
                     } else if (value === 'Cancel' || value === 'Unpaid') {
                         individualUpdates.amountReceived = 0;
                         individualUpdates.settleDate = null as any;
+                        // Unpaid on a Salesman's unconfirmed payment removes it,
+                        // same as on the single-row badge.
+                        if (value === 'Unpaid' && order.paymentClaim && canConfirmPayments) individualUpdates.paymentClaim = null;
                     }
                     
                     return updateOrder(id, { ...individualUpdates, expectedPaymentStatus: order.paymentStatus });
@@ -3810,6 +3858,7 @@ const Orders: React.FC = () => {
                                             })();
                                         }}
                                         onUpdatePaymentStatus={(id, status) => {
+                                            if (rejectClaimIfUnpaid(order, status)) return;
                                             const updates: any = { paymentStatus: status };
                                             if (status === 'Deposit') {
                                                 setDepositTargetOrder(order);
@@ -3839,6 +3888,11 @@ const Orders: React.FC = () => {
                                         canEdit={canEdit}
                                         isAdmin={isAdmin}
                                         canRestock={canRestock}
+                                        canConfirmPayments={canConfirmPayments}
+                                        isSalesman={isSalesmanUser}
+                                        claimTitle={claimOpen(order) ? claimTooltip(order.paymentClaim!) : undefined}
+                                        claimDisabledOptions={claimDisabledOptions(order)}
+                                        salesmanDisabledOptions={salesmanDisabled}
                                     />
                                 ))}
 
@@ -4161,7 +4215,12 @@ const Orders: React.FC = () => {
                                                                     </div>
                                                                 </td>;
                                                             }
-                                                            case 'received': return <td key={colId} style={{
+                                                            case 'received': return claimOpen(order) ? (
+                                                                // Entered by a Salesman, not confirmed: gray, not counted.
+                                                                <td key={colId} style={{ ...cellStyle, textAlign: 'right', color: '#9CA3AF', fontStyle: 'italic' }} title={claimTooltip(order.paymentClaim!)}>
+                                                                    ${order.paymentClaim!.amount.toFixed(2)}
+                                                                </td>
+                                                            ) : <td key={colId} style={{
                                                                 ...cellStyle,
                                                                 textAlign: 'right',
                                                                 // Blue = money in hand (fully paid, a deposit, or a delivery fee on an
@@ -4180,10 +4239,12 @@ const Orders: React.FC = () => {
                                                                         textAlign: 'left'
                                                                     }}>
                                                                         <PaymentStatusBadge
-                                                                            status={order.paymentStatus || 'Unpaid'}
-                                                                            disabledOptions={isAdmin ? [] : ['Cancel']}
+                                                                            status={claimOpen(order) ? order.paymentClaim!.status : (order.paymentStatus || 'Unpaid')}
+                                                                            unconfirmed={claimOpen(order) ? claimTooltip(order.paymentClaim!) : undefined}
+                                                                            disabledOptions={claimOpen(order) ? claimDisabledOptions(order) : [...(isAdmin ? [] : ['Cancel']), ...salesmanDisabled]}
                                                                             bold={false}
                                                                             onChange={(newStatus) => {
+                                                                                if (rejectClaimIfUnpaid(order, newStatus)) return;
                                                                                 const updates: any = { paymentStatus: newStatus };
                                                                                 if (newStatus === 'Paid') {
                                                                                     setPaymentMethodTargetOrder(order);
@@ -4212,7 +4273,9 @@ const Orders: React.FC = () => {
                                                                             // Admins bypass the lock so they can correct mistakes
                                                                             // (e.g. un-mark a wrong Paid); the store cleans up the
                                                                             // logged income when leaving Paid.
-                                                                            readOnly={!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid' || order.paymentStatus === 'PdFee'))}
+                                                                            readOnly={claimOpen(order)
+                                                                                ? !canConfirmPayments
+                                                                                : (!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid' || order.paymentStatus === 'PdFee')))}
                                                                         />
                                                                     </td>
                                                                 );
@@ -4937,10 +5000,19 @@ const Orders: React.FC = () => {
                 <SettlePaymentModal
                     isOpen={isPaymentMethodModalOpen}
                     onClose={() => { setIsPaymentMethodModalOpen(false); setPaymentMethodTargetOrder(null); }}
-                    initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
-                    initialDate={paymentMethodTargetOrder.settleDate || undefined}
+                    initialMethod={paymentMethodTargetOrder.paymentClaim?.method || paymentMethodTargetOrder.paymentMethod || undefined}
+                    initialDate={paymentMethodTargetOrder.paymentClaim?.date || paymentMethodTargetOrder.settleDate || undefined}
                     amountDue={Math.max(0, paymentMethodTargetOrder.total - (paymentMethodTargetOrder.depositAmount || 0))}
-                    khrExpected={paymentMethodTargetOrder.customKhrAmount}
+                    khrExpected={paymentMethodTargetOrder.paymentClaim?.status === 'Paid' && paymentMethodTargetOrder.paymentClaim.currency === 'KHR'
+                        ? paymentMethodTargetOrder.paymentClaim.original_amount
+                        : paymentMethodTargetOrder.customKhrAmount}
+                    preferInitialMethod={!!paymentMethodTargetOrder.paymentClaim?.method}
+                    preferRiel={paymentMethodTargetOrder.paymentClaim?.status === 'Paid' && paymentMethodTargetOrder.paymentClaim.currency === 'KHR'
+                        ? { rate: paymentMethodTargetOrder.paymentClaim.exchange_rate }
+                        : undefined}
+                    description={paymentMethodTargetOrder.paymentClaim
+                        ? `Confirming the ${paymentMethodTargetOrder.paymentClaim.status === 'Paid' ? 'payment' : 'deposit'} ${paymentMethodTargetOrder.paymentClaim.by || 'the Salesman'} entered ($${Number(paymentMethodTargetOrder.paymentClaim.amount || 0).toFixed(2)}${paymentMethodTargetOrder.paymentClaim.currency === 'KHR' && paymentMethodTargetOrder.paymentClaim.original_amount ? ` = ៛${Math.round(paymentMethodTargetOrder.paymentClaim.original_amount).toLocaleString()}` : ''}). Check it arrived, then confirm: that books it.`
+                        : undefined}
                     onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, money }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
@@ -4986,6 +5058,7 @@ const Orders: React.FC = () => {
                 order={depositTargetOrder}
                 onClose={() => setDepositTargetOrder(null)}
                 showDepositAccount
+                claim={depositTargetOrder?.paymentClaim?.status === 'Deposit' ? depositTargetOrder.paymentClaim : undefined}
                 onConfirm={({ amount, method, date, depositAccountId, depositAccountName, money }) => {
                     if (!depositTargetOrder) return;
                     updateOrder(depositTargetOrder.id, {
