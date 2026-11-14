@@ -53,7 +53,9 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
 }) => {
     const { paymentMethods, khrExchangeRate } = useStore();
     // The riel actually received (only when the account / toggle says riel).
-    const rielField = useMoneyField({ shopRate: khrExchangeRate, snapToUsd: amountDue ?? null, init: { currency: 'KHR' } });
+    // Settle books the order's amount due whatever riel is typed; the riel
+    // and rate are recorded with it (fixedBookedUsd: the confirm says so).
+    const rielField = useMoneyField({ shopRate: khrExchangeRate, snapToUsd: amountDue ?? null, fixedBookedUsd: amountDue ?? null, init: { currency: 'KHR' } });
     const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');

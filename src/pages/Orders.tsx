@@ -31,7 +31,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
 import { mapSaleEntity } from '../utils/mapper';
-import { shopRate } from '../utils/currency';
+import { amountWarningLine, amountWarningText, checkUsdAmount, shopRate } from '../utils/currency';
 import * as XLSX from 'xlsx';
 import type { Sale, CartItem } from '../types';
 
@@ -143,6 +143,12 @@ const ShippingModalComponent: React.FC<{
     const remainingAmount = Math.max(0, computedTotal - depositNum);
     const khrBase = depositNum > 0 ? remainingAmount : computedTotal;
     const displayKhr = customKhr !== '' ? customKhr : Math.round(khrBase * shopRate(khrExchangeRate)).toString();
+    // The deposit is money received (booked as កក់ប្រាក់ with its DEP entry),
+    // and it sits next to the riel figure: a riel-sized number, or one above
+    // the order total, warns under the field and asks before saving.
+    const depositWarning = depositNum !== (order.depositAmount || 0)
+        ? checkUsdAmount(depositNum, { rate: shopRate(khrExchangeRate), maxPlausibleUsd: computedTotal > 0 ? computedTotal : null })
+        : null;
 
     const updateItem = (idx: number, patch: Partial<CartItem>) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
     const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
@@ -332,6 +338,11 @@ const ShippingModalComponent: React.FC<{
                             />
                         </div>
                     </div>
+                    {depositWarning && (
+                        <div data-money-warning role="alert" style={{ marginTop: '4px', fontSize: '12px', color: '#B45309', textAlign: 'right' }}>
+                            {amountWarningLine(depositWarning)}
+                        </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginTop: '6px', borderTop: '1px dashed var(--color-border)', paddingTop: '6px' }}>
                         <span>REMAINING AMOUNT</span>
                         <span>${remainingAmount.toFixed(2)}</span>
@@ -375,6 +386,7 @@ const ShippingModalComponent: React.FC<{
                             // running is ignored (the ref answers at once; the state
                             // disables the button).
                             if (savingRef.current) return;
+                            if (depositWarning && !window.confirm(amountWarningText(depositWarning))) return;
                             savingRef.current = true;
                             setSaving(true);
                             try {

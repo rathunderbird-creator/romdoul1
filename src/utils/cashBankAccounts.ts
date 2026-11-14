@@ -87,14 +87,19 @@ export function defaultCashBankAccountId<T extends CashBankCandidate>(
     opts?: { preferredId?: string | null; hint?: string | null; cashHint?: boolean; currency?: Currency }
 ): string {
     const all = accounts.filter(isCashBank).sort(byCode);
-    if (opts?.preferredId && all.some(a => a.id === opts.preferredId)) return opts.preferredId;
-    const hint = (opts?.hint || '').trim().toLowerCase();
-    if (hint) {
-        const exact = all.find(a => a.account_name.toLowerCase() === hint);
-        if (exact) return exact.id;
-    }
     const wantKhr = opts?.currency === 'KHR';
     const pool = all.filter(a => isKhrAccountName(a.account_name) === wantKhr);
+    // With a currency given, the preferred id and the exact-name hint count
+    // only inside that currency: a riel row's hint is often a USD account's
+    // name (pay_by 'Cash' is the USD cash account on Romdoul2/3), and a USD
+    // receipt never opens on a riel account. Without one, as before.
+    const scope = opts?.currency ? pool : all;
+    if (opts?.preferredId && scope.some(a => a.id === opts.preferredId)) return opts.preferredId;
+    const hint = (opts?.hint || '').trim().toLowerCase();
+    if (hint) {
+        const exact = scope.find(a => a.account_name.toLowerCase() === hint);
+        if (exact) return exact.id;
+    }
     const pick = (opts?.cashHint && hint.includes('cash') ? pool.find(a => /cash/i.test(a.account_name)) : undefined)
         || pool.find(a => a.account_name.toLowerCase().includes('bank'))
         || pool[0];

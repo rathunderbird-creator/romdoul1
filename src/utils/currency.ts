@@ -124,6 +124,32 @@ export function formatMoneyLine(row: MoneyRow): string {
         : `${head} = ${formatUsd(amount)}`;
 }
 
+// The USD an edited row books. A riel row is often booked at a USD that is
+// not riel/rate on purpose (Settle books the order's USD; a riel figure
+// within 3 cents snaps to the balance), so an edit that leaves the currency,
+// the riel amount and the rate as they were keeps the booked USD. Only a
+// changed figure is converted again. A USD row keeps its amount when the
+// typed figure equals it.
+export function editedBookedUsd(
+    prev: MoneyRow,
+    next: { currency: Currency; amount: string | number; rate?: string | number | null },
+): number {
+    const typed = toNum(next.amount);
+    const v = Number.isFinite(typed) ? typed : 0;
+    const prevAmount = Number(prev.amount) || 0;
+    if (next.currency === 'KHR') {
+        const rate = toNum(next.rate ?? NaN);
+        if (isKhrRow(prev)
+            && Math.round(v) === Math.round(Number(prev.original_amount))
+            && Number.isFinite(rate) && Math.abs(rate - Number(prev.exchange_rate)) < 1e-9) {
+            return prevAmount;
+        }
+        return khrToUsd(v, rate > 0 ? rate : NaN);
+    }
+    if (!isKhrRow(prev) && Math.abs(roundCents(v) - roundCents(prevAmount)) < 0.005) return prevAmount;
+    return roundCents(v);
+}
+
 // ── Wrong-amount heuristics (warn, never block) ─────────────────────────
 export type AmountWarning =
     | { kind: 'usd-looks-riel'; typed: number; asUsd: number; asRielUsd: number; rate: number; reason: 'riel-shaped' | 'over-max' }
@@ -158,11 +184,22 @@ const fill = (s: string, vars: Record<string, string>) => s.replace(/\{\{(\w+)\}
 
 // The confirm text: both readings of what was typed. `t` is an optional
 // translator (i18n key, vars); the English text is the fallback.
-export function amountWarningText(w: AmountWarning, t?: Tr): string {
+// bookedUsd: the form books this fixed USD whatever is typed (Settle books
+// the order's amount and only records the riel with it), so the last line
+// says that instead of the typed figure's USD.
+export function amountWarningText(w: AmountWarning, t?: Tr, bookedUsd?: number | null): string {
     const tr = (key: string, en: string, vars: Record<string, string>) => {
         const out = t ? t(key, vars) : '';
         return out && out !== key ? fill(out, vars) : fill(en, vars);
     };
+    if (w.kind !== 'rate-off' && bookedUsd !== undefined && bookedUsd !== null && Number.isFinite(bookedUsd)) {
+        const body = amountWarningText(w, t).split('\n');
+        body.pop();
+        body.push(tr('money.fixedBooksConfirm',
+            'OK books {{booked}} (the amount due) and records {{typed}} with it. Cancel to fix it.',
+            { booked: formatUsd(bookedUsd), typed: w.kind === 'khr-looks-usd' ? formatKhr(w.typed) : w.typed.toLocaleString('en-US') }));
+        return body.join('\n');
+    }
     if (w.kind === 'usd-looks-riel') {
         return tr('money.usdLooksRielConfirm',
             'You typed {{typed}} in a USD field.\n• As dollars: {{asUsd}}\n• As riel: {{asKhr}} = {{asRielUsd}} at {{rate}}\nOK books {{asUsd}}. Cancel to fix it.',

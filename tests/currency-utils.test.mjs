@@ -154,5 +154,40 @@ check('counterpart in KHR without riel accounts → undefined', m.counterpartAcc
 const sorted = m.sortCashBankForPicker([...KHR, ...R1]).map(a => a.account_code).join(',');
 check('picker order: USD by code, then riel', sorted === '1001,1010,1200,1002,1011', sorted);
 
+// ── Posting a riel row (RecordReceipt finalize): the hint is the row's
+// pay_by, often a USD account's name ('Cash' is 1000 on Romdoul2/3). With a
+// currency given, the hint and the preferred id count only in that currency.
+check('R2 finalize KHR row, hint "Cash" → 1002 (not 1000 Cash)', m.defaultCashBankAccountId([...R2, ...KHR], { hint: 'Cash', cashHint: true, currency: 'KHR' }) === 'k1002');
+check('R1 finalize KHR row, hint "Cash" → 1002', m.defaultCashBankAccountId([...R1, ...KHR], { hint: 'Cash', cashHint: true, currency: 'KHR' }) === 'k1002');
+check('R2 finalize KHR row, hint "Bank" → 1011', m.defaultCashBankAccountId([...R2, ...KHR], { hint: 'Bank', cashHint: true, currency: 'KHR' }) === 'k1011');
+check('USD receipt, preferred id a riel account → USD default', m.defaultCashBankAccountId([...R1, ...KHR], { preferredId: 'k1002', currency: 'USD' }) === 'a1010');
+check('USD receipt, hint a riel name → USD default', m.defaultCashBankAccountId([...R2, ...KHR], { hint: 'Cash on Hand (KHR)', cashHint: true, currency: 'USD' }) === 'a1000');
+check('USD receipt, hint "Cash" on R2 → 1000', m.defaultCashBankAccountId([...R2, ...KHR], { hint: 'Cash', cashHint: true, currency: 'USD' }) === 'a1000');
+for (const [store, chart] of [['R1', R1], ['R2', R2]]) {
+    for (const [pref, hint] of [[null, null], [null, 'Cash'], [null, 'Bank'], ['a1001', null], [null, 'Petty Cash']]) {
+        const before = oldDefault(chart, pref, hint, true);
+        const after = m.defaultCashBankAccountId([...chart, ...KHR], { preferredId: pref, hint, cashHint: true, currency: 'USD' });
+        check(`${store} USD receipt default (${pref}, ${hint}) unchanged with the riel accounts (${before})`, before === after, { before, after });
+    }
+}
+
+// ── Editing a row keeps its booked USD unless the figure changes ──
+const settled = { amount: 20, currency: 'KHR', original_amount: 80000, exchange_rate: 4100 };
+check('edit, riel and rate unchanged → keeps $20.00 (not 19.51)', m.editedBookedUsd(settled, { currency: 'KHR', amount: '80000', rate: '4100' }) === 20);
+check('edit, riel changed → converts again', m.editedBookedUsd(settled, { currency: 'KHR', amount: '82000', rate: '4100' }) === 20 && m.editedBookedUsd(settled, { currency: 'KHR', amount: '41000', rate: '4100' }) === 10);
+check('edit, rate changed → converts again', m.editedBookedUsd(settled, { currency: 'KHR', amount: '80000', rate: '4000' }) === 20 && m.editedBookedUsd(settled, { currency: 'KHR', amount: '80000', rate: '3200' }) === 25);
+check('edit, switched to USD → the typed dollars', m.editedBookedUsd(settled, { currency: 'USD', amount: '20', rate: '' }) === 20);
+check('edit, USD row unchanged keeps an unrounded legacy amount', m.editedBookedUsd({ amount: 1041.219512 }, { currency: 'USD', amount: '1041.219512' }) === 1041.219512);
+check('edit, USD row changed → rounded to cents', m.editedBookedUsd({ amount: 10 }, { currency: 'USD', amount: '12.345' }) === 12.35);
+check('edit, untagged row given riel → converts', m.editedBookedUsd({ amount: 20 }, { currency: 'KHR', amount: '82000', rate: '4100' }) === 20);
+
+// ── Confirm text when the form books a fixed USD (Settle) ──
+const small = m.checkKhrAmount(5, { rate: 4100 });
+const fixedText = m.amountWarningText(small, undefined, 20);
+check('Settle confirm says it books the $20.00 due, not $0.00', fixedText.includes('OK books $20.00') && !fixedText.includes('OK books $0.00'), fixedText);
+check('Settle confirm still shows both readings', fixedText.includes('As riel: ៛5') && fixedText.includes('As dollars: $5.00'), fixedText);
+check('no fixed amount → the typed figure\'s USD', m.amountWarningText(small).includes('OK books $0.00'));
+check('fixed line translates', m.amountWarningText(small, k => (k === 'money.fixedBooksConfirm' ? 'KM {{booked}} {{typed}}' : k), 20).endsWith('KM $20.00 ៛5'));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -15,7 +15,8 @@ import { supabase } from '../lib/supabase';
 import { getShippingCoColor } from '../utils/orderUtils';
 import { dayKeyFromDate } from '../utils/dateRange';
 import { fetchAll } from '../utils/fetchAll';
-import { amountWarningLine, amountWarningText, checkKhrAmount, checkRate, checkUsdAmount, formatMoneyLine, isKhrRow, khrMeta, khrToUsd, shopRate, usdMeta } from '../utils/currency';
+import { amountWarningLine, amountWarningText, checkKhrAmount, checkRate, checkUsdAmount, editedBookedUsd, formatMoneyLine, formatUsd, isKhrRow, khrMeta, khrToUsd, shopRate, usdMeta } from '../utils/currency';
+import type { Currency } from '../utils/currency';
 import { roundCents } from '../utils/money';
 
 // Safari fails on "YYYY-MM-DD HH:MM:SS" (needs "T" instead of space)
@@ -602,15 +603,35 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             // 1041.219512…); the riel amount and rate are kept with it.
             finalAmount = khrToUsd(entered, rate);
             money = khrMeta(entered, rate);
-            const rateWarn = checkRate(rate, shopRate(khrExchangeRate));
+        }
+        // Editing a row without changing its figure keeps the USD it was
+        // booked at: a riel row is often booked at a USD that is not
+        // riel/rate on purpose (Settle books the order's USD, a riel figure
+        // within 3 cents snaps to the balance), and its journal entry and
+        // payment rows carry that USD.
+        const figureUnchanged = !!editingTransaction
+            && editedBookedUsd(editingTransaction, { currency: formData.currency as Currency, amount: entered, rate: formData.exchangeRate }) === Number(editingTransaction.amount)
+            && (formData.currency === 'KHR') === isKhrRow(editingTransaction);
+        if (figureUnchanged && editingTransaction) {
+            finalAmount = Number(editingTransaction.amount);
+        } else if (formData.currency === 'KHR') {
+            const rateWarn = checkRate(Number(formData.exchangeRate), shopRate(khrExchangeRate));
             if (rateWarn && rateWarn !== 'invalid' && !window.confirm(amountWarningText(rateWarn))) return;
         }
-        // A riel-sized figure typed as dollars (or the other way round) asks
-        // first, showing both readings.
-        const warn = formData.currency === 'KHR'
-            ? checkKhrAmount(entered, { rate: Number(formData.exchangeRate) })
-            : checkUsdAmount(entered, { rate: shopRate(khrExchangeRate) });
-        if (warn && !window.confirm(amountWarningText(warn))) return;
+        if (!figureUnchanged) {
+            // A riel-sized figure typed as dollars (or the other way round)
+            // asks first, showing both readings.
+            const warn = formData.currency === 'KHR'
+                ? checkKhrAmount(entered, { rate: Number(formData.exchangeRate) })
+                : checkUsdAmount(entered, { rate: shopRate(khrExchangeRate) });
+            if (warn && !window.confirm(amountWarningText(warn))) return;
+            // A changed figure on a row booked at a different USD than its
+            // riel converts to moves it away from its journal entry: say so.
+            if (editingTransaction && isKhrRow(editingTransaction)
+                && Math.abs(khrToUsd(Number(editingTransaction.original_amount), Number(editingTransaction.exchange_rate)) - Number(editingTransaction.amount)) >= 0.01
+                && Math.abs(Number(editingTransaction.amount) - finalAmount) >= 0.01
+                && !window.confirm(`This row was booked at ${formatUsd(Number(editingTransaction.amount))}. Saving books ${formatUsd(finalAmount)} instead. Continue?`)) return;
+        }
 
         try {
             if (editingTransaction) {
@@ -694,8 +715,12 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
     // Transaction modal validation + live KHR→USD preview.
     const txnAmountValid = Number(formData.amount) > 0;
     const txnRateValid = formData.currency === 'USD' || Number(formData.exchangeRate) > 0;
+    // An edit that leaves the riel figure and rate as they were keeps the
+    // booked USD (see handleSave), so the preview shows that.
     const txnUsdPreview = formData.currency === 'KHR' && txnAmountValid && txnRateValid
-        ? khrToUsd(Number(formData.amount), Number(formData.exchangeRate))
+        ? (editingTransaction
+            ? editedBookedUsd(editingTransaction, { currency: 'KHR', amount: formData.amount, rate: formData.exchangeRate })
+            : khrToUsd(Number(formData.amount), Number(formData.exchangeRate)))
         : null;
     // The wrong-amount warning, live under the field.
     const txnWarning = !txnAmountValid ? null : (formData.currency === 'KHR'

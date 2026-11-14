@@ -711,6 +711,7 @@
     "rateOff": "Rate {{rate}} is far from the shop rate {{shop}}.",
     "usdLooksRielConfirm": "You typed {{typed}} in a USD field.\n• As dollars: {{asUsd}}\n• As riel: {{asKhr}} = {{asRielUsd}} at {{rate}}\nOK books {{asUsd}}. Cancel to fix it.",
     "khrLooksUsdConfirm": "You typed {{asKhrTyped}} in a riel field.\n• As riel: {{asKhrTyped}} = {{asRielUsd}}\n• As dollars: {{asUsd}} (= {{asKhr}})\nOK books {{asRielUsd}}. Cancel to fix it.",
+    "fixedBooksConfirm": "OK books {{booked}} (the amount due) and records {{typed}} with it. Cancel to fix it.",
     "rateOffConfirm": "The rate {{rate}} riel per dollar is far from the usual (shop rate {{shop}}). Use it anyway?",
     "rateInvalid": "Enter a riel rate above 0.",
     "rate": "Rate ៛ per $1",

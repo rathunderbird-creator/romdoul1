@@ -17,6 +17,7 @@ import { getShippingLogo } from '../utils/shipping';
 import ReportModal from '../components/ReportModal';
 import Modal from '../components/Modal';
 import IncomeExpense from './IncomeExpense';
+import { amountWarningLine, amountWarningText, checkUsdAmount, shopRate } from '../utils/currency';
 
 const getStatusBorderColor = (s: string) => {
     switch (s) {
@@ -33,7 +34,7 @@ const getStatusBorderColor = (s: string) => {
 };
 
 const PaymentTracking: React.FC = () => {
-    const { updateOrder, updateOrders, updateOrderStatus, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders, hasPermission } = useStore();
+    const { updateOrder, updateOrders, updateOrderStatus, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders, hasPermission, khrExchangeRate } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const navigate = useNavigate();
@@ -760,8 +761,15 @@ const PaymentTracking: React.FC = () => {
 
 
 
+    // Amount Received books income on a Paid transition: a riel-sized figure,
+    // or one above the order total, warns under the field and asks first.
+    const amountReceivedWarning = selectedOrder && Number(formData.amountReceived) !== Number(selectedOrder.amountReceived || 0)
+        ? checkUsdAmount(Number(formData.amountReceived), { rate: shopRate(khrExchangeRate), maxPlausibleUsd: selectedOrder.total > 0 ? selectedOrder.total : null })
+        : null;
+
     const handleUpdatePayment = () => {
         if (!selectedOrder) return;
+        if (amountReceivedWarning && !window.confirm(amountWarningText(amountReceivedWarning))) return;
         updateOrder(selectedOrder.id, {
             amountReceived: formData.amountReceived,
             settleDate: formData.settleDate,
@@ -1480,7 +1488,12 @@ const PaymentTracking: React.FC = () => {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Amount Received ($)</label>
-                                    <input type="number" className="search-input" style={{ width: '100%' }} value={formData.amountReceived} onChange={e => setFormData({ ...formData, amountReceived: Number(e.target.value) })} />
+                                    <input type="number" className="search-input" style={{ width: '100%', ...(amountReceivedWarning ? { border: '1px solid #F59E0B' } : {}) }} value={formData.amountReceived} onChange={e => setFormData({ ...formData, amountReceived: Number(e.target.value) })} />
+                                    {amountReceivedWarning && (
+                                        <div data-money-warning role="alert" style={{ marginTop: '6px', fontSize: '12px', color: '#B45309' }}>
+                                            {amountWarningLine(amountReceivedWarning)}
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Settle Date</label>

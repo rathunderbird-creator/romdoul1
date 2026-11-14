@@ -8,7 +8,7 @@ import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
 import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
-import { formatMoneyLine, isKhrRow, type MoneyMeta, type MoneyRow } from '../utils/currency';
+import { accountCurrency, formatMoneyLine, isKhrRow, type MoneyMeta, type MoneyRow } from '../utils/currency';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
 // (not 24h) so a daylight-saving change can't land on the wrong date.
@@ -128,6 +128,15 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     const depositAccountId = chosenAccountId || defaultAccountId;
     const coupling = useAccountCurrency(field, paymentAccounts, depositAccountId, setChosenAccountId);
     const amountReceived = finalizeMode ? order.total : field.usd;
+    // Posting a row: the amount is fixed, so the account must match the
+    // row's currency (a riel row into a riel account, a USD row into a USD
+    // one). A mismatch is shown and asks before posting.
+    const pickedAccount = paymentAccounts.find(a => a.id === depositAccountId);
+    const rowCurrency = rowIsKhr ? 'KHR' : 'USD';
+    const finalizeMismatch = finalizeMode && !!pickedAccount && accountCurrency(pickedAccount) !== rowCurrency;
+    const mismatchText = rowCurrency === 'KHR'
+        ? `This row was received in riel (${finalizeRow ? formatMoneyLine(finalizeRow) : ''}), but ${pickedAccount?.account_name ?? 'this account'} is a dollar account.`
+        : `This row was received in dollars, but ${pickedAccount?.account_name ?? 'this account'} is a riel account.`;
 
     // A prior deposit already reduced the balance — leave it out of "remaining"
     // too, or a fully-settling receipt would still show a bogus balance.
@@ -259,6 +268,11 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                         <option value="">Bank or cash account…</option>
                         <CashBankOptions accounts={paymentAccounts} />
                     </select>
+                    {finalizeMismatch && (
+                        <div data-money-warning role="alert" style={{ marginTop: '8px', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.55)', color: '#B45309' }}>
+                            {mismatchText}
+                        </div>
+                    )}
                     {!accountsLoaded ? (
                         <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                             Loading accounts…
@@ -302,6 +316,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                         onClick={() => {
                             if (!canRecord) return;
                             if (!finalizeMode && !field.confirmIfSuspicious()) return;
+                            if (finalizeMismatch && !window.confirm(`${mismatchText}\nPost it there anyway?`)) return;
                             const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
                             onConfirm({
                                 paymentMethod: selectedMethod,

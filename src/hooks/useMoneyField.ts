@@ -45,6 +45,9 @@ export function useMoneyField(opts: {
     shopRate: number | null | undefined;
     maxPlausibleUsd?: number | null;
     snapToUsd?: number | null;
+    // The form books this USD whatever is typed (Settle: the order's amount);
+    // the confirm says so instead of the typed figure's USD.
+    fixedBookedUsd?: number | null;
     init?: { amount?: string | number; currency?: Currency; rate?: number | string };
 }): MoneyField {
     const shop = toShopRate(opts.shopRate);
@@ -78,6 +81,7 @@ export function useMoneyField(opts: {
     }, [shop]);
 
     const snap = opts.snapToUsd ?? null;
+    const fixed = opts.fixedBookedUsd ?? null;
     const typed = parseAmount(amount);
     const resolved = useMemo(() => resolveMoney({ amount, currency, rate: effRate, snapToUsd: snap }), [amount, currency, effRate, snap]);
     const rateCheck = currency === 'KHR' ? checkRate(rateNum, shop) : null;
@@ -94,14 +98,14 @@ export function useMoneyField(opts: {
             return false;
         }
         const parts: string[] = [];
-        if (warning) parts.push(amountWarningText(warning, t));
+        if (warning) parts.push(amountWarningText(warning, t, fixed));
         if (rateWarning) parts.push(amountWarningText(rateWarning, t));
         if (currency === 'KHR' && snap !== null && snap > 0 && Math.abs(resolved.diffUsd) > snap * SNAP_CONFIRM_SHARE) {
             parts.push(`${formatKhr(typed)} @ ${formatRate(effRate)} = ${formatUsd(khrToUsd(typed, effRate))}, `
                 + `but the amount due is ${formatUsd(snap)} (difference ${formatUsd(Math.abs(resolved.diffUsd))}). Go on?`);
         }
         return parts.length === 0 || window.confirm(parts.join('\n\n'));
-    }, [rateInvalid, warning, rateWarning, currency, snap, resolved.diffUsd, typed, effRate, t]);
+    }, [rateInvalid, warning, rateWarning, currency, snap, resolved.diffUsd, typed, effRate, t, fixed]);
 
     return {
         amount, setAmount, currency, setCurrency, reinterpret, rate, setRate, resetRate: () => setRate(String(shop)), shopRate: shop, reset,
