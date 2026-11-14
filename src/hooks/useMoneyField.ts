@@ -11,6 +11,7 @@ import {
 } from '../utils/currency';
 import { roundCents } from '../utils/money';
 import { counterpartAccount } from '../utils/cashBankAccounts';
+import { tNow } from '../i18n/translate';
 
 export type MoneyField = {
     amount: string;
@@ -94,15 +95,14 @@ export function useMoneyField(opts: {
     const confirmIfSuspicious = useCallback((): boolean => {
         if (rateInvalid) {
             window.alert(t?.('money.rateInvalid') && t('money.rateInvalid') !== 'money.rateInvalid'
-                ? t('money.rateInvalid') : 'Enter a riel rate above 0.');
+                ? t('money.rateInvalid') : tNow('ui.store.money.rateInvalid'));
             return false;
         }
         const parts: string[] = [];
         if (warning) parts.push(amountWarningText(warning, t, fixed));
         if (rateWarning) parts.push(amountWarningText(rateWarning, t));
         if (currency === 'KHR' && snap !== null && snap > 0 && Math.abs(resolved.diffUsd) > snap * SNAP_CONFIRM_SHARE) {
-            parts.push(`${formatKhr(typed)} @ ${formatRate(effRate)} = ${formatUsd(khrToUsd(typed, effRate))}, `
-                + `but the amount due is ${formatUsd(snap)} (difference ${formatUsd(Math.abs(resolved.diffUsd))}). Go on?`);
+            parts.push(tNow('ui.store.money.snapConfirm', { khr: formatKhr(typed), rate: formatRate(effRate), usd: formatUsd(khrToUsd(typed, effRate)), due: formatUsd(snap), diff: formatUsd(Math.abs(resolved.diffUsd)) }));
         }
         return parts.length === 0 || window.confirm(parts.join('\n\n'));
     }, [rateInvalid, warning, rateWarning, currency, snap, resolved.diffUsd, typed, effRate, t, fixed]);

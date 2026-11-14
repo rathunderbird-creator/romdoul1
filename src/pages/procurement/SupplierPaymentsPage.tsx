@@ -10,6 +10,8 @@ import { Plus, Search, Eye, Printer, XCircle, Download, RefreshCw, Receipt, Zap,
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
@@ -34,9 +36,9 @@ const STATUS_CFG: Record<PayStatus, { color: string; bg: string }> = {
     Draft: { color: '#92400e', bg: '#fef3c7' },
     Posted: { color: '#4c5fd0', bg: 'rgba(84, 105, 212, 0.12)' },
 };
-const statusChip = (status: PayStatus) => (
+const statusChip = (status: PayStatus, label: string) => (
     <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', whiteSpace: 'nowrap', background: STATUS_CFG[status].bg, color: STATUS_CFG[status].color }}>
-        {status}
+        {label}
     </span>
 );
 
@@ -62,6 +64,8 @@ const SupplierPaymentsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { purchaseSettings, khrExchangeRate } = useStore();
     const { showToast } = useToast();
+    const { t } = useLanguage();
+    const statusLabel = (s: PayStatus) => t(s === 'Posted' ? 'ui.supplier.common.posted' : 'ui.supplier.common.draft');
     const {
         purchaseOrders, supplierPayments, isLoading,
         fetchPurchaseOrders, fetchSupplierPayments,
@@ -80,13 +84,13 @@ const SupplierPaymentsPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Supplier Payments</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Money paid out, and which bills it settled</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.supplierPayments')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('ui.supplier.payments.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchPurchaseOrders();
@@ -150,18 +154,18 @@ const SupplierPaymentsPage: React.FC = () => {
         (paymentStatus.get(p.id) || 'Draft') === 'Draft' && paymentEntryId.has(p.id);
     const postPayment = async (p: SupplierPayment) => {
         const entryId = paymentEntryId.get(p.id);
-        if (!entryId) { showToast('No ledger entry found for this payment — repost it from Journal Entries’ Import to Ledger.', 'info'); return; }
+        if (!entryId) { showToast(t('ui.supplier.payments.toast.noLedgerEntry'), 'info'); return; }
         setPostingId(p.id);
         try {
             const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', entryId);
             if (error) throw error;
-            showToast('Payment posted', 'success');
+            showToast(t('ui.supplier.payments.toast.posted'), 'success');
             // Only the status changed — patch the one entry in place; the
             // status map above recomputes from journalEntries.
             patchJournalEntry(entryId, { status: 'Posted' });
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to post payment: ' + msg, 'error');
+            showToast(t('ui.supplier.payments.toast.postFailed') + msg, 'error');
         } finally {
             setPostingId(null);
         }
@@ -204,12 +208,12 @@ const SupplierPaymentsPage: React.FC = () => {
     const paymentSuppliers = useMemo(() => {
         const byId = new Map<string, string>();
         for (const p of supplierPayments) {
-            if (p.supplier_id && !byId.has(p.supplier_id)) byId.set(p.supplier_id, p.supplier?.name || 'Unknown supplier');
+            if (p.supplier_id && !byId.has(p.supplier_id)) byId.set(p.supplier_id, p.supplier?.name || t('ui.supplier.common.unknownSupplier'));
         }
         return [...byId.entries()]
             .map(([id, name]) => ({ id, name }))
             .sort((a, b) => a.name.localeCompare(b.name));
-    }, [supplierPayments]);
+    }, [supplierPayments, t]);
 
     const filteredPayments = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -258,7 +262,7 @@ const SupplierPaymentsPage: React.FC = () => {
     const supplierOptions = useMemo(() => {
         const bySupplier = new Map<string, { name: string; bills: PurchaseOrder[]; outstanding: number }>();
         for (const po of billableBills) {
-            const g = bySupplier.get(po.supplier_id) || { name: po.supplier?.name || 'Unknown supplier', bills: [], outstanding: 0 };
+            const g = bySupplier.get(po.supplier_id) || { name: po.supplier?.name || t('ui.supplier.common.unknownSupplier'), bills: [], outstanding: 0 };
             g.bills.push(po);
             g.outstanding += (po.total_amount || 0) - (po.amount_paid || 0);
             bySupplier.set(po.supplier_id, g);
@@ -266,7 +270,7 @@ const SupplierPaymentsPage: React.FC = () => {
         return [...bySupplier.entries()]
             .map(([id, g]) => ({ id, ...g }))
             .sort((a, b) => a.name.localeCompare(b.name));
-    }, [billableBills]);
+    }, [billableBills, t]);
 
     const [isPayOpen, setIsPayOpen] = useState(false);
     const [paySupplierId, setPaySupplierId] = useState('');
@@ -332,24 +336,24 @@ const SupplierPaymentsPage: React.FC = () => {
     };
 
     const submitPayment = async () => {
-        if (!paySupplier) { showToast('Choose a supplier', 'error'); return; }
+        if (!paySupplier) { showToast(t('ui.supplier.payments.toast.chooseSupplier'), 'error'); return; }
         const entered = payField.typed;
-        if (!entered || entered <= 0) { showToast('Enter a valid amount', 'error'); return; }
+        if (!entered || entered <= 0) { showToast(t('ui.supplier.payments.toast.validAmount'), 'error'); return; }
         const rate = Number(payField.rate);
-        if (payField.currency === 'KHR' && payField.rateInvalid) { showToast('Enter the KHR exchange rate', 'error'); return; }
+        if (payField.currency === 'KHR' && payField.rateInvalid) { showToast(t('ui.supplier.payments.toast.khrRate'), 'error'); return; }
         const usd = payUsdAmount;
         for (const po of payBills) {
             if ((Number(allocations[po.id]) || 0) > po.outstanding + 0.005) {
-                showToast(`${po.invoice_number || poShortId(po.id)}: applied amount exceeds its ${fmtUsd(po.outstanding)} outstanding`, 'error');
+                showToast(fill(t('ui.supplier.payments.toast.exceedsOutstanding'), { ref: po.invoice_number || poShortId(po.id), amount: fmtUsd(po.outstanding) }), 'error');
                 return;
             }
         }
-        if (appliedTotal <= 0) { showToast('Apply the payment to at least one bill — use "Oldest first" to fill it automatically', 'error'); return; }
+        if (appliedTotal <= 0) { showToast(t('ui.supplier.payments.toast.applyToBill'), 'error'); return; }
         if (Math.abs(onAccount) > 0.005) {
-            showToast(`Applied ${fmtUsd(appliedTotal)} doesn't match the ${fmtUsd(usd)} amount — on-account credit isn't supported, so apply the full amount to bills`, 'error');
+            showToast(fill(t('ui.supplier.payments.toast.appliedMismatch'), { applied: fmtUsd(appliedTotal), amount: fmtUsd(usd) }), 'error');
             return;
         }
-        if (paymentAccounts.length > 0 && !payAccountId) { showToast('Choose the account this payment is paid from', 'error'); return; }
+        if (paymentAccounts.length > 0 && !payAccountId) { showToast(t('ui.supplier.payments.toast.chooseAccount'), 'error'); return; }
         if (!payField.confirmIfSuspicious()) return;
         const acc = paymentAccounts.find(a => a.id === payAccountId);
         // The riel text stays in the notes too (a store without the
@@ -381,7 +385,7 @@ const SupplierPaymentsPage: React.FC = () => {
     const [viewPayment, setViewPayment] = useState<SupplierPayment | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const handleDelete = async (p: SupplierPayment) => {
-        if (!confirm(`Delete ${referenceOf.get(p.id) || 'this payment'}? The bill it settled goes back to its previous balance.`)) return;
+        if (!confirm(fill(t('ui.supplier.payments.confirmDelete'), { ref: referenceOf.get(p.id) || t('ui.supplier.payments.thisPayment') }))) return;
         setDeletingId(p.id);
         try {
             await deleteSupplierPayment(p.id);
@@ -410,9 +414,9 @@ const SupplierPaymentsPage: React.FC = () => {
     };
 
     const exportCsv = () => {
-        const t = activeTable();
+        const tbl = activeTable();
         const esc = (v: string | number) => { const s = String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-        const csv = [t.columns, ...t.rows].map(r => r.map(esc).join(',')).join('\n');
+        const csv = [tbl.columns, ...tbl.rows].map(r => r.map(esc).join(',')).join('\n');
         const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -422,14 +426,14 @@ const SupplierPaymentsPage: React.FC = () => {
     };
 
     const printList = () => {
-        const t = activeTable();
+        const tbl = activeTable();
         const w = window.open('', '_blank', 'width=900,height=700');
         if (!w) return;
-        const body = t.rows.map(r => `<tr>${r.map((c, i) => `<td class="${i >= 4 && i <= 5 ? 'num' : ''}">${escapeHtml(String(c))}</td>`).join('')}</tr>`).join('');
+        const body = tbl.rows.map(r => `<tr>${r.map((c, i) => `<td class="${i >= 4 && i <= 5 ? 'num' : ''}">${escapeHtml(String(c))}</td>`).join('')}</tr>`).join('');
         const total = filteredPayments.reduce((s, p) => s + (p.amount || 0), 0);
-        w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${t.name}</title><style>${PRINT_CSS}</style></head><body>
-        <h1>${t.name}</h1><p class="muted">${filteredPayments.length} ${filteredPayments.length === 1 ? 'payment' : 'payments'} · Printed ${new Date().toLocaleString()}</p>
-        <table><thead><tr>${t.columns.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${body}</tbody>
+        w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${tbl.name}</title><style>${PRINT_CSS}</style></head><body>
+        <h1>${tbl.name}</h1><p class="muted">${filteredPayments.length} ${filteredPayments.length === 1 ? 'payment' : 'payments'} · Printed ${new Date().toLocaleString()}</p>
+        <table><thead><tr>${tbl.columns.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${body}</tbody>
         <tfoot><tr><td colspan="4">Total</td><td class="num">${fmtUsd(total)}</td><td colspan="2"></td></tr></tfoot></table>
         <div class="foot">All figures are in USD.</div>
         </body></html>`);
@@ -444,65 +448,65 @@ const SupplierPaymentsPage: React.FC = () => {
                 <button
                     onClick={openPay}
                     disabled={billableBills.length === 0}
-                    title={billableBills.length === 0 ? 'No outstanding bills to pay' : undefined}
+                    title={billableBills.length === 0 ? t('ui.supplier.payments.noBillsToPay') : undefined}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '8px', border: 'none', background: billableBills.length === 0 ? 'var(--color-border)' : '#4c5fd0', color: 'white', fontSize: '14px', fontWeight: 600, cursor: billableBills.length === 0 ? 'not-allowed' : 'pointer' }}
                 >
-                    <Plus size={16} /> Record Payment
+                    <Plus size={16} /> {t('ui.supplier.common.recordPayment')}
                 </button>
             </div>
 
             {/* Summary — same flat cards as the financial statements, totalling what the table shows */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
-                <SummaryCard color="#4c5fd0" label="Total Paid" value={fmtUsd(totals.paid)} sub={`${totals.count} payment${totals.count === 1 ? '' : 's'}`} />
-                <SummaryCard color="#10B981" label="Posted" value={fmtUsd(totals.posted)} sub={`${totals.postedCount} payment${totals.postedCount === 1 ? '' : 's'}`} />
-                <SummaryCard color="#D97706" label="Draft" value={fmtUsd(totals.draft)} sub={`${totals.draftCount} payment${totals.draftCount === 1 ? '' : 's'}`} />
+                <SummaryCard color="#4c5fd0" label={t('ui.supplier.common.totalPaid')} value={fmtUsd(totals.paid)} sub={fill(t(totals.count === 1 ? 'ui.supplier.payments.paymentCountOne' : 'ui.supplier.payments.paymentCountMany'), { n: totals.count })} />
+                <SummaryCard color="#10B981" label={t('ui.supplier.common.posted')} value={fmtUsd(totals.posted)} sub={fill(t(totals.postedCount === 1 ? 'ui.supplier.payments.paymentCountOne' : 'ui.supplier.payments.paymentCountMany'), { n: totals.postedCount })} />
+                <SummaryCard color="#D97706" label={t('ui.supplier.common.draft')} value={fmtUsd(totals.draft)} sub={fill(t(totals.draftCount === 1 ? 'ui.supplier.payments.paymentCountOne' : 'ui.supplier.payments.paymentCountMany'), { n: totals.draftCount })} />
             </div>
 
             {/* Filters */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '340px' }}>
                     <Search size={15} color="var(--color-text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                    <input type="text" placeholder="Search reference or supplier…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
+                    <input type="text" placeholder={t('ui.supplier.payments.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
                 </div>
                 <select className="d2-khmer" value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '150px', maxWidth: '220px', cursor: 'pointer' }}>
-                    <option value="all">All suppliers</option>
+                    <option value="all">{t('ui.supplier.common.allSuppliers')}</option>
                     {paymentSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | PayStatus)} style={{ ...inputStyle, width: 'auto', minWidth: '140px', cursor: 'pointer' }}>
-                    <option value="All">All statuses</option>
-                    <option value="Posted">Posted</option>
-                    <option value="Draft">Draft</option>
+                    <option value="All">{t('ui.supplier.common.allStatuses')}</option>
+                    <option value="Posted">{t('ui.supplier.common.posted')}</option>
+                    <option value="Draft">{t('ui.supplier.common.draft')}</option>
                 </select>
                 {/* Same date picker as the Accounting pages (presets + calendar); the range
                     is still remembered per browser via usePersistedDateRange. */}
                 <DateRangePicker value={spRangeShown} onChange={setSpDateRange} />
-                <button onClick={() => { fetchSupplierPayments(); fetchJournalEntries(); }} title="Refresh" style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
+                <button onClick={() => { fetchSupplierPayments(); fetchJournalEntries(); }} title={t('ui.supplier.common.refresh')} style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} />
                 </button>
                 {hasActiveFilters && (
                     <button onClick={clearFilters} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
-                        Clear
+                        {t('ui.supplier.common.clear')}
                     </button>
                 )}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     <button onClick={printList} disabled={isLoading || filteredPayments.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredPayments.length === 0) ? 0.5 : 1 }}>
-                        <Printer size={13} /> Print list
+                        <Printer size={13} /> {t('ui.supplier.common.printList')}
                     </button>
                     <button onClick={exportCsv} disabled={isLoading || filteredPayments.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredPayments.length === 0) ? 0.5 : 1 }}>
-                        <Download size={13} /> Export CSV
+                        <Download size={13} /> {t('ui.supplier.common.exportCsv')}
                     </button>
                 </div>
             </div>
 
             <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                 {isLoading ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading payments...</div>
+                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.supplier.payments.loading')}</div>
                 ) : filteredPayments.length === 0 ? (
                     <div className="glass-panel" style={{ textAlign: 'center', padding: '60px', border: 'none' }}>
                         <Receipt size={40} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-                        <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>No payments found</h3>
+                        <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{t('ui.supplier.payments.noneFound')}</h3>
                         <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                            {hasActiveFilters ? 'Try adjusting your filters.' : 'Record a payment against an outstanding bill to get started.'}
+                            {hasActiveFilters ? t('ui.supplier.common.tryAdjustFilters') : t('ui.supplier.payments.getStarted')}
                         </p>
                     </div>
                 ) : (
@@ -510,8 +514,8 @@ const SupplierPaymentsPage: React.FC = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '720px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                    {['Reference', 'Date', 'Supplier', 'Amount', 'Unapplied', 'Status', ''].map((h, i) => (
-                                        <th key={h || 'actions'} style={{ padding: '12px 20px', textAlign: i === 3 || i === 4 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{h}</th>
+                                    {[t('ui.supplier.common.reference'), t('ui.supplier.common.date'), t('ui.supplier.common.supplier'), t('common.amount'), t('ui.supplier.payments.unapplied'), t('ui.supplier.common.status'), ''].map((h, i) => (
+                                        <th key={i} style={{ padding: '12px 20px', textAlign: i === 3 || i === 4 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -523,17 +527,17 @@ const SupplierPaymentsPage: React.FC = () => {
                                         <td className="d2-khmer" style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{p.supplier?.name || '—'}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(p.amount)}{isKhrRow(p) && <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(p)}</div>}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(0)}</td>
-                                        <td style={{ padding: '12px 20px' }}>{statusChip(paymentStatus.get(p.id) || 'Draft')}</td>
+                                        <td style={{ padding: '12px 20px' }}>{statusChip(paymentStatus.get(p.id) || 'Draft', statusLabel(paymentStatus.get(p.id) || 'Draft'))}</td>
                                         <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
                                                 {canPost(p) && (
-                                                    <button onClick={() => setConfirmPostPayment(p)} disabled={postingId === p.id} title="Post to ledger" style={{ background: 'rgba(76,95,208,0.1)', border: 'none', cursor: postingId === p.id ? 'not-allowed' : 'pointer', color: '#4c5fd0', padding: '6px', borderRadius: '6px', opacity: postingId === p.id ? 0.6 : 1 }}>
+                                                    <button onClick={() => setConfirmPostPayment(p)} disabled={postingId === p.id} title={t('ui.supplier.payments.postToLedger')} style={{ background: 'rgba(76,95,208,0.1)', border: 'none', cursor: postingId === p.id ? 'not-allowed' : 'pointer', color: '#4c5fd0', padding: '6px', borderRadius: '6px', opacity: postingId === p.id ? 0.6 : 1 }}>
                                                         {postingId === p.id ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={15} />}
                                                     </button>
                                                 )}
-                                                <button onClick={() => setViewPayment(p)} title="View" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
-                                                <button onClick={printList} title="Print" style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
-                                                <button onClick={() => handleDelete(p)} disabled={deletingId === p.id} title="Delete" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: deletingId === p.id ? 'not-allowed' : 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px', opacity: deletingId === p.id ? 0.6 : 1 }}><XCircle size={15} /></button>
+                                                <button onClick={() => setViewPayment(p)} title={t('ui.supplier.common.view')} style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
+                                                <button onClick={printList} title={t('ui.supplier.common.print')} style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
+                                                <button onClick={() => handleDelete(p)} disabled={deletingId === p.id} title={t('common.delete')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: deletingId === p.id ? 'not-allowed' : 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px', opacity: deletingId === p.id ? 0.6 : 1 }}><XCircle size={15} /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -545,24 +549,24 @@ const SupplierPaymentsPage: React.FC = () => {
             </div>
 
             {/* Record Payment — supplier-first form, applied oldest-bill-first */}
-            <Modal isOpen={isPayOpen} onClose={() => !paySaving && setIsPayOpen(false)} title="Record Supplier Payment" width="640px">
+            <Modal isOpen={isPayOpen} onClose={() => !paySaving && setIsPayOpen(false)} title={t('ui.supplier.payments.recordTitle')} width="640px">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div>
-                        <label style={labelStyle}>Supplier <span style={{ color: '#ef4444' }}>*</span></label>
+                        <label style={labelStyle}>{t('ui.supplier.common.supplier')} <span style={{ color: '#ef4444' }}>*</span></label>
                         <select className="d2-khmer" value={paySupplierId} onChange={e => { setPaySupplierId(e.target.value); setAllocations({}); }} style={{ ...inputStyle, cursor: 'pointer' }}>
-                            <option value="">Select supplier…</option>
+                            <option value="">{t('ui.supplier.payments.selectSupplier')}</option>
                             {supplierOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                         <div>
-                            <label style={labelStyle}>Payment date <span style={{ color: '#ef4444' }}>*</span></label>
+                            <label style={labelStyle}>{t('ui.supplier.payments.paymentDate')} <span style={{ color: '#ef4444' }}>*</span></label>
                             <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} style={inputStyle} />
                         </div>
                     </div>
                     <MoneyInput
                         field={payField}
-                        label="Amount"
+                        label={t('common.amount')}
                         required
                         allowKhr
                         onToggleCurrency={payCoupling.onToggleCurrency}
@@ -571,42 +575,42 @@ const SupplierPaymentsPage: React.FC = () => {
                         inputStyle={inputStyle}
                     />
                     <div>
-                        <label style={labelStyle}>Paid from <span style={{ color: '#ef4444' }}>*</span></label>
+                        <label style={labelStyle}>{t('ui.supplier.payments.paidFrom')} <span style={{ color: '#ef4444' }}>*</span></label>
                         <select className="d2-khmer" value={payAccountId} onChange={e => payCoupling.onAccountChange(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                            <option value="">Bank or cash account…</option>
+                            <option value="">{t('ui.supplier.payments.bankOrCash')}</option>
                             <CashBankOptions accounts={paymentAccounts} label={a => `${a.account_code} — ${a.account_name}`} />
                         </select>
                         {paymentAccounts.length === 0 && (
                             <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                                No cash or bank accounts in the Chart of Accounts yet — the payment saves without one.
+                                {t('ui.supplier.payments.noCashBankAccounts')}
                             </div>
                         )}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                         <div>
-                            <label style={labelStyle}>Method</label>
+                            <label style={labelStyle}>{t('ui.supplier.common.method')}</label>
                             <select value={payMethod} onChange={e => setPayMethod(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                <option value="Bank transfer">Bank transfer</option>
-                                <option value="Cash">Cash</option>
-                                <option value="Cheque">Cheque</option>
+                                <option value="Bank transfer">{t('ui.supplier.payments.methodBankTransfer')}</option>
+                                <option value="Cash">{t('ui.supplier.payments.methodCash')}</option>
+                                <option value="Cheque">{t('ui.supplier.payments.methodCheque')}</option>
                             </select>
                         </div>
                         <div>
-                            <label style={labelStyle}>Reference</label>
-                            <input type="text" placeholder="Cheque or transfer no." value={payReference} onChange={e => setPayReference(e.target.value)} style={inputStyle} />
+                            <label style={labelStyle}>{t('ui.supplier.common.reference')}</label>
+                            <input type="text" placeholder={t('ui.supplier.payments.referencePlaceholder')} value={payReference} onChange={e => setPayReference(e.target.value)} style={inputStyle} />
                         </div>
                     </div>
                     {paySupplier && (
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                <label style={{ ...labelStyle, marginBottom: 0 }}>Apply to bills</label>
+                                <label style={{ ...labelStyle, marginBottom: 0 }}>{t('ui.supplier.payments.applyToBills')}</label>
                                 <button
                                     type="button"
                                     onClick={fillOldestFirst}
-                                    title="Spread the amount across the oldest bills first"
+                                    title={t('ui.supplier.payments.oldestFirstHint')}
                                     style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 8px', borderRadius: '6px', border: 'none', background: 'transparent', color: '#4c5fd0', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
                                 >
-                                    <Zap size={13} /> Oldest first
+                                    <Zap size={13} /> {t('ui.supplier.payments.oldestFirst')}
                                 </button>
                             </div>
                             <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
@@ -615,7 +619,7 @@ const SupplierPaymentsPage: React.FC = () => {
                                         <div style={{ minWidth: 0 }}>
                                             <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>{poShortId(po.id)}</div>
                                             <div className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                {po.invoice_number || '—'} · due {String(po.payment_due_date || po.order_date || '').slice(0, 10) || '—'} · {po.outstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })} outstanding
+                                                {po.invoice_number || '—'} · {t('ui.supplier.payments.dueLower')} {String(po.payment_due_date || po.order_date || '').slice(0, 10) || '—'} · {fill(t('ui.supplier.payments.amountOutstanding'), { amount: po.outstanding.toLocaleString('en-US', { minimumFractionDigits: 2 }) })}
                                             </div>
                                         </div>
                                         <input
@@ -627,55 +631,55 @@ const SupplierPaymentsPage: React.FC = () => {
                                     </div>
                                 ))}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--color-bg)', fontSize: '13px' }}>
-                                    <span style={{ color: 'var(--color-text-secondary)' }}>Applied <span style={{ fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{appliedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></span>
+                                    <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.supplier.payments.applied')} <span style={{ fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{appliedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></span>
                                     {/* On-account credit has no backing in the books — it must land on 0. */}
                                     <span style={{ color: Math.abs(onAccount) > 0.005 ? '#ef4444' : 'var(--color-text-secondary)' }}>
-                                        On account <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{onAccount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                        {t('ui.supplier.payments.onAccount')} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{onAccount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                     </span>
                                 </div>
                             </div>
                         </div>
                     )}
                     <div>
-                        <label style={labelStyle}>Notes</label>
+                        <label style={labelStyle}>{t('ui.supplier.common.notes')}</label>
                         <textarea value={payNotes} onChange={e => setPayNotes(e.target.value)} style={{ ...inputStyle, minHeight: '70px', resize: 'vertical', fontFamily: 'inherit' }} />
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '4px' }}>
                         <button onClick={() => setIsPayOpen(false)} disabled={paySaving} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>
-                            Cancel
+                            {t('common.cancel')}
                         </button>
                         <button onClick={submitPayment} disabled={paySaving} style={{ padding: '10px 18px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', cursor: paySaving ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 600, opacity: paySaving ? 0.7 : 1 }}>
-                            {paySaving ? 'Saving…' : 'Record payment'}
+                            {paySaving ? t('ui.supplier.common.saving') : t('ui.supplier.payments.recordPaymentBtn')}
                         </button>
                     </div>
                 </div>
             </Modal>
 
             {viewPayment && (
-                <Modal isOpen={!!viewPayment} onClose={() => setViewPayment(null)} title="Supplier Payment" width="420px">
+                <Modal isOpen={!!viewPayment} onClose={() => setViewPayment(null)} title={t('ui.supplier.payments.viewTitle')} width="420px">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '8px' }}>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Reference</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.reference')}</span>
                             <span style={{ fontWeight: 600 }}>{referenceOf.get(viewPayment.id) || '—'}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Date</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.date')}</span>
                             <span>{fmtDate(viewPayment.payment_date)}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Supplier</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.supplier')}</span>
                             <span className="d2-khmer">{viewPayment.supplier?.name || '—'}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Bill</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.supplier.payments.bill')}</span>
                             <span>{poById.get(viewPayment.purchase_order_id)?.invoice_number || poShortId(viewPayment.purchase_order_id)}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Method</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.method')}</span>
                             <span>{viewPayment.payment_method || '—'}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Status</span>
-                            <span>{statusChip(paymentStatus.get(viewPayment.id) || 'Draft')}</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.status')}</span>
+                            <span>{statusChip(paymentStatus.get(viewPayment.id) || 'Draft', statusLabel(paymentStatus.get(viewPayment.id) || 'Draft'))}</span>
                             {viewPayment.notes && (
                                 <>
-                                    <span style={{ color: 'var(--color-text-secondary)' }}>Notes</span>
+                                    <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.supplier.common.notes')}</span>
                                     <span>{viewPayment.notes}</span>
                                 </>
                             )}
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '12px 0', borderTop: '1px solid var(--color-border)' }}>
-                            <span style={{ fontWeight: 700 }}>Amount</span>
+                            <span style={{ fontWeight: 700 }}>{t('common.amount')}</span>
                             <span style={{ fontWeight: 800, fontSize: '18px', fontVariantNumeric: 'tabular-nums' }}>{isKhrRow(viewPayment) ? formatMoneyLine(viewPayment) : fmtUsd(viewPayment.amount)}</span>
                         </div>
                         {canPost(viewPayment) && (
@@ -685,7 +689,7 @@ const SupplierPaymentsPage: React.FC = () => {
                                     disabled={postingId === viewPayment.id}
                                     style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: postingId === viewPayment.id ? 'not-allowed' : 'pointer', opacity: postingId === viewPayment.id ? 0.6 : 1 }}
                                 >
-                                    <CheckCircle2 size={13} /> {postingId === viewPayment.id ? 'Posting…' : 'Post'}
+                                    <CheckCircle2 size={13} /> {postingId === viewPayment.id ? t('ui.supplier.common.posting') : t('ui.supplier.common.post')}
                                 </button>
                             </div>
                         )}
@@ -710,18 +714,18 @@ const SupplierPaymentsPage: React.FC = () => {
                                 <HelpCircle size={22} />
                             </div>
                             <div>
-                                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: 'var(--color-text-main)' }}>Are you sure?</h3>
+                                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: 'var(--color-text-main)' }}>{t('ui.supplier.common.areYouSure')}</h3>
                                 <p className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-secondary)', margin: 0 }}>
-                                    Post this {fmtUsd(confirmPostPayment.amount)} payment to {confirmPostPayment.supplier?.name || 'the supplier'}? This books the entry below.
+                                    {fill(t('ui.supplier.payments.confirmPost'), { amount: fmtUsd(confirmPostPayment.amount), supplier: confirmPostPayment.supplier?.name || t('ui.supplier.payments.theSupplier') })}
                                 </p>
                             </div>
                         </div>
                         {previewLines.length > 0 && (
                             <div style={{ marginTop: '16px', borderRadius: '10px', border: '1px solid color-mix(in srgb, #4c5fd0 30%, var(--color-border))', background: 'color-mix(in srgb, #4c5fd0 4%, var(--color-surface))', padding: '10px 14px' }}>
-                                <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#4c5fd0', marginBottom: '4px' }}>Journal Entry Preview</div>
+                                <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#4c5fd0', marginBottom: '4px' }}>{t('ui.supplier.common.jePreview')}</div>
                                 {previewLines.map((l, i) => (
                                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0', borderBottom: i < previewLines.length - 1 ? '1px solid var(--color-border)' : 'none', fontSize: '13px', color: 'var(--color-text-main)' }}>
-                                        <span className="d2-khmer" style={l.credit > 0 ? { paddingLeft: '18px' } : undefined}>{l.debit > 0 ? 'Dr.' : 'Cr.'} {l.name}</span>
+                                        <span className="d2-khmer" style={l.credit > 0 ? { paddingLeft: '18px' } : undefined}>{l.debit > 0 ? t('ui.supplier.common.dr') : t('ui.supplier.common.cr')} {l.name}</span>
                                         <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmtNum(l.debit > 0 ? l.debit : l.credit)}</span>
                                     </div>
                                 ))}
@@ -729,13 +733,13 @@ const SupplierPaymentsPage: React.FC = () => {
                         )}
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
                             <button onClick={() => setConfirmPostPayment(null)} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                                Cancel
+                                {t('common.cancel')}
                             </button>
                             <button
                                 onClick={() => { const p = confirmPostPayment; setConfirmPostPayment(null); postPayment(p); }}
                                 style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                             >
-                                Post
+                                {t('ui.supplier.common.post')}
                             </button>
                         </div>
                     </div>

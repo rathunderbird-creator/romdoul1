@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { Employee, LeaveRequest, PayrollRun } from '../types';
 import { useToast } from '../context/ToastContext';
 import { dayKeyFromDate } from '../utils/dateRange';
+import { tNow } from '../i18n/translate';
 
 const generateUUID = () => {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -62,7 +63,7 @@ export const useHR = () => {
             setEmployees(data || []);
         } catch (error: any) {
             console.error('Failed to fetch employees:', error);
-            showToast('Failed to fetch employees: ' + error.message, 'error');
+            showToast(tNow('ui.store.hr.fetchEmployeesFailed', { error: error.message }), 'error');
         } finally {
             if (!silent) setIsLoading(false);
         }
@@ -84,18 +85,18 @@ export const useHR = () => {
                     .update(payload)
                     .eq('id', employee.id);
                 if (error) throw error;
-                showToast('Employee updated successfully', 'success');
+                showToast(tNow('ui.store.hr.employeeUpdated'), 'success');
             } else {
                 const { error } = await supabase
                     .from('employees')
                     .insert([payload]);
                 if (error) throw error;
-                showToast('Employee created successfully', 'success');
+                showToast(tNow('ui.store.hr.employeeCreated'), 'success');
             }
             await fetchEmployees(true);
         } catch (error: any) {
             console.error('Failed to save employee:', error);
-            showToast('Failed to save employee: ' + error.message, 'error');
+            showToast(tNow('ui.store.hr.saveEmployeeFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchEmployees]);
@@ -115,11 +116,11 @@ export const useHR = () => {
                 const { error: txErr } = await supabase.from('transactions').delete().like('description', `%${payrollMarker(r.id)}%`);
                 if (txErr) console.error('Failed to remove salary expense row for deleted employee:', txErr);
             }
-            showToast('Employee deleted successfully', 'success');
+            showToast(tNow('ui.store.hr.employeeDeleted'), 'success');
             await fetchEmployees(true);
         } catch (error: any) {
             console.error('Failed to delete employee:', error);
-            showToast('Failed to delete employee: ' + error.message, 'error');
+            showToast(tNow('ui.store.hr.deleteEmployeeFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchEmployees]);
@@ -137,7 +138,7 @@ export const useHR = () => {
             setLeaveRequests(data || []);
         } catch (error: any) {
             console.error('Failed to fetch leave requests:', error);
-            showToast('Failed to fetch leave requests: ' + error.message, 'error');
+            showToast(tNow('ui.store.hr.fetchLeavesFailed', { error: error.message }), 'error');
         } finally {
             if (!silent) setIsLoading(false);
         }
@@ -152,18 +153,18 @@ export const useHR = () => {
                     .update(payload)
                     .eq('id', leave.id);
                 if (error) throw error;
-                showToast('Leave request updated successfully', 'success');
+                showToast(tNow('ui.store.hr.leaveUpdated'), 'success');
             } else {
                 const { error } = await supabase
                     .from('leave_requests')
                     .insert([payload]);
                 if (error) throw error;
-                showToast('Leave request created successfully', 'success');
+                showToast(tNow('ui.store.hr.leaveCreated'), 'success');
             }
             await fetchLeaveRequests(true);
         } catch (error: any) {
             console.error('Failed to save leave request:', error);
-            showToast('Failed to save leave request: ' + error.message, 'error');
+            showToast(tNow('ui.store.hr.saveLeaveFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchLeaveRequests]);
@@ -172,11 +173,11 @@ export const useHR = () => {
         try {
             const { error } = await supabase.from('leave_requests').delete().eq('id', id);
             if (error) throw error;
-            showToast('Leave request deleted successfully', 'success');
+            showToast(tNow('ui.store.hr.leaveDeleted'), 'success');
             await fetchLeaveRequests(true);
         } catch (error: any) {
             console.error('Failed to delete leave request:', error);
-            showToast('Failed to delete leave request: ' + error.message, 'error');
+            showToast(tNow('ui.store.hr.deleteLeaveFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchLeaveRequests]);
@@ -194,7 +195,7 @@ export const useHR = () => {
             setPayrollRuns(data || []);
         } catch (error: any) {
             console.error('Failed to fetch payroll runs:', error);
-            showToast('Failed to fetch payroll runs: ' + error.message, 'error');
+            showToast(tNow('ui.store.hr.fetchPayrollFailed', { error: error.message }), 'error');
         } finally {
             if (!silent) setIsLoading(false);
         }
@@ -251,7 +252,7 @@ export const useHR = () => {
         }]);
         if (insErr) {
             console.error('Failed to log salary expense:', insErr);
-            showToast('Payroll saved, but logging the salary to Expense failed: ' + insErr.message, 'error');
+            showToast(tNow('ui.store.hr.payrollExpenseFailed', { error: insErr.message }), 'error');
         }
     }, [showToast]);
 
@@ -271,7 +272,7 @@ export const useHR = () => {
                     .update(payload)
                     .eq('id', runId);
                 if (error) throw error;
-                showToast('Payroll record updated successfully', 'success');
+                showToast(tNow('ui.store.hr.payrollUpdated'), 'success');
             } else {
                 const { data: inserted, error } = await supabase
                     .from('payroll_runs')
@@ -280,7 +281,7 @@ export const useHR = () => {
                     .single();
                 if (error) throw error;
                 runId = inserted.id;
-                showToast('Payroll record created successfully', 'success');
+                showToast(tNow('ui.store.hr.payrollCreated'), 'success');
             }
             if (runId) {
                 await syncSalaryExpense(
@@ -291,7 +292,7 @@ export const useHR = () => {
             await fetchPayrollRuns(true);
         } catch (error: any) {
             console.error('Failed to save payroll run:', error);
-            showToast('Failed to save payroll run: ' + error.message, 'error');
+            showToast(tNow('ui.store.hr.savePayrollFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchPayrollRuns, syncSalaryExpense, employeeDisplayName]);
@@ -321,7 +322,7 @@ export const useHR = () => {
             return { created: targets.length, skipped: already.size };
         } catch (error: any) {
             console.error('Failed to generate payroll:', error);
-            showToast('Failed to generate payroll: ' + error.message, 'error');
+            showToast(tNow('ui.store.hr.generatePayrollFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [employees, showToast, fetchPayrollRuns]);
@@ -333,11 +334,11 @@ export const useHR = () => {
             // Its salary Expense row (if it was paid) goes with it.
             const { error: txErr } = await supabase.from('transactions').delete().like('description', `%${payrollMarker(id)}%`);
             if (txErr) console.error('Failed to remove salary expense row:', txErr);
-            showToast('Payroll record deleted successfully', 'success');
+            showToast(tNow('ui.store.hr.payrollDeleted'), 'success');
             await fetchPayrollRuns(true);
         } catch (error: any) {
             console.error('Failed to delete payroll run:', error);
-            showToast('Failed to delete payroll run: ' + error.message, 'error');
+            showToast(tNow('ui.store.hr.deletePayrollFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchPayrollRuns]);

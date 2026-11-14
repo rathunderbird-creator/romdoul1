@@ -17,11 +17,13 @@ import { useToast } from '../../context/ToastContext';
 import { useAccounting } from '../../hooks/useAccounting';
 import { fetchFifoPeek, FIFO_MISSING_MESSAGE } from '../../hooks/useFifo';
 import type { ChartOfAccount } from '../../types';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 type TabKey = 'behaviour' | 'gl-accounts';
-const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
-    { key: 'behaviour', label: 'Behaviour', icon: SlidersHorizontal },
-    { key: 'gl-accounts', label: 'GL Accounts', icon: Landmark },
+const TABS: { key: TabKey; label: string; tKey: string; icon: React.ComponentType<{ size?: number }> }[] = [
+    { key: 'behaviour', label: 'Behaviour', tKey: 'ui.inventory.settings.tabs.behaviour', icon: SlidersHorizontal },
+    { key: 'gl-accounts', label: 'GL Accounts', tKey: 'ui.inventory.settings.tabs.glAccounts', icon: Landmark },
 ];
 
 interface AcctField { key: string; label: string; code: string; namePattern: RegExp; type?: ChartOfAccount['account_type']; help: string; required?: boolean }
@@ -73,19 +75,20 @@ const saveBtn: React.CSSProperties = {
 const InventorySettingsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const { accounts, fetchAccounts } = useAccounting();
 
     useEffect(() => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Inventory Settings</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>How stock behaves, and which accounts it posts to.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('ui.inventory.settings.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{t('ui.inventory.settings.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
 
@@ -113,8 +116,8 @@ const InventorySettingsPage: React.FC = () => {
     const openingDefault = useMemo(() => accounts.find(a => a.account_code === '3300') || equityAccounts[0], [accounts, equityAccounts]);
     const [openingStockAccountId, setOpeningStockAccountId] = useState('');
 
-    const handleSaveBehaviour = () => showToast("Mockup only — behaviour settings aren't saved yet. Decide which of these the app actually needs before this gets built for real.", 'info');
-    const handleSaveAccounts = () => showToast("Mockup only — GL account mappings aren't saved yet. Decide which of these the app actually needs before this gets built for real.", 'info');
+    const handleSaveBehaviour = () => showToast(t('ui.inventory.settings.mockBehaviour'), 'info');
+    const handleSaveAccounts = () => showToast(t('ui.inventory.settings.mockAccounts'), 'info');
 
     // ── GL Accounts (local draft, pre-selected against this instance's real
     // chart of accounts) ──
@@ -142,12 +145,12 @@ const InventorySettingsPage: React.FC = () => {
         const opts = optionsFor(field);
         return (
             <div>
-                <label style={labelStyle}>{field.label}{field.required ? ' *' : ''}</label>
+                <label style={labelStyle}>{t(`ui.inventory.settings.acct.${field.key}.label`)}{field.required ? ' *' : ''}</label>
                 <select value={mapping[field.key] || ''} onChange={e => setMapping(m => ({ ...m, [field.key]: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
-                    <option value="">— not set —</option>
+                    <option value="">{t('ui.inventory.settings.notSet')}</option>
                     {opts.map(a => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
                 </select>
-                <div style={helpStyle}>{field.help}</div>
+                <div style={helpStyle}>{t(`ui.inventory.settings.acct.${field.key}.help`)}</div>
             </div>
         );
     };
@@ -156,7 +159,7 @@ const InventorySettingsPage: React.FC = () => {
         <div className="acct-page" style={{ maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: '18px' }}>
             {/* Tabs */}
             <div style={{ display: 'flex', gap: '4px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '4px', flexWrap: 'wrap', alignSelf: 'flex-start' }}>
-                {TABS.map(({ key, label, icon: Icon }) => (
+                {TABS.map(({ key, tKey, icon: Icon }) => (
                     <button
                         key={key}
                         onClick={() => setTab(key)}
@@ -168,7 +171,7 @@ const InventorySettingsPage: React.FC = () => {
                             boxShadow: tab === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
                         }}
                     >
-                        <Icon size={15} /> {label}
+                        <Icon size={15} /> {t(tKey)}
                     </button>
                 ))}
             </div>
@@ -176,18 +179,18 @@ const InventorySettingsPage: React.FC = () => {
             {tab === 'behaviour' && (
                 <div style={{ ...cardStyle, padding: '20px 22px', maxWidth: '640px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
                     <div>
-                        <label style={labelStyle}>Costing method</label>
+                        <label style={labelStyle}>{t('ui.inventory.settings.costingMethod')}</label>
                         <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'default' }}>
                             <span style={{ fontWeight: 700 }}>FIFO</span>
                             {fifoSetUp === false ? (
-                                <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '999px', background: 'rgba(245,158,11,0.14)', color: '#B45309' }}>Not set up</span>
+                                <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '999px', background: 'rgba(245,158,11,0.14)', color: '#B45309' }}>{t('ui.inventory.settings.notSetUp')}</span>
                             ) : (
-                                <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '999px', background: 'rgba(16,185,129,0.14)', color: '#059669' }}>Active</span>
+                                <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '999px', background: 'rgba(16,185,129,0.14)', color: '#059669' }}>{t('ui.inventory.settings.active')}</span>
                             )}
                         </div>
                         <div style={helpStyle}>
-                            Every product is costed first in, first out: each receipt becomes a cost layer, and stock that leaves (orders, wholesale, write-offs) takes the oldest layers first and is costed at them.
-                            This is how the database works, not a choice made here.
+                            {t('ui.inventory.settings.fifoHelp1')}
+                            {' '}{t('ui.inventory.settings.fifoHelp2')}
                             {fifoSetUp === false && <span style={{ color: '#B45309' }}> {FIFO_MISSING_MESSAGE}</span>}
                         </div>
                     </div>
@@ -195,11 +198,11 @@ const InventorySettingsPage: React.FC = () => {
                     <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
                     {[
-                        { checked: allowNegativeStock, set: setAllowNegativeStock, label: 'Allow negative stock', help: 'Off is recommended: perpetual inventory should refuse to issue stock you do not have, rather than guess at a cost.' },
-                        { checked: allowBackdatedPosting, set: setAllowBackdatedPosting, label: 'Allow backdated posting', help: 'Off is recommended: FIFO orders cost layers by date, so a backdated receipt would claim a consumption order that never happened.' },
-                        { checked: postToGLAutomatically, set: setPostToGLAutomatically, label: 'Post to the general ledger automatically', help: 'On: every stock movement writes its own journal entry. Off: quantities still move, but your accountant posts the value manually.' },
-                        { checked: blockExpiredIssue, set: setBlockExpiredIssue, label: 'Block issuing expired batches', help: 'Expired stock can still be removed with a stock adjustment.' },
-                        { checked: requireBatchOnExpiry, set: setRequireBatchOnExpiry, label: 'Require a batch on expiry-tracked products', help: 'Expiry dates are meaningless without a batch to attach them to.' },
+                        { checked: allowNegativeStock, set: setAllowNegativeStock, label: t('ui.inventory.settings.rows.negativeStock.label'), help: t('ui.inventory.settings.rows.negativeStock.help') },
+                        { checked: allowBackdatedPosting, set: setAllowBackdatedPosting, label: t('ui.inventory.settings.rows.backdated.label'), help: t('ui.inventory.settings.rows.backdated.help') },
+                        { checked: postToGLAutomatically, set: setPostToGLAutomatically, label: t('ui.inventory.settings.rows.autoPost.label'), help: t('ui.inventory.settings.rows.autoPost.help') },
+                        { checked: blockExpiredIssue, set: setBlockExpiredIssue, label: t('ui.inventory.settings.rows.blockExpired.label'), help: t('ui.inventory.settings.rows.blockExpired.help') },
+                        { checked: requireBatchOnExpiry, set: setRequireBatchOnExpiry, label: t('ui.inventory.settings.rows.requireBatch.label'), help: t('ui.inventory.settings.rows.requireBatch.help') },
                     ].map(row => (
                         <label key={row.label} style={{ display: 'flex', gap: '10px', cursor: 'pointer' }}>
                             <input type="checkbox" checked={row.checked} onChange={e => row.set(e.target.checked)} style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: 'var(--color-primary)', cursor: 'pointer', flexShrink: 0 }} />
@@ -213,16 +216,16 @@ const InventorySettingsPage: React.FC = () => {
                     <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
                     <div>
-                        <label style={labelStyle}>Opening stock account</label>
+                        <label style={labelStyle}>{t('ui.inventory.settings.openingAccount')}</label>
                         <select value={openingStockAccountId} onChange={e => setOpeningStockAccountId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                            <option value="">{openingDefault ? `Automatic (${openingDefault.account_code} ${openingDefault.account_name})` : 'Automatic'}</option>
+                            <option value="">{openingDefault ? fill(t('ui.inventory.settings.automaticWith'), { account: `${openingDefault.account_code} ${openingDefault.account_name}` }) : t('ui.inventory.settings.automatic')}</option>
                             {equityAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
                         </select>
-                        <div style={helpStyle}>The counter-entry for a stock adjustment with reason Opening Balance. Opening stock is value the business started with, not a cost it incurred, so it is offset against equity rather than an expense.</div>
+                        <div style={helpStyle}>{t('ui.inventory.settings.openingHelp')}</div>
                     </div>
 
                     <div>
-                        <button onClick={handleSaveBehaviour} style={saveBtn}>Save settings</button>
+                        <button onClick={handleSaveBehaviour} style={saveBtn}>{t('ui.inventory.settings.saveSettings')}</button>
                     </div>
                 </div>
             )}
@@ -230,11 +233,11 @@ const InventorySettingsPage: React.FC = () => {
             {tab === 'gl-accounts' && (
                 <div style={{ ...cardStyle, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                        These are pre-filled from the default trading chart of accounts when your company is created. Anything you change here is kept — re-importing the chart only fills accounts that are still blank.
+                        {t('ui.inventory.settings.glIntro')}
                     </p>
 
                     <div>
-                        <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Required</div>
+                        <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>{t('ui.inventory.settings.required')}</div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '18px' }}>
                             {REQUIRED_FIELDS.map(f => <AccountField key={f.key} field={f} />)}
                         </div>
@@ -243,14 +246,14 @@ const InventorySettingsPage: React.FC = () => {
                     <div style={{ borderTop: '1px solid var(--color-border)' }} />
 
                     <div>
-                        <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Optional</div>
+                        <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>{t('ui.inventory.settings.optional')}</div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '18px' }}>
                             {OPTIONAL_FIELDS.map(f => <AccountField key={f.key} field={f} />)}
                         </div>
                     </div>
 
                     <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '18px' }}>
-                        <button onClick={handleSaveAccounts} style={saveBtn}>Save accounts</button>
+                        <button onClick={handleSaveAccounts} style={saveBtn}>{t('ui.inventory.settings.saveAccounts')}</button>
                     </div>
                 </div>
             )}

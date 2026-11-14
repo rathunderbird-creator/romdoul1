@@ -3,6 +3,7 @@ import type { Sale } from '../types';
 import StatusBadge from './StatusBadge';
 import LazyAvatar from './LazyAvatar';
 import { ExternalLink } from 'lucide-react';
+import { useTx } from './useTx';
 
 interface OrderDetailsContentProps {
     order: Sale;
@@ -19,14 +20,15 @@ interface OrderDetailsContentProps {
 // with totals, and an optional remark section. Shared by the full-page
 // OrderDetailPage and OrderDetailsModal so both stay visually identical.
 const OrderDetailsContent: React.FC<OrderDetailsContentProps> = ({ order, showHeading = true, showPermalink = true }) => {
+    const tx = useTx();
     return (
         <>
             <div className="glass-panel" style={{ padding: '24px', marginBottom: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                     <div style={{ maxWidth: '100%' }}>
-                        {showHeading && <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px' }}>Order #{order.id.substring(0, 8)}</h2>}
+                        {showHeading && <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px' }}>{tx('ui.components.orderDetails.orderNo', 'Order #{id}', { id: order.id.substring(0, 8) })}</h2>}
                         <div style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>
-                            Placed on {new Date(order.date).toLocaleString()}
+                            {tx('ui.components.orderDetails.placedOn', 'Placed on {date}', { date: new Date(order.date).toLocaleString() })}
                         </div>
                         {showPermalink && (
                             <div style={{ marginTop: '8px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
@@ -47,15 +49,15 @@ const OrderDetailsContent: React.FC<OrderDetailsContentProps> = ({ order, showHe
                     {/* Customer Info */}
                     <div>
                         <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: '12px' }}>
-                            Customer Details
+                            {tx('ui.components.orderDetails.customerDetails', 'Customer Details')}
                         </h3>
                         <div style={{ fontSize: '15px', display: 'flex', flexDirection: 'column', gap: '8px', wordBreak: 'break-word' }}>
                             <div style={{ fontWeight: 600 }}>{order.customer?.name}</div>
-                            <div>{order.customer?.phone || 'No phone'}</div>
-                            <div>{order.customer?.address || 'No address'}</div>
+                            <div>{order.customer?.phone || tx('ui.components.orderDetails.noPhone', 'No phone')}</div>
+                            <div>{order.customer?.address || tx('ui.components.orderDetails.noAddress', 'No address')}</div>
                             {order.customer?.city && <div>{order.customer?.city}</div>}
                             <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                                Via {order.customer?.platform} {order.customer?.page && `(${order.customer.page})`}
+                                {tx('ui.components.orderDetails.via', 'Via')} {order.customer?.platform} {order.customer?.page && `(${order.customer.page})`}
                             </div>
                         </div>
                     </div>
@@ -63,16 +65,16 @@ const OrderDetailsContent: React.FC<OrderDetailsContentProps> = ({ order, showHe
                     {/* Payment & Shipping */}
                     <div>
                         <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: '12px' }}>
-                            Payment & Shipping
+                            {tx('ui.components.orderDetails.paymentShipping', 'Payment & Shipping')}
                         </h3>
                         <div style={{ fontSize: '15px', display: 'flex', flexDirection: 'column', gap: '8px', wordBreak: 'break-word' }}>
-                            <div>Paying by: <span style={{ fontWeight: 500 }}>{order.paymentMethod}</span></div>
-                            <div>Status: <span style={{ fontWeight: 500, color: order.paymentStatus === 'Paid' ? 'var(--color-green)' : 'var(--color-text-main)' }}>{order.paymentStatus}</span></div>
+                            <div>{tx('ui.components.orderDetails.payingBy', 'Paying by:')} <span style={{ fontWeight: 500 }}>{order.paymentMethod}</span></div>
+                            <div>{tx('ui.components.orderDetails.status', 'Status:')} <span style={{ fontWeight: 500, color: order.paymentStatus === 'Paid' ? 'var(--color-green)' : 'var(--color-text-main)' }}>{order.paymentStatus ? tx(`dashboard2.pay.${order.paymentStatus}`, order.paymentStatus) : order.paymentStatus}</span></div>
                             {order.shipping?.company && (
                                 <div style={{ marginTop: '8px' }}>
-                                    <div>Shipping: {order.shipping.company}</div>
-                                    {order.shipping.trackingNumber && <div>Tracking: {order.shipping.trackingNumber}</div>}
-                                    {order.shipping.cost > 0 && <div>Cost: ${order.shipping.cost}</div>}
+                                    <div>{tx('ui.components.orderDetails.shipping', 'Shipping:')} {order.shipping.company}</div>
+                                    {order.shipping.trackingNumber && <div>{tx('ui.components.orderDetails.tracking', 'Tracking:')} {order.shipping.trackingNumber}</div>}
+                                    {order.shipping.cost > 0 && <div>{tx('ui.components.orderDetails.cost', 'Cost:')} ${order.shipping.cost}</div>}
                                 </div>
                             )}
                         </div>
@@ -82,7 +84,7 @@ const OrderDetailsContent: React.FC<OrderDetailsContentProps> = ({ order, showHe
 
             {/* Items */}
             <div className="glass-panel" style={{ padding: '24px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>Order Items</h3>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>{tx('ui.components.orderDetails.orderItems', 'Order Items')}</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {order.items.map((item, index) => (
                         <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '16px', borderBottom: index === order.items.length - 1 ? 'none' : '1px solid var(--color-border)', gap: '12px' }}>
@@ -102,7 +104,7 @@ const OrderDetailsContent: React.FC<OrderDetailsContentProps> = ({ order, showHe
                     ))}
                 </div>
                 <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '2px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '16px', fontWeight: 600 }}>Total</span>
+                    <span style={{ fontSize: '16px', fontWeight: 600 }}>{tx('common.total', 'Total')}</span>
                     <span style={{ fontSize: '20px', fontWeight: 'bold', color: 'var(--color-primary)' }}>${order.total.toFixed(2)}</span>
                 </div>
             </div>
@@ -110,7 +112,7 @@ const OrderDetailsContent: React.FC<OrderDetailsContentProps> = ({ order, showHe
             {order.remark && (
                 <div className="glass-panel" style={{ padding: '24px', marginTop: '24px' }}>
                     <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: '8px' }}>
-                        Remark
+                        {tx('ui.components.orderDetails.remark', 'Remark')}
                     </h3>
                     <p style={{ fontSize: '15px' }}>{order.remark}</p>
                 </div>

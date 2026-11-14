@@ -10,6 +10,7 @@ import { fetchAll } from '../utils/fetchAll';
 import { isMissingTableError, errMessage } from '../utils/supabaseErrors';
 import type { MoneyMeta } from '../utils/currency';
 import { findTransactionIdsByMarker, resolveCashBankAccount, tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
+import { tNow } from '../i18n/translate';
 
 // Stock, payments and the books for wholesale orders move inside the
 // database (migrations/add_wholesale_procurement_functions.sql): each save is
@@ -72,7 +73,7 @@ export const useWholesale = () => {
             setCustomerPayments(data);
         } catch (error: any) {
             console.error('Failed to fetch customer payments:', error);
-            showToast('Failed to fetch customer payments: ' + error.message, 'error');
+            showToast(tNow('ui.store.wholesale.fetchPaymentsFailed', { error: error.message }), 'error');
         } finally {
             if (!silent) setIsLoading(false);
         }
@@ -107,7 +108,7 @@ export const useWholesale = () => {
                     setWholesaleOrders([]);
                 } else {
                     console.error('Failed to fetch wholesale orders:', error);
-                    showToast('Failed to fetch wholesale orders: ' + errMessage(error), 'error');
+                    showToast(tNow('ui.store.wholesale.fetchOrdersFailed', { error: errMessage(error) }), 'error');
                 }
             }
         } finally {
@@ -132,13 +133,13 @@ export const useWholesale = () => {
                 p_items: itemsPayload(items),
                 p_created_by: createdBy || 'System',
                 p_today: dayKeyFromDate(new Date()),
-            }, 'Wholesale orders');
-            showToast('Wholesale order created', 'success');
+            }, tNow('ui.store.area.wholesaleOrders'));
+            showToast(tNow('ui.store.wholesale.orderCreated'), 'success');
             await fetchWholesaleOrders(true);
             return orderId;
         } catch (error: any) {
             console.error('Failed to create wholesale order:', error);
-            showToast('Failed to create wholesale order: ' + error.message, 'error');
+            showToast(tNow('ui.store.wholesale.createFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchWholesaleOrders]);
@@ -157,20 +158,20 @@ export const useWholesale = () => {
         editedBy?: string
     ) => {
         try {
-            if (order.status === 'Cancelled') throw new Error('Cannot edit a cancelled order');
+            if (order.status === 'Cancelled') throw new Error(tNow('ui.store.wholesale.cannotEditCancelled'));
             const result = await callDbFunction<unknown>('update_wholesale_order', {
                 p_id: order.id,
                 p_updates: orderPayload(updates),
                 p_items: itemsPayload(items),
                 p_edited_by: editedBy || 'System',
                 p_today: dayKeyFromDate(new Date()),
-            }, 'Editing wholesale orders');
+            }, tNow('ui.store.area.editingWholesaleOrders'));
             showNotices(showToast, result);
-            showToast('Wholesale order updated', 'success');
+            showToast(tNow('ui.store.wholesale.orderUpdated'), 'success');
             await fetchWholesaleOrders(true);
         } catch (error: any) {
             console.error('Failed to update wholesale order:', error);
-            showToast('Failed to update wholesale order: ' + error.message, 'error');
+            showToast(tNow('ui.store.wholesale.updateFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchWholesaleOrders]);
@@ -181,13 +182,13 @@ export const useWholesale = () => {
     // tab already deleted counts as deleted.
     const deleteWholesaleOrder = useCallback(async (order: WholesaleOrder) => {
         try {
-            const result = await callDbFunction<unknown>('delete_wholesale_order', { p_id: order.id }, 'Deleting wholesale orders');
+            const result = await callDbFunction<unknown>('delete_wholesale_order', { p_id: order.id }, tNow('ui.store.area.deletingWholesaleOrders'));
             showNotices(showToast, result);
-            showToast('Wholesale order deleted', 'success');
+            showToast(tNow('ui.store.wholesale.orderDeleted'), 'success');
             await fetchWholesaleOrders(true);
         } catch (error: any) {
             console.error('Failed to delete wholesale order:', error);
-            showToast('Failed to delete wholesale order: ' + error.message, 'error');
+            showToast(tNow('ui.store.wholesale.deleteFailed', { error: error.message }), 'error');
             await fetchWholesaleOrders(true);
             throw error;
         }
@@ -230,7 +231,7 @@ export const useWholesale = () => {
                 p_account_id: receivedInAccountId || null,
                 p_account_name: receivedInAccountName || null,
                 p_payment_id: paymentId,
-            }, 'Recording payments');
+            }, tNow('ui.store.area.recordingPayments'));
             customerPaymentKeys.release(signature);
             if (money?.currency === 'KHR') {
                 // Best effort, never fails the payment (a store without
@@ -240,12 +241,12 @@ export const useWholesale = () => {
                 await tagTransactionsAndEntries(txIds, money);
             }
             showNotices(showToast, result);
-            showToast(result?.already_recorded ? 'This payment had already been saved — it was not recorded twice' : 'Payment recorded', 'success');
+            showToast(result?.already_recorded ? tNow('ui.store.paymentAlreadyRecorded') : tNow('ui.store.wholesale.paymentRecorded'), 'success');
             await fetchWholesaleOrders(true);
             await fetchCustomerPayments(true);
         } catch (error: any) {
             console.error('Failed to record payment:', error);
-            showToast('Failed to record payment: ' + error.message, 'error');
+            showToast(tNow('ui.store.recordPaymentFailed', { error: error.message }), 'error');
             // The payment may have been saved even so (a lost reply): show the
             // order as it is now.
             await fetchWholesaleOrders(true);
@@ -262,12 +263,12 @@ export const useWholesale = () => {
     // Delivered is a plain status update. A cancelled order stays cancelled.
     const updateWholesaleOrderStatus = useCallback(async (order: WholesaleOrder, status: WholesaleOrder['status']) => {
         try {
-            const result = await callDbFunction<unknown>('set_wholesale_order_status', { p_id: order.id, p_status: status }, 'Changing wholesale order status');
+            const result = await callDbFunction<unknown>('set_wholesale_order_status', { p_id: order.id, p_status: status }, tNow('ui.store.area.changingWholesaleStatus'));
             showNotices(showToast, result);
-            showToast(status === 'Cancelled' ? 'Order cancelled — stock returned' : `Order marked ${status}`, 'success');
+            showToast(status === 'Cancelled' ? tNow('ui.store.wholesale.orderCancelled') : tNow('ui.store.wholesale.orderMarked', { status }), 'success');
             await fetchWholesaleOrders(true);
         } catch (error: any) {
-            showToast('Failed to update order status: ' + error.message, 'error');
+            showToast(tNow('ui.store.wholesale.statusFailed', { error: error.message }), 'error');
             await fetchWholesaleOrders(true);
             throw error;
         }
@@ -281,12 +282,12 @@ export const useWholesale = () => {
     // one transaction. A payment another tab already deleted counts as deleted.
     const deleteCustomerPayment = useCallback(async (paymentId: string) => {
         try {
-            await callDbFunction<unknown>('delete_customer_payment', { p_payment_id: paymentId }, 'Deleting payments');
-            showToast('Payment deleted', 'success');
+            await callDbFunction<unknown>('delete_customer_payment', { p_payment_id: paymentId }, tNow('ui.store.area.deletingPayments'));
+            showToast(tNow('ui.store.wholesale.paymentDeleted'), 'success');
             await fetchWholesaleOrders(true);
             await fetchCustomerPayments(true);
         } catch (error: any) {
-            showToast('Failed to delete payment: ' + error.message, 'error');
+            showToast(tNow('ui.store.deletePaymentFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchWholesaleOrders, fetchCustomerPayments]);
@@ -324,10 +325,10 @@ export const useWholesale = () => {
                 const { error } = await supabase.from('wholesale_customers').insert([payload]);
                 if (error) throw error;
             }
-            showToast(customer.id ? 'Customer updated' : 'Customer added', 'success');
+            showToast(customer.id ? tNow('ui.store.wholesale.customerUpdated') : tNow('ui.store.wholesale.customerAdded'), 'success');
             await fetchCustomers();
         } catch (error: any) {
-            showToast('Failed to save customer: ' + error.message, 'error');
+            showToast(tNow('ui.store.wholesale.saveCustomerFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchCustomers]);
@@ -336,10 +337,10 @@ export const useWholesale = () => {
         try {
             const { error } = await supabase.from('wholesale_customers').delete().eq('id', id);
             if (error) throw error;
-            showToast('Customer deleted', 'success');
+            showToast(tNow('ui.store.wholesale.customerDeleted'), 'success');
             await fetchCustomers();
         } catch (error: any) {
-            showToast('Failed to delete customer: ' + error.message, 'error');
+            showToast(tNow('ui.store.wholesale.deleteCustomerFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchCustomers]);

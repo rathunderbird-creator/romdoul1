@@ -31,13 +31,16 @@ import DataImportModal from '../../components/DataImportModal';
 import type { PurchaseSettings, PurchasePaymentTerm, PurchaseOpeningBalance, FallsDueType } from '../../types';
 import CashBankOptions from '../../components/CashBankOptions';
 import { isKhrAccountName } from '../../utils/currency';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 type TabKey = 'defaults' | 'terms' | 'opening';
 
+// label is a translation key under ui.purchase.
 const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
-    { key: 'defaults', label: 'Defaults', icon: SlidersHorizontal },
-    { key: 'terms', label: 'Payment Terms', icon: CalendarClock },
-    { key: 'opening', label: 'AP Opening Balances', icon: Landmark },
+    { key: 'defaults', label: 'setup.tabs.defaults', icon: SlidersHorizontal },
+    { key: 'terms', label: 'setup.tabs.terms', icon: CalendarClock },
+    { key: 'opening', label: 'setup.tabs.opening', icon: Landmark },
 ];
 
 const DEFAULT_TERMS: PurchasePaymentTerm[] = [
@@ -53,15 +56,22 @@ const DEFAULT_TERMS: PurchasePaymentTerm[] = [
 
 // A term saved before this shape existed has no fallsDueType (just the old
 // {name, days}) — treat that as 'net' so it still reads sensibly instead of
-// showing a blank Falls Due.
-const fallsDueLabel = (t: { fallsDueType?: FallsDueType; days?: number }): string => {
+// showing a blank Falls Due. tp: the page's translator (keys under ui.purchase).
+const fallsDueLabel = (t: { fallsDueType?: FallsDueType; days?: number }, tp: (k: string) => string): string => {
     switch (t.fallsDueType || (t.days ? 'net' : undefined)) {
-        case 'receipt': return 'Due on receipt';
-        case 'net': return `${t.days ?? 0} days`;
-        case 'eom': return 'End of month';
-        case 'eom_plus': return `${t.days ?? 0} days after month end`;
+        case 'receipt': return tp('setup.fallsDue.receipt');
+        case 'net': return fill(tp('setup.fallsDue.netDays'), { n: t.days ?? 0 });
+        case 'eom': return tp('setup.fallsDue.eom');
+        case 'eom_plus': return fill(tp('setup.fallsDue.eomPlusDays'), { n: t.days ?? 0 });
         default: return '';
     }
+};
+
+// A built-in term still carrying its default name shows that name translated;
+// a name the user typed or changed is data and shows as saved.
+const termNameLabel = (t: PurchasePaymentTerm, tp: (k: string) => string): string => {
+    const def = DEFAULT_TERMS.find(d => d.code === t.code);
+    return def && def.name === t.name ? tp('setup.defaultTerms.' + t.code) : t.name;
 };
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
@@ -93,6 +103,8 @@ const PurchaseSetupPage: React.FC = () => {
     const { warehouses, purchaseSettings, updatePurchaseSettings } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
     const { suppliers, fetchSuppliers, purchaseOrders, fetchPurchaseOrders } = useProcurement();
+    const { t } = useLanguage();
+    const tp = useCallback((k: string) => t('ui.purchase.' + k), [t]);
 
     const [tab, setTab] = useState<TabKey>('defaults');
     const [saving, setSaving] = useState(false);
@@ -108,13 +120,13 @@ const PurchaseSetupPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Purchase Setup</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Defaults for new buy-side documents, and where you started</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{tp('setup.title')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{tp('setup.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, tp]);
 
     useEffect(() => {
         fetchAccounts();
@@ -144,10 +156,10 @@ const PurchaseSetupPage: React.FC = () => {
             };
             await updatePurchaseSettings(clean);
             setDraft(clean);
-            showToast('Purchase settings saved', 'success');
+            showToast(tp('setup.toast.saved'), 'success');
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to save settings: ' + msg, 'error');
+            showToast(tp('setup.toast.saveSettingsFailed') + msg, 'error');
         } finally {
             setSaving(false);
         }
@@ -186,9 +198,9 @@ const PurchaseSetupPage: React.FC = () => {
         try {
             await updatePurchaseSettings(updated);
         } catch (e) {
-            showToast('Failed to save: ' + (e instanceof Error ? e.message : 'unknown error'), 'error');
+            showToast(tp('setup.toast.saveFailed') + (e instanceof Error ? e.message : tp('setup.toast.unknownError')), 'error');
         }
-    }, [draft, updatePurchaseSettings, showToast]);
+    }, [draft, updatePurchaseSettings, showToast, tp]);
 
     const [termModal, setTermModal] = useState<{ index: number | null; code: string; name: string; fallsDueType: FallsDueType; days: string; active: boolean } | null>(null);
     const openNewTerm = () => setTermModal({ index: null, code: '', name: '', fallsDueType: 'net', days: '30', active: true });
@@ -198,7 +210,7 @@ const PurchaseSetupPage: React.FC = () => {
     };
     const saveTermModal = async () => {
         if (!termModal) return;
-        if (!termModal.code.trim() || !termModal.name.trim()) { showToast('Code and name are required', 'error'); return; }
+        if (!termModal.code.trim() || !termModal.name.trim()) { showToast(tp('setup.toast.codeNameRequired'), 'error'); return; }
         const entry: PurchasePaymentTerm = {
             code: termModal.code.trim().toUpperCase(),
             name: termModal.name.trim(),
@@ -209,12 +221,12 @@ const PurchaseSetupPage: React.FC = () => {
         const next = termModal.index === null ? [...terms, entry] : terms.map((t, i) => i === termModal.index ? entry : t);
         await persistTerms(next);
         setTermModal(null);
-        showToast(termModal.index === null ? 'Payment term added' : 'Payment term updated', 'success');
+        showToast(termModal.index === null ? tp('setup.toast.termAdded') : tp('setup.toast.termUpdated'), 'success');
     };
     const deleteTerm = async (i: number) => {
-        if (!confirm(`Delete "${terms[i].name}"?`)) return;
+        if (!confirm(fill(tp('setup.confirmDeleteTerm'), { name: termNameLabel(terms[i], tp) }))) return;
         await persistTerms(terms.filter((_, idx) => idx !== i));
-        showToast('Payment term deleted', 'success');
+        showToast(tp('setup.toast.termDeleted'), 'success');
     };
 
     // ═══════════════════════ AP Opening Balances ═══════════════════════
@@ -260,20 +272,20 @@ const PurchaseSetupPage: React.FC = () => {
                 amount: String(row['Amount'] ?? ''),
             });
         }
-        if (newRows.length === 0) { showToast('No matching suppliers found in that file (matched by name).', 'error'); return; }
+        if (newRows.length === 0) { showToast(tp('setup.toast.noMatchingSuppliers'), 'error'); return; }
         setDraftRows(prev => {
             const kept = prev.filter(r => r.supplier_id || r.their_invoice || r.amount);
             return [...kept, ...newRows];
         });
         showToast(notFound.length
-            ? `Imported ${newRows.length} row(s); ${notFound.length} supplier(s) not found: ${notFound.slice(0, 5).join(', ')}${notFound.length > 5 ? '…' : ''}`
-            : `Imported ${newRows.length} row(s)`, notFound.length ? 'info' : 'success');
+            ? fill(tp('setup.toast.importedMissing'), { n: newRows.length, m: notFound.length, names: notFound.slice(0, 5).join(', ') + (notFound.length > 5 ? '…' : '') })
+            : fill(tp('setup.toast.imported'), { n: newRows.length }), notFound.length ? 'info' : 'success');
     };
 
     const [isLoadingBalances, setIsLoadingBalances] = useState(false);
     const handleLoadBalances = async () => {
-        if (!offsetAccountId) { showToast('Choose an offset account', 'error'); return; }
-        if (validRows.length === 0) { showToast('Add at least one row with a supplier, invoice, both dates and a positive amount', 'error'); return; }
+        if (!offsetAccountId) { showToast(tp('setup.toast.chooseOffset'), 'error'); return; }
+        if (validRows.length === 0) { showToast(tp('setup.toast.addValidRow'), 'error'); return; }
         setIsLoadingBalances(true);
         try {
             const newEntries: PurchaseOpeningBalance[] = [];
@@ -326,8 +338,8 @@ const PurchaseSetupPage: React.FC = () => {
                 await fetchPurchaseOrders(true);
                 setDraftRows([emptyDraftRow()]);
             }
-            if (failures > 0) showToast(`Loaded ${newEntries.length}, ${failures} failed — see console.`, newEntries.length ? 'info' : 'error');
-            else if (newEntries.length > 0) showToast(`Loaded ${newEntries.length} opening balance${newEntries.length === 1 ? '' : 's'}`, 'success');
+            if (failures > 0) showToast(fill(tp('setup.toast.loadedFailed'), { n: newEntries.length, m: failures }), newEntries.length ? 'info' : 'error');
+            else if (newEntries.length > 0) showToast(fill(tp(newEntries.length === 1 ? 'setup.toast.loaded1' : 'setup.toast.loadedN'), { n: newEntries.length }), 'success');
         } finally {
             setIsLoadingBalances(false);
         }
@@ -346,22 +358,22 @@ const PurchaseSetupPage: React.FC = () => {
             const outstanding = po ? Math.max(0, (po.total_amount || 0) - (po.amount_paid || 0)) : b.amount;
             const paid = (po?.amount_paid || 0) > 0;
             const status: 'Posted' | 'Paid' = outstanding <= 0.005 ? 'Paid' : 'Posted';
-            return { ...b, reference, supplierName: suppliers.find(s => s.id === b.supplier_id)?.name || 'Unknown supplier', outstanding, status, canUndo: poExists && !paid };
+            return { ...b, reference, supplierName: suppliers.find(s => s.id === b.supplier_id)?.name || tp('common.unknownSupplier'), outstanding, status, canUndo: poExists && !paid };
         }).sort((a, b) => (b.as_of || '').localeCompare(a.as_of || '') || (b.reference || '').localeCompare(a.reference || ''));
-    }, [draft.apOpeningBalances, draft.numbering, purchaseOrders, suppliers]);
+    }, [draft.apOpeningBalances, draft.numbering, purchaseOrders, suppliers, tp]);
 
     const handleUndo = async (row: typeof loadedRows[number]) => {
         if (!row.canUndo || !row.purchase_order_id) return;
-        if (!confirm(`Remove this opening balance for ${row.supplierName}? This deletes its bill and ledger entry.`)) return;
+        if (!confirm(fill(tp('setup.confirmUndo'), { name: row.supplierName }))) return;
         try {
             await reverseOpeningBalance(row.purchase_order_id);
             const updated = { ...draft, apOpeningBalances: (draft.apOpeningBalances || []).filter(b => b.purchase_order_id !== row.purchase_order_id) };
             setDraft(updated);
             await updatePurchaseSettings(updated);
             await fetchPurchaseOrders(true);
-            showToast('Opening balance removed', 'success');
+            showToast(tp('setup.toast.removed'), 'success');
         } catch (e) {
-            showToast('Failed to remove: ' + (e instanceof Error ? e.message : 'unknown error'), 'error');
+            showToast(tp('setup.toast.removeFailed') + (e instanceof Error ? e.message : tp('setup.toast.unknownError')), 'error');
         }
     };
 
@@ -383,7 +395,7 @@ const PurchaseSetupPage: React.FC = () => {
                             boxShadow: tab === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
                         }}
                     >
-                        <Icon size={15} /> {label}
+                        <Icon size={15} /> {tp(label)}
                     </button>
                 ))}
             </div>
@@ -392,58 +404,57 @@ const PurchaseSetupPage: React.FC = () => {
             {tab === 'defaults' && (
                 <div style={{ ...cardStyle, padding: '20px 22px', maxWidth: '640px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                        Starting values for new documents only. Changing them never alters an order or a bill that has already been saved.
+                        {tp('setup.defaults.intro')}
                     </p>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                         <div>
-                            <label style={labelStyle}>Default VAT rate (%)</label>
+                            <label style={labelStyle}>{tp('setup.defaults.vatRate')}</label>
                             <input type="number" min="0" step="0.01" value={draft.vatRate ?? 0}
                                 onChange={e => setDraft(d => ({ ...d, vatRate: Number(e.target.value) }))} style={inputStyle} />
                         </div>
                         <div>
-                            <label style={labelStyle}>Payment terms (days)</label>
+                            <label style={labelStyle}>{tp('setup.defaults.termsDays')}</label>
                             <input type="number" min="0" step="1" value={draft.paymentTermsDays ?? 30}
                                 onChange={e => setDraft(d => ({ ...d, paymentTermsDays: Number(e.target.value) }))} style={inputStyle} />
                         </div>
                     </div>
 
                     <div>
-                        <label style={labelStyle}>Over-receipt tolerance (%)</label>
+                        <label style={labelStyle}>{tp('setup.defaults.tolerance')}</label>
                         <input type="number" min="0" step="0.01" value={draft.overReceiptTolerance ?? 0}
                             onChange={e => setDraft(d => ({ ...d, overReceiptTolerance: Number(e.target.value) }))} style={inputStyle} />
                         <div style={helpStyle}>
-                            How much more than the ordered quantity a delivery may contain. Zero means exactly what was ordered;
-                            suppliers of bulk goods routinely ship a little over.
+                            {tp('setup.defaults.toleranceHelp')}
                         </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                         <div>
-                            <label style={labelStyle}>Default warehouse</label>
+                            <label style={labelStyle}>{tp('setup.defaults.warehouse')}</label>
                             <select value={draft.defaultWarehouseId || ''} className="d2-khmer"
                                 onChange={e => setDraft(d => ({ ...d, defaultWarehouseId: e.target.value || undefined }))}
                                 style={{ ...inputStyle, cursor: 'pointer' }}>
-                                <option value="">None</option>
+                                <option value="">{tp('setup.defaults.none')}</option>
                                 {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label style={labelStyle}>Default payment account</label>
+                            <label style={labelStyle}>{tp('setup.defaults.paymentAccount')}</label>
                             <select value={draft.defaultPaymentAccountId || ''} className="d2-khmer"
                                 onChange={e => setDraft(d => ({ ...d, defaultPaymentAccountId: e.target.value || undefined }))}
                                 style={{ ...inputStyle, cursor: 'pointer' }}>
-                                <option value="">Bank or cash account…</option>
+                                <option value="">{tp('common.bankOrCash')}</option>
                                 {/* A riel account as the default opens the payment forms in riel. */}
-                                <CashBankOptions accounts={paymentAccounts} label={a => `${a.account_code} · ${a.account_name}${isKhrAccountName(a.account_name) ? ' (riel)' : ''}`} />
+                                <CashBankOptions accounts={paymentAccounts} label={a => `${a.account_code} · ${a.account_name}${isKhrAccountName(a.account_name) ? tp('setup.defaults.rielSuffix') : ''}`} />
                             </select>
                         </div>
                     </div>
 
                     <div>
-                        <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)', marginBottom: '4px' }}>Document numbering</div>
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)', marginBottom: '4px' }}>{tp('setup.defaults.numbering')}</div>
                         <div style={{ ...helpStyle, marginTop: 0, marginBottom: '10px' }}>
-                            Prefixes only. Changing a prefix affects new records only — documents that already exist keep their reference.
+                            {tp('setup.defaults.numberingHelp')}
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '10px' }}>
                             {([
@@ -453,9 +464,9 @@ const PurchaseSetupPage: React.FC = () => {
                                 ['Payments', 'payments', 'PAY'],
                                 ['Pay requests', 'payRequests', 'PRQ'],
                                 ['Opening', 'opening', 'OPA'],
-                            ] as const).map(([label, key, def]) => (
+                            ] as const).map(([, key, def]) => (
                                 <div key={key}>
-                                    <label style={{ ...labelStyle, whiteSpace: 'nowrap' }}>{label}</label>
+                                    <label style={{ ...labelStyle, whiteSpace: 'nowrap' }}>{tp('setup.numbering.' + key)}</label>
                                     <input type="text" value={numbering[key] ?? def} maxLength={6}
                                         onChange={e => setNumbering(key, e.target.value.toUpperCase())} style={inputStyle} />
                                 </div>
@@ -464,11 +475,11 @@ const PurchaseSetupPage: React.FC = () => {
                     </div>
 
                     <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                        The GL accounts a purchase posts to — payables, input VAT, goods-received-not-invoiced and the inventory asset — are configured under{' '}
-                        <b onClick={() => navigate('/inventory/settings')} style={{ color: 'var(--color-primary)', cursor: 'pointer' }}>Inventory Setup</b>, where the posting engine reads them.
+                        {tp('setup.defaults.glNoteBefore')}{' '}
+                        <b onClick={() => navigate('/inventory/settings')} style={{ color: 'var(--color-primary)', cursor: 'pointer' }}>{tp('setup.defaults.inventorySetup')}</b>{tp('setup.defaults.glNoteAfter')}
                     </div>
 
-                    <button onClick={handleSave} disabled={saving} style={saveBtn}>{saving ? 'Saving…' : 'Save settings'}</button>
+                    <button onClick={handleSave} disabled={saving} style={saveBtn}>{saving ? tp('common.saving') : tp('setup.defaults.saveSettings')}</button>
                 </div>
             )}
 
@@ -476,17 +487,17 @@ const PurchaseSetupPage: React.FC = () => {
             {tab === 'terms' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                        <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text-main)' }}>Payment Terms</h2>
+                        <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text-main)' }}>{tp('setup.tabs.terms')}</h2>
                         <button onClick={openNewTerm} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px' }}>
-                            <Plus size={15} /> New Payment Term
+                            <Plus size={15} /> {tp('setup.terms.new')}
                         </button>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: '360px' }}>
                             <Search size={15} color="var(--color-text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                            <input type="text" placeholder="Search payment terms…" value={termSearch} onChange={e => setTermSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
+                            <input type="text" placeholder={tp('setup.terms.search')} value={termSearch} onChange={e => setTermSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
                         </div>
-                        <button onClick={() => setDraft({ ...purchaseSettings })} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
+                        <button onClick={() => setDraft({ ...purchaseSettings })} title={tp('setup.terms.reload')} style={{ ...btnStyle, padding: '9px 10px' }}>
                             <RefreshCw size={14} />
                         </button>
                     </div>
@@ -497,29 +508,29 @@ const PurchaseSetupPage: React.FC = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                    <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Code</th>
-                                    <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Name</th>
-                                    <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Falls Due</th>
-                                    <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Status</th>
+                                    <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{tp('setup.col.code')}</th>
+                                    <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{tp('setup.col.name')}</th>
+                                    <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{tp('setup.col.fallsDue')}</th>
+                                    <th style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{tp('col.status')}</th>
                                     <th style={{ padding: '12px 20px', width: '90px' }}></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredTerms.length === 0 ? (
-                                    <tr><td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No payment terms match.</td></tr>
-                                ) : filteredTerms.map(t => {
-                                    const i = terms.indexOf(t);
+                                    <tr><td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{tp('setup.terms.noMatch')}</td></tr>
+                                ) : filteredTerms.map(term => {
+                                    const i = terms.indexOf(term);
                                     return (
-                                        <tr key={t.code + i} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                            <td style={{ padding: '12px 20px', fontSize: '11px', color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>{t.code}</td>
-                                            <td style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-main)' }}>{t.name}</td>
-                                            <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)' }}>{fallsDueLabel(t)}</td>
+                                        <tr key={term.code + i} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                            <td style={{ padding: '12px 20px', fontSize: '11px', color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>{term.code}</td>
+                                            <td style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--color-text-main)' }}>{termNameLabel(term, tp)}</td>
+                                            <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)' }}>{fallsDueLabel(term, tp)}</td>
                                             <td style={{ padding: '12px 20px' }}>
-                                                <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px', background: t.active !== false ? 'rgba(16,185,129,0.14)' : 'var(--color-bg)', color: t.active !== false ? '#059669' : 'var(--color-text-secondary)' }}>{t.active !== false ? 'Active' : 'Inactive'}</span>
+                                                <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px', background: term.active !== false ? 'rgba(16,185,129,0.14)' : 'var(--color-bg)', color: term.active !== false ? '#059669' : 'var(--color-text-secondary)' }}>{term.active !== false ? tp('setup.terms.active') : tp('setup.terms.inactive')}</span>
                                             </td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                                <button onClick={() => openEditTerm(i)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', padding: '4px' }}><Pencil size={14} /></button>
-                                                <button onClick={() => deleteTerm(i)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', padding: '4px' }}><Trash2 size={14} /></button>
+                                                <button onClick={() => openEditTerm(i)} title={t('common.edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', padding: '4px' }}><Pencil size={14} /></button>
+                                                <button onClick={() => deleteTerm(i)} title={t('common.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', padding: '4px' }}><Trash2 size={14} /></button>
                                             </td>
                                         </tr>
                                     );
@@ -535,41 +546,41 @@ const PurchaseSetupPage: React.FC = () => {
                 <div style={overlayStyle}>
                     <div style={{ ...cardStyle, width: '100%', maxWidth: '420px', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>{termModal.index === null ? 'New Payment Term' : 'Edit Payment Term'}</h3>
+                            <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>{termModal.index === null ? tp('setup.terms.new') : tp('setup.terms.edit')}</h3>
                             <button onClick={() => setTermModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={18} /></button>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                             <div>
-                                <label style={labelStyle}>Code</label>
-                                <input type="text" value={termModal.code} onChange={e => setTermModal(m => m && { ...m, code: e.target.value.toUpperCase() })} placeholder="e.g. NET30" style={inputStyle} maxLength={10} />
+                                <label style={labelStyle}>{tp('setup.col.code')}</label>
+                                <input type="text" value={termModal.code} onChange={e => setTermModal(m => m && { ...m, code: e.target.value.toUpperCase() })} placeholder={tp('setup.terms.codePlaceholder')} style={inputStyle} maxLength={10} />
                             </div>
                             <div>
-                                <label style={labelStyle}>Name</label>
-                                <input type="text" value={termModal.name} onChange={e => setTermModal(m => m && { ...m, name: e.target.value })} placeholder="e.g. Net 30 days" style={inputStyle} />
+                                <label style={labelStyle}>{tp('setup.col.name')}</label>
+                                <input type="text" value={termModal.name} onChange={e => setTermModal(m => m && { ...m, name: e.target.value })} placeholder={tp('setup.terms.namePlaceholder')} style={inputStyle} />
                             </div>
                         </div>
                         <div>
-                            <label style={labelStyle}>Falls due</label>
+                            <label style={labelStyle}>{tp('setup.terms.fallsDue')}</label>
                             <select value={termModal.fallsDueType} onChange={e => setTermModal(m => m && { ...m, fallsDueType: e.target.value as FallsDueType })} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                <option value="receipt">Due on receipt</option>
-                                <option value="net">Net N days</option>
-                                <option value="eom">End of month</option>
-                                <option value="eom_plus">End of month + N days</option>
+                                <option value="receipt">{tp('setup.fallsDue.receipt')}</option>
+                                <option value="net">{tp('setup.fallsDue.net')}</option>
+                                <option value="eom">{tp('setup.fallsDue.eom')}</option>
+                                <option value="eom_plus">{tp('setup.fallsDue.eomPlus')}</option>
                             </select>
                         </div>
                         {(termModal.fallsDueType === 'net' || termModal.fallsDueType === 'eom_plus') && (
                             <div>
-                                <label style={labelStyle}>Days</label>
+                                <label style={labelStyle}>{tp('setup.terms.days')}</label>
                                 <input type="number" min="0" step="1" value={termModal.days} onChange={e => setTermModal(m => m && { ...m, days: e.target.value })} style={inputStyle} />
                             </div>
                         )}
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', cursor: 'pointer' }}>
                             <input type="checkbox" checked={termModal.active} onChange={e => setTermModal(m => m && { ...m, active: e.target.checked })} style={{ width: '15px', height: '15px', accentColor: 'var(--color-primary)', cursor: 'pointer' }} />
-                            Active
+                            {tp('setup.terms.active')}
                         </label>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
-                            <button onClick={() => setTermModal(null)} style={{ ...btnStyle, background: 'var(--color-surface)' }}>Cancel</button>
-                            <button onClick={saveTermModal} className="primary-button" style={{ padding: '9px 18px' }}>Save</button>
+                            <button onClick={() => setTermModal(null)} style={{ ...btnStyle, background: 'var(--color-surface)' }}>{t('common.cancel')}</button>
+                            <button onClick={saveTermModal} className="primary-button" style={{ padding: '9px 18px' }}>{t('common.save')}</button>
                         </div>
                     </div>
                 </div>
@@ -580,33 +591,32 @@ const PurchaseSetupPage: React.FC = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '920px' }}>
                     <div style={{ ...cardStyle, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         <div>
-                            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '4px' }}>Load balances from your previous system</div>
+                            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '4px' }}>{tp('setup.opening.title')}</div>
                             <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.55 }}>
-                                One row per unpaid supplier invoice, with the reference and dates your supplier knows. These are offset against the
-                                equity account below on the as-at date, but they age from their own due dates — so the aging report reads the way it did before you switched.
+                                {tp('setup.opening.intro')}
                             </p>
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                             <div>
-                                <label style={labelStyle}>As at *</label>
+                                <label style={labelStyle}>{tp('setup.opening.asAt')}</label>
                                 <input type="date" value={asAtDate} onChange={e => setAsAtDate(e.target.value)} style={inputStyle} />
-                                <div style={helpStyle}>The date these enter your books.</div>
+                                <div style={helpStyle}>{tp('setup.opening.asAtHelp')}</div>
                             </div>
                             <div>
-                                <label style={labelStyle}>Offset against</label>
+                                <label style={labelStyle}>{tp('setup.opening.offset')}</label>
                                 <select value={offsetAccountId} onChange={e => setOffsetAccountId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                    <option value="">Select account…</option>
+                                    <option value="">{tp('setup.opening.selectAccount')}</option>
                                     {equityAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
                                 </select>
-                                <div style={helpStyle}>Defaults to 3300 Opening Balance Equity.</div>
+                                <div style={helpStyle}>{tp('setup.opening.offsetHelp')}</div>
                             </div>
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                            <button onClick={downloadTemplate} style={btnStyle}><Download size={14} /> Download template</button>
-                            <button onClick={() => setIsImportOpen(true)} style={btnStyle}><Upload size={14} /> Import CSV</button>
-                            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Rows are added to the list below for you to review — nothing is saved until you load them.</span>
+                            <button onClick={downloadTemplate} style={btnStyle}><Download size={14} /> {tp('setup.opening.downloadTemplate')}</button>
+                            <button onClick={() => setIsImportOpen(true)} style={btnStyle}><Upload size={14} /> {tp('setup.opening.importCsv')}</button>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{tp('setup.opening.reviewNote')}</span>
                         </div>
 
                         <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
@@ -614,11 +624,11 @@ const PurchaseSetupPage: React.FC = () => {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                                     <thead>
                                         <tr style={{ background: 'var(--color-bg)' }}>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Supplier</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Their invoice</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Bill date</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Due date</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Amount</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{tp('col.supplier')}</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{tp('setup.col.theirInvoice')}</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{tp('setup.col.billDate')}</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{tp('setup.col.dueDate')}</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{tp('col.amount')}</th>
                                             <th style={{ width: '40px' }}></th>
                                         </tr>
                                     </thead>
@@ -627,7 +637,7 @@ const PurchaseSetupPage: React.FC = () => {
                                             <tr key={r.key} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}>
                                                 <td style={{ padding: '8px 12px' }}>
                                                     <select value={r.supplier_id} onChange={e => updateRow(r.key, { supplier_id: e.target.value })} className="d2-khmer" style={{ ...inputStyle, cursor: 'pointer', minWidth: '160px' }}>
-                                                        <option value="">Select supplier…</option>
+                                                        <option value="">{tp('setup.opening.selectSupplier')}</option>
                                                         {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                                     </select>
                                                 </td>
@@ -644,7 +654,7 @@ const PurchaseSetupPage: React.FC = () => {
                                                     <input type="number" min="0" step="0.01" placeholder="0.00" value={r.amount} onChange={e => updateRow(r.key, { amount: e.target.value })} style={{ ...inputStyle, textAlign: 'right' }} />
                                                 </td>
                                                 <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                                    <button onClick={() => removeRow(r.key)} title="Remove row" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626' }}><Trash2 size={14} /></button>
+                                                    <button onClick={() => removeRow(r.key)} title={tp('setup.opening.removeRow')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626' }}><Trash2 size={14} /></button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -652,31 +662,31 @@ const PurchaseSetupPage: React.FC = () => {
                                 </table>
                             </div>
                             <button onClick={() => setDraftRows(prev => [...prev, emptyDraftRow()])} style={{ width: '100%', padding: '10px', border: 'none', borderTop: '1px dashed var(--color-border)', background: 'transparent', color: 'var(--color-primary)', fontWeight: 600, fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                <Plus size={14} /> Add row
+                                <Plus size={14} /> {tp('setup.opening.addRow')}
                             </button>
                         </div>
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{validRows.length} row{validRows.length === 1 ? '' : 's'} · <b style={{ color: 'var(--color-text-main)' }}>{fmt(draftTotal)}</b></span>
-                            <button onClick={handleLoadBalances} disabled={isLoadingBalances} className="primary-button" style={{ padding: '10px 20px', opacity: isLoadingBalances ? 0.6 : 1 }}>{isLoadingBalances ? 'Loading…' : 'Load balances'}</button>
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{fill(tp(validRows.length === 1 ? 'setup.opening.rows1' : 'setup.opening.rowsN'), { n: validRows.length })} · <b style={{ color: 'var(--color-text-main)' }}>{fmt(draftTotal)}</b></span>
+                            <button onClick={handleLoadBalances} disabled={isLoadingBalances} className="primary-button" style={{ padding: '10px 20px', opacity: isLoadingBalances ? 0.6 : 1 }}>{isLoadingBalances ? tp('common.loadingEllipsis') : tp('setup.opening.load')}</button>
                         </div>
                     </div>
 
                     {loadedRows.length > 0 && (
                         <div>
-                            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '10px' }}>Already loaded</div>
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '10px' }}>{tp('setup.opening.alreadyLoaded')}</div>
                             <div style={{ ...cardStyle, overflow: 'hidden' }}>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                                         <thead>
                                             <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Reference</th>
-                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Their Invoice</th>
-                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Supplier</th>
-                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Due</th>
-                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Amount</th>
-                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>Outstanding</th>
-                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Status</th>
+                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{tp('col.reference')}</th>
+                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{tp('setup.col.theirInvoiceCap')}</th>
+                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{tp('col.supplier')}</th>
+                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{tp('setup.col.due')}</th>
+                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{tp('col.amount')}</th>
+                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'right' }}>{tp('setup.col.outstanding')}</th>
+                                                <th style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>{tp('col.status')}</th>
                                                 <th style={{ width: '40px' }}></th>
                                             </tr>
                                         </thead>
@@ -690,13 +700,13 @@ const PurchaseSetupPage: React.FC = () => {
                                                     <td style={{ padding: '10px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.amount)}</td>
                                                     <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.outstanding)}</td>
                                                     <td style={{ padding: '10px 16px' }}>
-                                                        <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px', background: r.status === 'Paid' ? 'rgba(16,185,129,0.14)' : 'rgba(84,105,212,0.12)', color: r.status === 'Paid' ? '#059669' : '#5469d4' }}>{r.status}</span>
+                                                        <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px', background: r.status === 'Paid' ? 'rgba(16,185,129,0.14)' : 'rgba(84,105,212,0.12)', color: r.status === 'Paid' ? '#059669' : '#5469d4' }}>{r.status === 'Paid' ? t('status.paid') : tp('status.Posted')}</span>
                                                     </td>
                                                     <td style={{ padding: '10px 16px', textAlign: 'center' }}>
                                                         <button
                                                             onClick={() => handleUndo(r)}
                                                             disabled={!r.canUndo}
-                                                            title={r.canUndo ? 'Remove this opening balance' : "Can't remove — a payment is already recorded against it"}
+                                                            title={r.canUndo ? tp('setup.opening.undo') : tp('setup.opening.cantUndo')}
                                                             style={{ background: 'none', border: 'none', cursor: r.canUndo ? 'pointer' : 'not-allowed', color: r.canUndo ? 'var(--color-text-secondary)' : 'var(--color-text-muted)', opacity: r.canUndo ? 1 : 0.5, padding: '4px' }}
                                                         ><Undo2 size={14} /></button>
                                                     </td>

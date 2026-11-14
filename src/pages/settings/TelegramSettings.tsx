@@ -4,6 +4,7 @@ import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useHeader } from '../../context/HeaderContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import type { TelegramConfig } from '../../types';
 
 const TelegramSettings: React.FC = () => {
@@ -11,6 +12,8 @@ const TelegramSettings: React.FC = () => {
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
+    // Status codes stay as stored; only their display is translated.
+    const statusLabel = (s: string) => { const v = t('ui.admin.telegram.status.' + s); return v && v !== 'ui.admin.telegram.status.' + s ? v : s; };
 
     const [localState, setLocalState] = useState<{ telegramConfigs: TelegramConfig[] }>({
         telegramConfigs: []
@@ -57,20 +60,20 @@ const TelegramSettings: React.FC = () => {
         const localConfig = localState.telegramConfigs.find(c => c.id === configId);
         if (!localConfig) return;
         if (isCommitting) {
-            showToast('Another save is still running — try again in a moment', 'error');
+            showToast(t('ui.admin.telegram.anotherSave'), 'error');
             return;
         }
         setIsCommitting(true);
         try {
             await commitTelegramGroup(localConfig);
-            showToast('Telegram Configuration committed!', 'success');
+            showToast(t('ui.admin.telegram.committed'), 'success');
         } catch (error) {
             console.error(error);
-            showToast('Failed to commit Telegram configuration: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
+            showToast(fill(t('ui.admin.telegram.commitFailed'), { error: error instanceof Error ? error.message : t('ui.admin.settings.db.unknownError') }), 'error');
         } finally {
             setIsCommitting(false);
         }
-    }, [localState, isCommitting, commitTelegramGroup, showToast]);
+    }, [localState, isCommitting, commitTelegramGroup, showToast, t]);
 
     // HR-1: Remove deletes exactly this one group's row. On failure the row is
     // put back on screen (it still exists in the database).
@@ -80,11 +83,11 @@ const TelegramSettings: React.FC = () => {
             // A never-committed "+ Add Group" draft: discard locally, nothing
             // to delete or re-save in the database.
             setLocalState(prev => ({ ...prev, telegramConfigs: prev.telegramConfigs.filter(c => c.id !== configId) }));
-            showToast('Group removed', 'success');
+            showToast(t('ui.admin.telegram.groupRemoved'), 'success');
             return;
         }
         if (isCommitting) {
-            showToast('Another save is still running — try again in a moment', 'error');
+            showToast(t('ui.admin.telegram.anotherSave'), 'error');
             return;
         }
         setIsCommitting(true);
@@ -92,23 +95,23 @@ const TelegramSettings: React.FC = () => {
         setLocalState(prev => ({ ...prev, telegramConfigs: prev.telegramConfigs.filter(c => c.id !== configId) }));
         try {
             await removeTelegramGroup(configId);
-            showToast('Telegram group removed', 'success');
+            showToast(t('ui.admin.telegram.telegramGroupRemoved'), 'success');
         } catch (error) {
             console.error(error);
             // The delete failed: the group still exists — show it again.
             setLocalState(prev => ({ ...prev, telegramConfigs: before }));
-            showToast('Failed to remove Telegram group: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
+            showToast(fill(t('ui.admin.telegram.removeFailed'), { error: error instanceof Error ? error.message : t('ui.admin.settings.db.unknownError') }), 'error');
         } finally {
             setIsCommitting(false);
         }
-    }, [localState, isCommitting, removeTelegramGroup, showToast]);
+    }, [localState, isCommitting, removeTelegramGroup, showToast, t]);
 
     useEffect(() => {
         setHeaderContent({
             title: (
                 <div>
                     <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>{t('settings.telegramNotifications')}</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '14px' }}>Configure your bot alerts</p>
+                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '14px' }}>{t('ui.admin.telegram.subtitle')}</p>
                 </div>
             )
         });
@@ -137,7 +140,7 @@ const TelegramSettings: React.FC = () => {
                         className="primary-button"
                         style={{ padding: '8px 16px', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)' }}
                     >
-                        + Add Group
+                        {t('ui.admin.telegram.addGroup')}
                     </button>
                 </div>
                 <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '20px' }}>
@@ -160,7 +163,7 @@ const TelegramSettings: React.FC = () => {
                                     setLocalState({ ...localState, telegramConfigs: newConfigs });
                                 }}
                                 style={{ fontSize: '16px', fontWeight: '600', padding: '4px 8px', border: '1px solid transparent', borderBottom: '1px solid var(--color-border)', background: 'transparent' }}
-                                placeholder="Group Name"
+                                placeholder={t('ui.admin.telegram.groupName')}
                             />
                             <div>
                                 <button
@@ -169,14 +172,14 @@ const TelegramSettings: React.FC = () => {
                                     disabled={isCommitting}
                                     style={{ padding: '6px 12px', fontSize: '12px', background: '#FEE2E2', color: '#DC2626', border: 'none', borderRadius: '4px', cursor: isCommitting ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: isCommitting ? 0.6 : 1 }}
                                 >
-                                    Remove
+                                    {t('ui.admin.telegram.remove')}
                                 </button>
                             </div>
                         </div>
                         
                         <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', marginBottom: '16px', flexWrap: 'nowrap' }}>
                             <div style={{ flex: '1' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Bot Token</label>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>{t('ui.admin.telegram.botToken')}</label>
                                 <div style={{ position: 'relative' }}>
                                     <input
                                         type={visibleTokens[index] ? "text" : "password"}
@@ -200,7 +203,7 @@ const TelegramSettings: React.FC = () => {
                             </div>
                             
                             <div style={{ flex: '1' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Chat IDs</label>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>{t('ui.admin.telegram.chatIds')}</label>
                                 <input
                                     type="text"
                                     value={config.chatId}
@@ -216,7 +219,7 @@ const TelegramSettings: React.FC = () => {
                             </div>
 
                             <div style={{ flex: '1' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Trigger Statuses</label>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>{t('ui.admin.telegram.triggerStatuses')}</label>
                                 <div style={{ position: 'relative' }}>
                                     <div
                                         onClick={() => setStatusDropdownOpen(prev => ({ ...prev, [index]: !prev[index] }))}
@@ -224,7 +227,7 @@ const TelegramSettings: React.FC = () => {
                                         style={{ width: '100%', padding: '10px', minHeight: '42px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--color-bg)' }}
                                     >
                                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', minWidth: 0, flex: 1, marginRight: '8px' }}>
-                                            {config.triggerStatuses?.length === 8 ? 'All Statuses' : (config.triggerStatuses?.length > 0 ? config.triggerStatuses.join(', ') : 'Select Status')}
+                                            {config.triggerStatuses?.length === 8 ? t('ui.admin.telegram.allStatuses') : (config.triggerStatuses?.length > 0 ? config.triggerStatuses.map(statusLabel).join(', ') : t('ui.admin.telegram.selectStatus'))}
                                         </span>
                                         <ChevronDown size={16} />
                                     </div>
@@ -245,7 +248,7 @@ const TelegramSettings: React.FC = () => {
                                                     }}
                                                     style={{ width: '14px', height: '14px', cursor: 'pointer' }}
                                                 />
-                                                All Statuses
+                                                {t('ui.admin.telegram.allStatuses')}
                                             </label>
                                             {['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'].map(status => (
                                                 <label key={status} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', cursor: 'pointer', fontSize: '13px' }}>
@@ -264,7 +267,7 @@ const TelegramSettings: React.FC = () => {
                                                         }}
                                                         style={{ width: '14px', height: '14px', cursor: 'pointer' }}
                                                     />
-                                                    {status}
+                                                    {statusLabel(status)}
                                                 </label>
                                             ))}
                                         </div>
@@ -273,7 +276,7 @@ const TelegramSettings: React.FC = () => {
                             </div>
                             
                             <div style={{ flex: '1' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Note (Remark)</label>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>{t('ui.admin.telegram.note')}</label>
                                 <input
                                     type="text"
                                     value={config.note || ''}
@@ -282,7 +285,7 @@ const TelegramSettings: React.FC = () => {
                                         newConfigs[index] = { ...newConfigs[index], note: e.target.value };
                                         setLocalState({ ...localState, telegramConfigs: newConfigs });
                                     }}
-                                    placeholder="Add a remark for this bot configuration..."
+                                    placeholder={t('ui.admin.telegram.notePlaceholder')}
                                     className="search-input"
                                     style={{ width: '100%', padding: '10px' }}
                                 />
@@ -291,39 +294,39 @@ const TelegramSettings: React.FC = () => {
                                     onClick={() => setTemplateDropdownOpen(prev => ({ ...prev, [index]: !prev[index] }))}
                                     style={{ padding: '10px 16px', fontSize: '13px', background: 'var(--color-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}
                                 >
-                                    Template
+                                    {t('ui.admin.telegram.template')}
                                 </button>
                                 <button
                                     onClick={async () => {
                                         if (!config.botToken || !config.chatId) {
-                                            showToast('Please enter Bot Token and Chat ID first', 'error');
+                                            showToast(t('ui.admin.telegram.enterTokenFirst'), 'error');
                                             return;
                                         }
                                         try {
                                             const { sendTelegramTestMessage } = await import('../../utils/telegram');
                                             await sendTelegramTestMessage(config.botToken, config.chatId);
-                                            showToast('Test message sent!', 'success');
+                                            showToast(t('ui.admin.telegram.testSent'), 'success');
                                         } catch (err: any) {
-                                            showToast(err.message || 'Failed to send test message', 'error');
+                                            showToast(err.message || t('ui.admin.telegram.testFailed'), 'error');
                                         }
                                     }}
                                     style={{ padding: '10px 16px', fontSize: '13px', background: 'var(--color-primary-light)', color: 'var(--color-primary)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}
                                 >
-                                    Test
+                                    {t('ui.admin.telegram.test')}
                                 </button>
                                 <button
                                     onClick={() => handleCommitTelegramConfigs(config.id)}
                                     disabled={!isRowChanged || isCommitting}
                                     style={{ padding: '10px 16px', fontSize: '13px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '8px', cursor: (isRowChanged && !isCommitting) ? 'pointer' : 'not-allowed', fontWeight: 600, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap', opacity: (isRowChanged && !isCommitting) ? 1 : 0.5 }}
                                 >
-                                    {isCommitting ? 'Saving…' : 'Commit'}
+                                    {isCommitting ? t('ui.admin.telegram.saving') : t('ui.admin.telegram.commit')}
                                 </button>
                         </div>
                         {templateDropdownOpen[index] && (
                             <div style={{ marginTop: '8px', padding: '16px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>Message Template</label>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>{t('ui.admin.telegram.messageTemplate')}</label>
                                 <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
-                                    Available variables: <code>{`{order_no}`}</code>, <code>{`{customer_name}`}</code>, <code>{`{phone}`}</code>, <code>{`{address}`}</code>, <code>{`{page}`}</code>, <code>{`{items}`}</code>, <code>{`{total}`}</code>, <code>{`{shipping_company}`}</code>, <code>{`{salesman}`}</code>, <code>{`{remark}`}</code>
+                                    {t('ui.admin.telegram.availableVariables')} <code>{`{order_no}`}</code>, <code>{`{customer_name}`}</code>, <code>{`{phone}`}</code>, <code>{`{address}`}</code>, <code>{`{page}`}</code>, <code>{`{items}`}</code>, <code>{`{total}`}</code>, <code>{`{shipping_company}`}</code>, <code>{`{salesman}`}</code>, <code>{`{remark}`}</code>
                                 </p>
                                 <textarea
                                     value={config.messageTemplate || ''}
@@ -332,7 +335,7 @@ const TelegramSettings: React.FC = () => {
                                         newConfigs[index] = { ...newConfigs[index], messageTemplate: e.target.value };
                                         setLocalState({ ...localState, telegramConfigs: newConfigs });
                                     }}
-                                    placeholder="Leave empty to use the default message format."
+                                    placeholder={t('ui.admin.telegram.templatePlaceholder')}
                                     className="search-input"
                                     style={{ width: '100%', padding: '12px', minHeight: '150px', resize: 'vertical', fontSize: '13px' }}
                                 />
@@ -340,24 +343,24 @@ const TelegramSettings: React.FC = () => {
                                     <button
                                         onClick={async () => {
                                             if (!config.botToken || !config.chatId) {
-                                                showToast('Please enter Bot Token and Chat ID first', 'error');
+                                                showToast(t('ui.admin.telegram.enterTokenFirst'), 'error');
                                                 return;
                                             }
                                             if (!config.messageTemplate) {
-                                                showToast('Please enter a message template to test', 'error');
+                                                showToast(t('ui.admin.telegram.enterTemplate'), 'error');
                                                 return;
                                             }
                                             try {
                                                 const { sendTelegramTestTemplateMessage } = await import('../../utils/telegram');
                                                 await sendTelegramTestTemplateMessage(config.botToken, config.chatId, config.messageTemplate);
-                                                showToast('Test template message sent!', 'success');
+                                                showToast(t('ui.admin.telegram.testTemplateSent'), 'success');
                                             } catch (err: any) {
-                                                showToast(err.message || 'Failed to send test message', 'error');
+                                                showToast(err.message || t('ui.admin.telegram.testFailed'), 'error');
                                             }
                                         }}
                                         style={{ padding: '8px 16px', fontSize: '13px', background: 'var(--color-primary-light)', color: 'var(--color-primary)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                     >
-                                        Test Template
+                                        {t('ui.admin.telegram.testTemplate')}
                                     </button>
                                 </div>
                             </div>

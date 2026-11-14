@@ -1,6 +1,7 @@
 import React, { type ReactNode, Suspense } from 'react';
 import { X } from 'lucide-react';
 import { useMobile } from '../hooks/useMobile';
+import { useTx } from './useTx';
 
 interface ModalProps {
     isOpen: boolean;
@@ -16,6 +17,7 @@ interface ModalProps {
 
 const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, width, height, bodyPadding, bodyOverflowY, fullScreen }) => {
     const isMobile = useMobile();
+    const tx = useTx();
 
     if (!isOpen) return null;
 
@@ -77,7 +79,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, width, 
                 }}>
                     <Suspense fallback={
                         <div style={{ padding: '2rem', display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--color-text-secondary)' }}>
-                            Loading...
+                            {tx('common.loading', 'Loading...')}
                         </div>
                     }>
                         {children}

@@ -11,6 +11,7 @@ import { useMobile } from '../hooks/useMobile';
 import { useNavigate } from 'react-router-dom';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useLanguage } from '../context/LanguageContext';
+import { useTx, txNow } from './useTx';
 
 interface HeaderProps {
     isCollapsed: boolean;
@@ -46,10 +47,10 @@ const getTimeAgo = (dateStr: string): string => {
     const diffHr = Math.floor(diffMin / 60);
     const diffDay = Math.floor(diffHr / 24);
 
-    if (diffMin < 1) return 'Just now';
-    if (diffMin < 60) return `${diffMin}m ago`;
-    if (diffHr < 24) return `${diffHr}h ago`;
-    if (diffDay < 7) return `${diffDay}d ago`;
+    if (diffMin < 1) return txNow('header.justNow', 'Just now');
+    if (diffMin < 60) return txNow('ui.components.header.minAgo', '{n}m ago', { n: diffMin });
+    if (diffHr < 24) return txNow('ui.components.header.hrAgo', '{n}h ago', { n: diffHr });
+    if (diffDay < 7) return txNow('ui.components.header.dayAgo', '{n}d ago', { n: diffDay });
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
@@ -79,6 +80,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
     const isMobile = useMobile();
     const navigate = useNavigate();
     const { t, language, setLanguage } = useLanguage();
+    const tx = useTx();
     const { fontSize, setFontSize, layout, setLayout, mode, setMode, sidebarColor, setSidebarColor } = useTheme();
     const [isRefreshing, setIsRefreshing] = React.useState(false);
 
@@ -247,7 +249,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
             setNewTaskTitle('');
         } catch (e: any) {
             console.error('Failed to add task:', e);
-            alert('Failed to add task: ' + (e?.message || 'unknown error'));
+            alert(tx('ui.components.header.addTaskFailed', 'Failed to add task: {msg}', { msg: e?.message || tx('ui.components.config.unknownError', 'unknown error') }));
         } finally {
             setIsAddingTask(false);
         }
@@ -277,7 +279,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                             color: 'var(--color-primary)', fontSize: '12px', fontWeight: 600, padding: '4px'
                         }}
                     >
-                        View all
+                        {tx('ui.components.header.viewAll', 'View all')}
                     </button>
                     <button
                         onClick={closePanel}
@@ -351,10 +353,10 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                         gap: '2px'
                                     }}>
                                         {log.metadata.oldRemark !== undefined && log.metadata.newRemark !== undefined && (
-                                            <div><span style={{ textDecoration: 'line-through', opacity: 0.7 }}>{log.metadata.oldRemark || 'None'}</span> → <span style={{ fontWeight: 500, color: 'var(--color-text-main)' }}>{log.metadata.newRemark || 'None'}</span></div>
+                                            <div><span style={{ textDecoration: 'line-through', opacity: 0.7 }}>{log.metadata.oldRemark || tx('ui.components.header.none', 'None')}</span> → <span style={{ fontWeight: 500, color: 'var(--color-text-main)' }}>{log.metadata.newRemark || tx('ui.components.header.none', 'None')}</span></div>
                                         )}
                                         {log.metadata.oldTracking !== undefined && log.metadata.newTracking !== undefined && (
-                                            <div><span style={{ textDecoration: 'line-through', opacity: 0.7 }}>{log.metadata.oldTracking || 'None'}</span> → <span style={{ fontWeight: 500, color: 'var(--color-text-main)' }}>{log.metadata.newTracking || 'None'}</span></div>
+                                            <div><span style={{ textDecoration: 'line-through', opacity: 0.7 }}>{log.metadata.oldTracking || tx('ui.components.header.none', 'None')}</span> → <span style={{ fontWeight: 500, color: 'var(--color-text-main)' }}>{log.metadata.newTracking || tx('ui.components.header.none', 'None')}</span></div>
                                         )}
                                         {log.metadata.remark && log.metadata.newRemark === undefined && (
                                             <div><span style={{ fontWeight: 500, color: 'var(--color-text-main)' }}>{log.metadata.remark}</span></div>
@@ -433,7 +435,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                     {/* Refresh Button */}
                     <button
                         onClick={handleRefresh}
-                        title="Refresh Data"
+                        title={t('header.refreshData')}
                         className="hover-opacity"
                         style={{
                             background: 'none',
@@ -707,7 +709,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                     {/* Calculator */}
                     <button
                         onClick={() => { setIsTasksOpen(false); setIsCalcOpen(true); }}
-                        title="Calculator"
+                        title={tx('ui.components.calculator.title', 'Calculator')}
                         style={{
                             background: 'none',
                             border: 'none',
@@ -724,7 +726,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                     {/* Today's Tasks */}
                     <button
                         onClick={() => { setIsCalcOpen(false); setIsTasksOpen(true); fetchTasks(); }}
-                        title="Today's Tasks"
+                        title={tx('ui.components.header.todaysTasks', "Today's Tasks")}
                         style={{
                             background: 'none',
                             border: 'none',
@@ -855,9 +857,9 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                     <ClipboardList size={18} />
                                 </div>
                                 <div>
-                                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Today's Tasks</h3>
+                                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>{tx('ui.components.header.todaysTasks', "Today's Tasks")}</h3>
                                     <p style={{ margin: 0, fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                                        {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })} · {openTaskCount} open
+                                        {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })} · {tx('ui.components.header.nOpen', '{n} open', { n: openTaskCount })}
                                     </p>
                                 </div>
                             </div>
@@ -870,7 +872,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                         <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: '8px' }}>
                             <input
                                 type="text"
-                                placeholder="Add a task for today…"
+                                placeholder={tx('ui.components.header.addTaskPh', 'Add a task for today…')}
                                 value={newTaskTitle}
                                 onChange={(e) => setNewTaskTitle(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === 'Enter') addTask(); }}
@@ -879,7 +881,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                             <button
                                 onClick={addTask}
                                 disabled={!newTaskTitle.trim() || isAddingTask}
-                                title="Add Task"
+                                title={tx('ui.components.header.addTask', 'Add Task')}
                                 style={{
                                     width: '38px', height: '38px', borderRadius: '10px', border: 'none', flexShrink: 0,
                                     background: newTaskTitle.trim() && !isAddingTask ? 'linear-gradient(135deg, #F59E0B, #D97706)' : 'var(--color-bg)',
@@ -897,11 +899,11 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
                             {tasksLoading && tasks.length === 0 ? (
                                 <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                                    Loading tasks…
+                                    {tx('ui.components.header.loadingTasks', 'Loading tasks…')}
                                 </div>
                             ) : tasks.length === 0 ? (
                                 <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                                    🎉 No tasks for today
+                                    {'🎉 ' + tx('ui.components.header.noTasks', 'No tasks for today')}
                                 </div>
                             ) : (
                                 (() => {
@@ -913,7 +915,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                             <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 16px', borderBottom: '1px solid var(--color-border)' }}>
                                                 <button
                                                     onClick={() => toggleTask(t)}
-                                                    title={done ? 'Mark as open' : 'Mark as done'}
+                                                    title={done ? tx('ui.components.header.markOpen', 'Mark as open') : tx('ui.components.header.markDone', 'Mark as done')}
                                                     style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '1px', color: done ? '#10B981' : 'var(--color-text-muted)', display: 'flex', flexShrink: 0 }}
                                                 >
                                                     {done ? <CheckCircle2 size={19} /> : <Circle size={19} />}
@@ -924,9 +926,9 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                                     </div>
                                                     <div style={{ display: 'flex', gap: '8px', marginTop: '3px', fontSize: '11px', alignItems: 'center', flexWrap: 'wrap' }}>
                                                         {overdue ? (
-                                                            <span style={{ color: '#DC2626', fontWeight: 700 }}>Overdue · {t.due_date}</span>
+                                                            <span style={{ color: '#DC2626', fontWeight: 700 }}>{tx('ui.components.header.overdue', 'Overdue')} · {t.due_date}</span>
                                                         ) : t.due_date ? (
-                                                            <span style={{ color: 'var(--color-text-muted)' }}>{t.due_date === today ? 'Today' : t.due_date}</span>
+                                                            <span style={{ color: 'var(--color-text-muted)' }}>{t.due_date === today ? tx('ui.components.common.today', 'Today') : t.due_date}</span>
                                                         ) : null}
                                                         {t.remind_at && <span style={{ color: 'var(--color-text-muted)' }}>⏰ {t.remind_at}</span>}
                                                     </div>
@@ -943,9 +945,9 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                     );
                                     return (
                                         <>
-                                            {ongoingTasks.length > 0 && sectionLabel('Ongoing')}
+                                            {ongoingTasks.length > 0 && sectionLabel(tx('ui.components.header.ongoing', 'Ongoing'))}
                                             {ongoingTasks.map(renderTask)}
-                                            {completedTasks.length > 0 && sectionLabel('Completed')}
+                                            {completedTasks.length > 0 && sectionLabel(tx('ui.components.header.completed', 'Completed'))}
                                             {completedTasks.map(renderTask)}
                                         </>
                                     );
@@ -960,7 +962,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, isHidden }) => {
                                 className="primary-button"
                                 style={{ width: '100%', padding: '11px', borderRadius: '10px', fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                             >
-                                <ExternalLink size={15} /> Open Todo
+                                <ExternalLink size={15} /> {tx('ui.components.header.openTodo', 'Open Todo')}
                             </button>
                         </div>
                     </div>

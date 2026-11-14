@@ -17,6 +17,8 @@ import { RefreshCw, Wallet, HandCoins, Scale, TrendingUp, ArrowDownUp, BookOpen,
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { useHeader } from '../../context/HeaderContext';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useProcurement } from '../../hooks/useProcurement';
 import { useWholesale } from '../../hooks/useWholesale';
 import { supabase } from '../../lib/supabase';
@@ -76,18 +78,19 @@ const FinancialDashboardPage: React.FC = () => {
     const { purchaseOrders, fetchPurchaseOrders } = useProcurement();
     const { wholesaleOrders, fetchWholesaleOrders } = useWholesale();
     const isMobile = useMobile();
+    const { t } = useLanguage();
 
     useEffect(() => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Financial Dashboard</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>Cash, what's owed to and by the business, and revenue vs. expense for the period.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.financialDashboard')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{t('ui.accounting.fd.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchPurchaseOrders();
@@ -240,31 +243,31 @@ const FinancialDashboardPage: React.FC = () => {
                 {/* Filter */}
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
                     <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Ending month</label>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>{t('ui.accounting.fd.endingMonth')}</label>
                         <input type="month" value={endingMonth} max={monthKeyOf(today)} onChange={e => setEndingMonth(e.target.value || monthKeyOf(today))} style={inputStyle} />
                     </div>
-                    <button onClick={() => { fetchPurchaseOrders(); fetchWholesaleOrders(); setRefreshKey(k => k + 1); }} title="Refresh" style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
+                    <button onClick={() => { fetchPurchaseOrders(); fetchWholesaleOrders(); setRefreshKey(k => k + 1); }} title={t('ui.accounting.common.refresh')} style={{ ...inputStyle, cursor: 'pointer', display: 'flex' }}>
                         <RefreshCw size={15} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} />
                     </button>
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                    Income Statement: {monthLabel(startMonth)} – {monthLabel(endingMonth)} · Balance Sheet: as of {today} · Amounts in USD, posted entries only
+                    {fill(t('ui.accounting.fd.periodNote'), { from: monthLabel(startMonth), to: monthLabel(endingMonth), today })}
                 </div>
 
                 {/* KPI row 1 — the period */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                    <KpiCard label="Revenue" value={fmt(revenue)} sub={monthLabel(endingMonth)} color={GREEN} loading={isLoading} />
-                    <KpiCard label="Expenses" value={fmt(expenses)} sub={monthLabel(endingMonth)} color={RED} loading={isLoading} />
-                    <KpiCard label="Net income" value={fmt(netIncome)} sub={netIncome >= 0 ? 'Profit' : 'Loss'} color={netIncome >= 0 ? GREEN : RED} loading={isLoading} />
-                    <KpiCard label="Cash position" value={fmt(cashPosition)} sub="All cash & bank accounts, today" color={BLUE} loading={isLoading} />
+                    <KpiCard label={t('ui.accounting.fd.revenue')} value={fmt(revenue)} sub={monthLabel(endingMonth)} color={GREEN} loading={isLoading} />
+                    <KpiCard label={t('ui.accounting.fd.expenses')} value={fmt(expenses)} sub={monthLabel(endingMonth)} color={RED} loading={isLoading} />
+                    <KpiCard label={t('ui.accounting.fd.netIncome')} value={fmt(netIncome)} sub={netIncome >= 0 ? t('ui.accounting.fd.profit') : t('ui.accounting.fd.loss')} color={netIncome >= 0 ? GREEN : RED} loading={isLoading} />
+                    <KpiCard label={t('ui.accounting.fd.cashPosition')} value={fmt(cashPosition)} sub={t('ui.accounting.fd.allCashBankToday')} color={BLUE} loading={isLoading} />
                 </div>
 
                 {/* KPI row 2 — Balance Sheet snapshot */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                    <KpiCard label="Total assets" value={fmt(totalAssets)} sub="As of today" loading={isLoading} />
-                    <KpiCard label="Total liabilities" value={fmt(totalLiabilities)} sub="As of today" color={totalLiabilities > 0 ? AMBER : undefined} loading={isLoading} />
-                    <KpiCard label="Total equity" value={fmt(totalEquity)} sub="Including retained earnings" color={PURPLE} loading={isLoading} />
-                    <KpiCard label="Receivable" value={fmt(receivable.outstanding)} sub={`${openReceivables.length} order${openReceivables.length === 1 ? '' : 's'} open`} color={receivable.overdue > 0 ? RED : GREEN} loading={isLoading} />
+                    <KpiCard label={t('ui.accounting.fd.totalAssets')} value={fmt(totalAssets)} sub={t('ui.accounting.fd.asOfToday')} loading={isLoading} />
+                    <KpiCard label={t('ui.accounting.fd.totalLiabilities')} value={fmt(totalLiabilities)} sub={t('ui.accounting.fd.asOfToday')} color={totalLiabilities > 0 ? AMBER : undefined} loading={isLoading} />
+                    <KpiCard label={t('ui.accounting.fd.totalEquity')} value={fmt(totalEquity)} sub={t('ui.accounting.fd.inclRetained')} color={PURPLE} loading={isLoading} />
+                    <KpiCard label={t('ui.accounting.fd.receivable')} value={fmt(receivable.outstanding)} sub={fill(t(openReceivables.length === 1 ? 'ui.accounting.fd.ordersOpenOne' : 'ui.accounting.fd.ordersOpen'), { n: openReceivables.length })} color={receivable.overdue > 0 ? RED : GREEN} loading={isLoading} />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
@@ -272,19 +275,19 @@ const FinancialDashboardPage: React.FC = () => {
                     <div style={{ ...cardStyle, padding: '18px 20px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
                             <HandCoins size={16} color={GREEN} />
-                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Receivables</span>
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.accounting.fd.receivables')}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
-                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Owed by customers as of today. Wholesale credit sales only.</span>
-                            <button onClick={() => navigate('/accounting/receivable')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>Open report →</button>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.fd.receivablesNote')}</span>
+                            <button onClick={() => navigate('/accounting/receivable')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>{t('ui.accounting.fd.openReport')} →</button>
                         </div>
                         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                            <Tile label="Overdue" value={receivable.overdue} color={RED} />
-                            <Tile label="Due in 7 days" value={receivable.within7} color={AMBER} />
-                            <Tile label="Due in 30 days" value={receivable.within30} color={BLUE} />
+                            <Tile label={t('ui.accounting.fd.overdue')} value={receivable.overdue} color={RED} />
+                            <Tile label={t('ui.accounting.fd.due7')} value={receivable.within7} color={AMBER} />
+                            <Tile label={t('ui.accounting.fd.due30')} value={receivable.within30} color={BLUE} />
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '8px 0', borderTop: '1px solid var(--color-border)', fontWeight: 700 }}>
-                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>Outstanding</span>
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>{t('ui.accounting.fd.outstanding')}</span>
                             <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{fmt(receivable.outstanding)}</span>
                         </div>
                     </div>
@@ -293,19 +296,19 @@ const FinancialDashboardPage: React.FC = () => {
                     <div style={{ ...cardStyle, padding: '18px 20px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
                             <Wallet size={16} color={AMBER} />
-                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Payables</span>
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.accounting.fd.payables')}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
-                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Owed to suppliers as of today.</span>
-                            <button onClick={() => navigate('/accounting/payable')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>Open report →</button>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.fd.payablesNote')}</span>
+                            <button onClick={() => navigate('/accounting/payable')} style={{ background: 'none', border: 'none', color: BLUE, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}>{t('ui.accounting.fd.openReport')} →</button>
                         </div>
                         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                            <Tile label="Overdue" value={payable.overdue} color={RED} />
-                            <Tile label="Due in 7 days" value={payable.within7} color={AMBER} />
-                            <Tile label="Due in 30 days" value={payable.within30} color={BLUE} />
+                            <Tile label={t('ui.accounting.fd.overdue')} value={payable.overdue} color={RED} />
+                            <Tile label={t('ui.accounting.fd.due7')} value={payable.within7} color={AMBER} />
+                            <Tile label={t('ui.accounting.fd.due30')} value={payable.within30} color={BLUE} />
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '8px 0', borderTop: '1px solid var(--color-border)', fontWeight: 700 }}>
-                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>Outstanding</span>
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>{t('ui.accounting.fd.outstanding')}</span>
                             <span style={{ fontSize: '14px', color: 'var(--color-text-main)' }}>{fmt(payable.outstanding)}</span>
                         </div>
                     </div>
@@ -313,11 +316,11 @@ const FinancialDashboardPage: React.FC = () => {
 
                 {/* Revenue vs Expense by month */}
                 <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Revenue vs. Expense by month</div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Posted journal entries only, in USD.</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.accounting.fd.revVsExp')}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>{t('ui.accounting.fd.postedOnlyUsd')}</div>
                     <div style={{ height: '280px' }}>
                         {isLoading ? (
-                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading…</div>
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.accounting.fd.loading')}</div>
                         ) : (
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={byMonth} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -330,8 +333,8 @@ const FinancialDashboardPage: React.FC = () => {
                                         formatter={((value: any, name: any) => [fmt(Number(value)), name]) as any}
                                     />
                                     <Legend wrapperStyle={{ fontSize: '12px' }} />
-                                    <Bar dataKey="revenue" name="Revenue" fill={GREEN} radius={[4, 4, 0, 0]} maxBarSize={28} />
-                                    <Bar dataKey="expense" name="Expense" fill={RED} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                                    <Bar dataKey="revenue" name={t('ui.accounting.fd.revenue')} fill={GREEN} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                                    <Bar dataKey="expense" name={t('ui.accounting.fd.expense')} fill={RED} radius={[4, 4, 0, 0]} maxBarSize={28} />
                                 </BarChart>
                             </ResponsiveContainer>
                         )}
@@ -340,14 +343,14 @@ const FinancialDashboardPage: React.FC = () => {
 
                 {/* Quick links into the full reports */}
                 <div style={{ ...cardStyle, padding: '18px 20px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '12px' }}>Reports</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '12px' }}>{t('ui.accounting.fd.reports')}</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
-                        <ReportLink label="Financial Reports" icon={ClipboardList} path="/accounting/financial-reports" onClick={navigate} />
-                        <ReportLink label="Balance Sheet" icon={Scale} path="/accounting/balance-sheet" onClick={navigate} />
-                        <ReportLink label="Income Statement" icon={TrendingUp} path="/accounting/income-statement" onClick={navigate} />
-                        <ReportLink label="Cash In / Out" icon={ArrowDownUp} path="/accounting/cash-in-out" onClick={navigate} />
-                        <ReportLink label="General Ledger" icon={BookOpen} path="/accounting/general-ledger" onClick={navigate} />
-                        <ReportLink label="Journal Entries" icon={LayoutDashboard} path="/accounting/journal-entries" onClick={navigate} />
+                        <ReportLink label={t('nav.financialReports')} icon={ClipboardList} path="/accounting/financial-reports" onClick={navigate} />
+                        <ReportLink label={t('nav.balanceSheet')} icon={Scale} path="/accounting/balance-sheet" onClick={navigate} />
+                        <ReportLink label={t('nav.incomeStatement')} icon={TrendingUp} path="/accounting/income-statement" onClick={navigate} />
+                        <ReportLink label={t('nav.cashInOut')} icon={ArrowDownUp} path="/accounting/cash-in-out" onClick={navigate} />
+                        <ReportLink label={t('nav.generalLedger')} icon={BookOpen} path="/accounting/general-ledger" onClick={navigate} />
+                        <ReportLink label={t('nav.journalEntries')} icon={LayoutDashboard} path="/accounting/journal-entries" onClick={navigate} />
                     </div>
                 </div>
             </div>

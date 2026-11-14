@@ -9,6 +9,27 @@ import { X } from 'lucide-react';
 import { D2 } from '../dashboard2/theme';
 import type { PillTone } from './types';
 import { paramsToFilters, filtersToParams, DEFAULT_FILTERS, type OM2Filters } from './urlFilters';
+import { useOptionalLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
+import { orderStatusLabel } from '../../utils/orderStatusRules';
+
+// ─── Khmer/English text (keys under ui.orderFlow) ─────────────────────────
+// tx("om2.key", "English text", { n }) — the English text is also the
+// fallback when no LanguageProvider is above (dev previews) or the key is
+// missing. statusLabel / payLabel translate a stored status for display only.
+export type Tx = (key: string, en: string, vars?: Record<string, string | number>) => string;
+// eslint-disable-next-line react-refresh/only-export-components -- a hook next to the primitives that use it.
+export const useOM2Lang = () => {
+    const lang = useOptionalLanguage();
+    const t = lang?.t;
+    const lookup = useCallback((full: string, en: string) => { const v = t?.(full); return v && v !== full ? v : en; }, [t]);
+    const tx = useCallback<Tx>((key, en, vars) => fill(lookup(`ui.orderFlow.${key}`, en), vars), [lookup]);
+    // English keeps the page's own labels exactly; Khmer uses the shared status names.
+    const km = lang?.language === 'km';
+    const statusLabel = useCallback((s: string | undefined | null) => (s ? (km ? lookup(`dashboard2.status.${s}`, orderStatusLabel(s)) : orderStatusLabel(s)) : ''), [lookup, km]);
+    const payLabel = useCallback((s: string | undefined | null) => (s ? (km ? lookup(`dashboard2.pay.${s}`, s) : s) : ''), [lookup, km]);
+    return { tx, statusLabel, payLabel };
+};
 
 // ─── Muted pills (spec §5: tinted bg + darker text + 1px border of the same
 // hue — never fully saturated; saturated red is reserved for genuine
@@ -80,6 +101,7 @@ export const DrawerShell: React.FC<{
     width?: number;
 }> = ({ isOpen, onClose, title, children, footer, headerActions, onBeforeClose, width = 480 }) => {
     const closeButtonRef = useRef<HTMLButtonElement>(null);
+    const { tx } = useOM2Lang();
     const requestClose = useCallback(() => {
         // onBeforeClose returning true BLOCKS the close (per its own doc
         // comment above) — no "!" here; that inversion previously made the
@@ -116,7 +138,7 @@ export const DrawerShell: React.FC<{
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '14px 16px', borderBottom: `1px solid ${D2.border}` }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: D2.ink, minWidth: 0, flex: 1 }}>{title}</div>
                     {headerActions && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>{headerActions}</div>}
-                    <button ref={closeButtonRef} type="button" onClick={requestClose} aria-label="Close" title="Close (Esc)" className="d2-clickable" style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${D2.border}`, background: D2.card, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <button ref={closeButtonRef} type="button" onClick={requestClose} aria-label={tx('om2.close', 'Close')} title={tx('om2.closeEsc', 'Close (Esc)')} className="d2-clickable" style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${D2.border}`, background: D2.card, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <X size={16} />
                     </button>
                 </div>
@@ -135,6 +157,7 @@ export interface UndoToastHandle { show: (message: string, onUndo: () => void) =
 export const UndoToast: React.FC<{ handleRef: React.MutableRefObject<UndoToastHandle | null> }> = ({ handleRef }) => {
     const [state, setState] = useState<{ message: string; onUndo: () => void; key: number } | null>(null);
     const [remaining, setRemaining] = useState(10);
+    const { tx } = useOM2Lang();
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -161,7 +184,7 @@ export const UndoToast: React.FC<{ handleRef: React.MutableRefObject<UndoToastHa
                 onClick={() => { state.onUndo(); setState(null); if (timerRef.current) clearInterval(timerRef.current); }}
                 style={{ background: 'none', border: '1px solid rgba(255,255,255,0.35)', color: '#fff', borderRadius: 6, padding: '4px 10px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
             >
-                Undo ({remaining}s)
+                {tx('om2.undoN', 'Undo ({n}s)', { n: remaining })}
             </button>
         </div>
     );

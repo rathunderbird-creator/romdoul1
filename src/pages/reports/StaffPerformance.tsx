@@ -8,6 +8,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { supabase } from '../../lib/supabase';
 import { fetchAll } from '../../utils/fetchAll';
 import { parseDay } from '../../utils/dateRange';
+import { fill } from '../../i18n/translate';
 
 const StaffPerformance: React.FC = () => {
     const { users, updateUser, salesmen, currentUser } = useStore();
@@ -332,9 +333,9 @@ const StaffPerformance: React.FC = () => {
                                                 }}
                                                 onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.color = 'var(--color-primary)'; }}
                                                 onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-                                                title="Set Target"
+                                                title={t('ui.people.reports.staff.setTarget')}
                                             >
-                                                <Target size={14} /> Set
+                                                <Target size={14} /> {t('ui.people.reports.ship.set')}
                                             </button>
                                         )}
                                     </div>
@@ -347,7 +348,7 @@ const StaffPerformance: React.FC = () => {
                     </div>
                 ) : (
                     <div style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)' }}>
-                        No salesman target profiles configured. Edit user settings to establish targets.
+                        {t('ui.people.reports.staff.noTargets')}
                     </div>
                 )}
             </div>
@@ -356,13 +357,13 @@ const StaffPerformance: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(139, 92, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Active Staff</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.staff.activeStaff')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6' }}><Users size={18} /></div>
                     </div>
                     <div 
                         style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)', cursor: 'pointer' }}
                         onClick={() => handleNavigateToOrders('All')}
-                        title="Go to Orders"
+                        title={t('ui.people.reports.staff.goToOrders')}
                     >
                         {staffData.length}
                     </div>
@@ -370,15 +371,15 @@ const StaffPerformance: React.FC = () => {
 
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.1), rgba(236, 72, 153, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(236, 72, 153, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Top Performer</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.staff.topPerformer')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(236, 72, 153, 0.15)', color: '#EC4899' }}><Award size={18} /></div>
                     </div>
                     <div 
                         style={{ fontSize: '20px', fontWeight: 700, color: 'var(--color-text-main)', marginTop: '4px', cursor: topSalesman ? 'pointer' : 'default' }}
                         onClick={() => topSalesman ? handleNavigateToOrders(topSalesman.name) : undefined}
-                        title={topSalesman ? "Go to Orders for " + topSalesman.name : undefined}
+                        title={topSalesman ? fill(t('ui.people.reports.staff.goToOrdersFor'), { name: topSalesman.name }) : undefined}
                     >
-                        {topSalesman ? topSalesman.name : 'N/A'}
+                        {topSalesman ? topSalesman.name : t('ui.people.common.na')}
                     </div>
                 </div>
             </div>
@@ -387,7 +388,7 @@ const StaffPerformance: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
                 {/* Revenue by Staff */}
                 <div className="glass-panel hover-lift" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', height: '400px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>Revenue by Staff</h3>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>{t('ui.people.reports.staff.revenueByStaff')}</h3>
                     {staffData.some(d => d.revenue > 0) ? (
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={staffData} layout="vertical" margin={{ top: 10, right: 10, left: 20, bottom: 0 }}>
@@ -397,7 +398,7 @@ const StaffPerformance: React.FC = () => {
                                 <Tooltip 
                                     cursor={{ fill: 'rgba(139, 92, 246, 0.05)' }}
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                    formatter={(value: any) => [`$${Number(value).toFixed(2)}`, 'Revenue']}
+                                    formatter={(value: any) => [`$${Number(value).toFixed(2)}`, t('ui.people.reports.revenue')]}
                                 />
                                 <Bar 
                                     dataKey="revenue" 
@@ -410,13 +411,13 @@ const StaffPerformance: React.FC = () => {
                             </BarChart>
                         </ResponsiveContainer>
                     ) : (
-                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>No staff revenue data.</div>
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.people.reports.staff.noRevenue')}</div>
                     )}
                 </div>
 
                 {/* Orders by Staff */}
                 <div className="glass-panel hover-lift" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', height: '400px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>Orders Processed</h3>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>{t('ui.people.reports.staff.ordersProcessed')}</h3>
                     {staffData.some(d => d.orders > 0) ? (
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={staffData} layout="vertical" margin={{ top: 10, right: 10, left: 20, bottom: 0 }}>
@@ -426,7 +427,7 @@ const StaffPerformance: React.FC = () => {
                                 <Tooltip 
                                     cursor={{ fill: 'rgba(236, 72, 153, 0.05)' }}
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                    formatter={(value: any) => [`${value}`, 'Orders Processed']}
+                                    formatter={(value: any) => [`${value}`, t('ui.people.reports.staff.ordersProcessed')]}
                                 />
                                 <Bar 
                                     dataKey="orders" 
@@ -439,7 +440,7 @@ const StaffPerformance: React.FC = () => {
                             </BarChart>
                         </ResponsiveContainer>
                     ) : (
-                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>No staff order data.</div>
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.people.reports.staff.noOrders')}</div>
                     )}
                 </div>
             </div>
@@ -460,9 +461,9 @@ const StaffPerformance: React.FC = () => {
                                 <thead>
                                     <tr style={{ borderBottom: '2px solid var(--color-border)', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
                                         <th style={{ textAlign: 'left', padding: '8px 12px' }}>{t('targets.salesman')}</th>
-                                        <th style={{ textAlign: 'center', padding: '8px 12px', width: '120px' }}>Daily ($)</th>
-                                        <th style={{ textAlign: 'center', padding: '8px 12px', width: '120px' }}>Weekly ($)</th>
-                                        <th style={{ textAlign: 'center', padding: '8px 12px', width: '120px' }}>Monthly ($)</th>
+                                        <th style={{ textAlign: 'center', padding: '8px 12px', width: '120px' }}>{t('ui.people.reports.staff.daily')} ($)</th>
+                                        <th style={{ textAlign: 'center', padding: '8px 12px', width: '120px' }}>{t('ui.people.reports.staff.weekly')} ($)</th>
+                                        <th style={{ textAlign: 'center', padding: '8px 12px', width: '120px' }}>{t('ui.people.reports.staff.monthly')} ($)</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -515,9 +516,9 @@ const StaffPerformance: React.FC = () => {
                         </div>
 
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px', borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
-                            <button onClick={() => setIsTargetModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontSize: '14px' }}>Cancel</button>
+                            <button onClick={() => setIsTargetModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '8px', background: 'none', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', cursor: 'pointer', fontSize: '14px' }}>{t('common.cancel')}</button>
                             <button onClick={handleSaveTargets} disabled={isSavingTargets} style={{ padding: '8px 20px', borderRadius: '8px', background: 'var(--color-primary)', color: 'white', border: 'none', cursor: isSavingTargets ? 'not-allowed' : 'pointer', opacity: isSavingTargets ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 500 }}>
-                                <Save size={16} /> {isSavingTargets ? 'Saving…' : 'Save'}
+                                <Save size={16} /> {isSavingTargets ? t('ui.people.common.saving') : t('common.save')}
                             </button>
                         </div>
                     </div>

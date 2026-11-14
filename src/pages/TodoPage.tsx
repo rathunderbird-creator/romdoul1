@@ -5,6 +5,8 @@ import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { CheckCircle2, Circle, Calendar as CalendarIcon, Inbox, CalendarDays, Plus, Flag, Loader2, Trash2, X, Hash, Clock, AlignLeft, Repeat, Bell, Send, Eye, EyeOff } from 'lucide-react';
 import { useMobile } from '../hooks/useMobile';
+import { useLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
 import { toLocalDateStr } from '../utils/todoReminders';
 
 interface TodoProject {
@@ -97,6 +99,7 @@ const TodoPage: React.FC = () => {
     const { currentUser, telegramConfigs, commitTelegramGroup } = useStore();
     const { showToast } = useToast();
     const isMobile = useMobile();
+    const { t } = useLanguage();
 
     // Telegram reminder settings. Reminders look for a config whose name contains
     // "todo", so this panel edits that one specifically rather than the order channels.
@@ -151,12 +154,12 @@ const TodoPage: React.FC = () => {
             title: (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <CheckCircle2 size={20} color="#8B5CF6" />
-                    <h1 style={{ fontSize: '18px', fontWeight: 'bold' }}>Todo</h1>
+                    <h1 style={{ fontSize: '18px', fontWeight: 'bold' }}>{t('nav.todo')}</h1>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     // Re-fetch when the signed-in user changes, so switching accounts swaps the task
     // list instead of leaving the previous user's tasks on screen.
@@ -237,10 +240,10 @@ const TodoPage: React.FC = () => {
                 };
 
             await commitTelegramGroup(group);
-            showToast('Telegram reminder settings saved', 'success');
+            showToast(t('ui.admin.todo.tgSaved'), 'success');
         } catch (error) {
             console.error('Failed to save Telegram reminder settings:', error);
-            showToast('Failed to save: ' + (error instanceof Error ? error.message : 'unknown error'), 'error');
+            showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: error instanceof Error ? error.message : t('ui.admin.salesSetup.unknownError') }), 'error');
         } finally {
             setIsSavingTelegram(false);
         }
@@ -248,7 +251,7 @@ const TodoPage: React.FC = () => {
 
     const handleTestTelegram = async () => {
         if (!telegramForm.botToken.trim() || !telegramForm.chatId.trim()) {
-            showToast('Enter a bot token and chat ID first', 'error');
+            showToast(t('ui.admin.todo.tgEnterFirst'), 'error');
             return;
         }
         setIsTestingTelegram(true);
@@ -269,12 +272,12 @@ const TodoPage: React.FC = () => {
                 else console.error('Telegram test rejected:', await res.text());
             }
             showToast(
-                delivered > 0 ? `Test sent to ${delivered} chat${delivered > 1 ? 's' : ''}` : 'Telegram rejected the message — check the token and chat ID',
+                delivered > 0 ? fill(delivered > 1 ? t('ui.admin.todo.tgSentMany') : t('ui.admin.todo.tgSentOne'), { n: delivered }) : t('ui.admin.todo.tgRejected'),
                 delivered > 0 ? 'success' : 'error'
             );
         } catch (error) {
             console.error('Telegram test failed:', error);
-            showToast('Test failed — see console', 'error');
+            showToast(t('ui.admin.todo.tgTestFailed'), 'error');
         } finally {
             setIsTestingTelegram(false);
         }
@@ -299,7 +302,7 @@ const TodoPage: React.FC = () => {
             }
         } catch (error) {
             console.error('Error adding project:', error);
-            alert(`Failed to create project: ${error instanceof Error ? error.message : 'Check console for details.'}`);
+            alert(fill(t('ui.admin.todo.createProjectFailed'), { error: error instanceof Error ? error.message : t('ui.admin.todo.checkConsole') }));
         }
     };
 
@@ -348,7 +351,7 @@ const TodoPage: React.FC = () => {
             setIsAdding(false);
         } catch (error) {
             console.error('Error adding task:', error);
-            alert(`Failed to add task: ${error instanceof Error ? error.message : 'Check console for details.'}`);
+            alert(fill(t('ui.admin.todo.addTaskFailed'), { error: error instanceof Error ? error.message : t('ui.admin.todo.checkConsole') }));
         } finally {
             setIsSubmitting(false);
         }
@@ -375,7 +378,7 @@ const TodoPage: React.FC = () => {
             // must not spawn a second series.
             setTodos(prev => prev.map(t => t.id === id ? { ...t, status: 'completed', repeat_rule: null, updated_at: now } : t));
             setSelectedTodo(prev => (prev && prev.id === id ? { ...prev, status: 'completed', repeat_rule: null, updated_at: now } : prev));
-            showToast(`Done — repeats next on ${next}`, 'success');
+            showToast(fill(t('ui.admin.todo.repeatsNext'), { date: next }), 'success');
             try {
                 await supabase.from('todos')
                     .update({ status: 'completed', repeat_rule: null, updated_at: now })
@@ -464,7 +467,7 @@ const TodoPage: React.FC = () => {
     useEffect(() => () => flushRef.current(), []);
 
     const deleteTodo = async (id: string) => {
-        if (!confirm('Delete this task?')) return;
+        if (!confirm(t('ui.admin.todo.confirmDeleteTask'))) return;
         if (selectedTodo?.id === id) setSelectedTodo(null);
 
         // Drop any pending debounced edit for this task so it can't resurrect it.
@@ -483,7 +486,7 @@ const TodoPage: React.FC = () => {
     };
     
     const deleteProject = async (id: string) => {
-        if (!confirm('Delete this project? Tasks inside will be moved to Inbox.')) return;
+        if (!confirm(t('ui.admin.todo.confirmDeleteProject'))) return;
         try {
             await supabase.from('todos').update({ project: null }).eq('project', id).eq('user_id', currentUser?.id);
             await supabase.from('todo_projects').delete().eq('id', id).eq('user_id', currentUser?.id);
@@ -504,8 +507,8 @@ const TodoPage: React.FC = () => {
     };
 
     const getProjectName = (projectId: string | null) => {
-        if (!projectId) return 'Inbox';
-        return projects.find(p => p.id === projectId)?.name || 'Inbox';
+        if (!projectId) return t('ui.admin.todo.inbox');
+        return projects.find(p => p.id === projectId)?.name || t('ui.admin.todo.inbox');
     };
 
     const todayStr = toLocalDateStr(new Date());
@@ -583,16 +586,16 @@ const TodoPage: React.FC = () => {
 
     const getViewTitle = () => {
         switch (activeView) {
-            case 'today': return 'Today';
-            case 'upcoming': return 'Scheduled';
-            case 'inbox': return 'Inbox';
-            case 'all': return 'All';
-            case 'flagged': return 'Flagged';
-            case 'completed': return 'Completed';
-            case 'settings': return 'Telegram Reminders';
+            case 'today': return t('ui.admin.todo.today');
+            case 'upcoming': return t('ui.admin.todo.scheduled');
+            case 'inbox': return t('ui.admin.todo.inbox');
+            case 'all': return t('common.all');
+            case 'flagged': return t('ui.admin.todo.flagged');
+            case 'completed': return t('ui.admin.todo.completed');
+            case 'settings': return t('ui.admin.todo.tgReminders');
             default: {
                 const proj = projects.find(p => p.id === activeView);
-                return proj ? proj.name : 'Inbox';
+                return proj ? proj.name : t('ui.admin.todo.inbox');
             }
         }
     };
@@ -649,7 +652,7 @@ const TodoPage: React.FC = () => {
                         )}
                         {todo.repeat_rule && (
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#8B5CF6' }}>
-                                <Repeat size={12} /> {todo.repeat_rule}
+                                <Repeat size={12} /> {t(`ui.admin.todo.repeatTag.${todo.repeat_rule}`)}
                             </span>
                         )}
                         {todo.remind_at && (
@@ -675,11 +678,11 @@ const TodoPage: React.FC = () => {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '32px' }}>
                     {[
-                        { title: 'Today', count: viewCounts.today, icon: <CalendarIcon size={20} />, color: '#3B82F6', view: 'today' },
-                        { title: 'Scheduled', count: viewCounts.upcoming, icon: <CalendarDays size={20} />, color: '#EF4444', view: 'upcoming' },
-                        { title: 'All', count: viewCounts.all, icon: <Inbox size={20} />, color: '#374151', view: 'all' },
-                        { title: 'Flagged', count: viewCounts.flagged, icon: <Flag size={20} />, color: '#F59E0B', view: 'flagged' },
-                        { title: 'Completed', count: viewCounts.completed, icon: <CheckCircle2 size={20} />, color: '#6B7280', view: 'completed' },
+                        { title: t('ui.admin.todo.today'), count: viewCounts.today, icon: <CalendarIcon size={20} />, color: '#3B82F6', view: 'today' },
+                        { title: t('ui.admin.todo.scheduled'), count: viewCounts.upcoming, icon: <CalendarDays size={20} />, color: '#EF4444', view: 'upcoming' },
+                        { title: t('common.all'), count: viewCounts.all, icon: <Inbox size={20} />, color: '#374151', view: 'all' },
+                        { title: t('ui.admin.todo.flagged'), count: viewCounts.flagged, icon: <Flag size={20} />, color: '#F59E0B', view: 'flagged' },
+                        { title: t('ui.admin.todo.completed'), count: viewCounts.completed, icon: <CheckCircle2 size={20} />, color: '#6B7280', view: 'completed' },
                     ].map(card => (
                         <div 
                             key={card.title}
@@ -701,13 +704,13 @@ const TodoPage: React.FC = () => {
                     ))}
                 </div>
 
-                <h2 style={{ fontSize: '22px', fontWeight: 'bold', marginBottom: '16px', color: 'var(--color-text-main)' }}>My Lists</h2>
+                <h2 style={{ fontSize: '22px', fontWeight: 'bold', marginBottom: '16px', color: 'var(--color-text-main)' }}>{t('ui.admin.todo.myLists')}</h2>
                 <div style={{ background: 'var(--color-surface)', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                     <div onClick={() => { setActiveView('inbox'); setShowMobileHome(false); }} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}>
                         <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#3B82F6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', marginRight: '12px' }}>
                             <Inbox size={16} />
                         </div>
-                        <span style={{ flex: 1, fontSize: '15px', fontWeight: 500, color: 'var(--color-text-main)' }}>Inbox</span>
+                        <span style={{ flex: 1, fontSize: '15px', fontWeight: 500, color: 'var(--color-text-main)' }}>{t('ui.admin.todo.inbox')}</span>
                         <span style={{ fontSize: '15px', color: 'var(--color-text-secondary)', marginRight: '8px' }}>{viewCounts.inbox}</span>
                         <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>&gt;</span>
                     </div>
@@ -727,13 +730,13 @@ const TodoPage: React.FC = () => {
                     onClick={() => { setIsAddingProject(true); setNewProjectName(''); }}
                     style={{ background: 'none', border: 'none', color: '#3B82F6', fontSize: '15px', fontWeight: 500, padding: '16px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                    <Plus size={18} /> Add List
+                    <Plus size={18} /> {t('ui.admin.todo.addList')}
                 </button>
                 
                 {isAddingProject && (
                     <form onSubmit={handleAddProject} style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--color-surface)', borderRadius: '12px', marginBottom: '16px' }}>
                         <input 
-                            autoFocus type="text" placeholder="List name"
+                            autoFocus type="text" placeholder={t('ui.admin.todo.listName')}
                             value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
                             style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-background)', color: 'var(--color-text-main)', fontSize: '15px' }}
                         />
@@ -743,8 +746,8 @@ const TodoPage: React.FC = () => {
                             ))}
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
-                            <button type="submit" style={{ flex: 1, padding: '10px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Add</button>
-                            <button type="button" onClick={() => setIsAddingProject(false)} style={{ flex: 1, padding: '10px', background: 'var(--color-background)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                            <button type="submit" style={{ flex: 1, padding: '10px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>{t('ui.admin.todo.add')}</button>
+                            <button type="button" onClick={() => setIsAddingProject(false)} style={{ flex: 1, padding: '10px', background: 'var(--color-background)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>{t('common.cancel')}</button>
                         </div>
                     </form>
                 )}
@@ -776,7 +779,7 @@ const TodoPage: React.FC = () => {
                     }}
                 >
                     <Inbox size={20} color={activeView === 'inbox' ? '#8B5CF6' : '#3B82F6'} />
-                    {!isMobile && <span>Inbox</span>}
+                    {!isMobile && <span>{t('ui.admin.todo.inbox')}</span>}
                     {!isMobile && <CountBadge count={viewCounts.inbox} />}
                 </button>
                 <button 
@@ -790,7 +793,7 @@ const TodoPage: React.FC = () => {
                     }}
                 >
                     <CalendarIcon size={20} color={activeView === 'today' ? '#8B5CF6' : '#10B981'} />
-                    {!isMobile && <span>Today</span>}
+                    {!isMobile && <span>{t('ui.admin.todo.today')}</span>}
                     {/* Overdue is called out in red — it's the number that needs acting on. */}
                     {!isMobile && <CountBadge count={viewCounts.today} urgent={overdueCount > 0} />}
                 </button>
@@ -805,14 +808,14 @@ const TodoPage: React.FC = () => {
                     }}
                 >
                     <CalendarDays size={20} color={activeView === 'upcoming' ? '#8B5CF6' : '#F59E0B'} />
-                    {!isMobile && <span>Upcoming</span>}
+                    {!isMobile && <span>{t('ui.admin.todo.upcoming')}</span>}
                     {!isMobile && <CountBadge count={viewCounts.upcoming} />}
                 </button>
 
                 <div style={{ marginTop: '20px' }}>
                     {!isMobile ? (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', marginBottom: '8px' }}>
-                            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Projects</span>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{t('ui.admin.todo.projects')}</span>
                             <button onClick={() => setIsAddingProject(!isAddingProject)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><Plus size={16} /></button>
                         </div>
                     ) : (
@@ -826,7 +829,7 @@ const TodoPage: React.FC = () => {
                                 <input 
                                     autoFocus
                                     type="text" 
-                                    placeholder="Project name"
+                                    placeholder={t('ui.admin.todo.projectName')}
                                     value={newProjectName}
                                     onChange={e => setNewProjectName(e.target.value)}
                                     style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px' }}
@@ -841,8 +844,8 @@ const TodoPage: React.FC = () => {
                                     ))}
                                 </div>
                                 <div style={{ display: 'flex', gap: '4px' }}>
-                                    <button type="submit" style={{ flex: 1, padding: '4px', background: '#8B5CF6', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Add</button>
-                                    <button type="button" onClick={() => setIsAddingProject(false)} style={{ flex: 1, padding: '4px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Cancel</button>
+                                    <button type="submit" style={{ flex: 1, padding: '4px', background: '#8B5CF6', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>{t('ui.admin.todo.add')}</button>
+                                    <button type="button" onClick={() => setIsAddingProject(false)} style={{ flex: 1, padding: '4px', background: 'var(--color-surface)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>{t('common.cancel')}</button>
                                 </div>
                             </form>
                         )}
@@ -864,7 +867,7 @@ const TodoPage: React.FC = () => {
                                         {!isMobile && <CountBadge count={viewCounts[p.id] || 0} />}
                                     </button>
                                     {!isMobile && (
-                                        <button onClick={() => deleteProject(p.id)} style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }} title="Delete Project">
+                                        <button onClick={() => deleteProject(p.id)} style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }} title={t('ui.admin.todo.deleteProject')}>
                                             <Trash2 size={14} color="var(--color-text-secondary)" />
                                         </button>
                                     )}
@@ -876,7 +879,7 @@ const TodoPage: React.FC = () => {
                     <div style={{ marginTop: '20px' }}>
                         {!isMobile && (
                             <div style={{ padding: '0 12px', marginBottom: '8px' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Settings</span>
+                                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{t('nav.settings')}</span>
                             </div>
                         )}
                         <button
@@ -892,10 +895,10 @@ const TodoPage: React.FC = () => {
                             }}
                         >
                             <Send size={isMobile ? 20 : 16} color={activeView === 'settings' ? '#8B5CF6' : '#0EA5E9'} />
-                            {!isMobile && <span style={{ fontSize: '14px' }}>Telegram Reminders</span>}
+                            {!isMobile && <span style={{ fontSize: '14px' }}>{t('ui.admin.todo.tgReminders')}</span>}
                             {!isMobile && (
                                 <span
-                                    title={todoTelegramConfig?.botToken && todoTelegramConfig?.chatId ? 'Connected' : 'Not configured'}
+                                    title={todoTelegramConfig?.botToken && todoTelegramConfig?.chatId ? t('ui.admin.todo.connected') : t('ui.admin.todo.notConfigured')}
                                     style={{
                                         marginLeft: 'auto', width: '8px', height: '8px', borderRadius: '50%',
                                         background: todoTelegramConfig?.botToken && todoTelegramConfig?.chatId ? '#10B981' : '#EF4444'
@@ -927,7 +930,7 @@ const TodoPage: React.FC = () => {
                                 style={{ background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
                             >
                                 <CheckCircle2 size={16} />
-                                {showCompleted ? 'Hide Completed' : 'Show Completed'}
+                                {showCompleted ? t('ui.admin.todo.hideCompleted') : t('ui.admin.todo.showCompleted')}
                             </button>
                         )}
                     </div>
@@ -935,15 +938,13 @@ const TodoPage: React.FC = () => {
                     {activeView === 'settings' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                             <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-                                Task reminders are sent to Telegram so they reach phones, not just whoever is at
-                                the POS. This is a separate chat from your order notifications, so reminders don't
-                                mix in with new-order alerts.
+                                {t('ui.admin.todo.tgIntro')}
                             </p>
 
                             <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
-                                        Bot Token
+                                        {t('ui.admin.telegram.botToken')}
                                     </label>
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                         <input
@@ -956,20 +957,20 @@ const TodoPage: React.FC = () => {
                                         <button
                                             type="button"
                                             onClick={() => setShowToken(v => !v)}
-                                            title={showToken ? 'Hide token' : 'Show token'}
+                                            title={showToken ? t('ui.admin.todo.hideToken') : t('ui.admin.todo.showToken')}
                                             style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
                                         >
                                             {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
                                         </button>
                                     </div>
                                     <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                        Create a bot with @BotFather on Telegram to get this.
+                                        {t('ui.admin.todo.botFatherHelp')}
                                     </p>
                                 </div>
 
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
-                                        Chat ID
+                                        {t('ui.admin.todo.chatId')}
                                     </label>
                                     <input
                                         type="text"
@@ -979,7 +980,7 @@ const TodoPage: React.FC = () => {
                                         style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', outline: 'none', fontSize: '14px' }}
                                     />
                                     <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                        Separate multiple chats with commas. Add the bot to the group first.
+                                        {t('ui.admin.todo.chatIdHelp')}
                                     </p>
                                 </div>
 
@@ -991,7 +992,7 @@ const TodoPage: React.FC = () => {
                                         style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: isTestingTelegram ? 'not-allowed' : 'pointer' }}
                                     >
                                         {isTestingTelegram ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={16} />}
-                                        Send test
+                                        {t('settings.sendTest')}
                                     </button>
                                     <button
                                         onClick={handleSaveTelegram}
@@ -1000,14 +1001,13 @@ const TodoPage: React.FC = () => {
                                         style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: isSavingTelegram ? 'not-allowed' : 'pointer' }}
                                     >
                                         {isSavingTelegram ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : null}
-                                        Save
+                                        {t('common.save')}
                                     </button>
                                 </div>
                             </div>
 
                             <p style={{ margin: 0, fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-                                Reminders fire while the POS is open on any page. If every device is closed at the
-                                reminder time, the message is sent when the app is next opened rather than skipped.
+                                {t('ui.admin.todo.tgFooter')}
                             </p>
                         </div>
                     )}
@@ -1028,13 +1028,13 @@ const TodoPage: React.FC = () => {
                             {displayedTodos.filter(t => activeView === 'completed' || t.status === 'open').length === 0 && !isAdding && (
                                 displayedTodos.length > 0 ? (
                                     <div style={{ padding: '12px 4px', color: 'var(--color-text-secondary)', fontSize: '14px' }}>
-                                        No open tasks left here.
+                                        {t('ui.admin.todo.noOpenLeft')}
                                     </div>
                                 ) : (
                                     <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                                         <CheckCircle2 size={48} color="rgba(139,92,246,0.2)" />
                                         <p style={{ margin: 0, fontSize: '16px' }}>
-                                            {activeView === 'completed' ? 'No completed tasks yet.' : 'All clear! Enjoy your day.'}
+                                            {activeView === 'completed' ? t('ui.admin.todo.noCompletedYet') : t('ui.admin.todo.allClear')}
                                         </p>
                                     </div>
                                 )
@@ -1043,13 +1043,13 @@ const TodoPage: React.FC = () => {
                             {(showCompleted || activeView === 'today') && activeView !== 'completed' && (
                                 <>
                                     <div style={{ margin: '16px 0 0 4px', fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', letterSpacing: '0.5px' }}>
-                                        Completed
+                                        {t('ui.admin.todo.completed')}
                                     </div>
                                     {displayedTodos.filter(t => t.status === 'completed').length > 0 ? (
                                         displayedTodos.filter(t => t.status === 'completed').map(todo => <TaskItem key={todo.id} todo={todo} />)
                                     ) : (
                                         <div style={{ padding: '16px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px', fontStyle: 'italic', background: 'var(--color-surface)', borderRadius: '12px', border: '1px dashed var(--color-border)' }}>
-                                            No completed tasks in this view.
+                                            {t('ui.admin.todo.noCompletedView')}
                                         </div>
                                     )}
                                 </>
@@ -1065,7 +1065,7 @@ const TodoPage: React.FC = () => {
                                     <input 
                                         ref={inputRef}
                                         type="text" 
-                                        placeholder="Task name" 
+                                        placeholder={t('ui.admin.todo.taskName')} 
                                         value={newTaskTitle}
                                         onChange={e => setNewTaskTitle(e.target.value)}
                                         style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '15px', fontWeight: 500, color: 'var(--color-text-main)', width: '100%' }}
@@ -1108,7 +1108,7 @@ const TodoPage: React.FC = () => {
                                                 onChange={e => setNewTaskProjectId(e.target.value)}
                                                 style={{ border: 'none', background: 'transparent', color: 'var(--color-text-main)', outline: 'none', fontSize: '13px', cursor: 'pointer' }}
                                             >
-                                                <option value="">Inbox</option>
+                                                <option value="">{t('ui.admin.todo.inbox')}</option>
                                                 {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                             </select>
                                         </div>
@@ -1121,7 +1121,7 @@ const TodoPage: React.FC = () => {
                                                 onChange={e => setNewTaskRepeat(e.target.value as RepeatRule | '')}
                                                 style={{ border: 'none', background: 'transparent', color: 'var(--color-text-main)', outline: 'none', fontSize: '13px', cursor: 'pointer' }}
                                             >
-                                                {REPEAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                {REPEAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(`ui.admin.todo.repeat.${o.value || 'none'}`)}</option>)}
                                             </select>
                                         </div>
 
@@ -1132,16 +1132,16 @@ const TodoPage: React.FC = () => {
                                                 type="time"
                                                 value={newTaskRemindAt}
                                                 onChange={e => setNewTaskRemindAt(e.target.value)}
-                                                title="Remind me at"
+                                                title={t('ui.admin.todo.remindMeAt')}
                                                 style={{ border: 'none', background: 'transparent', color: 'var(--color-text-main)', outline: 'none', fontSize: '13px', cursor: 'pointer' }}
                                             />
                                         </div>
                                     </div>
 
                                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
-                                        <button type="button" onClick={() => { setIsAdding(false); setNewTaskTitle(''); }} className="secondary-button" disabled={isSubmitting}>Cancel</button>
+                                        <button type="button" onClick={() => { setIsAdding(false); setNewTaskTitle(''); }} className="secondary-button" disabled={isSubmitting}>{t('common.cancel')}</button>
                                         <button type="submit" className="primary-button" disabled={!newTaskTitle.trim() || isSubmitting}>
-                                            {isSubmitting ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : 'Add task'}
+                                            {isSubmitting ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : t('ui.admin.todo.addTask')}
                                         </button>
                                     </div>
                                 </form>
@@ -1157,7 +1157,7 @@ const TodoPage: React.FC = () => {
                                     onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
                                 >
                                     <Plus size={20} color="currentColor" />
-                                    Add task
+                                    {t('ui.admin.todo.addTask')}
                                 </button>
                             ) : null}
                         </div>
@@ -1216,7 +1216,7 @@ const TodoPage: React.FC = () => {
                                 onChange={e => updateTodo(selectedTodo.id, { project_id: e.target.value || null })}
                                 style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '4px 8px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer' }}
                             >
-                                <option value="">Inbox</option>
+                                <option value="">{t('ui.admin.todo.inbox')}</option>
                                 {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>
                         </div>
@@ -1251,12 +1251,12 @@ const TodoPage: React.FC = () => {
                         {/* Description */}
                         <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-secondary)', marginBottom: '8px', fontSize: '13px', fontWeight: 600 }}>
-                                <AlignLeft size={16} /> Description
+                                <AlignLeft size={16} /> {t('ui.admin.todo.description')}
                             </div>
                             <textarea 
                                 value={selectedTodo.description || ''}
                                 onChange={e => updateTodoText(selectedTodo.id, { description: e.target.value })}
-                                placeholder="Add detailed notes or descriptions here..."
+                                placeholder={t('ui.admin.todo.descriptionPlaceholder')}
                                 style={{ 
                                     width: '100%', minHeight: '120px', fontSize: '14px', color: 'var(--color-text-main)',
                                     background: 'var(--color-surface)', border: '1px solid var(--color-border)', 
@@ -1272,7 +1272,7 @@ const TodoPage: React.FC = () => {
                             {/* Due Date */}
                             <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-secondary)', marginBottom: '8px', fontSize: '13px', fontWeight: 600 }}>
-                                    <Clock size={16} /> Due Date
+                                    <Clock size={16} /> {t('ui.admin.todo.dueDate')}
                                 </div>
                                 <input 
                                     type="date"
@@ -1289,7 +1289,7 @@ const TodoPage: React.FC = () => {
                             {/* Priority */}
                             <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-secondary)', marginBottom: '8px', fontSize: '13px', fontWeight: 600 }}>
-                                    <Flag size={16} /> Priority
+                                    <Flag size={16} /> {t('ui.admin.todo.priority')}
                                 </div>
                                 <select
                                     value={selectedTodo.priority}
@@ -1300,17 +1300,17 @@ const TodoPage: React.FC = () => {
                                         color: 'var(--color-text-main)', outline: 'none', cursor: 'pointer'
                                     }}
                                 >
-                                    <option value={1}>Priority 1 (High)</option>
-                                    <option value={2}>Priority 2 (Medium)</option>
-                                    <option value={3}>Priority 3 (Low)</option>
-                                    <option value={4}>Priority 4 (None)</option>
+                                    <option value={1}>{t('ui.admin.todo.p1')}</option>
+                                    <option value={2}>{t('ui.admin.todo.p2')}</option>
+                                    <option value={3}>{t('ui.admin.todo.p3')}</option>
+                                    <option value={4}>{t('ui.admin.todo.p4')}</option>
                                 </select>
                             </div>
 
                             {/* Repeat */}
                             <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-secondary)', marginBottom: '8px', fontSize: '13px', fontWeight: 600 }}>
-                                    <Repeat size={16} /> Repeat
+                                    <Repeat size={16} /> {t('ui.admin.todo.repeatLabel')}
                                 </div>
                                 <select
                                     value={selectedTodo.repeat_rule || ''}
@@ -1321,14 +1321,14 @@ const TodoPage: React.FC = () => {
                                         color: 'var(--color-text-main)', outline: 'none', cursor: 'pointer'
                                     }}
                                 >
-                                    {REPEAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    {REPEAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(`ui.admin.todo.repeat.${o.value || 'none'}`)}</option>)}
                                 </select>
                             </div>
 
                             {/* Reminder time */}
                             <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-secondary)', marginBottom: '8px', fontSize: '13px', fontWeight: 600 }}>
-                                    <Bell size={16} /> Remind at
+                                    <Bell size={16} /> {t('ui.admin.todo.remindAt')}
                                 </div>
                                 <input
                                     type="time"
@@ -1348,7 +1348,7 @@ const TodoPage: React.FC = () => {
                     
                     {/* Drawer Footer */}
                     <div style={{ padding: '16px 20px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end' }}>
-                        <button onClick={() => { flushTextUpdate(); setSelectedTodo(null); }} className="primary-button">Done</button>
+                        <button onClick={() => { flushTextUpdate(); setSelectedTodo(null); }} className="primary-button">{t('ui.admin.todo.done')}</button>
                     </div>
                 </div>
             )}

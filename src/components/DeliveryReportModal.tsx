@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Modal from './Modal';
+import { useTx, orderStatusDisplay } from './useTx';
 import DateRangePicker from './DateRangePicker';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
@@ -25,6 +26,7 @@ const getTodayStr = () => {
 };
 
 const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClose }) => {
+  const tx = useTx();
   const today = getTodayStr();
   const [dateRange, setDateRange] = useState({ start: today, end: today });
   const [report, setReport] = useState<DeliveryReportData | null>(null);
@@ -179,7 +181,7 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Delivery Tracking Report" width="720px">
+    <Modal isOpen={isOpen} onClose={onClose} title={tx('ui.components.report.deliveryTitle', 'Delivery Tracking Report')} width="720px">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {/* Date selector + Print */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -207,7 +209,7 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
             }}
           >
             <Printer size={15} />
-            Print
+            {tx('ui.components.report.print', 'Print')}
           </button>
         </div>
 
@@ -215,13 +217,13 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
         {isLoading ? (
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '60px 0', color: 'var(--color-text-muted)' }}>
             <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
-            <span style={{ marginLeft: '10px', fontSize: '14px' }}>Generating report...</span>
+            <span style={{ marginLeft: '10px', fontSize: '14px' }}>{tx('ui.components.report.generating', 'Generating report...')}</span>
           </div>
         ) : report ? (
           <div id="delivery-report-print-area" data-resize="off" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {/* Report Header */}
             <div style={{ textAlign: 'center', paddingBottom: '12px', borderBottom: '1px solid var(--color-border)' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text-main)' }}>Delivery Tracking Report</h2>
+              <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text-main)' }}>{tx('ui.components.report.deliveryTitle', 'Delivery Tracking Report')}</h2>
               <div className="subtitle" style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                 {dateRange.start === dateRange.end
                   ? formatDateDisplay(dateRange.start)
@@ -232,25 +234,25 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
             {/* Summary Cards */}
             <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
               <div style={{ padding: '14px', borderRadius: '10px', background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.1))', border: '1px solid rgba(99,102,241,0.2)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 500 }}>Total Shipments</div>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 500 }}>{tx('ui.components.report.totalShipments', 'Total Shipments')}</div>
                 <div style={{ fontSize: '22px', fontWeight: 700, color: '#6366F1', marginTop: '4px' }}>{report.totalOrders}</div>
               </div>
               <div style={{ padding: '14px', borderRadius: '10px', background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.1))', border: '1px solid rgba(16,185,129,0.2)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 500 }}>Total Shipping Cost</div>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 500 }}>{tx('ui.components.report.totalShippingCost', 'Total Shipping Cost')}</div>
                 <div style={{ fontSize: '22px', fontWeight: 700, color: '#10B981', marginTop: '4px' }}>{formatCurrency(report.totalShippingCost)}</div>
               </div>
             </div>
 
             {/* By Shipping Status */}
             <div>
-              <h3 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--color-text-main)' }}>By Shipping Status</h3>
+              <h3 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--color-text-main)' }}>{tx('ui.components.report.byShipStatus', 'By Shipping Status')}</h3>
               <div style={{ borderRadius: '8px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--color-bg)' }}>
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Status</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Orders</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Shipping Cost</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{tx('ui.components.report.status', 'Status')}</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{tx('dashboard2.orders', 'Orders')}</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{tx('ui.components.report.shippingCost', 'Shipping Cost')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -259,7 +261,7 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
                         <td style={{ padding: '8px 12px', fontSize: '13px' }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: getStatusColor(row.status) }}>
                             {getStatusIcon(row.status)}
-                            {row.status}
+                            {orderStatusDisplay(tx, row.status)}
                           </span>
                         </td>
                         <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '13px', fontWeight: 600 }}>{row.count}</td>
@@ -274,14 +276,14 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
             {/* By Shipping Company */}
             {report.byShippingCo.length > 0 && (
               <div>
-                <h3 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--color-text-main)' }}>By Shipping Company</h3>
+                <h3 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--color-text-main)' }}>{tx('ui.components.report.byShippingCo', 'By Shipping Company')}</h3>
                 <div style={{ borderRadius: '8px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: 'var(--color-bg)' }}>
-                        <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Company</th>
-                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Orders</th>
-                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Shipping Cost</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{tx('ui.components.report.company', 'Company')}</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{tx('dashboard2.orders', 'Orders')}</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{tx('ui.components.report.shippingCost', 'Shipping Cost')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -301,14 +303,14 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
             {/* By Delivery Staff */}
             {report.byDeliveryStaff.length > 0 && (
               <div>
-                <h3 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--color-text-main)' }}>By Delivery Staff</h3>
+                <h3 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--color-text-main)' }}>{tx('ui.components.report.byStaff', 'By Delivery Staff')}</h3>
                 <div style={{ borderRadius: '8px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: 'var(--color-bg)' }}>
-                        <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Staff</th>
-                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Orders</th>
-                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Shipping Cost</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{tx('ui.components.report.staff', 'Staff')}</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{tx('dashboard2.orders', 'Orders')}</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{tx('ui.components.report.shippingCost', 'Shipping Cost')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -327,7 +329,7 @@ const DeliveryReportModal: React.FC<DeliveryReportModalProps> = ({ isOpen, onClo
           </div>
         ) : (
           <div style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)', fontSize: '14px' }}>
-            No data available
+            {tx('ui.components.report.noData', 'No data available')}
           </div>
         )}
       </div>

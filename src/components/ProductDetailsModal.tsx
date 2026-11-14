@@ -2,6 +2,7 @@ import React from 'react';
 import { Package } from 'lucide-react';
 import Modal from './Modal';
 import type { Product } from '../types';
+import { useOptionalLanguage } from '../context/LanguageContext';
 
 export type StockStatus = 'Out of Stock' | 'Low Stock' | 'In Stock';
 
@@ -28,10 +29,18 @@ const ProductDetailsModal: React.FC<{
     /** Cost and stock value are hidden from roles without financial access. */
     canViewFinancials: boolean;
 }> = ({ product, stockStatus, onClose, canViewFinancials }) => {
+    const lang = useOptionalLanguage();
+    const tx = (k: string, en: string) => { const v = lang?.t(k); return v && v !== k ? v : en; };
     if (!product) return null;
+    const STATUS_LABEL: Record<StockStatus, string> = {
+        'Out of Stock': tx('ui.inventory.stockStatus.outOfStock', 'Out of Stock'),
+        'Low Stock': tx('ui.inventory.stockStatus.lowStock', 'Low Stock'),
+        'In Stock': tx('ui.inventory.stockStatus.inStock', 'In Stock'),
+    };
+    const pcs = tx('ui.inventory.pcs', 'pcs');
 
     return (
-        <Modal isOpen onClose={onClose} title="Product Details" width="560px">
+        <Modal isOpen onClose={onClose} title={tx('ui.inventory.details.title', 'Product Details')} width="560px">
             <div style={{ width: '100%', height: product.image ? '300px' : '120px', flexShrink: 0, borderRadius: '12px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '16px' }}>
                 {product.image
                     ? <img src={product.image} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
@@ -40,22 +49,22 @@ const ProductDetailsModal: React.FC<{
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '20px' }}>
                 <div style={{ minWidth: 0, fontSize: '18px', fontWeight: 700, color: 'var(--color-text-main)', overflowWrap: 'anywhere' }}>{product.name}</div>
                 <span style={{ flexShrink: 0, padding: '4px 12px', borderRadius: '16px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', whiteSpace: 'nowrap', ...STATUS_COLORS[stockStatus] }}>
-                    {stockStatus}
+                    {STATUS_LABEL[stockStatus] ?? stockStatus}
                 </span>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '18px 16px' }}>
                 <Field label="SKU" value={product.sku || '—'} />
-                <Field label="Model" value={product.model || '—'} />
-                <Field label="Category" value={product.category || '—'} />
-                <Field label="Supplier" value={product.supplier || '—'} />
-                <Field label="Invoice Number" value={product.invoiceNumber || '—'} />
-                <Field label="Sell Price" value={money(product.price)} />
-                {canViewFinancials && <Field label="Cost" value={money(product.purchaseCost || 0)} />}
-                <Field label="Stock" value={`${product.stock.toLocaleString('en-US')} pcs`} />
-                <Field label="Low Stock Threshold" value={`${(product.lowStockThreshold || 5).toLocaleString('en-US')} pcs`} />
-                {canViewFinancials && <Field label="Total Value" value={money(product.price * product.stock)} />}
-                <Field label="Date Added" value={product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-GB') : '—'} />
+                <Field label={tx('inventory.model', 'Model')} value={product.model || '—'} />
+                <Field label={tx('inventory.category', 'Category')} value={product.category || '—'} />
+                <Field label={tx('ui.inventory.col.supplier', 'Supplier')} value={product.supplier || '—'} />
+                <Field label={tx('ui.inventory.invoiceNumber', 'Invoice Number')} value={product.invoiceNumber || '—'} />
+                <Field label={tx('ui.inventory.col.sellPrice', 'Sell Price')} value={money(product.price)} />
+                {canViewFinancials && <Field label={tx('ui.inventory.details.cost', 'Cost')} value={money(product.purchaseCost || 0)} />}
+                <Field label={tx('inventory.stock', 'Stock')} value={`${product.stock.toLocaleString('en-US')} ${pcs}`} />
+                <Field label={tx('inventory.lowStockThreshold', 'Low Stock Threshold')} value={`${(product.lowStockThreshold || 5).toLocaleString('en-US')} ${pcs}`} />
+                {canViewFinancials && <Field label={tx('ui.inventory.stats.totalValue', 'Total Value')} value={money(product.price * product.stock)} />}
+                <Field label={tx('ui.inventory.details.dateAdded', 'Date Added')} value={product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-GB') : '—'} />
             </div>
         </Modal>
     );

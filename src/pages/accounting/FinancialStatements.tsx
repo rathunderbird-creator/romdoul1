@@ -11,6 +11,8 @@ import { useNavigate } from 'react-router-dom';
 import { Scale, TrendingUp, ArrowDownUp, ClipboardList, CheckCircle2, AlertTriangle, Printer, Download, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import type { ChartOfAccount } from '../../types';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import { fetchPostedLedgerLines } from '../../utils/fetchPostedLedgerLines';
@@ -71,6 +73,14 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
     // "Lifetime" sends '' for both bounds: '' start is already unbounded, '' end means today.
     const endDate = endDateProp || dayKeyFromDate(new Date());
     const isMobile = useMobile();
+    const { t } = useLanguage();
+    // On-screen names for the synthetic rows (the CSV/print keep the English).
+    const nameDisp = (name: string): string =>
+        name === 'Retained Earnings (to date)' ? t('ui.accounting.common.retainedEarningsToDate')
+            : name === 'Cash-to-cash transfer' ? t('ui.accounting.common.cashToCashTransfer')
+            : name === '(Deleted account)' ? t('ui.accounting.common.deletedAccount')
+            : name === '(Deleted accounts)' ? t('ui.accounting.common.deletedAccounts')
+            : name;
     const navigate = useNavigate();
     const goToLedger = (accountId: string) => navigate(`/accounting/general-ledger?account=${accountId}`);
     // The open statement survives reloads and navigation, same idea as the
@@ -79,7 +89,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
         if (initialTab) return initialTab;
         try {
             const saved = localStorage.getItem('financial_reports_tab');
-            if (saved && TABS.some(t => t.key === saved)) return saved as TabKey;
+            if (saved && TABS.some(tb => tb.key === saved)) return saved as TabKey;
         } catch { /* storage unavailable — fall through to the default */ }
         return 'balance';
     });
@@ -464,7 +474,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</div>
             <div style={{ fontSize: '26px', fontWeight: 800, color, marginTop: '6px', fontVariantNumeric: 'tabular-nums' }}>{loading ? '…' : fmt(value)}</div>
             {compare && prev !== undefined && prev !== null && (
-                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', fontVariantNumeric: 'tabular-nums' }}>Previous year: {fmt(prev)}</div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', fontVariantNumeric: 'tabular-nums' }}>{t('ui.accounting.fs.previousYear')}: {fmt(prev)}</div>
             )}
         </div>
     );
@@ -474,20 +484,20 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             <div style={{ ...cardStyle, borderLeft: `4px solid ${color}`, overflow: 'hidden' }}>
                 <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                     <span style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color }}>{title}</span>
-                    {compare && <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>current · previous year</span>}
+                    {compare && <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.fs.currentPrevious')}</span>}
                 </div>
                 {rows.length === 0 ? (
-                    <div style={{ padding: '18px 20px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{emptyText || 'No accounts of this type.'}</div>
+                    <div style={{ padding: '18px 20px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{emptyText || t('ui.accounting.fs.noAccountsOfType')}</div>
                 ) : rows.map((r, i) => (
                     <div
                         key={`${r.code}|${r.name}`}
                         className={r.id ? 'hover-highlight' : undefined}
                         onClick={r.id ? () => goToLedger(r.id!) : undefined}
-                        title={r.id ? 'View in General Ledger' : undefined}
+                        title={r.id ? t('ui.accounting.common.viewInLedger') : undefined}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderBottom: i === rows.length - 1 ? 'none' : '1px solid var(--color-border)', fontSize: '14px', cursor: r.id ? 'pointer' : 'default' }}
                     >
                         <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', width: '44px', flexShrink: 0 }}>{r.code}</span>
-                        <span className="d2-khmer" style={{ flex: 1, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{r.name}</span>
+                        <span className="d2-khmer" style={{ flex: 1, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{nameDisp(r.name)}</span>
                         {compare && <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{loading ? '…' : fmt(r.prev || 0)}</span>}
                         {amountText(r.amount)}
                     </div>
@@ -505,50 +515,50 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
     // Banner message per tab: the integrity check that statement must satisfy.
     const banner = (() => {
         if (tab === 'balance') return balanceSheet.balanced
-            ? { ok: true, title: 'Accounting Equation Balanced', sub: 'Assets = Liabilities + Equity' }
-            : { ok: false, title: `Accounting Equation Off by ${fmt(balanceSheet.gap)}`, sub: 'Assets ≠ Liabilities + Equity — check the journal entries' };
+            ? { ok: true, title: t('ui.accounting.fs.banner.equationBalanced'), sub: t('ui.accounting.fs.banner.equationSub') }
+            : { ok: false, title: fill(t('ui.accounting.fs.banner.equationOff'), { amount: fmt(balanceSheet.gap) }), sub: t('ui.accounting.fs.banner.equationOffSub') };
         if (tab === 'trial') return trialBalance.balanced
-            ? { ok: true, title: 'Trial Balance Balanced', sub: 'Total debits equal total credits' }
-            : { ok: false, title: `Trial Balance Off by ${fmt(trialBalance.totals.debit - trialBalance.totals.credit)}`, sub: 'Total debits do not equal total credits' };
+            ? { ok: true, title: t('ui.accounting.fs.banner.trialBalanced'), sub: t('ui.accounting.fs.banner.trialSub') }
+            : { ok: false, title: fill(t('ui.accounting.fs.banner.trialOff'), { amount: fmt(trialBalance.totals.debit - trialBalance.totals.credit) }), sub: t('ui.accounting.fs.banner.trialOffSub') };
         if (tab === 'income') return {
             ok: incomeStatement.totals.net >= 0,
-            title: `${incomeStatement.totals.net >= 0 ? 'Net Income' : 'Net Loss'}: ${fmt(Math.abs(incomeStatement.totals.net))}`,
-            sub: `Revenue ${fmt(incomeStatement.totals.totalRevenue)} − Expenses ${fmt(incomeStatement.totals.expenses)} · Gross Profit ${fmt(incomeStatement.totals.grossProfit)}`,
+            title: `${incomeStatement.totals.net >= 0 ? t('ui.accounting.common.netIncome') : t('ui.accounting.common.netLoss')}: ${fmt(Math.abs(incomeStatement.totals.net))}`,
+            sub: fill(t('ui.accounting.fs.banner.incomeSub'), { revenue: fmt(incomeStatement.totals.totalRevenue), expenses: fmt(incomeStatement.totals.expenses), gross: fmt(incomeStatement.totals.grossProfit) }),
         };
         const reconciled = Math.abs(cashFlowStatement.netChange - cashFlow.net) < 0.005;
         return {
             ok: reconciled,
-            title: `Net Cash Change: ${fmt(cashFlow.net)}`,
+            title: `${t('ui.accounting.fs.banner.netCashChange')}: ${fmt(cashFlow.net)}`,
             sub: !cashFlow.hasCash
-                ? 'No cash accounts found (name containing cash or bank)'
+                ? t('ui.accounting.fs.banner.noCashAccounts')
                 : reconciled
-                    ? 'Operating + Investing + Financing reconciles with the cash and bank accounts'
-                    : `Statement differs from the cash accounts' actual change by ${fmt(cashFlowStatement.netChange - cashFlow.net)} — check account classifications`,
+                    ? t('ui.accounting.fs.banner.reconciled')
+                    : fill(t('ui.accounting.fs.banner.notReconciled'), { amount: fmt(cashFlowStatement.netChange - cashFlow.net) }),
         };
     })();
 
     const totalCards = (() => {
         if (tab === 'balance') return [
-            { label: 'Total Assets', value: balanceSheet.totals.assets, prev: balanceSheet.prevTotals?.assets ?? null, color: BLUE },
-            { label: 'Total Liabilities', value: balanceSheet.totals.liabilities, prev: balanceSheet.prevTotals?.liabilities ?? null, color: RED },
-            { label: 'Total Equity', value: balanceSheet.totals.equity, prev: balanceSheet.prevTotals?.equity ?? null, color: PURPLE },
+            { label: t('ui.accounting.common.totalAssets'), value: balanceSheet.totals.assets, prev: balanceSheet.prevTotals?.assets ?? null, color: BLUE },
+            { label: t('ui.accounting.common.totalLiabilities'), value: balanceSheet.totals.liabilities, prev: balanceSheet.prevTotals?.liabilities ?? null, color: RED },
+            { label: t('ui.accounting.common.totalEquity'), value: balanceSheet.totals.equity, prev: balanceSheet.prevTotals?.equity ?? null, color: PURPLE },
         ];
         if (tab === 'income') return [
-            { label: 'Total Revenue', value: incomeStatement.totals.totalRevenue, prev: incomeStatement.prevTotals?.totalRevenue ?? null, color: GREEN },
-            { label: 'Gross Profit', value: incomeStatement.totals.grossProfit, prev: incomeStatement.prevTotals?.grossProfit ?? null, color: incomeStatement.totals.grossProfit < 0 ? RED : BLUE },
-            { label: 'Total Expenses', value: incomeStatement.totals.expenses, prev: incomeStatement.prevTotals?.expenses ?? null, color: RED },
-            { label: 'Net Income', value: incomeStatement.totals.net, prev: incomeStatement.prevTotals?.net ?? null, color: incomeStatement.totals.net < 0 ? RED : BLUE },
+            { label: t('ui.accounting.fs.totalRevenue'), value: incomeStatement.totals.totalRevenue, prev: incomeStatement.prevTotals?.totalRevenue ?? null, color: GREEN },
+            { label: t('ui.accounting.common.grossProfit'), value: incomeStatement.totals.grossProfit, prev: incomeStatement.prevTotals?.grossProfit ?? null, color: incomeStatement.totals.grossProfit < 0 ? RED : BLUE },
+            { label: t('ui.accounting.fs.totalExpenses'), value: incomeStatement.totals.expenses, prev: incomeStatement.prevTotals?.expenses ?? null, color: RED },
+            { label: t('ui.accounting.common.netIncome'), value: incomeStatement.totals.net, prev: incomeStatement.prevTotals?.net ?? null, color: incomeStatement.totals.net < 0 ? RED : BLUE },
         ];
         if (tab === 'cashflow') return [
-            { label: 'Net Cash from Operations', value: cashFlowStatement.netOperating, prev: null, color: cashFlowStatement.netOperating < 0 ? RED : BLUE },
-            { label: 'Net Cash from Investing', value: cashFlowStatement.netInvesting, prev: null, color: cashFlowStatement.netInvesting < 0 ? RED : GREEN },
-            { label: 'Net Cash from Financing', value: cashFlowStatement.netFinancing, prev: null, color: cashFlowStatement.netFinancing < 0 ? RED : PURPLE },
-            { label: 'Ending Cash', value: cashFlow.closing, prev: null, color: cashFlow.closing < 0 ? RED : BLUE },
+            { label: t('ui.accounting.fs.netCashOperations'), value: cashFlowStatement.netOperating, prev: null, color: cashFlowStatement.netOperating < 0 ? RED : BLUE },
+            { label: t('ui.accounting.fs.netCashInvesting'), value: cashFlowStatement.netInvesting, prev: null, color: cashFlowStatement.netInvesting < 0 ? RED : GREEN },
+            { label: t('ui.accounting.fs.netCashFinancing'), value: cashFlowStatement.netFinancing, prev: null, color: cashFlowStatement.netFinancing < 0 ? RED : PURPLE },
+            { label: t('ui.accounting.fs.endingCash'), value: cashFlow.closing, prev: null, color: cashFlow.closing < 0 ? RED : BLUE },
         ];
         return [
-            { label: 'Total Debits', value: trialBalance.totals.debit, prev: null, color: BLUE },
-            { label: 'Total Credits', value: trialBalance.totals.credit, prev: null, color: RED },
-            { label: 'Difference', value: trialBalance.totals.debit - trialBalance.totals.credit, prev: null, color: trialBalance.balanced ? GREEN : AMBER },
+            { label: t('ui.accounting.fs.totalDebits'), value: trialBalance.totals.debit, prev: null, color: BLUE },
+            { label: t('ui.accounting.fs.totalCredits'), value: trialBalance.totals.credit, prev: null, color: RED },
+            { label: t('ui.accounting.fs.difference'), value: trialBalance.totals.debit - trialBalance.totals.credit, prev: null, color: trialBalance.balanced ? GREEN : AMBER },
         ];
     })();
 
@@ -564,23 +574,23 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                     {tab === 'balance' || tab === 'trial'
-                        ? <>As at <strong style={{ color: 'var(--color-text-main)' }}>{displayDate(endDate)}</strong> · This statement is struck at the end date.</>
-                        : <>From <strong style={{ color: 'var(--color-text-main)' }}>{displayDate(startDate)}</strong> to <strong style={{ color: 'var(--color-text-main)' }}>{displayDate(endDate)}</strong></>}
+                        ? <>{t('ui.accounting.fs.asAtPrefix')} <strong style={{ color: 'var(--color-text-main)' }}>{displayDate(endDate)}</strong> · {t('ui.accounting.fs.struckAtEnd')}</>
+                        : <>{t('ui.accounting.fs.fromPrefix')} <strong style={{ color: 'var(--color-text-main)' }}>{displayDate(startDate)}</strong> {t('ui.accounting.common.to')} <strong style={{ color: 'var(--color-text-main)' }}>{displayDate(endDate)}</strong></>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                     {tab === 'income' && (
-                        <label title="Also list accounts with no activity in the period" style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
+                        <label title={t('ui.accounting.fs.showEmptyHint')} style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
                             <input type="checkbox" checked={showEmpty} onChange={e => setShowEmpty(e.target.checked)} style={{ accentColor: BLUE, cursor: 'pointer' }} />
-                            Show empty accounts
+                            {t('ui.accounting.fs.showEmpty')}
                         </label>
                     )}
                     {(tab === 'balance' || tab === 'income') && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
                             <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} style={{ accentColor: BLUE, cursor: 'pointer' }} />
-                            Compare with previous year
+                            {t('ui.accounting.fs.comparePrevYear')}
                         </label>
                     )}
-                    <button onClick={() => setRefreshKey(k => k + 1)} title="Reload the ledger" style={{ ...btnStyle, padding: '7px 10px' }}>
+                    <button onClick={() => setRefreshKey(k => k + 1)} title={t('ui.accounting.common.reloadLedger')} style={{ ...btnStyle, padding: '7px 10px' }}>
                         <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
                     </button>
                 </div>
@@ -588,7 +598,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
 
             {/* Tabs */}
             <div style={{ display: 'flex', gap: '4px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '4px', flexWrap: 'wrap', alignSelf: 'flex-start' }}>
-                {TABS.map(({ key, label, icon: Icon }) => (
+                {TABS.map(({ key, icon: Icon }) => (
                     <button key={key} onClick={() => setTab(key)} style={{
                         display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '9px', border: 'none',
                         background: tab === key ? 'var(--color-surface)' : 'transparent',
@@ -596,12 +606,12 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                         fontWeight: tab === key ? 700 : 500, fontSize: '13px', cursor: 'pointer',
                         boxShadow: tab === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s',
                     }}>
-                        <Icon size={15} /> {label}
+                        <Icon size={15} /> {t('ui.accounting.fs.tab.' + key)}
                     </button>
                 ))}
             </div>
 
-            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>All figures are in USD.</div>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.allUsd')}</div>
 
             {/* Integrity banner + actions */}
             <div style={{ ...cardStyle, borderLeft: `4px solid ${loading ? 'var(--color-border)' : banner.ok ? GREEN : AMBER}`, padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -609,13 +619,13 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                     {loading ? <RefreshCw size={20} color="var(--color-text-secondary)" style={{ animation: 'spin 1s linear infinite' }} />
                         : banner.ok ? <CheckCircle2 size={20} color={GREEN} /> : <AlertTriangle size={20} color={AMBER} />}
                     <div>
-                        <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-text-main)' }}>{loading ? 'Loading the ledger…' : banner.title}</div>
+                        <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-text-main)' }}>{loading ? t('ui.accounting.common.loadingLedger') : banner.title}</div>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{banner.sub}</div>
                     </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={printReport} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> Print / PDF</button>
-                    <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> Export CSV</button>
+                    <button onClick={printReport} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> {t('ui.accounting.common.printPdf')}</button>
+                    <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> {t('ui.accounting.common.exportCsv')}</button>
                 </div>
             </div>
 
@@ -627,12 +637,12 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             {/* Statement body */}
             {tab === 'balance' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
-                    <SectionCard title="Assets" color={BLUE} rows={balanceSheet.assets} totalLabel="Total Assets" total={balanceSheet.totals.assets} prevTotal={balanceSheet.prevTotals?.assets} />
+                    <SectionCard title={t('ui.accounting.common.typePlural.Asset')} color={BLUE} rows={balanceSheet.assets} totalLabel={t('ui.accounting.common.totalAssets')} total={balanceSheet.totals.assets} prevTotal={balanceSheet.prevTotals?.assets} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        <SectionCard title="Liabilities" color={RED} rows={balanceSheet.liabilities} totalLabel="Total Liabilities" total={balanceSheet.totals.liabilities} prevTotal={balanceSheet.prevTotals?.liabilities} />
-                        <SectionCard title="Equity" color={PURPLE} rows={balanceSheet.equity} totalLabel="Total Equity" total={balanceSheet.totals.equity} prevTotal={balanceSheet.prevTotals?.equity} />
+                        <SectionCard title={t('ui.accounting.common.typePlural.Liability')} color={RED} rows={balanceSheet.liabilities} totalLabel={t('ui.accounting.common.totalLiabilities')} total={balanceSheet.totals.liabilities} prevTotal={balanceSheet.prevTotals?.liabilities} />
+                        <SectionCard title={t('ui.accounting.common.typePlural.Equity')} color={PURPLE} rows={balanceSheet.equity} totalLabel={t('ui.accounting.common.totalEquity')} total={balanceSheet.totals.equity} prevTotal={balanceSheet.prevTotals?.equity} />
                         <div style={{ ...cardStyle, padding: '12px 20px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px' }}>
-                            <span style={{ color: 'var(--color-text-main)' }}>Liabilities + Equity</span>
+                            <span style={{ color: 'var(--color-text-main)' }}>{t('ui.accounting.fs.liabilitiesPlusEquity')}</span>
                             {amountText(balanceSheet.totals.liabilities + balanceSheet.totals.equity, true)}
                         </div>
                     </div>
@@ -640,8 +650,8 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
             )}
 
             {tab === 'income' && (() => {
-                const t = incomeStatement.totals, pt = incomeStatement.prevTotals;
-                const noActivity = showEmpty ? undefined : 'No activity in this period.';
+                const tt = incomeStatement.totals, pt = incomeStatement.prevTotals;
+                const noActivity = showEmpty ? undefined : t('ui.accounting.fs.noActivity');
                 // Gross/Operating Profit and the closing Net line — the bars
                 // between sections that make the statement read top-down.
                 const KeyBar: React.FC<{ label: string; value: number; prevValue?: number; closing?: boolean }> = ({ label, value, prevValue, closing }) => {
@@ -658,18 +668,18 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                 };
                 return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '880px' }}>
-                        <SectionCard title="Revenue" color={GREEN} rows={incomeStatement.revenue} totalLabel="Total Operating Revenue" total={t.revenue} prevTotal={pt?.revenue} emptyText={noActivity} />
-                        <SectionCard title="Cost of Sales" color={AMBER} rows={incomeStatement.cogs} totalLabel="Total Cost of Sales" total={t.cogs} prevTotal={pt?.cogs} emptyText={noActivity} />
-                        <KeyBar label="Gross Profit" value={t.grossProfit} prevValue={pt?.grossProfit} />
-                        <SectionCard title="Operating Expenses" color={RED} rows={incomeStatement.opex} totalLabel="Total Operating Expenses" total={t.opex} prevTotal={pt?.opex} emptyText={noActivity} />
-                        <KeyBar label="Operating Profit" value={t.operatingProfit} prevValue={pt?.operatingProfit} />
+                        <SectionCard title={t('ui.accounting.common.typePlural.Revenue')} color={GREEN} rows={incomeStatement.revenue} totalLabel={t('ui.accounting.common.totalOperatingRevenue')} total={tt.revenue} prevTotal={pt?.revenue} emptyText={noActivity} />
+                        <SectionCard title={t('ui.accounting.fs.costOfSales')} color={AMBER} rows={incomeStatement.cogs} totalLabel={t('ui.accounting.common.totalCostOfSales')} total={tt.cogs} prevTotal={pt?.cogs} emptyText={noActivity} />
+                        <KeyBar label={t('ui.accounting.common.grossProfit')} value={tt.grossProfit} prevValue={pt?.grossProfit} />
+                        <SectionCard title={t('ui.accounting.fs.operatingExpenses')} color={RED} rows={incomeStatement.opex} totalLabel={t('ui.accounting.common.totalOperatingExpenses')} total={tt.opex} prevTotal={pt?.opex} emptyText={noActivity} />
+                        <KeyBar label={t('ui.accounting.common.operatingProfit')} value={tt.operatingProfit} prevValue={pt?.operatingProfit} />
                         {incomeStatement.hasOtherRevenue && (
-                            <SectionCard title="Other Revenue" color={GREEN} rows={incomeStatement.otherRevenue} totalLabel="Total Other Revenue" total={t.otherRevenue} prevTotal={pt?.otherRevenue} emptyText={noActivity} />
+                            <SectionCard title={t('ui.accounting.fs.otherRevenue')} color={GREEN} rows={incomeStatement.otherRevenue} totalLabel={t('ui.accounting.common.totalOtherRevenue')} total={tt.otherRevenue} prevTotal={pt?.otherRevenue} emptyText={noActivity} />
                         )}
                         {incomeStatement.hasOtherExpenses && (
-                            <SectionCard title="Other Expenses" color={RED} rows={incomeStatement.otherExpenses} totalLabel="Total Other Expenses" total={t.otherExpenses} prevTotal={pt?.otherExpenses} emptyText={noActivity} />
+                            <SectionCard title={t('ui.accounting.fs.otherExpenses')} color={RED} rows={incomeStatement.otherExpenses} totalLabel={t('ui.accounting.common.totalOtherExpenses')} total={tt.otherExpenses} prevTotal={pt?.otherExpenses} emptyText={noActivity} />
                         )}
-                        <KeyBar label={t.net >= 0 ? 'Net Income' : 'Net Loss'} value={t.net} prevValue={pt?.net} closing />
+                        <KeyBar label={tt.net >= 0 ? t('ui.accounting.common.netIncome') : t('ui.accounting.common.netLoss')} value={tt.net} prevValue={pt?.net} closing />
                     </div>
                 );
             })()}
@@ -681,11 +691,11 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                         key={`${r.code}|${r.name}`}
                         className={r.id ? 'hover-highlight' : undefined}
                         onClick={r.id ? () => goToLedger(r.id!) : undefined}
-                        title={r.id ? 'View in General Ledger' : undefined}
+                        title={r.id ? t('ui.accounting.common.viewInLedger') : undefined}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderBottom: last ? 'none' : '1px solid var(--color-border)', fontSize: '14px', cursor: r.id ? 'pointer' : 'default' }}
                     >
                         <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', width: '44px', flexShrink: 0 }}>{r.code}</span>
-                        <span className="d2-khmer" style={{ flex: 1, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{r.name}</span>
+                        <span className="d2-khmer" style={{ flex: 1, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{nameDisp(r.name)}</span>
                         <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: r.amount < 0 ? RED : GREEN }}>{loading ? '…' : fmt(r.amount)}</span>
                     </div>
                 );
@@ -707,50 +717,50 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                 return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '880px' }}>
                         <div style={{ ...cardStyle, borderLeft: `4px solid ${BLUE}`, overflow: 'hidden' }}>
-                            {activityHeader('Operating Activities', BLUE)}
+                            {activityHeader(t('ui.accounting.fs.operatingActivities'), BLUE)}
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '12px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '14px', fontWeight: 700 }}>
-                                <span style={{ color: 'var(--color-text-main)' }}>Net Income</span>
+                                <span style={{ color: 'var(--color-text-main)' }}>{t('ui.accounting.common.netIncome')}</span>
                                 {amountText(cf.netIncome, true)}
                             </div>
-                            {subHeader('Changes in Working Capital')}
+                            {subHeader(t('ui.accounting.fs.changesWorkingCapital'))}
                             {cf.workingCapital.length === 0
-                                ? emptyNote('No working-capital movements')
+                                ? emptyNote(t('ui.accounting.fs.noWorkingCapital'))
                                 : cf.workingCapital.map((r, i) => lineRow(r, i === cf.workingCapital.length - 1))}
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 20px', borderTop: '1px solid var(--color-border)', fontSize: '13px', fontWeight: 700 }}>
-                                <span style={{ color: 'var(--color-text-secondary)' }}>Total Changes in Working Capital</span>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.accounting.fs.totalChangesWorkingCapital')}</span>
                                 {amountText(cf.totalWC)}
                             </div>
-                            {footerRow('Net Cash from Operations', cf.netOperating)}
+                            {footerRow(t('ui.accounting.fs.netCashOperations'), cf.netOperating)}
                         </div>
 
                         <div style={{ ...cardStyle, borderLeft: `4px solid ${GREEN}`, overflow: 'hidden' }}>
-                            {activityHeader('Investing Activities', GREEN)}
+                            {activityHeader(t('ui.accounting.fs.investingActivities'), GREEN)}
                             {cf.investing.length === 0
-                                ? emptyNote('No investing activities')
+                                ? emptyNote(t('ui.accounting.fs.noInvesting'))
                                 : cf.investing.map((r, i) => lineRow(r, i === cf.investing.length - 1))}
-                            {footerRow('Net Cash from Investing', cf.netInvesting)}
+                            {footerRow(t('ui.accounting.fs.netCashInvesting'), cf.netInvesting)}
                         </div>
 
                         <div style={{ ...cardStyle, borderLeft: `4px solid ${PURPLE}`, overflow: 'hidden' }}>
-                            {activityHeader('Financing Activities', PURPLE)}
+                            {activityHeader(t('ui.accounting.fs.financingActivities'), PURPLE)}
                             {cf.financing.length === 0
-                                ? emptyNote('No financing activities')
+                                ? emptyNote(t('ui.accounting.fs.noFinancing'))
                                 : cf.financing.map((r, i) => lineRow(r, i === cf.financing.length - 1))}
-                            {footerRow('Net Cash from Financing', cf.netFinancing)}
+                            {footerRow(t('ui.accounting.fs.netCashFinancing'), cf.netFinancing)}
                         </div>
 
                         <div style={{ ...cardStyle, overflow: 'hidden' }}>
-                            {activityHeader('Cash Summary', 'var(--color-text-secondary)')}
+                            {activityHeader(t('ui.accounting.fs.cashSummary'), 'var(--color-text-secondary)')}
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '14px' }}>
-                                <span style={{ color: 'var(--color-text-secondary)' }}>Beginning Cash Balance ({displayDate(startDate)})</span>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.accounting.fs.beginningCash')} ({displayDate(startDate)})</span>
                                 {amountText(cashFlow.opening)}
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '14px' }}>
-                                <span style={{ color: 'var(--color-text-secondary)' }}>Net Change in Cash</span>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.accounting.fs.netChangeInCash')}</span>
                                 <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: cf.netChange < 0 ? RED : GREEN }}>{loading ? '…' : fmt(cf.netChange)}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '14px 20px', background: 'var(--color-bg)', fontSize: '15px', fontWeight: 800 }}>
-                                <span style={{ color: 'var(--color-text-main)' }}>Ending Cash Balance ({displayDate(endDate)})</span>
+                                <span style={{ color: 'var(--color-text-main)' }}>{t('ui.accounting.fs.endingCashBalance')} ({displayDate(endDate)})</span>
                                 {amountText(cashFlow.closing, true)}
                             </div>
                         </div>
@@ -759,20 +769,20 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                             share of the period's actual cash deltas. */}
                         <div style={{ ...cardStyle, borderLeft: `4px solid ${BLUE}`, overflow: 'hidden' }}>
                     <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color: BLUE }}>Cash Movements</div>
-                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>Where the cash actually moved — each entry's cash change attributed to its counter-accounts</div>
+                        <div style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color: BLUE }}>{t('ui.accounting.fs.cashMovements')}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{t('ui.accounting.fs.cashMovementsSub')}</div>
                     </div>
                     {cashFlow.rows.length === 0 ? (
                         <div style={{ padding: '18px 20px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                            {cashFlow.hasCash ? 'No cash movements in this period.' : 'No accounts named cash or bank exist, so no cash flow can be derived.'}
+                            {cashFlow.hasCash ? t('ui.accounting.fs.noCashMovements') : t('ui.accounting.fs.noCashAccountsDerive')}
                         </div>
                     ) : cashFlow.rows.map(r => (
                         <div key={r.name} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '14px' }}>
-                            <span className="d2-khmer" style={{ color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{r.name}</span>
+                            <span className="d2-khmer" style={{ color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{nameDisp(r.name)}</span>
                             <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: r.amount < 0 ? RED : GREEN }}>{loading ? '…' : `${r.amount >= 0 ? '+' : ''}${fmt(r.amount)}`}</span>
                         </div>
                     ))}
-                    {footerRow('Net change in cash', cashFlow.net)}
+                    {footerRow(t('ui.accounting.fs.netChangeInCashLower'), cashFlow.net)}
                         </div>
                     </div>
                 );
@@ -786,21 +796,21 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                             key={`${r.code}|${r.name}`}
                             className="hover-highlight"
                             onClick={() => goToLedger(r.id)}
-                            title="View in General Ledger"
+                            title={t('ui.accounting.common.viewInLedger')}
                             style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}
                         >
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <div className="d2-khmer" style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '1px' }}>{r.code} · {r.type.toUpperCase()}</div>
+                                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '1px' }}>{r.code} · {t('ui.accounting.common.accountType.' + r.type).toUpperCase()}</div>
                             </div>
                             <div style={{ textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums', fontSize: '13px' }}>
-                                {loading ? '…' : r.debit ? <span style={{ color: BLUE, fontWeight: 600 }}>Dr {fmt(r.debit)}</span> : r.credit ? <span style={{ color: RED, fontWeight: 600 }}>Cr {fmt(r.credit)}</span> : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
+                                {loading ? '…' : r.debit ? <span style={{ color: BLUE, fontWeight: 600 }}>{fill(t('ui.accounting.common.drAmount'), { amount: fmt(r.debit) })}</span> : r.credit ? <span style={{ color: RED, fontWeight: 600 }}>{fill(t('ui.accounting.common.crAmount'), { amount: fmt(r.credit) })}</span> : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
                             </div>
                         </div>
                     ))}
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', background: 'var(--color-bg)', fontWeight: 800, fontSize: '13px', fontVariantNumeric: 'tabular-nums' }}>
-                        <span style={{ color: BLUE }}>Dr {loading ? '…' : fmt(trialBalance.totals.debit)}</span>
-                        <span style={{ color: RED }}>Cr {loading ? '…' : fmt(trialBalance.totals.credit)}</span>
+                        <span style={{ color: BLUE }}>{fill(t('ui.accounting.common.drAmount'), { amount: loading ? '…' : fmt(trialBalance.totals.debit) })}</span>
+                        <span style={{ color: RED }}>{fill(t('ui.accounting.common.crAmount'), { amount: loading ? '…' : fmt(trialBalance.totals.credit) })}</span>
                     </div>
                 </div>
             )}
@@ -811,11 +821,11 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '600px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                    <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', width: '90px' }}>Code</th>
-                                    <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>Account</th>
-                                    <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', width: '110px' }}>Type</th>
-                                    <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: BLUE, width: '140px' }}>Debit</th>
-                                    <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: RED, width: '140px' }}>Credit</th>
+                                    <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', width: '90px' }}>{t('ui.accounting.common.code')}</th>
+                                    <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.account')}</th>
+                                    <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', width: '110px' }}>{t('ui.accounting.common.type')}</th>
+                                    <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: BLUE, width: '140px' }}>{t('ui.accounting.common.debit')}</th>
+                                    <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: RED, width: '140px' }}>{t('ui.accounting.common.credit')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -824,12 +834,12 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                                         key={`${r.code}|${r.name}`}
                                         className="hover-highlight"
                                         onClick={() => goToLedger(r.id)}
-                                        title="View in General Ledger"
+                                        title={t('ui.accounting.common.viewInLedger')}
                                         style={{ borderBottom: '1px solid var(--color-border)', background: i % 2 ? 'rgba(0,0,0,0.015)' : 'transparent', cursor: 'pointer' }}
                                     >
                                         <td style={{ padding: '10px 20px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.code}</td>
                                         <td className="d2-khmer" style={{ padding: '10px 20px', color: 'var(--color-text-main)' }}>{r.name}</td>
-                                        <td style={{ padding: '10px 20px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{r.type}</td>
+                                        <td style={{ padding: '10px 20px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.accountType.' + r.type)}</td>
                                         <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{loading ? '…' : r.debit ? fmt(r.debit) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}</td>
                                         <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{loading ? '…' : r.credit ? fmt(r.credit) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}</td>
                                     </tr>
@@ -837,7 +847,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
                             </tbody>
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontWeight: 800 }}>
-                                    <td colSpan={3} style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>Total</td>
+                                    <td colSpan={3} style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{t('common.total')}</td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: BLUE }}>{loading ? '…' : fmt(trialBalance.totals.debit)}</td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: RED }}>{loading ? '…' : fmt(trialBalance.totals.credit)}</td>
                                 </tr>

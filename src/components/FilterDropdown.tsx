@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { useTx } from './useTx';
 
 export type FilterOption = { key: string; label: string; count: number; title?: string };
 const MENU_WIDTH = 260;
@@ -26,6 +27,7 @@ const FilterDropdown: React.FC<{
     onClear: () => void;
     emptyTitle: string;    // tooltip on a zero-count, unticked row
 }> = ({ allLabel, noun, options, selected, onToggle, onClear, emptyTitle }) => {
+    const tx = useTx();
     const [open, setOpen] = useState(false);
     const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; left: number; maxHeight: number }>({ top: 0, left: 0, maxHeight: 320 });
     const triggerRef = useRef<HTMLButtonElement>(null);
@@ -97,7 +99,7 @@ const FilterDropdown: React.FC<{
     const active = selected.size > 0;
     const summary = !active ? allLabel
         : picked.length === 1 && selected.size === 1 ? picked[0].label
-        : `${selected.size} ${noun}${selected.size === 1 ? '' : 's'}`;
+        : (selected.size === 1 ? tx('ui.components.filter.nOne', '{n} {noun}', { n: selected.size, noun }) : tx('ui.components.filter.nMany', '{n} {noun}s', { n: selected.size, noun }));
 
     return (
         <div
@@ -118,9 +120,9 @@ const FilterDropdown: React.FC<{
                 aria-expanded={open}
                 // The visible text is just the summary ("Retail") — the name
                 // carries the facet so a Tab stop still says what it filters.
-                aria-label={`Filter by ${noun}: ${summary}`}
+                aria-label={tx('ui.components.filter.byAria', 'Filter by {noun}: {summary}', { noun, summary })}
                 className="d2-khmer"
-                title={`Filter by ${noun} — tick one or more`}
+                title={tx('ui.components.filter.byTitle', 'Filter by {noun} — tick one or more', { noun })}
                 style={{
                     display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 12px', borderRadius: '9px',
                     // The JE area chips' blue — white text passes contrast on
@@ -135,7 +137,7 @@ const FilterDropdown: React.FC<{
                 <ChevronDown size={14} style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
             </button>
             {open && (
-                <div ref={menuRef} role="group" aria-label={`Filter by ${noun}`} style={{
+                <div ref={menuRef} role="group" aria-label={tx('ui.components.filter.by', 'Filter by {noun}', { noun })} style={{
                     position: 'fixed', top: menuPos.top, bottom: menuPos.bottom, left: menuPos.left, zIndex: 900,
                     width: MENU_WIDTH, maxHeight: menuPos.maxHeight, overflowY: 'auto',
                     background: 'var(--color-surface)', border: '1px solid var(--color-border)',

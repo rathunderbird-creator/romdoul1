@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Edit, Trash2, Mail, Phone, MapPin, Search, Users, Building2, DollarSign, AlertTriangle, RefreshCw, Database, FileText, ArrowUpDown } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { Modal } from '../../components';
 import { useMobile } from '../../hooks/useMobile';
 import { MiniStatCard, MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../components/MobileFilterKit';
@@ -25,6 +27,7 @@ const emptyStat: CustStat = { totalInvoiced: 0, totalPaid: 0, balance: 0, orders
 
 const WholesaleCustomersPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
     const navigate = useNavigate();
     const { customers, wholesaleOrders, tableMissing, fetchCustomers, fetchWholesaleOrders, saveCustomer, deleteCustomer } = useWholesale();
 
@@ -42,13 +45,13 @@ const WholesaleCustomersPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Wholesale Customers</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Your wholesale/credit customers and their outstanding balances</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('ui.wholesale.customers.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.wholesale.customers.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => { fetchCustomers(); fetchWholesaleOrders(); }, [fetchCustomers, fetchWholesaleOrders]);
 
@@ -118,13 +121,13 @@ const WholesaleCustomersPage: React.FC = () => {
 
     const handleDelete = async (c: WholesaleCustomer, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm(`Delete customer "${c.name}"?`)) { try { await deleteCustomer(c.id); } catch { /* hook toasts */ } }
+        if (confirm(fill(t('ui.wholesale.customers.confirmDelete'), { name: c.name }))) { try { await deleteCustomer(c.id); } catch { /* hook toasts */ } }
     };
 
     const statusTabs: { label: string; value: StatusFilter; count: number }[] = [
-        { label: 'All', value: 'All', count: summary.total },
-        { label: 'Active', value: 'Active', count: summary.active },
-        { label: 'Inactive', value: 'Inactive', count: summary.inactive },
+        { label: t('common.all'), value: 'All', count: summary.total },
+        { label: t('ui.wholesale.common.active'), value: 'Active', count: summary.active },
+        { label: t('ui.wholesale.common.inactive'), value: 'Inactive', count: summary.inactive },
     ];
 
     return (
@@ -133,17 +136,17 @@ const WholesaleCustomersPage: React.FC = () => {
                 {/* Summary cards — mobile: four compact cards on one row */}
                 {isMobile ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' }}>
-                        <MiniStatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Customers" value={String(summary.total)} />
-                        <MiniStatCard icon={Building2} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Active" value={String(summary.active)} valueColor="#10b981" />
-                        <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Overdue" value={String(summary.overdueCount)} valueColor={summary.overdueCount > 0 ? '#ef4444' : undefined} />
-                        <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={fmt(summary.totalOutstanding)} valueColor={summary.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
+                        <MiniStatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label={t('ui.wholesale.customers.stats.customers')} value={String(summary.total)} />
+                        <MiniStatCard icon={Building2} gradient="linear-gradient(135deg, #10b981, #34d399)" label={t('ui.wholesale.common.active')} value={String(summary.active)} valueColor="#10b981" />
+                        <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={t('ui.wholesale.orders.stats.overdue')} value={String(summary.overdueCount)} valueColor={summary.overdueCount > 0 ? '#ef4444' : undefined} />
+                        <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label={t('ui.wholesale.orders.stats.outstanding')} value={fmt(summary.totalOutstanding)} valueColor={summary.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
                     </div>
                 ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                    <StatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Total Customers" value={String(summary.total)} />
-                    <StatCard icon={Building2} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Active" value={String(summary.active)} valueColor="#10b981" />
-                    <StatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Overdue" value={String(summary.overdueCount)} valueColor={summary.overdueCount > 0 ? '#ef4444' : undefined} />
-                    <StatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={fmt(summary.totalOutstanding)} valueColor={summary.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
+                    <StatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label={t('ui.wholesale.customers.stats.total')} value={String(summary.total)} />
+                    <StatCard icon={Building2} gradient="linear-gradient(135deg, #10b981, #34d399)" label={t('ui.wholesale.common.active')} value={String(summary.active)} valueColor="#10b981" />
+                    <StatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={t('ui.wholesale.orders.stats.overdue')} value={String(summary.overdueCount)} valueColor={summary.overdueCount > 0 ? '#ef4444' : undefined} />
+                    <StatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label={t('ui.wholesale.orders.stats.outstanding')} value={fmt(summary.totalOutstanding)} valueColor={summary.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
                 </div>
                 )}
 
@@ -153,7 +156,7 @@ const WholesaleCustomersPage: React.FC = () => {
                         <MobileSearchBar
                             searchValue={search}
                             onSearchChange={setSearch}
-                            placeholder="Search customers..."
+                            placeholder={t('ui.wholesale.customers.search')}
                             activeCount={(statusFilter !== 'All' ? 1 : 0)}
                             onOpenFilter={() => setIsFilterDrawerOpen(true)}
                             onAdd={() => openModal()}
@@ -165,18 +168,18 @@ const WholesaleCustomersPage: React.FC = () => {
                             onClear={() => { setSearch(''); setStatusFilter('All'); setSortBy('name'); }}
                             searchValue={search}
                             onSearchChange={setSearch}
-                            searchPlaceholder="Search customers..."
+                            searchPlaceholder={t('ui.wholesale.customers.search')}
                             onRefresh={() => { fetchCustomers(); fetchWholesaleOrders(); }}
                         >
                             <MobileChipGroup
-                                title="Status"
-                                options={statusTabs.map(t => ({ value: t.value, label: t.label, count: t.count }))}
+                                title={t('ui.wholesale.common.status')}
+                                options={statusTabs.map(st => ({ value: st.value, label: st.label, count: st.count }))}
                                 selected={statusFilter}
                                 onSelect={(v) => setStatusFilter(v as any)}
                             />
                             <MobileChipGroup
-                                title="Sort By"
-                                options={[{ value: 'name', label: 'Name' }, { value: 'balance', label: 'Balance' }, { value: 'newest', label: 'Newest' }]}
+                                title={t('ui.wholesale.customers.sortBy')}
+                                options={[{ value: 'name', label: t('ui.wholesale.customers.sortName') }, { value: 'balance', label: t('ui.wholesale.common.balance') }, { value: 'newest', label: t('ui.wholesale.customers.sortNewest') }]}
                                 selected={sortBy}
                                 onSelect={(v) => setSortBy(v as any)}
                             />
@@ -201,9 +204,9 @@ const WholesaleCustomersPage: React.FC = () => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <ArrowUpDown size={14} color="var(--color-text-muted)" />
                             <select value={sortBy} onChange={e => setSortBy(e.target.value as SortOption)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
-                                <option value="name">Sort by Name</option>
-                                <option value="balance">Sort by Balance</option>
-                                <option value="newest">Sort by Newest</option>
+                                <option value="name">{t('ui.wholesale.customers.sortByName')}</option>
+                                <option value="balance">{t('ui.wholesale.customers.sortByBalance')}</option>
+                                <option value="newest">{t('ui.wholesale.customers.sortByNewest')}</option>
                             </select>
                         </div>
                     </div>
@@ -211,10 +214,10 @@ const WholesaleCustomersPage: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ position: 'relative', width: '260px' }}>
                             <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                            <input type="text" placeholder="Search customers..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                            <input type="text" placeholder={t('ui.wholesale.customers.search')} value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
                         </div>
-                        <button className="secondary-button" onClick={() => { fetchCustomers(); fetchWholesaleOrders(); }} title="Refresh" style={{ padding: '9px 12px' }}><RefreshCw size={16} /></button>
-                        <button className="primary-button" disabled={tableMissing} onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}><Plus size={18} /> New Customer</button>
+                        <button className="secondary-button" onClick={() => { fetchCustomers(); fetchWholesaleOrders(); }} title={t('ui.wholesale.common.refresh')} style={{ padding: '9px 12px' }}><RefreshCw size={16} /></button>
+                        <button className="primary-button" disabled={tableMissing} onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}><Plus size={18} /> {t('ui.wholesale.customers.newCustomer')}</button>
                     </div>
                 </div>
                 )}
@@ -222,8 +225,8 @@ const WholesaleCustomersPage: React.FC = () => {
                 {tableMissing ? (
                     <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                         <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
-                        <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>Database setup needed</p>
-                        <p style={{ fontSize: '13px' }}>Run <code>migrations/full_schema.sql</code> in your Supabase SQL editor, then Refresh.</p>
+                        <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>{t('ui.wholesale.common.dbSetupNeeded')}</p>
+                        <p style={{ fontSize: '13px' }}>{t('ui.wholesale.common.dbSetupRun')} <code>migrations/full_schema.sql</code> {t('ui.wholesale.common.dbSetupThen')}</p>
                     </div>
                 ) : isMobile ? (
                     // Mobile: inbox-style customer rows — tap to open the ledger.
@@ -231,7 +234,7 @@ const WholesaleCustomersPage: React.FC = () => {
                         {filtered.length === 0 ? (
                             <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                                 <Users size={36} style={{ opacity: 0.25, margin: '0 auto 10px', display: 'block' }} />
-                                {search || statusFilter !== 'All' ? 'No customers match your filters.' : 'No customers yet.'}
+                                {search || statusFilter !== 'All' ? t('ui.wholesale.customers.noMatch') : t('ui.wholesale.customers.noneYet')}
                             </div>
                         ) : (
                             filtered.map(c => {
@@ -249,12 +252,12 @@ const WholesaleCustomersPage: React.FC = () => {
                                             <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
                                             <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                 {[c.phone, c.contact_name].filter(Boolean).join(' · ') || '—'}
-                                                {s.orders > 0 && ` · ${s.orders} order${s.orders === 1 ? '' : 's'}`}
+                                                {s.orders > 0 && ` · ${fill(s.orders === 1 ? t('ui.wholesale.customers.oneOrder') : t('ui.wholesale.customers.nOrders'), { n: s.orders })}`}
                                             </div>
                                         </div>
                                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                             <div style={{ fontSize: '13px', fontWeight: 800, color: s.balance > 0.005 ? '#ef4444' : '#10b981', fontVariantNumeric: 'tabular-nums' }}>{fmt(s.balance)}</div>
-                                            {s.overdue && <div style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444' }}>{s.overdueDays}d OVERDUE</div>}
+                                            {s.overdue && <div style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444' }}>{fill(t('ui.wholesale.orders.daysOverdue'), { n: s.overdueDays })}</div>}
                                         </div>
                                     </div>
                                 );
@@ -266,13 +269,13 @@ const WholesaleCustomersPage: React.FC = () => {
                         <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none', minWidth: '900px' }}>
                             <thead>
                                 <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                                    <th style={thStyle}>Customer</th>
-                                    <th style={thStyle}>Contact</th>
-                                    <th style={{ ...thStyle, textAlign: 'center' }}>Orders</th>
-                                    <th style={thStyle}>Payment Progress</th>
-                                    <th style={{ ...thStyle, textAlign: 'right' }}>Outstanding</th>
-                                    <th style={{ ...thStyle, textAlign: 'center' }}>Status</th>
-                                    <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+                                    <th style={thStyle}>{t('ui.wholesale.common.customer')}</th>
+                                    <th style={thStyle}>{t('ui.wholesale.customers.contact')}</th>
+                                    <th style={{ ...thStyle, textAlign: 'center' }}>{t('ui.wholesale.customers.orders')}</th>
+                                    <th style={thStyle}>{t('ui.wholesale.customers.paymentProgress')}</th>
+                                    <th style={{ ...thStyle, textAlign: 'right' }}>{t('ui.wholesale.orders.stats.outstanding')}</th>
+                                    <th style={{ ...thStyle, textAlign: 'center' }}>{t('ui.wholesale.common.status')}</th>
+                                    <th style={{ ...thStyle, textAlign: 'right' }}>{t('common.actions')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -280,7 +283,7 @@ const WholesaleCustomersPage: React.FC = () => {
                                     <tr><td colSpan={7} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', color: 'var(--color-text-secondary)' }}>
                                             <Users size={40} style={{ opacity: 0.25 }} />
-                                            <p style={{ fontSize: '14px' }}>{search || statusFilter !== 'All' ? 'No customers match your filters.' : 'No customers yet. Add your first wholesale customer.'}</p>
+                                            <p style={{ fontSize: '14px' }}>{search || statusFilter !== 'All' ? t('ui.wholesale.customers.noMatch') : t('ui.wholesale.customers.noneYetAdd')}</p>
                                         </div>
                                     </td></tr>
                                 ) : filtered.map((c, idx) => {
@@ -314,28 +317,28 @@ const WholesaleCustomersPage: React.FC = () => {
                                                         <div style={{ width: '100%', height: '6px', borderRadius: '4px', background: 'var(--color-border)', overflow: 'hidden' }}>
                                                             <div style={{ width: `${paidPercent}%`, height: '100%', borderRadius: '4px', background: paidPercent >= 100 ? '#10b981' : paidPercent >= 50 ? '#3b82f6' : '#f59e0b', transition: 'width 0.5s ease' }} />
                                                         </div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>of {fmt(s.totalInvoiced)}</div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>{fill(t('ui.wholesale.customers.ofAmount'), { amount: fmt(s.totalInvoiced) })}</div>
                                                     </div>
-                                                ) : <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>No orders</span>}
+                                                ) : <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{t('ui.wholesale.customers.noOrders')}</span>}
                                             </td>
                                             <td style={{ ...tdStyle, textAlign: 'right' }}>
                                                 <div style={{ fontWeight: 700, fontSize: '15px', color: s.balance > 0.005 ? '#ef4444' : '#10b981' }}>{fmt(s.balance)}</div>
                                                 {s.overdue && (
                                                     <div style={{ fontSize: '11px', fontWeight: 700, color: '#ef4444', marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '12px', background: 'rgba(239,68,68,0.1)' }}>
-                                                        <AlertTriangle size={10} /> {s.overdueDays}d overdue
+                                                        <AlertTriangle size={10} /> {fill(t('ui.wholesale.customers.daysOverdueLower'), { n: s.overdueDays })}
                                                     </div>
                                                 )}
                                             </td>
                                             <td style={{ ...tdStyle, textAlign: 'center' }}>
                                                 <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '20px', textTransform: 'uppercase', color: c.is_active ? '#059669' : '#6B7280', background: c.is_active ? 'rgba(16,185,129,0.1)' : 'rgba(107,114,128,0.1)' }}>
-                                                    {c.is_active ? 'Active' : 'Inactive'}
+                                                    {c.is_active ? t('ui.wholesale.common.active') : t('ui.wholesale.common.inactive')}
                                                 </span>
                                             </td>
                                             <td style={{ ...tdStyle, textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                                                 <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                                    <button className="primary-button" style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }} title="View Ledger" onClick={() => navigate(`/wholesale/customers/${c.id}`)}><FileText size={13} /> Ledger</button>
-                                                    <button className="secondary-button" style={{ padding: '7px', borderRadius: '8px', background: 'var(--color-bg)' }} title="Edit" onClick={() => openModal(c)}><Edit size={14} /></button>
-                                                    <button style={{ padding: '7px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', color: '#ef4444', border: 'none', cursor: 'pointer' }} title="Delete" onClick={e => handleDelete(c, e)}><Trash2 size={14} /></button>
+                                                    <button className="primary-button" style={{ padding: '7px 12px', borderRadius: '8px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }} title={t('ui.wholesale.customers.viewLedger')} onClick={() => navigate(`/wholesale/customers/${c.id}`)}><FileText size={13} /> {t('ui.wholesale.customers.ledger')}</button>
+                                                    <button className="secondary-button" style={{ padding: '7px', borderRadius: '8px', background: 'var(--color-bg)' }} title={t('common.edit')} onClick={() => openModal(c)}><Edit size={14} /></button>
+                                                    <button style={{ padding: '7px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', color: '#ef4444', border: 'none', cursor: 'pointer' }} title={t('common.delete')} onClick={e => handleDelete(c, e)}><Trash2 size={14} /></button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -346,40 +349,40 @@ const WholesaleCustomersPage: React.FC = () => {
                     </div>
                 )}
 
-                <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editing ? 'Edit Customer' : 'Register New Customer'}>
+                <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editing ? t('ui.wholesale.customers.editCustomer') : t('ui.wholesale.customers.registerNew')}>
                     {/* minWidth 480 forced the modal wider than a phone screen */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '20px', padding: '4px 0', minWidth: isMobile ? undefined : '480px', maxWidth: '100%' }}>
                         <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
-                            <h4 style={sectionHeading}><Building2 size={16} /> Customer Information</h4>
+                            <h4 style={sectionHeading}><Building2 size={16} /> {t('ui.wholesale.orders.form.customerInfo')}</h4>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>
-                                    <label style={labelStyle}>Customer Name *</label>
-                                    <input className="search-input" style={{ width: '100%' }} value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} autoFocus placeholder="Company or person name" />
+                                    <label style={labelStyle}>{t('ui.wholesale.customers.form.name')} *</label>
+                                    <input className="search-input" style={{ width: '100%' }} value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} autoFocus placeholder={t('ui.wholesale.customers.form.namePlaceholder')} />
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
-                                    <div><label style={labelStyle}>Contact Person</label><input className="search-input" style={{ width: '100%' }} value={form.contact_name || ''} onChange={e => setForm({ ...form, contact_name: e.target.value })} placeholder="Full name" /></div>
-                                    <div><label style={labelStyle}>Phone</label><input className="search-input" style={{ width: '100%' }} value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+855 ..." /></div>
+                                    <div><label style={labelStyle}>{t('ui.wholesale.customers.form.contactPerson')}</label><input className="search-input" style={{ width: '100%' }} value={form.contact_name || ''} onChange={e => setForm({ ...form, contact_name: e.target.value })} placeholder={t('ui.wholesale.customers.form.fullName')} /></div>
+                                    <div><label style={labelStyle}>{t('ui.wholesale.common.phone')}</label><input className="search-input" style={{ width: '100%' }} value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+855 ..." /></div>
                                 </div>
                             </div>
                         </div>
 
                         <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
-                            <h4 style={sectionHeading}><MapPin size={16} /> Contact Details</h4>
+                            <h4 style={sectionHeading}><MapPin size={16} /> {t('ui.wholesale.customers.form.contactDetails')}</h4>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                <div><label style={labelStyle}>Email</label><input type="email" className="search-input" style={{ width: '100%' }} value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="contact@company.com" /></div>
-                                <div><label style={labelStyle}>Address</label><textarea className="search-input" style={{ width: '100%', minHeight: '70px', resize: 'vertical' }} value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="Full address..." /></div>
-                                <div><label style={labelStyle}>Note</label><input className="search-input" style={{ width: '100%' }} value={form.note || ''} onChange={e => setForm({ ...form, note: e.target.value })} /></div>
+                                <div><label style={labelStyle}>{t('ui.wholesale.common.email')}</label><input type="email" className="search-input" style={{ width: '100%' }} value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="contact@company.com" /></div>
+                                <div><label style={labelStyle}>{t('ui.wholesale.common.address')}</label><textarea className="search-input" style={{ width: '100%', minHeight: '70px', resize: 'vertical' }} value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })} placeholder={t('ui.wholesale.customers.form.fullAddress')} /></div>
+                                <div><label style={labelStyle}>{t('ui.wholesale.common.note')}</label><input className="search-input" style={{ width: '100%' }} value={form.note || ''} onChange={e => setForm({ ...form, note: e.target.value })} /></div>
                             </div>
                         </div>
 
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '0 4px' }}>
                             <input type="checkbox" checked={form.is_active ?? true} onChange={e => setForm({ ...form, is_active: e.target.checked })} style={{ width: '18px', height: '18px', accentColor: 'var(--color-primary)' }} />
-                            <span style={{ fontWeight: 500, fontSize: '14px' }}>Active customer</span>
+                            <span style={{ fontWeight: 500, fontSize: '14px' }}>{t('ui.wholesale.customers.form.activeCustomer')}</span>
                         </label>
 
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--color-border)', paddingTop: isMobile ? '12px' : '18px' }}>
-                            <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
-                            <button className="primary-button" disabled={saving || !form.name?.trim()} onClick={handleSave} style={{ padding: '10px 24px', borderRadius: '8px', fontWeight: 600, flex: isMobile ? 1 : undefined }}>{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Register Customer')}</button>
+                            <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px', flex: isMobile ? '0 0 auto' : undefined }}>{t('common.cancel')}</button>
+                            <button className="primary-button" disabled={saving || !form.name?.trim()} onClick={handleSave} style={{ padding: '10px 24px', borderRadius: '8px', fontWeight: 600, flex: isMobile ? 1 : undefined }}>{saving ? t('ui.wholesale.common.saving') : (editing ? t('ui.wholesale.common.saveChanges') : t('ui.wholesale.customers.register'))}</button>
                         </div>
                     </div>
                 </Modal>

@@ -5,6 +5,7 @@ import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
 import { useIntersectionObserver } from '../hooks/useIntersectionObserver';
 import type { Product } from '../types';
+import { useTx } from './useTx';
 
 interface ProductCardProps {
     product: Product;
@@ -13,6 +14,7 @@ interface ProductCardProps {
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd, cartQuantity = 0 }) => {
+    const tx = useTx();
     const { pinnedProductIds, toggleProductPin } = useStore();
     const isMobile = useMobile();
     const isPinned = pinnedProductIds.includes(product.id);
@@ -96,7 +98,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd, cartQuantity 
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     transition: 'all 0.2s'
                 }}
-                title={isPinned ? 'Unpin Product' : 'Pin Product'}
+                title={isPinned ? tx('ui.components.productCard.unpin', 'Unpin Product') : tx('ui.components.productCard.pin', 'Pin Product')}
             >
                 <Pin size={isMobile ? 12 : 14} fill={isPinned ? 'currentColor' : 'none'} />
             </button>
@@ -112,7 +114,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd, cartQuantity 
                     padding: '2px 8px', borderRadius: '12px', zIndex: 10, backdropFilter: 'blur(4px)',
                     boxShadow: isLowStock ? '0 2px 8px rgba(245, 158, 11, 0.4)' : '0 2px 4px rgba(0,0,0,0.05)'
                 }}>
-                    Stock: {effectiveStock}
+                    {tx('ui.components.productCard.stock', 'Stock:')} {effectiveStock}
                 </div>
             )}
 
@@ -136,7 +138,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd, cartQuantity 
                         style={{ width: '100%', height: '100%', objectFit: 'contain', transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)' }}
                     />
                 ) : (
-                    <div style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>Loading image...</div>
+                    <div style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>{tx('ui.components.productCard.loadingImage', 'Loading image...')}</div>
                 )}
             </div>
 
@@ -179,7 +181,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAdd, cartQuantity 
                     </div>
 
                     {isOutOfStock ? (
-                        <span style={{ fontSize: '10px', color: '#EF4444', fontWeight: 'bold', background: '#FEE2E2', padding: '4px 6px', borderRadius: '4px' }}>Sold Out</span>
+                        <span style={{ fontSize: '10px', color: '#EF4444', fontWeight: 'bold', background: '#FEE2E2', padding: '4px 6px', borderRadius: '4px' }}>{tx('ui.components.productCard.soldOut', 'Sold Out')}</span>
                     ) : (
                         <button
                             style={{

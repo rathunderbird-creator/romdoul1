@@ -3,17 +3,20 @@
 // account is never the one a USD payment slides onto.
 import React from 'react';
 import { sortCashBankForPicker, splitByCurrency } from '../utils/cashBankAccounts';
+import { useTx } from './useTx';
 
 type Acct = { id: string; account_code?: string | null; account_name: string };
 
-const CashBankOptions: React.FC<{ accounts: Acct[]; label?: (a: Acct) => string; khrGroupLabel?: string }> = ({ accounts, label, khrGroupLabel = 'Riel (KHR)' }) => {
+const CashBankOptions: React.FC<{ accounts: Acct[]; label?: (a: Acct) => string; khrGroupLabel?: string }> = ({ accounts, label, khrGroupLabel }) => {
+    const tx = useTx();
+    const groupLabel = khrGroupLabel ?? tx('money.rielGroup', 'Riel (KHR)');
     const { usd, khr } = splitByCurrency(sortCashBankForPicker(accounts));
     const text = label || ((a: Acct) => `${a.account_code ? a.account_code + ' · ' : ''}${a.account_name}`);
     return (
         <>
             {usd.map(a => <option key={a.id} value={a.id}>{text(a)}</option>)}
             {khr.length > 0 && (
-                <optgroup label={khrGroupLabel}>
+                <optgroup label={groupLabel}>
                     {khr.map(a => <option key={a.id} value={a.id}>{text(a)}</option>)}
                 </optgroup>
             )}

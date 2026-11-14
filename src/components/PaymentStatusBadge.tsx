@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 import { usePortalPosition } from '../hooks/usePortalPosition';
+import { useTx } from './useTx';
 
 interface PaymentStatusBadgeProps {
     status: string;
@@ -16,6 +17,15 @@ interface PaymentStatusBadgeProps {
 
 const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChange, readOnly = false, disabledOptions = [], bold = true, unconfirmed }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const tx = useTx();
+    // Display labels only: the stored values (options, status) stay English.
+    const extraLabels: Record<string, string> = {
+        Settled: tx('ui.components.payStatus.settled', 'Settled'),
+        'Not Settle': tx('ui.components.payStatus.notSettle', 'Not Settle'),
+        Pending: tx('status.pending', 'Pending'),
+    };
+    const payLabel = (s: string) => extraLabels[s] ?? tx(`dashboard2.pay.${s}`, s);
+    const pdFeeTitle = tx('ui.components.payStatus.pdFeeTitle', 'Paid for Delivery Fee');
     const dropdownRef = useRef<HTMLDivElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
     // In the zoomed body's coordinates, flipped above when there's no room below.
@@ -91,8 +101,8 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
 
     return (
         <div style={{ position: 'relative', display: 'inline-block', width: '100%' }} ref={dropdownRef}>
-            <div className="status-badge" data-unconfirmed={unconfirmed ? '' : undefined} style={badgeStyle} onClick={handleToggle} title={unconfirmed || (status === 'PdFee' ? 'Paid for Delivery Fee' : undefined)}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{status}</span>
+            <div className="status-badge" data-unconfirmed={unconfirmed ? '' : undefined} style={badgeStyle} onClick={handleToggle} title={unconfirmed || (status === 'PdFee' ? pdFeeTitle : undefined)}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{payLabel(status)}</span>
                 {!readOnly && <ChevronDown size={14} style={{ marginLeft: '4px', opacity: 0.7, flexShrink: 0 }} />}
             </div>
 
@@ -122,7 +132,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
                             <div
                                 key={opt}
                                 onClick={() => !isDisabled && handleSelect(opt)}
-                                title={opt === 'PdFee' ? 'Paid for Delivery Fee' : undefined}
+                                title={opt === 'PdFee' ? pdFeeTitle : undefined}
                                 style={{
                                     padding: '8px 12px',
                                     cursor: isDisabled ? 'not-allowed' : 'pointer',
@@ -144,7 +154,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
                                     if (!isDisabled) e.currentTarget.style.backgroundColor = opt === status ? 'var(--color-surface-hover)' : 'white';
                                 }}
                             >
-                                {opt}
+                                {payLabel(opt)}
                             </div>
                         );
                     })}

@@ -8,6 +8,7 @@ import CheckoutForm from './CheckoutForm';
 import type { Sale } from '../types';
 import { useMobile } from '../hooks/useMobile';
 import LazyAvatar from './LazyAvatar';
+import { useTx } from './useTx';
 
 interface POSInterfaceProps {
     orderToEdit?: Sale | null;
@@ -17,6 +18,7 @@ interface POSInterfaceProps {
 const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }) => {
     const { products, addToCart, cart, updateCartQuantity, clearCart, categories, customers, updateCart, pinnedProductIds, khrExchangeRate } = useStore();
     const isMobile = useMobile();
+    const tx = useTx();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
@@ -126,7 +128,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                             cursor: 'pointer',
                             color: 'var(--color-text-main)'
                         }}
-                        title="Close POS"
+                        title={tx('ui.components.pos.close', 'Close POS')}
                     >
                         <X size={20} />
                     </button>
@@ -142,7 +144,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                 <Search size={20} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-primary)', opacity: 0.7 }} />
                                 <input
                                     type="text"
-                                    placeholder="Search products..."
+                                    placeholder={tx('ui.components.pos.searchProducts', 'Search products...')}
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     className="search-input"
@@ -181,7 +183,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                             transform: selectedCategory === cat ? 'scale(1.05)' : 'scale(1)'
                                         }}
                                     >
-                                        {cat}
+                                        {cat === 'All' ? tx('common.all', 'All') : cat}
                                     </button>
                                 ))}
                             </div>
@@ -323,7 +325,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                             <ShoppingCart size={22} color="white" />
                                         </div>
                                         <div>
-                                            <h2 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--color-text-main)', lineHeight: 1.2 }}>Current Order</h2>
+                                            <h2 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--color-text-main)', lineHeight: 1.2 }}>{tx('ui.components.pos.currentOrder', 'Current Order')}</h2>
                                             <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>#{Date.now().toString().slice(-6)}</span>
                                         </div>
                                     </div>
@@ -356,7 +358,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                                 boxShadow: '0 2px 5px rgba(0,0,0,0.02)'
                                             }}
                                         >
-                                            <option value="">Guest Customer</option>
+                                            <option value="">{tx('ui.components.pos.guestCustomer', 'Guest Customer')}</option>
                                             {customers.map(c => (
                                                 <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
                                             ))}
@@ -372,7 +374,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                             <Banknote size={48} />
                                         </div>
                                         <div style={{ textAlign: 'center' }}>
-                                            <p style={{ fontWeight: 700, fontSize: '18px', marginBottom: '8px', color: 'var(--color-text-main)' }}>Cart is empty</p>
+                                            <p style={{ fontWeight: 700, fontSize: '18px', marginBottom: '8px', color: 'var(--color-text-main)' }}>{tx('ui.components.pos.cartEmpty', 'Cart is empty')}</p>
                                         </div>
                                     </div>
                                 ) : (
@@ -406,12 +408,12 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
 
                             <div style={{ padding: '28px', borderTop: '1px solid rgba(0,0,0,0.05)', backgroundColor: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(10px)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', fontSize: '15px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                                    <span>Subtotal</span>
+                                    <span>{tx('ui.components.pos.subtotal', 'Subtotal')}</span>
                                     <span style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>${cartTotal.toFixed(2)}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'flex-end', paddingTop: '20px', borderTop: '2px dashed rgba(0,0,0,0.05)' }}>
                                     <div>
-                                        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-muted)', display: 'block' }}>TOTAL</span>
+                                        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-muted)', display: 'block' }}>{tx('ui.components.pos.totalCaps', 'TOTAL')}</span>
                                         <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{formatKhr(finalTotal * khrExchangeRate)}</span>
                                     </div>
                                     <span style={{ fontSize: '32px', fontWeight: 900, color: 'var(--color-primary)', lineHeight: 1 }}>${finalTotal.toFixed(2)}</span>
@@ -440,7 +442,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
                                         }}
                                     >
                                         <Banknote size={24} />
-                                        Checkout
+                                        {tx('ui.components.pos.checkout', 'Checkout')}
                                     </button>
                                 </div>
                             </div>

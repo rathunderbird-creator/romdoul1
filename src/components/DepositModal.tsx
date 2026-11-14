@@ -8,6 +8,7 @@ import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
 import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
 import { accountCurrency, khrMeta, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { useTx } from './useTx';
 
 interface DepositModalProps {
     order: Sale | null;
@@ -34,6 +35,7 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
     const [method, setMethod] = useState('');
     const [date, setDate] = useState(today());
     const [depositAccountId, setDepositAccountId] = useState('');
+    const tx = useTx();
     // One save per opening: a second click before the modal closes would send
     // the same deposit twice.
     const [submitted, setSubmitted] = useState(false);
@@ -92,8 +94,8 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
                             <Wallet size={19} />
                         </div>
                         <div>
-                            <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>Record Deposit</h2>
-                            <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '1px 0 0 0' }}>{order.customer?.name || 'Customer'} · Total ${order.total.toFixed(2)}</p>
+                            <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>{tx('ui.components.deposit.title', 'Record Deposit')}</h2>
+                            <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '1px 0 0 0' }}>{order.customer?.name || tx('ui.components.common.customer', 'Customer')} · {tx('common.total', 'Total')} ${order.total.toFixed(2)}</p>
                         </div>
                     </div>
                     <button onClick={onClose} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -105,17 +107,19 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
                 <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     {claim && !(order.depositAmount && order.depositAmount > 0) && (
                         <div style={{ fontSize: '12px', color: '#374151', background: '#F3F4F6', border: '1px solid #D1D5DB', borderRadius: '8px', padding: '8px 10px' }}>
-                            Confirming the deposit {claim.by ? `${claim.by} ` : ''}entered{claim.date ? ` on ${claim.date}` : ''}. Check it arrived, correct anything that differs, then save: that books it.
+                            {claim.by
+                                ? (claim.date ? tx('ui.components.deposit.confirmingByOn', 'Confirming the deposit {by} entered on {date}. Check it arrived, correct anything that differs, then save: that books it.', { by: claim.by, date: claim.date }) : tx('ui.components.deposit.confirmingBy', 'Confirming the deposit {by} entered. Check it arrived, correct anything that differs, then save: that books it.', { by: claim.by }))
+                                : (claim.date ? tx('ui.components.deposit.confirmingOn', 'Confirming the deposit entered on {date}. Check it arrived, correct anything that differs, then save: that books it.', { date: claim.date }) : tx('ui.components.deposit.confirming', 'Confirming the deposit entered. Check it arrived, correct anything that differs, then save: that books it.'))}
                         </div>
                     )}
                     <div>
                         <MoneyInput
                             field={field}
-                            label="Deposit Amount"
+                            label={tx('ui.components.deposit.amount', 'Deposit Amount')}
                             required
                             autoFocus
                             allowKhr
-                            placeholder={field.currency === 'KHR' ? 'e.g. 8000' : 'e.g. 2.00'}
+                            placeholder={field.currency === 'KHR' ? tx('ui.components.common.eg', 'e.g. {v}', { v: '8000' }) : tx('ui.components.common.eg', 'e.g. {v}', { v: '2.00' })}
                             onToggleCurrency={coupling.onToggleCurrency}
                             khrUnavailableReason={coupling.khrUnavailableReason}
                             labelStyle={labelStyle}
@@ -124,49 +128,49 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
                         {amt > 0 && (
                             <div style={{ marginTop: '6px', fontSize: '12px', color: amt >= (order.total || 0) ? '#DC2626' : 'var(--color-text-secondary)' }}>
                                 {amt >= (order.total || 0)
-                                    ? 'Deposit must be less than the order total — use Paid for full payment.'
-                                    : <>Remaining via COD: <strong style={{ color: '#DC2626' }}>${remaining.toFixed(2)}</strong></>}
+                                    ? tx('ui.components.deposit.mustBeLess', 'Deposit must be less than the order total — use Paid for full payment.')
+                                    : <>{tx('ui.components.deposit.remainingCod', 'Remaining via COD:')} <strong style={{ color: '#DC2626' }}>${remaining.toFixed(2)}</strong></>}
                             </div>
                         )}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
-                            <label style={labelStyle}>Pay By</label>
+                            <label style={labelStyle}>{tx('orders.payBy', 'Pay By')}</label>
                             <select value={method} onChange={e => setMethod(e.target.value)} style={inputStyle}>
                                 {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label style={labelStyle}>Deposit Date</label>
+                            <label style={labelStyle}>{tx('ui.components.deposit.date', 'Deposit Date')}</label>
                             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
                         </div>
                     </div>
                     {showDepositAccount && (
                         <div>
-                            <label style={labelStyle}>Deposited into *</label>
+                            <label style={labelStyle}>{tx('ui.components.common.depositedInto', 'Deposited into')} *</label>
                             <select
                                 value={depositAccountId}
                                 onChange={e => coupling.onAccountChange(e.target.value)}
                                 style={{ ...inputStyle, border: `1px solid ${paymentAccounts.length > 0 && !depositAccountId ? '#DC2626' : 'var(--color-border)'}` }}
                             >
-                                <option value="">Bank or cash account…</option>
+                                <option value="">{tx('ui.components.common.bankOrCash', 'Bank or cash account…')}</option>
                                 <CashBankOptions accounts={paymentAccounts} />
                             </select>
                             {paymentAccounts.length === 0 && (
                                 <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                                    No cash or bank accounts in the Chart of Accounts yet — the deposit saves without one.
+                                    {tx('ui.components.deposit.noAccounts', 'No cash or bank accounts in the Chart of Accounts yet — the deposit saves without one.')}
                                 </div>
                             )}
                         </div>
                     )}
                     <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '8px 10px' }}>
-                        The deposit is logged as income now (កក់ប្រាក់) and is always kept, even if the order is cancelled later. When the order is marked Paid, only the COD remainder is added to income.
+                        {tx('ui.components.deposit.note', 'The deposit is logged as income now (កក់ប្រាក់) and is always kept, even if the order is cancelled later. When the order is marked Paid, only the COD remainder is added to income.')}
                     </div>
                 </div>
 
                 {/* Footer */}
                 <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                    <button className="secondary-button" onClick={onClose} style={{ padding: '10px 18px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
+                    <button className="secondary-button" onClick={onClose} style={{ padding: '10px 18px', borderRadius: '10px', fontWeight: 600 }}>{tx('common.cancel', 'Cancel')}</button>
                     <button
                         className="primary-button"
                         disabled={!valid}
@@ -190,7 +194,7 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
                         }}
                         style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, background: '#7e22ce', opacity: valid ? 1 : 0.5, cursor: valid ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}
                     >
-                        <CheckCircle2 size={16} /> Save Deposit
+                        <CheckCircle2 size={16} /> {tx('ui.components.deposit.save', 'Save Deposit')}
                     </button>
                 </div>
             </div>

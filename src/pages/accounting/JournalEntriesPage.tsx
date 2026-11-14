@@ -4,6 +4,8 @@ import { Plus, Trash2, Search, ArrowDownToLine, Eye, Printer, Pencil, CheckCircl
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { tNow, fill } from '../../i18n/translate';
 import { useStore } from '../../context/StoreContext';
 import { Modal } from '../../components';
 import DateRangePicker from '../../components/DateRangePicker';
@@ -94,7 +96,7 @@ const statusChip = (status: string) => (
         padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700,
         background: status === 'Draft' ? '#fef3c7' : 'rgba(84, 105, 212, 0.12)',
         color: status === 'Draft' ? '#92400e' : '#4c5fd0',
-    }}>{status === 'Draft' ? 'Draft' : 'Posted'}</span>
+    }}>{status === 'Draft' ? tNow('ui.wholesale.payments.draft') : tNow('ui.wholesale.payments.posted')}</span>
 );
 
 // An entry written by a payment flow (Customer Payment, Procurement or
@@ -107,14 +109,14 @@ const isSystemEntry = (entry: JournalEntry) => (entry.reference_id || '').starts
 const originChip = (isSystem: boolean) => (
     <span
         title={isSystem
-            ? 'Created automatically by a payment flow (Retail Payment, Procurement or Wholesale).'
-            : 'Recorded directly on this page.'}
+            ? tNow('ui.wholesale.journal.originAutoTitle')
+            : tNow('ui.wholesale.journal.originManualTitle')}
         style={{
             fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap',
             color: isSystem ? '#1D4ED8' : '#B45309',
             background: isSystem ? 'rgba(37, 99, 235, 0.12)' : 'rgba(217, 119, 6, 0.12)',
             cursor: 'help', textTransform: 'uppercase', letterSpacing: '0.4px',
-        }}>{isSystem ? 'auto' : 'manual'}</span>
+        }}>{isSystem ? tNow('ui.wholesale.journal.auto') : tNow('ui.wholesale.journal.manual')}</span>
 );
 
 // ── Business-area filter: with thousands of retail receipts in the ledger,
@@ -127,6 +129,11 @@ const originChip = (isSystem: boolean) => (
 // rows that originate in the retail/wholesale/purchase/expense flows.
 const AREA_LABELS = ['Retail', 'Wholesale', 'Purchases', 'Payments', 'Rev & Exp', 'General', 'Other'] as const;
 type Area = typeof AREA_LABELS[number];
+// Translation key per area (the Area values themselves stay English: they are lookup codes).
+const AREA_KEY: Record<Area, string> = {
+    Retail: 'retail', Wholesale: 'wholesale', Purchases: 'purchases', Payments: 'payments',
+    'Rev & Exp': 'revExp', General: 'general', Other: 'other',
+};
 const CODE_AREA: Record<string, Area> = {
     RCP: 'Retail', DEP: 'Retail', DLV: 'Retail',
     WSP: 'Wholesale',
@@ -160,6 +167,10 @@ const JournalEntriesPage = () => {
     const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
+    const areaLabel = (a: Area) => t(`ui.wholesale.journal.areas.${AREA_KEY[a]}`);
+    // Display label of an import candidate's source (the source value stays English: logic compares it).
+    const sourceLabel = (s: string) => s === 'Supplier payment' ? t('ui.wholesale.journal.source.supplier') : s === 'Wholesale receipt' ? t('ui.wholesale.journal.source.wholesale') : s === 'Payroll' ? t('ui.wholesale.journal.source.payroll') : s;
     const { currentUser } = useStore();
     // Unposting rewinds finalized books, so it stays admin-only — same gate
     // as Customer Payment's and Revenue/Expense's bulk Unpost.
@@ -288,7 +299,7 @@ const JournalEntriesPage = () => {
             setImportPreview({ candidates, skipped, beforeStart, start });
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to scan transactions: ' + msg, 'error');
+            showToast(t('ui.wholesale.journal.toast.scanFailed') + msg, 'error');
         } finally {
             setImporting(false);
         }
@@ -333,7 +344,7 @@ const JournalEntriesPage = () => {
                 }
                 if (error && /status/i.test(error.message || '')) {
                     // Never import as instantly-posted: drafts need the status column.
-                    showToast('Importing needs migrations/add_entry_status.sql on this instance, so entries arrive as drafts — nothing was imported', 'error');
+                    showToast(t('ui.wholesale.journal.toast.importNeedsStatus'), 'error');
                     return;
                 }
                 if (error || !entry) { failed++; continue; }
@@ -353,7 +364,7 @@ const JournalEntriesPage = () => {
                 }
                 ok++;
             }
-            showToast(`Imported ${ok} draft ${ok === 1 ? 'entry' : 'entries'}${failed ? `, ${failed} failed` : ''}`, failed ? 'error' : 'success');
+            showToast(`${fill(ok === 1 ? t('ui.wholesale.journal.toast.importedOne') : t('ui.wholesale.journal.toast.imported'), { n: ok })}${failed ? fill(t('ui.wholesale.journal.toast.failedSuffix'), { n: failed }) : ''}`, failed ? 'error' : 'success');
             setImportPreview(null);
             fetchJournalEntries();
         } finally {
@@ -386,10 +397,10 @@ const JournalEntriesPage = () => {
     // Draft-only (unchanged below); only Delete is widened.
     const handleDelete = async (entry: JournalEntry) => {
         const entryId = entry.id;
-        if (entry.status !== 'Draft' && !isAdmin) { showToast('Posted entries can only be deleted by an admin — unpost it first, or ask an admin.', 'info'); return; }
+        if (entry.status !== 'Draft' && !isAdmin) { showToast(t('ui.wholesale.journal.toast.adminOnlyDelete'), 'info'); return; }
         if (busyIds.has(entryId)) return;
-        const postedWarn = entry.status !== 'Draft' ? ' This entry is already Posted — deleting it changes the finalized books.' : '';
-        if (!confirm(`Delete this entry? Its lines are removed too.${postedWarn}`)) return;
+        const postedWarn = entry.status !== 'Draft' ? ' ' + t('ui.wholesale.journal.confirm.postedWarn') : '';
+        if (!confirm(`${t('ui.wholesale.journal.confirm.deleteOne')}${postedWarn}`)) return;
         markBusy(entryId, true);
         try {
             const { error: lErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId);
@@ -398,11 +409,11 @@ const JournalEntriesPage = () => {
             if (error) throw error;
             // The entry just deleted may be the one open in the edit modal.
             if (editingEntryId === entryId) { setIsModalOpen(false); setEditingEntryId(null); }
-            showToast('Entry deleted', 'success');
+            showToast(t('ui.wholesale.journal.toast.deleted'), 'success');
             fetchJournalEntries();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to delete entry: ' + msg, 'error');
+            showToast(t('ui.wholesale.journal.toast.deleteFailed') + msg, 'error');
         } finally {
             markBusy(entryId, false);
         }
@@ -415,15 +426,15 @@ const JournalEntriesPage = () => {
         try {
             const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', entryId);
             if (error) throw error;
-            showToast('Entry posted', 'success');
+            showToast(t('ui.wholesale.journal.toast.posted'), 'success');
             // Only the status changed — update that one row in place instead of
             // refetching the whole ledger (which flashes the table's loading state).
             patchJournalEntry(entryId, { status: 'Posted' });
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             showToast(/status/i.test(msg)
-                ? 'Posting needs migrations/add_entry_status.sql on this instance'
-                : 'Failed to post entry: ' + msg, 'error');
+                ? t('ui.wholesale.journal.toast.postNeedsStatus')
+                : t('ui.wholesale.journal.toast.postFailed') + msg, 'error');
         } finally {
             markBusy(entryId, false);
         }
@@ -433,13 +444,13 @@ const JournalEntriesPage = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Journal Entries</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Double-entry ledger with real-time validation.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('ui.wholesale.journal.title')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('ui.wholesale.journal.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchJournalEntries();
@@ -540,16 +551,16 @@ const JournalEntriesPage = () => {
                     ({ error: insErr } = await supabase.from('journal_entry_lines').insert(
                         linePayloads.map(l => { const copy: Record<string, unknown> = { ...l }; delete copy.description; return copy; })
                     ));
-                    if (!insErr) showToast('Saved without the line descriptions — run migrations/add_journal_entry_line_description.sql to store them', 'info');
+                    if (!insErr) showToast(t('ui.wholesale.journal.toast.savedNoLineDesc'), 'info');
                 }
                 if (insErr) throw insErr;
-                showToast('Entry updated', 'success');
+                showToast(t('ui.wholesale.journal.toast.updated'), 'success');
                 setIsModalOpen(false);
                 setEditingEntryId(null);
                 fetchJournalEntries();
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
-                showToast('Failed to update entry: ' + msg, 'error');
+                showToast(t('ui.wholesale.journal.toast.updateFailed') + msg, 'error');
             }
             return;
         }
@@ -579,7 +590,7 @@ const JournalEntriesPage = () => {
 
     const openPrintWindow = (title: string, bodyHtml: string) => {
         const w = window.open('', '_blank', 'width=860,height=900');
-        if (!w) { showToast('Allow popups to print', 'error'); return; }
+        if (!w) { showToast(t('ui.wholesale.journal.toast.allowPopups'), 'error'); return; }
         w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${PRINT_CSS}</style></head><body>${bodyHtml}</body></html>`);
         w.document.close();
         w.focus();
@@ -792,7 +803,7 @@ const JournalEntriesPage = () => {
     const handleBulkUnpost = async () => {
         const targets = selectedPostedRows;
         if (!isAdmin || targets.length === 0 || isBulkUnposting) return;
-        if (!confirm(`Return ${targets.length} posted ${targets.length === 1 ? 'entry' : 'entries'} to Draft?\nThey can then be corrected and posted again.`)) return;
+        if (!confirm(fill(targets.length === 1 ? t('ui.wholesale.journal.confirm.unpostOne') : t('ui.wholesale.journal.confirm.unpost'), { n: targets.length }))) return;
         setIsBulkUnposting(true);
         const ids = targets.map(e => e.id);
         setBusyIds(prev => new Set([...prev, ...ids]));
@@ -826,14 +837,14 @@ const JournalEntriesPage = () => {
                 if (error) throw error;
             }
             const extra = allIds.length - ids.length;
-            showToast(`Returned ${targets.length} ${targets.length === 1 ? 'entry' : 'entries'} to Draft${extra > 0 ? ` (plus ${extra} linked COGS ${extra === 1 ? 'entry' : 'entries'})` : ''}`, 'success');
+            showToast(`${fill(targets.length === 1 ? t('ui.wholesale.journal.toast.returnedOne') : t('ui.wholesale.journal.toast.returned'), { n: targets.length })}${extra > 0 ? fill(extra === 1 ? t('ui.wholesale.journal.toast.plusCogsOne') : t('ui.wholesale.journal.toast.plusCogs'), { n: extra }) : ''}`, 'success');
             setSelectedIds(prev => { const n = new Set(prev); allIds.forEach(id => n.delete(id)); return n; });
             fetchJournalEntries();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             showToast(/status/i.test(msg)
-                ? 'Unposting needs migrations/add_entry_status.sql on this instance'
-                : 'Failed to unpost: ' + msg, 'error');
+                ? t('ui.wholesale.journal.toast.unpostNeedsStatus')
+                : t('ui.wholesale.journal.toast.unpostFailed') + msg, 'error');
             fetchJournalEntries();
         } finally {
             setBusyIds(prev => { const n = new Set(prev); allIds.forEach(id => n.delete(id)); return n; });
@@ -845,8 +856,8 @@ const JournalEntriesPage = () => {
         const targets = selectedDeletableRows;
         if (targets.length === 0 || isBulkDeleting) return;
         const postedCount = targets.filter(e => e.status !== 'Draft').length;
-        const warn = postedCount > 0 ? `\n${postedCount} ${postedCount === 1 ? 'is' : 'are'} already Posted — deleting them changes the finalized books.` : '';
-        if (!confirm(`Delete ${targets.length} ${targets.length === 1 ? 'entry' : 'entries'}? Their lines are removed too.${warn}`)) return;
+        const warn = postedCount > 0 ? `\n${fill(postedCount === 1 ? t('ui.wholesale.journal.confirm.postedWarnOne') : t('ui.wholesale.journal.confirm.postedWarnMany'), { n: postedCount })}` : '';
+        if (!confirm(`${fill(targets.length === 1 ? t('ui.wholesale.journal.confirm.deleteManyOne') : t('ui.wholesale.journal.confirm.deleteMany'), { n: targets.length })}${warn}`)) return;
         setIsBulkDeleting(true);
         const ids = targets.map(e => e.id);
         setBusyIds(prev => new Set([...prev, ...ids]));
@@ -863,12 +874,12 @@ const JournalEntriesPage = () => {
             }
             // The entry just deleted may be the one open in the edit modal.
             if (editingEntryId && ids.includes(editingEntryId)) { setIsModalOpen(false); setEditingEntryId(null); }
-            showToast(`Deleted ${targets.length} ${targets.length === 1 ? 'entry' : 'entries'}`, 'success');
+            showToast(fill(targets.length === 1 ? t('ui.wholesale.journal.toast.deletedNOne') : t('ui.wholesale.journal.toast.deletedN'), { n: targets.length }), 'success');
             setSelectedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
             fetchJournalEntries();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to delete: ' + msg, 'error');
+            showToast(t('ui.wholesale.journal.toast.bulkDeleteFailed') + msg, 'error');
             fetchJournalEntries();
         } finally {
             setBusyIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
@@ -883,7 +894,7 @@ const JournalEntriesPage = () => {
                 <button
                     onClick={prepareImport}
                     disabled={importing}
-                    title="Bring supplier payments, wholesale receipts and payroll into the ledger as drafts"
+                    title={t('ui.wholesale.journal.importTitle')}
                     style={{
                         display: 'flex', alignItems: 'center', gap: '8px',
                         padding: '10px 16px', borderRadius: '8px',
@@ -892,7 +903,7 @@ const JournalEntriesPage = () => {
                         cursor: importing ? 'wait' : 'pointer'
                     }}
                 >
-                    <ArrowDownToLine size={16} /> {importing ? 'Working…' : 'Import to Ledger'}
+                    <ArrowDownToLine size={16} /> {importing ? t('ui.wholesale.journal.working') : t('ui.wholesale.journal.importToLedger')}
                 </button>
                 <button
                     onClick={handleOpenModal}
@@ -904,16 +915,16 @@ const JournalEntriesPage = () => {
                         boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                     }}
                 >
-                    <Plus size={16} /> New Entry
+                    <Plus size={16} /> {t('ui.wholesale.journal.newEntry')}
                 </button>
             </div>
 
             {/* Summary cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginBottom: '20px' }}>
                 {([
-                    [`Total Entries${filtersActive ? ' (Filtered)' : ''}`, counts.total, 'var(--color-text-main)'],
-                    [`Posted${filtersActive ? ' (Filtered)' : ''}`, counts.posted, '#4c5fd0'],
-                    [`Draft${filtersActive ? ' (Filtered)' : ''}`, counts.draft, '#D97706'],
+                    [`${t('ui.wholesale.journal.totalEntries')}${filtersActive ? ` ${t('ui.wholesale.journal.filteredSuffix')}` : ''}`, counts.total, 'var(--color-text-main)'],
+                    [`${t('ui.wholesale.payments.posted')}${filtersActive ? ` ${t('ui.wholesale.journal.filteredSuffix')}` : ''}`, counts.posted, '#4c5fd0'],
+                    [`${t('ui.wholesale.payments.draft')}${filtersActive ? ` ${t('ui.wholesale.journal.filteredSuffix')}` : ''}`, counts.draft, '#D97706'],
                 ] as const).map(([label, value, color]) => (
                     <div key={label} style={{ background: 'var(--color-surface)', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px' }}>
                         <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</div>
@@ -926,31 +937,31 @@ const JournalEntriesPage = () => {
             {/* Every control here is FILTER_H tall so the row lines up. */}
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
                 <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Date</label>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>{t('ui.wholesale.common.date')}</label>
                     <DateRangePicker value={dateRange} onChange={setDateRange} height={FILTER_H} />
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Status</label>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>{t('ui.wholesale.common.status')}</label>
                     <select
                         value={statusFilter}
                         onChange={e => setStatusFilter(e.target.value as 'All' | 'Posted' | 'Draft')}
                         style={{ height: `${FILTER_H}px`, boxSizing: 'border-box', padding: '0 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer' }}
                     >
-                        <option value="All">All statuses</option>
-                        <option value="Posted">Posted</option>
-                        <option value="Draft">Draft</option>
+                        <option value="All">{t('ui.wholesale.payments.allStatuses')}</option>
+                        <option value="Posted">{t('ui.wholesale.payments.posted')}</option>
+                        <option value="Draft">{t('ui.wholesale.payments.draft')}</option>
                     </select>
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Origin</label>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>{t('ui.wholesale.journal.origin')}</label>
                     <select
                         value={originFilter}
                         onChange={e => setOriginFilter(e.target.value as 'All' | 'Auto' | 'Manual')}
                         style={{ height: `${FILTER_H}px`, boxSizing: 'border-box', padding: '0 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer' }}
                     >
-                        <option value="All">Auto &amp; Manual</option>
-                        <option value="Auto">Auto only</option>
-                        <option value="Manual">Manual only</option>
+                        <option value="All">{t('ui.wholesale.journal.autoAndManual')}</option>
+                        <option value="Auto">{t('ui.wholesale.journal.autoOnly')}</option>
+                        <option value="Manual">{t('ui.wholesale.journal.manualOnly')}</option>
                     </select>
                 </div>
                 {/* Business-area filter — multi-select dropdown (none ticked
@@ -962,30 +973,30 @@ const JournalEntriesPage = () => {
                     reflow the bar while an active filter kept applying. */}
                 {(existingAreas.size > 0 || areaFilters.size > 0) && (
                     <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Area</label>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>{t('ui.wholesale.journal.area')}</label>
                         <FilterDropdown
-                            allLabel="All Areas"
+                            allLabel={t('ui.wholesale.journal.allAreas')}
                             noun="area"
                             options={AREA_LABELS
                                 .filter(a => existingAreas.has(a) || areaFilters.has(a))
                                 .map(a => ({
-                                    key: a, label: a, count: areaCounts[a] || 0,
-                                    title: a === 'General' ? 'General-journal entries recorded directly on this page (New Entry)' : a,
+                                    key: a, label: areaLabel(a), count: areaCounts[a] || 0,
+                                    title: a === 'General' ? t('ui.wholesale.journal.generalTitle') : areaLabel(a),
                                 }))}
                             selected={areaFilters}
                             onToggle={a => toggleAreaFilter(a as Area)}
                             onClear={() => setAreaFilters(new Set())}
-                            emptyTitle="No entries in this area under the current filters"
+                            emptyTitle={t('ui.wholesale.journal.areaEmptyTitle')}
                         />
                     </div>
                 )}
                 <div style={{ flex: '1 1 200px', maxWidth: '340px' }}>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>Search</label>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>{t('common.search')}</label>
                     <div style={{ position: 'relative' }}>
                         <Search size={15} color="#8792a2" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
                         <input
                             type="text"
-                            placeholder="Search..."
+                            placeholder={t('ui.wholesale.journal.searchPlaceholder')}
                             style={{ width: '100%', height: `${FILTER_H}px`, padding: '0 12px 0 33px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: 'var(--color-surface)', color: 'var(--color-text-main)', boxSizing: 'border-box' }}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -997,7 +1008,7 @@ const JournalEntriesPage = () => {
                         onClick={() => { setDateRange({ start: '', end: '' }); setSearchQuery(''); setStatusFilter('All'); setOriginFilter('All'); setAreaFilters(new Set()); }}
                         style={{ height: `${FILTER_H}px`, padding: '0 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}
                     >
-                        Clear
+                        {t('ui.wholesale.common.clear')}
                     </button>
                 )}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -1006,14 +1017,14 @@ const JournalEntriesPage = () => {
                         disabled={isLoading || filteredEntries.length === 0}
                         style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredEntries.length === 0) ? 0.5 : 1 }}
                     >
-                        <Printer size={14} /> Print list
+                        <Printer size={14} /> {t('ui.wholesale.common.printList')}
                     </button>
                     <button
                         onClick={exportCsv}
                         disabled={isLoading || filteredEntries.length === 0}
                         style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredEntries.length === 0) ? 0.5 : 1 }}
                     >
-                        <Download size={14} /> Export CSV
+                        <Download size={14} /> {t('ui.wholesale.common.exportCsv')}
                     </button>
                 </div>
             </div>
@@ -1022,12 +1033,12 @@ const JournalEntriesPage = () => {
                 {isMobile ? (
                     // Phones: one card per entry — no sideways scrolling.
                     isLoading ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading entries...</div>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.wholesale.journal.loading')}</div>
                     ) : filteredEntries.length === 0 ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>No entries found</div>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.wholesale.journal.noneFound')}</div>
                     ) : (
                         visibleEntries.map(entry => {
-                            const t = entryTotals(entry);
+                            const tot = entryTotals(entry);
                             const isDraft = entry.status === 'Draft';
                             const canDeleteRow = isDraft || isAdmin;
                             const busy = busyIds.has(entry.id);
@@ -1040,7 +1051,7 @@ const JournalEntriesPage = () => {
                                                 checked={selectedIds.has(entry.id)}
                                                 onChange={() => toggleSelect(entry.id)}
                                                 disabled={busy}
-                                                title={busy ? 'Busy…' : 'Select entry'}
+                                                title={busy ? t('ui.wholesale.journal.busy') : t('ui.wholesale.journal.selectEntry')}
                                                 style={{ cursor: busy ? 'not-allowed' : 'pointer', flexShrink: 0 }}
                                             />
                                             <span style={{ fontWeight: 600, color: '#5469d4', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayIdOf(entry)}</span>
@@ -1048,24 +1059,24 @@ const JournalEntriesPage = () => {
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{fmtDate(entry.date)}</span>
                                     </div>
                                     <div className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', margin: '4px 0 6px', fontWeight: 500 }}>
-                                        {entry.description || 'No Description'}
+                                        {entry.description || t('ui.wholesale.journal.noDescription')}
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(t.debit)}</span>
+                                            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(tot.debit)}</span>
                                             {statusChip(entry.status || 'Posted')}
                                             {originChip(isSystemEntry(entry))}
                                         </span>
                                         <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                                            <ActionBtn icon={Eye} label="View" onClick={() => setViewEntry(entry)} />
-                                            <ActionBtn icon={Printer} label="Print" onClick={() => printEntry(entry)} />
+                                            <ActionBtn icon={Eye} label={t('ui.wholesale.common.view')} onClick={() => setViewEntry(entry)} />
+                                            <ActionBtn icon={Printer} label={t('ui.wholesale.common.print')} onClick={() => printEntry(entry)} />
                                             {isDraft && (
                                                 <>
-                                                    <ActionBtn icon={Pencil} label="Edit" onClick={() => openEdit(entry)} />
-                                                    <ActionBtn icon={CheckCircle2} label="Post" onClick={() => postEntry(entry.id)} color="#4c5fd0" />
+                                                    <ActionBtn icon={Pencil} label={t('common.edit')} onClick={() => openEdit(entry)} />
+                                                    <ActionBtn icon={CheckCircle2} label={t('ui.wholesale.journal.post')} onClick={() => postEntry(entry.id)} color="#4c5fd0" />
                                                 </>
                                             )}
-                                            {canDeleteRow && <ActionBtn icon={Trash2} label="Delete" onClick={() => handleDelete(entry)} color="#ef4444" />}
+                                            {canDeleteRow && <ActionBtn icon={Trash2} label={t('common.delete')} onClick={() => handleDelete(entry)} color="#ef4444" />}
                                         </span>
                                     </div>
                                 </div>
@@ -1088,28 +1099,28 @@ const JournalEntriesPage = () => {
                                     ref={el => { if (el) el.indeterminate = !allSelected && someSelected; }}
                                     onChange={toggleSelectAll}
                                     disabled={selectableIds.length === 0}
-                                    title="Select all shown entries"
+                                    title={t('ui.wholesale.journal.selectAll')}
                                     style={{ cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer' }}
                                 />
                             </th>
-                            <th style={{ ...widthStyle('date'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Date{resizeHandle('date')}</th>
-                            <th style={{ ...widthStyle('reference'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Reference{resizeHandle('reference')}</th>
-                            <th style={{ ...widthStyle('description'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Description{resizeHandle('description')}</th>
-                            <th style={{ ...widthStyle('debits'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>Debits{resizeHandle('debits')}</th>
-                            <th style={{ ...widthStyle('credits'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>Credits{resizeHandle('credits')}</th>
-                            <th style={{ ...widthStyle('status'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Status{resizeHandle('status')}</th>
-                            <th style={{ ...widthStyle('actions'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>Actions{resizeHandle('actions')}</th>
+                            <th style={{ ...widthStyle('date'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>{t('ui.wholesale.common.date')}{resizeHandle('date')}</th>
+                            <th style={{ ...widthStyle('reference'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>{t('ui.wholesale.common.reference')}{resizeHandle('reference')}</th>
+                            <th style={{ ...widthStyle('description'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>{t('ui.wholesale.common.description')}{resizeHandle('description')}</th>
+                            <th style={{ ...widthStyle('debits'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>{t('ui.wholesale.journal.debits')}{resizeHandle('debits')}</th>
+                            <th style={{ ...widthStyle('credits'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none', textAlign: 'right' }}>{t('ui.wholesale.journal.credits')}{resizeHandle('credits')}</th>
+                            <th style={{ ...widthStyle('status'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>{t('ui.wholesale.common.status')}{resizeHandle('status')}</th>
+                            <th style={{ ...widthStyle('actions'), position: 'relative', padding: '14px 20px', fontWeight: 600, color: 'var(--color-text-secondary)', fontSize: '12px', textTransform: 'none' }}>{t('common.actions')}{resizeHandle('actions')}</th>
                             <th aria-hidden style={{ padding: 0 }} />
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading entries...</td></tr>
+                            <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.journal.loading')}</td></tr>
                         ) : filteredEntries.length === 0 ? (
-                            <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No entries found</td></tr>
+                            <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.journal.noneFound')}</td></tr>
                         ) : (
                             visibleEntries.map(entry => {
-                                const t = entryTotals(entry);
+                                const tot = entryTotals(entry);
                                 const isDraft = entry.status === 'Draft';
                                 const canDeleteRow = isDraft || isAdmin;
                                 const busy = busyIds.has(entry.id);
@@ -1121,7 +1132,7 @@ const JournalEntriesPage = () => {
                                                 checked={selectedIds.has(entry.id)}
                                                 onChange={() => toggleSelect(entry.id)}
                                                 disabled={busy}
-                                                title={busy ? 'Busy…' : 'Select entry'}
+                                                title={busy ? t('ui.wholesale.journal.busy') : t('ui.wholesale.journal.selectEntry')}
                                                 style={{ cursor: busy ? 'not-allowed' : 'pointer' }}
                                             />
                                         </td>
@@ -1132,13 +1143,13 @@ const JournalEntriesPage = () => {
                                             {displayIdOf(entry)}
                                         </td>
                                         <td className="d2-khmer" style={{ ...widthStyle('description'), padding: '14px 20px', color: 'var(--color-text-main)', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entry.description || ''}>
-                                            {entry.description || 'No Description'}
+                                            {entry.description || t('ui.wholesale.journal.noDescription')}
                                         </td>
                                         <td style={{ ...widthStyle('debits'), padding: '14px 20px', fontWeight: 700, textAlign: 'right', color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                                            {fmtUsd(t.debit)}
+                                            {fmtUsd(tot.debit)}
                                         </td>
                                         <td style={{ ...widthStyle('credits'), padding: '14px 20px', fontWeight: 700, textAlign: 'right', color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                                            {fmtUsd(t.credit)}
+                                            {fmtUsd(tot.credit)}
                                         </td>
                                         <td style={{ ...widthStyle('status'), padding: '14px 20px', overflow: 'hidden' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -1148,15 +1159,15 @@ const JournalEntriesPage = () => {
                                         </td>
                                         <td style={{ ...widthStyle('actions'), padding: '10px 14px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                                                <ActionBtn icon={Eye} label="View" onClick={() => setViewEntry(entry)} />
-                                                <ActionBtn icon={Printer} label="Print" onClick={() => printEntry(entry)} />
+                                                <ActionBtn icon={Eye} label={t('ui.wholesale.common.view')} onClick={() => setViewEntry(entry)} />
+                                                <ActionBtn icon={Printer} label={t('ui.wholesale.common.print')} onClick={() => printEntry(entry)} />
                                                 {isDraft && (
                                                     <>
-                                                        <ActionBtn icon={Pencil} label="Edit" onClick={() => openEdit(entry)} />
-                                                        <ActionBtn icon={CheckCircle2} label="Post" onClick={() => postEntry(entry.id)} color="#4c5fd0" />
+                                                        <ActionBtn icon={Pencil} label={t('common.edit')} onClick={() => openEdit(entry)} />
+                                                        <ActionBtn icon={CheckCircle2} label={t('ui.wholesale.journal.post')} onClick={() => postEntry(entry.id)} color="#4c5fd0" />
                                                     </>
                                                 )}
-                                                {canDeleteRow && <ActionBtn icon={Trash2} label="Delete" onClick={() => handleDelete(entry)} color="#ef4444" />}
+                                                {canDeleteRow && <ActionBtn icon={Trash2} label={t('common.delete')} onClick={() => handleDelete(entry)} color="#ef4444" />}
                                             </span>
                                         </td>
                                         <td aria-hidden style={{ padding: 0 }} />
@@ -1174,7 +1185,7 @@ const JournalEntriesPage = () => {
                 {!isLoading && filteredEntries.length > PAGE_SIZE && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px', flexWrap: 'wrap', padding: '14px 20px', borderTop: '1px solid var(--color-border)' }}>
                         <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
-                            Showing {Math.min(visibleCount, filteredEntries.length).toLocaleString()} of {filteredEntries.length.toLocaleString()} entries
+                            {fill(t('ui.wholesale.journal.showingOf'), { shown: Math.min(visibleCount, filteredEntries.length).toLocaleString(), total: filteredEntries.length.toLocaleString() })}
                         </span>
                         {filteredEntries.length > visibleCount && (
                             <>
@@ -1182,13 +1193,13 @@ const JournalEntriesPage = () => {
                                     onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
                                     style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #5469d4', background: 'var(--color-surface)', color: '#5469d4', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                                 >
-                                    Show {Math.min(PAGE_SIZE, filteredEntries.length - visibleCount).toLocaleString()} more
+                                    {fill(t('ui.wholesale.journal.showMore'), { n: Math.min(PAGE_SIZE, filteredEntries.length - visibleCount).toLocaleString() })}
                                 </button>
                                 <button
                                     onClick={() => setVisibleCount(filteredEntries.length)}
                                     style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                                 >
-                                    Show all
+                                    {t('ui.wholesale.journal.showAll')}
                                 </button>
                             </>
                         )}
@@ -1215,13 +1226,13 @@ const JournalEntriesPage = () => {
                         boxShadow: '0 10px 32px rgba(0,0,0,0.22)'
                     }}>
                         <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
-                            {selectedRows.length > 0 ? `${selectedRows.length} selected` : 'Working…'}
+                            {selectedRows.length > 0 ? fill(t('ui.wholesale.journal.nSelected'), { n: selectedRows.length }) : t('ui.wholesale.journal.working')}
                         </span>
                         {isAdmin && (selectedPostedRows.length > 0 || isBulkUnposting) && (
                             <button
                                 onClick={handleBulkUnpost}
                                 disabled={bulkBusy}
-                                title="Return the selected posted entries to Draft so they can be corrected"
+                                title={t('ui.wholesale.journal.unpostTitle')}
                                 style={{
                                     padding: '8px 16px', borderRadius: '8px',
                                     border: '1px solid #D97706', background: '#FEF3C7', color: '#92400E',
@@ -1229,7 +1240,7 @@ const JournalEntriesPage = () => {
                                     opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
                                 }}
                             >
-                                {isBulkUnposting ? 'Unposting…' : `Unpost (${selectedPostedRows.length})`}
+                                {isBulkUnposting ? t('ui.wholesale.journal.unposting') : fill(t('ui.wholesale.journal.unpostN'), { n: selectedPostedRows.length })}
                             </button>
                         )}
                         {(selectedDeletableRows.length > 0 || isBulkDeleting) && (
@@ -1244,7 +1255,7 @@ const JournalEntriesPage = () => {
                                     opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
                                 }}
                             >
-                                <Trash2 size={14} /> {isBulkDeleting ? 'Deleting…' : `Delete (${selectedDeletableRows.length})`}
+                                <Trash2 size={14} /> {isBulkDeleting ? t('ui.wholesale.journal.deleting') : fill(t('ui.wholesale.journal.deleteN'), { n: selectedDeletableRows.length })}
                             </button>
                         )}
                         <button
@@ -1257,7 +1268,7 @@ const JournalEntriesPage = () => {
                                 whiteSpace: 'nowrap'
                             }}
                         >
-                            Clear
+                            {t('ui.wholesale.common.clear')}
                         </button>
                     </div>
                 );
@@ -1267,39 +1278,37 @@ const JournalEntriesPage = () => {
             <Modal
                 isOpen={!!importPreview}
                 onClose={() => setImportPreview(null)}
-                title="Import to Ledger"
+                title={t('ui.wholesale.journal.importToLedger')}
             >
                 {importPreview && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '8px 0' }}>
                         <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                            Supplier payments, wholesale receipts and payroll from operations become <b>draft</b> journal entries
-                            for you to review and post. Income &amp; Expense's own entries stay out of the ledger, and
-                            nothing imports twice.
+                            {t('ui.wholesale.journal.importIntroBefore')} <b>{t('ui.wholesale.journal.importIntroDraft')}</b> {t('ui.wholesale.journal.importIntroAfter')}
                         </p>
                         {importPreview.candidates.length === 0 ? (
                             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px', background: 'var(--color-bg)', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                Everything is already in the ledger — nothing new to import.
-                                {importPreview.skipped > 0 && <div style={{ marginTop: '6px', fontSize: '12px' }}>({importPreview.skipped} skipped: no matching account)</div>}
-                                {importPreview.beforeStart > 0 && importPreview.start && <div style={{ marginTop: '6px', fontSize: '12px' }}>({importPreview.beforeStart} from before {formatLedgerStart(importPreview.start)} left out: the ledger starts at the opening stock count)</div>}
+                                {t('ui.wholesale.journal.nothingNew')}
+                                {importPreview.skipped > 0 && <div style={{ marginTop: '6px', fontSize: '12px' }}>({fill(t('ui.wholesale.journal.skippedNoAccount'), { n: importPreview.skipped })})</div>}
+                                {importPreview.beforeStart > 0 && importPreview.start && <div style={{ marginTop: '6px', fontSize: '12px' }}>({fill(t('ui.wholesale.journal.beforeStartLong'), { n: importPreview.beforeStart, date: formatLedgerStart(importPreview.start) })})</div>}
                             </div>
                         ) : (
                             <>
                                 <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                                    {importPreview.candidates.length} {importPreview.candidates.length === 1 ? 'transaction' : 'transactions'} ·{' '}
+                                    {fill(importPreview.candidates.length === 1 ? t('ui.wholesale.journal.nTransactionsOne') : t('ui.wholesale.journal.nTransactions'), { n: importPreview.candidates.length })} ·{' '}
                                     {formatCurrency(importPreview.candidates.reduce((s, c) => s + c.amount, 0))}
-                                    {importPreview.skipped > 0 && <span style={{ fontWeight: 500, color: 'var(--color-text-muted)' }}> · {importPreview.skipped} skipped (no matching account)</span>}
-                                    {importPreview.beforeStart > 0 && importPreview.start && <span style={{ fontWeight: 500, color: 'var(--color-text-muted)' }}> · {importPreview.beforeStart} before {formatLedgerStart(importPreview.start)} left out</span>}
+                                    {importPreview.skipped > 0 && <span style={{ fontWeight: 500, color: 'var(--color-text-muted)' }}> · {fill(t('ui.wholesale.journal.skippedShort'), { n: importPreview.skipped })}</span>}
+                                    {importPreview.beforeStart > 0 && importPreview.start && <span style={{ fontWeight: 500, color: 'var(--color-text-muted)' }}> · {fill(t('ui.wholesale.journal.beforeStartShort'), { n: importPreview.beforeStart, date: formatLedgerStart(importPreview.start) })}</span>}
                                 </div>
                                 <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                                     {importPreview.candidates.map(c => (
                                         <div key={c.txId} style={{ padding: '9px 12px', borderBottom: '1px solid #f1f5f9' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' }}>
-                                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#5469d4', flexShrink: 0 }}>{c.source}</span>
+                                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#5469d4', flexShrink: 0 }}>{sourceLabel(c.source)}</span>
                                                 <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{c.date}</span>
                                             </div>
                                             <div className="d2-khmer" style={{ fontSize: '12.5px', color: 'var(--color-text-main)', margin: '3px 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.description}>{c.description}</div>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
-                                                <span className="d2-khmer" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dr {c.debitLabel} → Cr {c.creditLabel}</span>
+                                                <span className="d2-khmer" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('ui.wholesale.journal.dr')} {c.debitLabel} → {t('ui.wholesale.journal.cr')} {c.creditLabel}</span>
                                                 <span style={{ fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{formatCurrency(c.amount)}</span>
                                             </div>
                                         </div>
@@ -1309,7 +1318,7 @@ const JournalEntriesPage = () => {
                         )}
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                             <button onClick={() => setImportPreview(null)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontWeight: 500, cursor: 'pointer' }}>
-                                {importPreview.candidates.length === 0 ? 'Close' : 'Cancel'}
+                                {importPreview.candidates.length === 0 ? t('common.close') : t('common.cancel')}
                             </button>
                             {importPreview.candidates.length > 0 && (
                                 <button
@@ -1317,7 +1326,7 @@ const JournalEntriesPage = () => {
                                     disabled={importing}
                                     style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#5469d4', color: 'white', fontWeight: 600, cursor: importing ? 'wait' : 'pointer' }}
                                 >
-                                    {importing ? 'Importing…' : `Import ${importPreview.candidates.length} as Drafts`}
+                                    {importing ? t('ui.wholesale.journal.importing') : fill(t('ui.wholesale.journal.importN'), { n: importPreview.candidates.length })}
                                 </button>
                             )}
                         </div>
@@ -1326,32 +1335,32 @@ const JournalEntriesPage = () => {
             </Modal>
 
             {/* View entry */}
-            <Modal isOpen={!!viewEntry} onClose={() => setViewEntry(null)} title="Journal Entry" width="820px">
+            <Modal isOpen={!!viewEntry} onClose={() => setViewEntry(null)} title={t('ui.wholesale.journal.entry')} width="820px">
                 {viewEntry && (() => {
-                    const t = entryTotals(viewEntry);
+                    const tot = entryTotals(viewEntry);
                     return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '8px 0' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '6px', fontSize: '13px' }}>
-                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Reference</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.wholesale.common.reference')}</span>
                                 <span style={{ color: 'var(--color-text-main)', fontSize: '12px' }}>{displayIdOf(viewEntry)}</span>
-                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Date</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.wholesale.common.date')}</span>
                                 <span style={{ color: 'var(--color-text-main)' }}>{fmtDate(viewEntry.date)}</span>
-                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Status</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.wholesale.common.status')}</span>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                     {statusChip(viewEntry.status || 'Posted')}
                                     {originChip(isSystemEntry(viewEntry))}
                                 </span>
-                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Description</span>
+                                <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.wholesale.common.description')}</span>
                                 <span className="d2-khmer" style={{ color: 'var(--color-text-main)' }}>{viewEntry.description || '—'}</span>
                             </div>
                             <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                                     <thead>
                                         <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid #e2e8f0' }}>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Account</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Description</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>Debit</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>Credit</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.journal.account')}</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.description')}</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>{t('ui.wholesale.journal.debit')}</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', width: '110px' }}>{t('ui.wholesale.journal.credit')}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1360,7 +1369,7 @@ const JournalEntriesPage = () => {
                                                 <td
                                                     className={l.account ? 'd2-khmer hover-highlight' : 'd2-khmer'}
                                                     onClick={l.account ? () => navigate(`/accounting/general-ledger?account=${l.account_id}`) : undefined}
-                                                    title={l.account ? 'View in General Ledger' : undefined}
+                                                    title={l.account ? t('ui.wholesale.journal.viewInGl') : undefined}
                                                     style={{ padding: '8px 12px', color: 'var(--color-text-main)', cursor: l.account ? 'pointer' : 'default' }}
                                                 >{accountLabelOf(l)}</td>
                                                 <td className="d2-khmer" style={{ padding: '8px 12px', color: l.description ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{l.description || '—'}</td>
@@ -1371,9 +1380,9 @@ const JournalEntriesPage = () => {
                                     </tbody>
                                     <tfoot>
                                         <tr style={{ background: 'var(--color-bg)', fontWeight: 700 }}>
-                                            <td colSpan={2} style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>Total</td>
-                                            <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(t.debit)}</td>
-                                            <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(t.credit)}</td>
+                                            <td colSpan={2} style={{ padding: '8px 12px', color: 'var(--color-text-main)' }}>{t('common.total')}</td>
+                                            <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(tot.debit)}</td>
+                                            <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)' }}>{fmtUsd(tot.credit)}</td>
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -1383,13 +1392,13 @@ const JournalEntriesPage = () => {
                                     onClick={() => printEntry(viewEntry)}
                                     style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#5469d4', color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
                                 >
-                                    <Printer size={15} /> Print
+                                    <Printer size={15} /> {t('ui.wholesale.common.print')}
                                 </button>
                                 <button
                                     onClick={() => setViewEntry(null)}
                                     style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                                 >
-                                    Close
+                                    {t('common.close')}
                                 </button>
                             </div>
                         </div>
@@ -1400,7 +1409,7 @@ const JournalEntriesPage = () => {
             <Modal
                 isOpen={isModalOpen}
                 onClose={() => { setIsModalOpen(false); setEditingEntryId(null); }}
-                title={editingEntryId ? 'Edit Journal Entry' : 'Create Journal Entry'}
+                title={editingEntryId ? t('ui.wholesale.journal.editTitle') : t('ui.wholesale.journal.createTitle')}
                 width="820px"
             >
                 {(() => {
@@ -1415,25 +1424,25 @@ const JournalEntriesPage = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', padding: '8px 0' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 170px', gap: '16px' }}>
                                 <div>
-                                    <label style={fieldLabel}>Transaction Date</label>
+                                    <label style={fieldLabel}>{t('ui.wholesale.journal.transactionDate')}</label>
                                     <input type="date" style={fieldInput} value={date} onChange={(e) => setDate(e.target.value)} />
                                 </div>
                                 <div>
-                                    <label style={fieldLabel}>Reference/JV Number</label>
-                                    <input type="text" style={fieldInput} value={referenceId} onChange={(e) => setReferenceId(e.target.value)} placeholder="e.g., JE-001" />
+                                    <label style={fieldLabel}>{t('ui.wholesale.journal.referenceJv')}</label>
+                                    <input type="text" style={fieldInput} value={referenceId} onChange={(e) => setReferenceId(e.target.value)} placeholder={t('ui.wholesale.journal.referencePlaceholder')} />
                                 </div>
                                 <div>
-                                    <label style={fieldLabel}>Status</label>
+                                    <label style={fieldLabel}>{t('ui.wholesale.common.status')}</label>
                                     <select style={{ ...fieldInput, cursor: 'pointer' }} value={entryStatus} onChange={(e) => setEntryStatus(e.target.value as 'Posted' | 'Draft')}>
-                                        <option value="Posted">Posted</option>
-                                        <option value="Draft">Draft</option>
+                                        <option value="Posted">{t('ui.wholesale.payments.posted')}</option>
+                                        <option value="Draft">{t('ui.wholesale.payments.draft')}</option>
                                     </select>
                                 </div>
                             </div>
 
                             <div>
-                                <label style={fieldLabel}>Description</label>
-                                <input type="text" className="d2-khmer" style={fieldInput} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the transaction..." />
+                                <label style={fieldLabel}>{t('ui.wholesale.common.description')}</label>
+                                <input type="text" className="d2-khmer" style={fieldInput} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('ui.wholesale.journal.describePlaceholder')} />
                             </div>
 
                             {/* Live balance banner — blue when debits equal credits, red otherwise. */}
@@ -1445,11 +1454,11 @@ const JournalEntriesPage = () => {
                             }}>
                                 <div>
                                     <div style={{ fontSize: '14px', fontWeight: 700, color: accent, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        {balancedNow ? <>✓ Entry Balanced</> : <>Entry Not Balanced</>}
+                                        {balancedNow ? <>✓ {t('ui.wholesale.journal.balanced')}</> : <>{t('ui.wholesale.journal.notBalanced')}</>}
                                     </div>
                                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>
-                                        Debits: {totalDebit.toFixed(2)} | Credits: {totalCredit.toFixed(2)}
-                                        {!balancedNow && <> · difference {Math.abs(totalDebit - totalCredit).toFixed(2)}</>}
+                                        {t('ui.wholesale.journal.debitsColon')} {totalDebit.toFixed(2)} | {t('ui.wholesale.journal.creditsColon')} {totalCredit.toFixed(2)}
+                                        {!balancedNow && <> · {t('ui.wholesale.journal.difference')} {Math.abs(totalDebit - totalCredit).toFixed(2)}</>}
                                     </div>
                                 </div>
                                 {balancedNow
@@ -1463,11 +1472,11 @@ const JournalEntriesPage = () => {
                                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '640px' }}>
                                         <thead>
                                             <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                                <th style={thCell}>Account</th>
-                                                <th style={thCell}>Description</th>
-                                                <th style={{ ...thCell, textAlign: 'right', width: '110px' }}>Debit</th>
-                                                <th style={{ ...thCell, textAlign: 'right', width: '110px' }}>Credit</th>
-                                                <th style={{ ...thCell, textAlign: 'center', width: '56px' }}>Action</th>
+                                                <th style={thCell}>{t('ui.wholesale.journal.account')}</th>
+                                                <th style={thCell}>{t('ui.wholesale.common.description')}</th>
+                                                <th style={{ ...thCell, textAlign: 'right', width: '110px' }}>{t('ui.wholesale.journal.debit')}</th>
+                                                <th style={{ ...thCell, textAlign: 'right', width: '110px' }}>{t('ui.wholesale.journal.credit')}</th>
+                                                <th style={{ ...thCell, textAlign: 'center', width: '56px' }}>{t('ui.wholesale.journal.action')}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1480,7 +1489,7 @@ const JournalEntriesPage = () => {
                                                             value={line.account_id}
                                                             onChange={(e) => updateLine(index, 'account_id', e.target.value)}
                                                         >
-                                                            <option value="">Select account...</option>
+                                                            <option value="">{t('ui.wholesale.journal.selectAccount')}</option>
                                                             {activeAccounts.map(acc => (
                                                                 <option key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</option>
                                                             ))}
@@ -1493,7 +1502,7 @@ const JournalEntriesPage = () => {
                                                             style={cellInput}
                                                             value={line.description || ''}
                                                             onChange={(e) => updateLine(index, 'description', e.target.value)}
-                                                            placeholder="Line description"
+                                                            placeholder={t('ui.wholesale.journal.lineDescription')}
                                                         />
                                                     </td>
                                                     <td style={{ padding: '8px 10px' }}>
@@ -1520,7 +1529,7 @@ const JournalEntriesPage = () => {
                                                         <button
                                                             onClick={() => removeLine(index)}
                                                             disabled={lines.length <= 2}
-                                                            title={lines.length > 2 ? 'Remove line' : 'An entry needs at least two lines'}
+                                                            title={lines.length > 2 ? t('ui.wholesale.journal.removeLine') : t('ui.wholesale.journal.needTwoLines')}
                                                             style={{
                                                                 background: 'none', border: 'none', cursor: lines.length > 2 ? 'pointer' : 'not-allowed',
                                                                 color: lines.length > 2 ? '#ef7a7a' : 'var(--color-border)',
@@ -1535,7 +1544,7 @@ const JournalEntriesPage = () => {
                                         </tbody>
                                         <tfoot>
                                             <tr style={{ background: 'var(--color-bg)' }}>
-                                                <td colSpan={2} style={{ padding: '12px 10px', fontWeight: 700, fontSize: '13px', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Total</td>
+                                                <td colSpan={2} style={{ padding: '12px 10px', fontWeight: 700, fontSize: '13px', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>{t('common.total')}</td>
                                                 <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 700, fontSize: '13px', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>USD {totalDebit.toFixed(2)}</td>
                                                 <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 700, fontSize: '13px', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>USD {totalCredit.toFixed(2)}</td>
                                                 <td></td>
@@ -1554,7 +1563,7 @@ const JournalEntriesPage = () => {
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
                                 }}
                             >
-                                <Plus size={16} /> Add Line Item
+                                <Plus size={16} /> {t('ui.wholesale.journal.addLine')}
                             </button>
 
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '4px' }}>
@@ -1562,14 +1571,14 @@ const JournalEntriesPage = () => {
                                     onClick={() => { setIsModalOpen(false); setEditingEntryId(null); }}
                                     style={{ padding: '10px 18px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-main)', fontWeight: 600, fontSize: '13.5px', cursor: 'pointer' }}
                                 >
-                                    Cancel
+                                    {t('common.cancel')}
                                 </button>
                                 <button
                                     onClick={handleSave}
                                     disabled={!isFormValid || isSavingEntry}
                                     style={{ padding: '10px 18px', borderRadius: '8px', border: 'none', background: '#2742c9', color: 'white', fontWeight: 600, fontSize: '13.5px', cursor: isFormValid && !isSavingEntry ? 'pointer' : 'not-allowed', opacity: (!isFormValid || isSavingEntry) ? 0.55 : 1 }}
                                 >
-                                    {isSavingEntry ? 'Saving…' : editingEntryId ? 'Save Changes' : 'Create Entry'}
+                                    {isSavingEntry ? t('ui.wholesale.common.saving') : editingEntryId ? t('ui.wholesale.common.saveChanges') : t('ui.wholesale.journal.createEntry')}
                                 </button>
                             </div>
                         </div>

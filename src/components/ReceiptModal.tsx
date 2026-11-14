@@ -4,6 +4,7 @@ import { X, Printer } from 'lucide-react';
 import type { Sale } from '../types';
 import { useStore } from '../context/StoreContext';
 import { markOrderAsPrintedLocal } from '../utils/mapper';
+import { useTx } from './useTx';
 
 interface ReceiptModalProps {
     sale: Sale;
@@ -156,6 +157,7 @@ const ReceiptContent: React.FC<ReceiptContentProps> = ({ sale, variant }) => {
 }
 
 const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
+    const tx = useTx();
     const { updateOrder } = useStore();
     const [printTwoCopies, setPrintTwoCopies] = React.useState(false);
 
@@ -202,7 +204,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                         backgroundColor: '#f9fafb'
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Transaction Receipt</h3>
+                            <h3 style={{ fontSize: '16px', fontWeight: 600 }}>{tx('ui.components.receipt.title', 'Transaction Receipt')}</h3>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', userSelect: 'none', background: 'white', padding: '4px 8px', borderRadius: '6px', border: '1px solid #e5e5e5' }}>
                                 <input
                                     type="checkbox"
@@ -214,7 +216,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                                         height: '16px'
                                     }}
                                 />
-                                Print 2 Copies
+                                {tx('ui.components.receipt.print2', 'Print 2 Copies')}
                             </label>
                         </div>
                         <button onClick={onClose} style={{ color: '#6b7280' }}>
@@ -227,7 +229,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
 
                         {printTwoCopies && (
                             <div style={{ borderTop: '2px dashed #eee', margin: '20px', textAlign: 'center', color: '#888', fontSize: '12px', padding: '10px' }}>
-                                [Stock Copy will print on next page]
+                                [{tx('ui.components.receipt.stockCopyNext', 'Stock Copy will print on next page')}]
                             </div>
                         )}
                     </div>
@@ -249,7 +251,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
                             }}
                         >
                             <Printer size={18} />
-                            Print Receipt
+                            {tx('ui.components.receipt.print', 'Print Receipt')}
                         </button>
                     </div>
                 </div>

@@ -5,6 +5,8 @@ import { useStore } from '../context/StoreContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
 import { DateRangePicker } from '../components';
+import { useLanguage } from '../context/LanguageContext';
+import { tNow, fill } from '../i18n/translate';
 import {
     Bell, Truck, Package, DollarSign, ShieldCheck, UserPlus, ArrowDownCircle,
     ArrowUpCircle, RotateCcw, Settings, RefreshCw, Search, ChevronLeft,
@@ -69,10 +71,10 @@ const formatTime = (iso: string) => {
 const timeAgo = (iso: string) => {
     const diffMs = Date.now() - new Date(iso).getTime();
     const min = Math.floor(diffMs / 60000);
-    if (min < 1) return 'just now';
-    if (min < 60) return `${min}m ago`;
+    if (min < 1) return tNow('ui.admin.activity.justNow');
+    if (min < 60) return tNow('ui.admin.activity.minAgo', { n: min });
     const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr}h ago`;
+    if (hr < 24) return tNow('ui.admin.activity.hrAgo', { n: hr });
     return '';
 };
 
@@ -80,32 +82,34 @@ const timeAgo = (iso: string) => {
 const dayLabel = (iso: string) => {
     const d = new Date(iso);
     const now = new Date();
-    if (d.toDateString() === now.toDateString()) return 'Today';
+    if (d.toDateString() === now.toDateString()) return tNow('ui.admin.activity.today');
     const yesterday = new Date(now.getTime() - 86400000);
-    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    if (d.toDateString() === yesterday.toDateString()) return tNow('ui.admin.activity.yesterday');
     return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 // Old -> new change details logged with order edits (remark / tracking).
 const MetadataDetails: React.FC<{ log: ActivityLogRow }> = ({ log }) => {
+    const { t } = useLanguage();
+    const none = t('ui.admin.activity.none');
     const m = log.metadata;
     if (!m || Object.keys(m).length === 0) return null;
     const parts: React.ReactNode[] = [];
     if (m.oldRemark !== undefined && m.newRemark !== undefined) {
         parts.push(
             <span key="remark">
-                <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>{m.oldRemark || 'None'}</span>
+                <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>{m.oldRemark || none}</span>
                 {' → '}
-                <span style={{ fontWeight: 600 }}>{m.newRemark || 'None'}</span>
+                <span style={{ fontWeight: 600 }}>{m.newRemark || none}</span>
             </span>
         );
     }
     if (m.oldTracking !== undefined && m.newTracking !== undefined) {
         parts.push(
             <span key="tracking">
-                <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>{m.oldTracking || 'None'}</span>
+                <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>{m.oldTracking || none}</span>
                 {' → '}
-                <span style={{ fontWeight: 600 }}>{m.newTracking || 'None'}</span>
+                <span style={{ fontWeight: 600 }}>{m.newTracking || none}</span>
             </span>
         );
     }
@@ -125,6 +129,7 @@ const ActivityLogPage: React.FC = () => {
     const { users } = useStore();
     const isMobile = useMobile();
     const navigate = useNavigate();
+    const { t } = useLanguage();
 
     const [logs, setLogs] = useState<ActivityLogRow[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -143,13 +148,13 @@ const ActivityLogPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: isMobile ? '8px' : 0 }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Activity Log</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Who did what, and when</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('nav.activityLog')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.admin.activity.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, isMobile]);
+    }, [setHeaderContent, isMobile, t]);
 
     // Reset to page 1 whenever a filter changes.
     useEffect(() => {
@@ -235,9 +240,9 @@ const ActivityLogPage: React.FC = () => {
     const weekAgoYMD = toYMD(new Date(Date.now() - 6 * 86400000));
     const isRange = (start: string, end: string) => dateRange.start === start && dateRange.end === end;
     const quickChips: { label: string; active: boolean; onClick: () => void }[] = [
-        { label: 'Today', active: isRange(todayYMD, todayYMD), onClick: () => setDateRange({ start: todayYMD, end: todayYMD }) },
-        { label: 'Yesterday', active: isRange(yesterdayYMD, yesterdayYMD), onClick: () => setDateRange({ start: yesterdayYMD, end: yesterdayYMD }) },
-        { label: '7 Days', active: isRange(weekAgoYMD, todayYMD), onClick: () => setDateRange({ start: weekAgoYMD, end: todayYMD }) },
+        { label: t('ui.admin.activity.today'), active: isRange(todayYMD, todayYMD), onClick: () => setDateRange({ start: todayYMD, end: todayYMD }) },
+        { label: t('ui.admin.activity.yesterday'), active: isRange(yesterdayYMD, yesterdayYMD), onClick: () => setDateRange({ start: yesterdayYMD, end: yesterdayYMD }) },
+        { label: t('ui.admin.activity.sevenDays'), active: isRange(weekAgoYMD, todayYMD), onClick: () => setDateRange({ start: weekAgoYMD, end: todayYMD }) },
     ];
 
     const activeFilterCount =
@@ -266,7 +271,9 @@ const ActivityLogPage: React.FC = () => {
             else groups.push({ label, items: [log] });
         }
         return groups;
-    }, [logs]);
+        // t: the day labels follow a language switch.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [logs, t]);
 
     const orderIdOf = (log: ActivityLogRow): string | null => {
         const oid = log.metadata?.orderId;
@@ -293,12 +300,12 @@ const ActivityLogPage: React.FC = () => {
     );
 
     const actionMeta = (action: string) =>
-        ACTION_META[action] || { icon: <Bell size={14} />, color: '#6B7280', label: action || 'Activity' };
+        ACTION_META[action] ? { ...ACTION_META[action], label: t(`ui.admin.activity.actions.${action}`) } : { icon: <Bell size={14} />, color: '#6B7280', label: action || t('ui.admin.activity.activity') };
 
     const viewOrderButton = (orderId: string) => (
         <button
             onClick={() => navigate(`/orders/${orderId}`)}
-            title="Open this order"
+            title={t('ui.admin.activity.openOrder')}
             style={{
                 display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px',
                 borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)',
@@ -319,9 +326,9 @@ const ActivityLogPage: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Stat cards */}
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                {statCard('Today', statToday, 'linear-gradient(135deg, #3B82F6, #2563EB)', <Activity size={19} />)}
-                {statCard('Last 7 Days', statWeek, 'linear-gradient(135deg, #8B5CF6, #7C3AED)', <CalendarDays size={19} />)}
-                {statCard('Matching Filter', totalCount, 'linear-gradient(135deg, #10B981, #059669)', <History size={19} />)}
+                {statCard(t('ui.admin.activity.today'), statToday, 'linear-gradient(135deg, #3B82F6, #2563EB)', <Activity size={19} />)}
+                {statCard(t('ui.admin.activity.last7Days'), statWeek, 'linear-gradient(135deg, #8B5CF6, #7C3AED)', <CalendarDays size={19} />)}
+                {statCard(t('ui.admin.activity.matchingFilter'), totalCount, 'linear-gradient(135deg, #10B981, #059669)', <History size={19} />)}
             </div>
 
             {/* Filters */}
@@ -331,7 +338,7 @@ const ActivityLogPage: React.FC = () => {
                         <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                         <input
                             type="text"
-                            placeholder="Search description or user..."
+                            placeholder={t('ui.admin.activity.searchPlaceholder')}
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             style={{ width: '100%', padding: '9px 10px 9px 32px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-bg)', color: 'var(--color-text-main)' }}
@@ -342,14 +349,14 @@ const ActivityLogPage: React.FC = () => {
                         onChange={(e) => setUserFilter(e.target.value)}
                         style={{ padding: '9px 10px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-bg)', color: 'var(--color-text-main)', cursor: 'pointer', maxWidth: isMobile ? '48%' : '180px' }}
                     >
-                        {userNames.map(n => <option key={n} value={n}>{n === 'All' ? 'All Users' : n}</option>)}
+                        {userNames.map(n => <option key={n} value={n}>{n === 'All' ? t('ui.admin.activity.allUsers') : n}</option>)}
                     </select>
                     <div style={{ minWidth: isMobile ? '48%' : '220px' }}>
                         <DateRangePicker value={dateRange} onChange={setDateRange} />
                     </div>
                     <button
                         onClick={() => { fetchLogs(); fetchStats(); }}
-                        title="Refresh"
+                        title={t('ui.admin.activity.refresh')}
                         style={{ width: '38px', height: '38px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                     >
                         <RefreshCw size={16} style={{ animation: isLoading ? 'spin 1s linear infinite' : 'none' }} />
@@ -370,7 +377,7 @@ const ActivityLogPage: React.FC = () => {
                                     color: active ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s'
                                 }}
                             >
-                                {cat}
+                                {cat === 'All' ? t('common.all') : t(`ui.admin.activity.categories.${cat}`)}
                             </button>
                         );
                     })}
@@ -399,7 +406,7 @@ const ActivityLogPage: React.FC = () => {
                                 cursor: 'pointer', marginLeft: 'auto'
                             }}
                         >
-                            <X size={13} /> Clear ({activeFilterCount})
+                            <X size={13} /> {fill(t('ui.admin.activity.clear'), { n: activeFilterCount })}
                         </button>
                     )}
                 </div>
@@ -409,11 +416,11 @@ const ActivityLogPage: React.FC = () => {
             <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '14px', overflow: 'hidden' }}>
                 {isLoading && logs.length === 0 ? (
                     <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                        <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> Loading activity…
+                        <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> {t('ui.admin.activity.loading')}
                     </div>
                 ) : logs.length === 0 ? (
                     <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                        No activity found for these filters.
+                        {t('ui.admin.activity.empty')}
                     </div>
                 ) : isMobile ? (
                     // Mobile: flat inbox-style rows, grouped by day
@@ -458,7 +465,7 @@ const ActivityLogPage: React.FC = () => {
                                 <tr style={{ background: 'var(--color-bg)' }}>
                                     {['Time', 'User', 'Action', 'Description', 'Order', 'Details'].map(h => (
                                         <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', whiteSpace: 'nowrap' }}>
-                                            {h}
+                                            {t(`ui.admin.activity.columns.${h}`)}
                                         </th>
                                     ))}
                                 </tr>
@@ -468,7 +475,7 @@ const ActivityLogPage: React.FC = () => {
                                     <React.Fragment key={group.label}>
                                         <tr>
                                             <td colSpan={6} style={daySeparatorStyle}>
-                                                {group.label} <span style={{ opacity: 0.6, fontWeight: 600 }}>· {group.items.length} {group.items.length === 1 ? 'entry' : 'entries'}</span>
+                                                {group.label} <span style={{ opacity: 0.6, fontWeight: 600 }}>· {fill(group.items.length === 1 ? t('ui.admin.activity.entryOne') : t('ui.admin.activity.entryMany'), { n: group.items.length })}</span>
                                             </td>
                                         </tr>
                                         {group.items.map((log, idx) => {
@@ -513,7 +520,7 @@ const ActivityLogPage: React.FC = () => {
             {totalCount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', paddingBottom: isMobile ? '24px' : 0 }}>
                     <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                        Showing {Math.min((currentPage - 1) * pageSize + 1, totalCount)}–{Math.min(currentPage * pageSize, totalCount)} of {totalCount.toLocaleString()}
+                        {fill(t('ui.admin.activity.showing'), { from: Math.min((currentPage - 1) * pageSize + 1, totalCount), to: Math.min(currentPage * pageSize, totalCount), total: totalCount.toLocaleString() })}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <select
@@ -534,7 +541,7 @@ const ActivityLogPage: React.FC = () => {
                             <ChevronLeft size={16} />
                         </button>
                         <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                            Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {totalPages}
+                            {t('ui.admin.activity.page')} <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> {fill(t('ui.admin.activity.ofPages'), { n: totalPages })}
                         </span>
                         <button
                             onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}

@@ -7,6 +7,8 @@ import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
 import { supabase } from '../lib/supabase';
 import { dayKeyFromDate } from '../utils/dateRange';
+import { useLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
 
 type SortKey = 'sold' | 'name' | 'model' | 'category' | 'price' | 'stock';
 
@@ -24,6 +26,7 @@ const PriceListPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { products } = useStore();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const isMobile = useMobile();
 
     const [search, setSearch] = useState('');
@@ -74,13 +77,13 @@ const PriceListPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: isMobile ? '8px' : 0 }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Price List</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Sell prices for all products</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('ui.inventory.priceList.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.inventory.priceList.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, isMobile]);
+    }, [setHeaderContent, isMobile, t]);
 
     // All products, same as the Inventory page. (Do NOT filter on isActive —
     // nothing else in the app uses that flag and the data has it false for
@@ -140,10 +143,10 @@ const PriceListPage: React.FC = () => {
         try {
             await navigator.clipboard.writeText(lines.join('\n'));
             setCopied(true);
-            showToast(`Copied ${rows.length} products`, 'success');
+            showToast(fill(t('ui.inventory.priceList.copiedN'), { n: rows.length }), 'success');
             setTimeout(() => setCopied(false), 1500);
         } catch {
-            showToast('Copy failed', 'error');
+            showToast(t('ui.inventory.priceList.copyFailed'), 'error');
         }
     };
 
@@ -170,7 +173,7 @@ const PriceListPage: React.FC = () => {
                         <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                         <input
                             type="text"
-                            placeholder="Search product, model, SKU..."
+                            placeholder={t('ui.inventory.priceList.searchPlaceholder')}
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             style={{ width: '100%', padding: '9px 10px 9px 32px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-bg)', color: 'var(--color-text-main)' }}
@@ -181,14 +184,14 @@ const PriceListPage: React.FC = () => {
                         disabled={rows.length === 0}
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #3B82F6, #2563EB)', color: 'white', fontSize: '13px', fontWeight: 600, cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.6 }}
                     >
-                        {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? 'Copied' : 'Copy List'}
+                        {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? t('ui.inventory.priceList.copied') : t('ui.inventory.priceList.copyList')}
                     </button>
                     <button
                         onClick={exportExcel}
                         disabled={rows.length === 0}
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 500, cursor: rows.length ? 'pointer' : 'not-allowed' }}
                     >
-                        <Download size={15} /> {!isMobile && 'Export'}
+                        <Download size={15} /> {!isMobile && t('common.export')}
                     </button>
                 </div>
                 {/* Category chips (only when there's more than "All") + quick filters */}
@@ -201,7 +204,7 @@ const PriceListPage: React.FC = () => {
                                 onClick={() => setCategory(c)}
                                 style={{ padding: '6px 14px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
                             >
-                                {c === 'All' ? `All (${activeProducts.length})` : c}
+                                {c === 'All' ? `${t('common.all')} (${activeProducts.length})` : c}
                             </button>
                         );
                     })}
@@ -216,15 +219,15 @@ const PriceListPage: React.FC = () => {
                         }}
                         style={{ padding: '6px 14px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${onlyTopSold ? '#059669' : 'var(--color-border)'}`, background: onlyTopSold ? '#059669' : 'var(--color-surface)', color: onlyTopSold ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
                     >
-                        🔥 Top Sold
+                        🔥 {t('ui.inventory.priceList.topSold')}
                     </button>
                     <button
                         onClick={() => setOnlyInStock(v => !v)}
                         style={{ padding: '6px 14px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${onlyInStock ? '#2563EB' : 'var(--color-border)'}`, background: onlyInStock ? '#2563EB' : 'var(--color-surface)', color: onlyInStock ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
                     >
-                        In Stock
+                        {t('ui.inventory.stockStatus.inStock')}
                     </button>
-                    <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{rows.length} products</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{fill(t('ui.inventory.nProducts'), { n: rows.length })}</span>
                 </div>
             </div>
 
@@ -233,7 +236,7 @@ const PriceListPage: React.FC = () => {
                 {rows.length === 0 ? (
                     <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                         <Package size={40} style={{ opacity: 0.15, margin: '0 auto 12px', display: 'block' }} />
-                        No products found.
+                        {t('ui.inventory.noProducts')}
                     </div>
                 ) : isMobile ? (
                     // Mobile: flat rows — name/model on the left, price on the right
@@ -251,7 +254,7 @@ const PriceListPage: React.FC = () => {
                                     <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
                                     <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                         {[p.model, p.category].filter(Boolean).join(' · ')}
-                                        {(soldMap[p.id] || 0) > 0 && <span style={{ marginLeft: '6px', color: '#059669', fontWeight: 600 }}>· {soldMap[p.id]} sold</span>}
+                                        {(soldMap[p.id] || 0) > 0 && <span style={{ marginLeft: '6px', color: '#059669', fontWeight: 600 }}>· {fill(t('ui.inventory.priceList.nSold'), { n: soldMap[p.id] })}</span>}
                                     </div>
                                 </div>
                                 <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-primary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmt(p.price)}</div>
@@ -264,12 +267,12 @@ const PriceListPage: React.FC = () => {
                             <thead>
                                 <tr>
                                     <th style={{ ...thStyle, width: '56px', cursor: 'default' }}></th>
-                                    <th onClick={() => toggleSort('name')} style={thStyle}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Product <SortIcon k="name" /></span></th>
-                                    <th onClick={() => toggleSort('model')} style={thStyle}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Model <SortIcon k="model" /></span></th>
-                                    <th onClick={() => toggleSort('category')} style={thStyle}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Category <SortIcon k="category" /></span></th>
-                                    <th onClick={() => toggleSort('sold')} style={{ ...thStyle, textAlign: 'center', color: '#059669' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Sold ({SOLD_WINDOW_DAYS}d) <SortIcon k="sold" /></span></th>
-                                    <th onClick={() => toggleSort('stock')} style={{ ...thStyle, textAlign: 'center' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Stock <SortIcon k="stock" /></span></th>
-                                    <th onClick={() => toggleSort('price')} style={{ ...thStyle, textAlign: 'right' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Sell Price <SortIcon k="price" /></span></th>
+                                    <th onClick={() => toggleSort('name')} style={thStyle}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{t('ui.inventory.priceList.product')} <SortIcon k="name" /></span></th>
+                                    <th onClick={() => toggleSort('model')} style={thStyle}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{t('inventory.model')} <SortIcon k="model" /></span></th>
+                                    <th onClick={() => toggleSort('category')} style={thStyle}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{t('inventory.category')} <SortIcon k="category" /></span></th>
+                                    <th onClick={() => toggleSort('sold')} style={{ ...thStyle, textAlign: 'center', color: '#059669' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{fill(t('ui.inventory.priceList.soldDays'), { n: SOLD_WINDOW_DAYS })} <SortIcon k="sold" /></span></th>
+                                    <th onClick={() => toggleSort('stock')} style={{ ...thStyle, textAlign: 'center' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{t('inventory.stock')} <SortIcon k="stock" /></span></th>
+                                    <th onClick={() => toggleSort('price')} style={{ ...thStyle, textAlign: 'right' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{t('ui.inventory.col.sellPrice')} <SortIcon k="price" /></span></th>
                                 </tr>
                             </thead>
                             <tbody>

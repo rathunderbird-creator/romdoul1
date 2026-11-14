@@ -13,6 +13,7 @@ import { fetchAll } from '../utils/fetchAll';
 import { fetchLedgerStartDate, isBeforeLedgerStart, purchaseOrderLedgerDay } from '../utils/ledgerStart';
 import { khrMeta, splitRiel, type MoneyMeta } from '../utils/currency';
 import { findTransactionIdsByMarker, resolveCashBankAccount, tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
+import { tNow } from '../i18n/translate';
 
 const supplierPaymentGuard = createInFlightGuard();
 const supplierPaymentKeys = createRetryKeys();
@@ -59,7 +60,7 @@ export const postPurchaseReceiptEntry = async (
             const current = Math.round((oldLines || []).reduce((s, l) => s + (Number(l.debit) || 0), 0) * 100) / 100;
             if (current === amount || amount <= 0) return;
             if (((existing as { status?: string }).status || 'Posted') !== 'Draft') {
-                showToast(`This PO's posted inventory entry is $${current.toFixed(2)} but the PO total is now $${amount.toFixed(2)} — adjust the ledger manually.`, 'info');
+                showToast(tNow('ui.store.procurement.postedMismatch', { posted: current.toFixed(2), total: amount.toFixed(2) }), 'info');
                 return;
             }
             if (!inventoryAcc || !apAcc) return;
@@ -76,7 +77,7 @@ export const postPurchaseReceiptEntry = async (
                 await insertJournalLines((oldLines || []).map(l => ({
                     journal_entry_id: existing.id, account_id: l.account_id, debit: l.debit, credit: l.credit, description: l.description || undefined,
                 })));
-                showToast('PO saved, but its inventory ledger entry could not be updated — re-save the PO to retry.', 'error');
+                showToast(tNow('ui.store.procurement.ledgerUpdateFailed'), 'error');
             }
             return;
         }
@@ -93,7 +94,7 @@ export const postPurchaseReceiptEntry = async (
             if (isBeforeLedgerStart(purchaseOrderLedgerDay(poRow), start)) return;
         }
         if (!inventoryAcc || !apAcc) {
-            showToast('PO received, but no Inventory or Accounts Payable account exists in the Chart of Accounts — no ledger entry was posted.', 'info');
+            showToast(tNow('ui.store.procurement.receivedNoAccounts'), 'info');
             return;
         }
         let supplierName = 'Supplier';
@@ -127,12 +128,12 @@ export const postPurchaseReceiptEntry = async (
         // Never create an instantly-posted entry on an instance without the
         // status column — same refusal as every other auto-posting flow.
         if (jeErr && /status/i.test(jeErr.message || '')) {
-            showToast('PO received — run migrations/add_entry_status.sql on this instance to also post the inventory entry as a draft.', 'info');
+            showToast(tNow('ui.store.procurement.receivedNoDrafts'), 'info');
             return;
         }
         if (jeErr || !entry) {
             console.error('Failed to post the inventory entry for the received PO:', jeErr);
-            showToast('PO received, but the inventory ledger entry failed to post — re-save the PO to retry.', 'error');
+            showToast(tNow('ui.store.procurement.receivedPostFailed'), 'error');
             return;
         }
         const { error: lErr } = await insertJournalLines([
@@ -142,7 +143,7 @@ export const postPurchaseReceiptEntry = async (
         if (lErr) {
             console.error('Failed to post the inventory entry lines for the received PO:', lErr);
             await supabase.from('journal_entries').delete().eq('id', entry.id);
-            showToast('PO received, but the inventory ledger entry failed to post — re-save the PO to retry.', 'error');
+            showToast(tNow('ui.store.procurement.receivedPostFailed'), 'error');
         }
     } catch (e) {
         console.error('Failed to post the inventory entry for the received PO:', e);
@@ -187,7 +188,7 @@ export const postOpeningBalanceEntry = async (
         const apAcc = pool.find(a => a.account_code === '2000')
             || pool.find(a => a.account_type === 'Liability' && /payable/i.test(a.account_name));
         if (!offsetAcc || !apAcc) {
-            showToast('Opening balance saved, but no Accounts Payable account exists in the Chart of Accounts — no ledger entry was posted.', 'info');
+            showToast(tNow('ui.store.procurement.openingNoAccount'), 'info');
             return false;
         }
 
@@ -214,12 +215,12 @@ export const postOpeningBalanceEntry = async (
             break;
         }
         if (jeErr && /status/i.test(jeErr.message || '')) {
-            showToast('Opening balance saved — run migrations/add_entry_status.sql on this instance to also post the ledger entry as a draft.', 'info');
+            showToast(tNow('ui.store.procurement.openingNoDrafts'), 'info');
             return false;
         }
         if (jeErr || !entry) {
             console.error('Failed to post the opening-balance ledger entry:', jeErr);
-            showToast('Opening balance saved, but the ledger entry failed to post.', 'error');
+            showToast(tNow('ui.store.procurement.openingPostFailed'), 'error');
             return false;
         }
         const { error: lErr } = await insertJournalLines([
@@ -229,7 +230,7 @@ export const postOpeningBalanceEntry = async (
         if (lErr) {
             console.error('Failed to post the opening-balance ledger entry lines:', lErr);
             await supabase.from('journal_entries').delete().eq('id', entry.id);
-            showToast('Opening balance saved, but the ledger entry failed to post.', 'error');
+            showToast(tNow('ui.store.procurement.openingPostFailed'), 'error');
             return false;
         }
         return true;
@@ -262,7 +263,7 @@ const cancelPurchaseReceiptEntry = async (poId: string, showToast: ToastFn) => {
             .select('*').eq('reference_id', 'PO-' + poId).limit(1).maybeSingle();
         if (exErr || !existing) return;
         if (((existing as { status?: string }).status || 'Posted') !== 'Draft') {
-            showToast('This cancelled PO has a POSTED inventory entry — record a reversing entry manually.', 'info');
+            showToast(tNow('ui.store.procurement.cancelledPosted'), 'info');
             return;
         }
         await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existing.id);
@@ -290,7 +291,7 @@ export const useProcurement = () => {
             setSuppliers(data || []);
         } catch (error: any) {
             console.error('Failed to fetch suppliers:', error);
-            showToast('Failed to fetch suppliers: ' + error.message, 'error');
+            showToast(tNow('ui.store.procurement.fetchSuppliersFailed', { error: error.message }), 'error');
         } finally {
             setIsLoading(false);
         }
@@ -316,7 +317,7 @@ export const useProcurement = () => {
                     .eq('id', supplier.id);
                 if (error) throw error;
                 saved = supplier as Supplier;
-                showToast('Supplier updated successfully', 'success');
+                showToast(tNow('ui.store.procurement.supplierUpdated'), 'success');
             } else {
                 const { data, error } = await supabase
                     .from('suppliers')
@@ -333,13 +334,13 @@ export const useProcurement = () => {
                     .single();
                 if (error) throw error;
                 saved = data as Supplier;
-                showToast('Supplier created successfully', 'success');
+                showToast(tNow('ui.store.procurement.supplierCreated'), 'success');
             }
             await fetchSuppliers();
             return saved;
         } catch (error: any) {
             console.error('Failed to save supplier:', error);
-            showToast('Failed to save supplier: ' + error.message, 'error');
+            showToast(tNow('ui.store.procurement.saveSupplierFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchSuppliers]);
@@ -348,11 +349,11 @@ export const useProcurement = () => {
         try {
             const { error } = await supabase.from('suppliers').delete().eq('id', id);
             if (error) throw error;
-            showToast('Supplier deleted successfully', 'success');
+            showToast(tNow('ui.store.procurement.supplierDeleted'), 'success');
             await fetchSuppliers();
         } catch (error: any) {
             console.error('Failed to delete supplier:', error);
-            showToast('Failed to delete supplier: ' + error.message, 'error');
+            showToast(tNow('ui.store.procurement.deleteSupplierFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchSuppliers]);
@@ -375,7 +376,7 @@ export const useProcurement = () => {
             setPurchaseOrders(data);
         } catch (error: any) {
             console.error('Failed to fetch purchase orders:', error);
-            showToast('Failed to fetch purchase orders: ' + error.message, 'error');
+            showToast(tNow('ui.store.procurement.fetchPOsFailed', { error: error.message }), 'error');
         } finally {
             if (!silent) setIsLoading(false);
         }
@@ -402,7 +403,7 @@ export const useProcurement = () => {
             setSupplierPayments(data);
         } catch (error: any) {
             console.error('Failed to fetch supplier payments:', error);
-            showToast('Failed to fetch supplier payments: ' + error.message, 'error');
+            showToast(tNow('ui.store.procurement.fetchPaymentsFailed', { error: error.message }), 'error');
         } finally {
             if (!silent) setIsLoading(false);
         }
@@ -435,7 +436,7 @@ export const useProcurement = () => {
                 if (arrErr) throw arrErr;
                 if (arrivedRows && arrivedRows.length > 0) {
                     if (po.status === 'Cancelled' || (wasReceived && po.status !== undefined && po.status !== 'Received')) {
-                        throw new Error("Goods from this purchase order are already in stock, so it can't be cancelled or moved off Received. Record a return to the supplier with Adjust Stock instead.");
+                        throw new Error(tNow('ui.store.procurement.receivedNoCancel'));
                     }
                     const totals = (rows: { product_id?: string | null; quantity?: number | null }[]) => {
                         const m = new Map<string, number>();
@@ -451,7 +452,7 @@ export const useProcurement = () => {
                         const before = totals(oldItems || []);
                         const same = before.size === after.size && [...before].every(([pid, q]) => after.get(pid) === q);
                         if (!same) {
-                            throw new Error("This purchase order has been received into stock, so its products and quantities can't be changed. Use Adjust Stock for any difference.");
+                            throw new Error(tNow('ui.store.procurement.receivedNoEdit'));
                         }
                     } else {
                         // Part-received (a receive that stopped part-way): more can be
@@ -459,7 +460,7 @@ export const useProcurement = () => {
                         const arrived = totals(arrivedRows);
                         const short = [...arrived].some(([pid, q]) => (after.get(pid) || 0) < q);
                         if (short) {
-                            throw new Error("Some of this order's goods are already in stock, so their quantities can't go below what arrived. Use Adjust Stock for any difference.");
+                            throw new Error(tNow('ui.store.procurement.belowArrived'));
                         }
                     }
                 }
@@ -472,7 +473,7 @@ export const useProcurement = () => {
             if (po.status === 'Received' && !wasReceived) {
                 const outstanding = currentPoId ? await outstandingReceipt(currentPoId, items) : [{ missing: 1 }];
                 if (outstanding.some(o => o.missing > 0)) {
-                    throw new Error('Receive the goods into stock first: this purchase order has items that have not been added to stock yet.');
+                    throw new Error(tNow('ui.store.procurement.receiveFirst'));
                 }
             }
 
@@ -568,12 +569,12 @@ export const useProcurement = () => {
                 await cancelPurchaseReceiptEntry(currentPoId, showToast);
             }
 
-            if (!opts?.quiet) showToast(po.id ? 'Purchase Order updated successfully' : 'Purchase Order created successfully', 'success');
+            if (!opts?.quiet) showToast(po.id ? tNow('ui.store.procurement.poUpdated') : tNow('ui.store.procurement.poCreated'), 'success');
             await fetchPurchaseOrders(true); // silent fetch
             return currentPoId;
         } catch (error: any) {
             console.error('Failed to save purchase order:', error);
-            showToast('Failed to save purchase order: ' + error.message, 'error');
+            showToast(tNow('ui.store.procurement.savePOFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchPurchaseOrders]);
@@ -593,11 +594,11 @@ export const useProcurement = () => {
             if (arrErr) throw arrErr;
             if (entErr) throw entErr;
             if (arrived && arrived.length > 0) {
-                throw new Error("it has been received into stock. Deleting it would leave the goods in stock with no purchase on the books. Record a return to the supplier with Adjust Stock instead.");
+                throw new Error(tNow('ui.store.procurement.deleteReceived'));
             }
             // A missing status column counts as Posted, same as the journal page.
             if ((entries || []).some(e => ((e as { status?: string }).status || 'Posted') !== 'Draft')) {
-                throw new Error('its inventory entry is posted in the books. Unpost the entry first if this purchase really should be removed.');
+                throw new Error(tNow('ui.store.procurement.deletePosted'));
             }
             // Payments cascade away with the PO — capture their ids FIRST (a
             // failed read aborts the delete), remove the PO, then clean their
@@ -636,11 +637,11 @@ export const useProcurement = () => {
                 await supabase.from('journal_entry_lines').delete().in('journal_entry_id', poEntryIds);
                 await supabase.from('journal_entries').delete().in('id', poEntryIds);
             }
-            showToast('Purchase Order deleted successfully', 'success');
+            showToast(tNow('ui.store.procurement.poDeleted'), 'success');
             await fetchPurchaseOrders(true);
         } catch (error: any) {
             console.error('Failed to delete purchase order:', error);
-            showToast("Can't delete this purchase order: " + error.message, 'error');
+            showToast(tNow('ui.store.procurement.deletePOFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchPurchaseOrders]);
@@ -685,7 +686,7 @@ export const useProcurement = () => {
                 p_paid_by: paidBy || null,
                 p_account_id: paidFromAccountId || null,
                 p_account_name: paidFromAccountName || null,
-            }, 'Recording supplier payments');
+            }, tNow('ui.store.area.recordingSupplierPayments'));
             supplierPaymentKeys.release(signature);
             if (money?.currency === 'KHR') {
                 // Best effort, never fails the payment (a store without
@@ -698,12 +699,12 @@ export const useProcurement = () => {
                     await tagTransactionsAndEntries(txIds, meta);
                 }
             }
-            showToast(result?.already_recorded ? 'This payment had already been saved — it was not recorded twice' : 'Payment recorded successfully', 'success');
+            showToast(result?.already_recorded ? tNow('ui.store.paymentAlreadyRecorded') : tNow('ui.store.procurement.paymentRecorded'), 'success');
             await fetchPurchaseOrders(true);
             await fetchSupplierPayments(true);
         } catch (error: any) {
             console.error('Failed to record payment:', error);
-            showToast('Failed to record payment: ' + error.message, 'error');
+            showToast(tNow('ui.store.recordPaymentFailed', { error: error.message }), 'error');
             // The payment may have been saved even so (a lost reply): show the
             // bills as they are now.
             await fetchPurchaseOrders(true);
@@ -737,11 +738,11 @@ export const useProcurement = () => {
                 if (!error) console.info('Saved without the Billed Date — run migrations/add_purchase_order_bill_date.sql to store it');
             }
             if (error) throw error;
-            showToast('Bill saved', 'success');
+            showToast(tNow('ui.store.procurement.billSaved'), 'success');
             await fetchPurchaseOrders(true);
         } catch (error: any) {
             console.error('Failed to save bill reference:', error);
-            showToast('Failed to save bill: ' + error.message, 'error');
+            showToast(tNow('ui.store.procurement.saveBillFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchPurchaseOrders]);
@@ -761,11 +762,11 @@ export const useProcurement = () => {
                     .eq('id', poId));
             }
             if (error) throw error;
-            showToast('Bill removed — the delivery stays received', 'success');
+            showToast(tNow('ui.store.procurement.billRemoved'), 'success');
             await fetchPurchaseOrders(true);
         } catch (error: any) {
             console.error('Failed to remove bill reference:', error);
-            showToast('Failed to remove bill: ' + error.message, 'error');
+            showToast(tNow('ui.store.procurement.removeBillFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchPurchaseOrders]);
@@ -810,12 +811,12 @@ export const useProcurement = () => {
                 }
             }
             await supabase.from('transactions').delete().like('description', marker);
-            showToast('Payment deleted successfully', 'success');
+            showToast(tNow('ui.store.procurement.paymentDeleted'), 'success');
             await fetchPurchaseOrders(true);
             await fetchSupplierPayments(true);
         } catch (error: any) {
             console.error('Failed to delete payment:', error);
-            showToast('Failed to delete payment: ' + error.message, 'error');
+            showToast(tNow('ui.store.deletePaymentFailed', { error: error.message }), 'error');
             throw error;
         }
     }, [showToast, fetchPurchaseOrders, fetchSupplierPayments]);

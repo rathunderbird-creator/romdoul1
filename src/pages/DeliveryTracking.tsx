@@ -16,6 +16,33 @@ import { mapSaleEntity } from '../utils/mapper';
 import { getOperatorForPhone, formatPhoneDisplay } from '../utils/telecom';
 import { getShippingLogo } from '../utils/shipping';
 import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../utils/liveColumnResize';
+import { useLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
+
+// Text under ui.orderFlow (English is the fallback for a missing key), plus the
+// display names of stored statuses: Khmer from the shared status keys, English
+// exactly as this page always showed them.
+const useTx = () => {
+    const { t, language } = useLanguage();
+    const tx = React.useCallback((key: string, en: string, vars?: Record<string, string | number>) => {
+        const k = `ui.orderFlow.${key}`;
+        const v = t(k);
+        return fill(v !== k ? v : en, vars);
+    }, [t]);
+    const statusLabel = React.useCallback((s: string) => {
+        if (language !== 'km') return orderStatusLabel(s);
+        const k = `dashboard2.status.${s}`;
+        const v = t(k);
+        return v !== k ? v : orderStatusLabel(s);
+    }, [t, language]);
+    const payLabel = React.useCallback((s: string) => {
+        if (language !== 'km') return s;
+        const k = `dashboard2.pay.${s}`;
+        const v = t(k);
+        return v !== k ? v : s;
+    }, [t, language]);
+    return { tx, statusLabel, payLabel };
+};
 
 const getStatusBorderColor = (s: string) => {
     switch (s) {
@@ -32,6 +59,7 @@ const getStatusBorderColor = (s: string) => {
 };
 
 const FollowUpButton = ({ orderId, status, isAdmin, onCall }: { orderId: string, status: string, isAdmin: boolean, onCall?: () => void }) => {
+    const { tx } = useTx();
     const [lastFollowUp, setLastFollowUp] = useState<string>(() => localStorage.getItem(`followUp_${orderId}`) || '');
     
     const isPermanentlyDisabled = status === 'Delivered' || status === 'Returned';
@@ -82,7 +110,7 @@ const FollowUpButton = ({ orderId, status, isAdmin, onCall }: { orderId: string,
                 }}
             >
                 <Phone size={12} />
-                {isCalledToday && !isPermanentlyDisabled ? 'Called' : 'Call'}
+                {isCalledToday && !isPermanentlyDisabled ? tx('delivery.called', 'Called') : tx('delivery.call', 'Call')}
             </button>
             {isAdmin && isDisabled && (
                 <button 
@@ -98,7 +126,7 @@ const FollowUpButton = ({ orderId, status, isAdmin, onCall }: { orderId: string,
                         justifyContent: 'center',
                         transition: 'all 0.2s ease'
                     }} 
-                    title="Re-enable Call Button"
+                    title={tx('delivery.reenableCall', 'Re-enable Call Button')}
                     onMouseOver={(e) => e.currentTarget.style.background = '#E5E7EB'}
                     onMouseOut={(e) => e.currentTarget.style.background = '#F3F4F6'}
                 >
@@ -110,6 +138,7 @@ const FollowUpButton = ({ orderId, status, isAdmin, onCall }: { orderId: string,
 };
 
 const EditableRemark = ({ order, updateOrder }: { order: Sale, updateOrder: (id: string, updates: Partial<Sale>) => void }) => {
+    const { tx } = useTx();
     const [isEditing, setIsEditing] = useState(false);
     const [value, setValue] = useState(order.remark || '');
 
@@ -164,7 +193,7 @@ const EditableRemark = ({ order, updateOrder }: { order: Sale, updateOrder: (id:
                 overflow: 'hidden', 
                 textOverflow: 'ellipsis' 
             }}
-            title={order.remark || 'Click to add remark'}
+            title={order.remark || tx('delivery.addRemark', 'Click to add remark')}
         >
             {order.remark || <span style={{ color: 'var(--color-text-secondary)' }}>-</span>}
         </div>
@@ -175,18 +204,19 @@ const DeliveryTracking: React.FC = () => {
     const { sales, salesUpdatedAt, updateOrderStatus, updateOrder, users, currentUser, hasPermission, shippingCompanies, customerCare, refreshData, telegramBotToken, telegramChatId, updateStoreProfile, trackingUrlTemplates } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
+    const { tx, statusLabel, payLabel } = useTx();
 
     React.useEffect(() => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Delivery Tracking</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage shipments and tracking</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{tx('delivery.title', 'Delivery Tracking')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{tx('delivery.subtitle', 'Manage shipments and tracking')}</p>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, tx]);
 
     const [searchTerm, setSearchTerm] = useState('');
     // Debounced copy drives the server fetch: typing used to fire the full
@@ -266,20 +296,20 @@ const DeliveryTracking: React.FC = () => {
             telegramBotToken: tempBotToken,
             telegramChatId: tempChatId
         });
-        showToast('Telegram configuration saved!', 'success');
+        showToast(tx('delivery.telegramSaved', 'Telegram configuration saved!'), 'success');
         setShowTelegramSettings(false);
     };
 
     const handleTestTelegram = async () => {
         if (!tempBotToken || !tempChatId) {
-            showToast('Please enter both Bot Token and Group Chat ID', 'error');
+            showToast(tx('delivery.telegramMissing', 'Please enter both Bot Token and Group Chat ID'), 'error');
             return;
         }
         try {
             await sendTelegramTestMessage(tempBotToken, tempChatId);
-            showToast('Test message sent successfully!', 'success');
+            showToast(tx('delivery.testSent', 'Test message sent successfully!'), 'success');
         } catch (error: any) {
-            showToast(`Failed to send test message: ${error.message}`, 'error');
+            showToast(tx('delivery.testFailed', 'Failed to send test message: {msg}', { msg: error.message }), 'error');
         }
     };
 
@@ -288,28 +318,28 @@ const DeliveryTracking: React.FC = () => {
         const sequenceNumber = sales.findIndex(s => s.id === order.id) + 1;
         try {
             await sendTelegramOrderNotification(telegramBotToken, telegramChatId, order, sequenceNumber, undefined);
-            showToast('Follow up notification sent to Telegram', 'success');
+            showToast(tx('delivery.followUpSent', 'Follow up notification sent to Telegram'), 'success');
         } catch (error: any) {
-            showToast(`Failed to send Telegram message: ${error.message}`, 'error');
+            showToast(tx('delivery.telegramFailed', 'Failed to send Telegram message: {msg}', { msg: error.message }), 'error');
         }
     };
 
     // Column Visibility
     const [showColumnMenu, setShowColumnMenu] = useState(false);
     const allColumns = [
-        { id: 'actions', label: 'Actions' },
-        { id: 'date', label: 'Order Date' },
-        { id: 'customer', label: 'Customer' },
-        { id: 'phone', label: 'Phone' },
-        { id: 'address', label: 'Address' },
-        { id: 'items', label: 'Products' },
-        { id: 'shippingCo', label: 'Shipping Co.' },
-        { id: 'tracking', label: 'Tracking ID' },
-        { id: 'deliveryMan', label: 'Delivery Man' },
-        { id: 'status', label: 'Ship Status' },
-        { id: 'cost', label: 'Cost' },
-        { id: 'followUp', label: 'Follow Up' },
-        { id: 'remark', label: 'Remark' },
+        { id: 'actions', label: tx('delivery.col.actions', 'Actions') },
+        { id: 'date', label: tx('delivery.col.date', 'Order Date') },
+        { id: 'customer', label: tx('delivery.col.customer', 'Customer') },
+        { id: 'phone', label: tx('delivery.col.phone', 'Phone') },
+        { id: 'address', label: tx('delivery.col.address', 'Address') },
+        { id: 'items', label: tx('delivery.col.items', 'Products') },
+        { id: 'shippingCo', label: tx('delivery.col.shippingCo', 'Shipping Co.') },
+        { id: 'tracking', label: tx('delivery.col.tracking', 'Tracking ID') },
+        { id: 'deliveryMan', label: tx('delivery.col.deliveryMan', 'Delivery Man') },
+        { id: 'status', label: tx('delivery.col.status', 'Ship Status') },
+        { id: 'cost', label: tx('delivery.col.cost', 'Cost') },
+        { id: 'followUp', label: tx('delivery.col.followUp', 'Follow Up') },
+        { id: 'remark', label: tx('delivery.col.remark', 'Remark') },
     ];
     // Default visible
     const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
@@ -771,10 +801,10 @@ const DeliveryTracking: React.FC = () => {
             // open instead of saying it was saved.
             const saved = await updateOrder(selectedOrder.id, { shipping: updatedShipping, expectedShippingStatus: selectedOrder.shipping?.status || 'Pending' });
             if (!saved) {
-                showToast('Not all shipping changes were saved — see the message shown.', 'error');
+                showToast(tx('delivery.notAllSaved', 'Not all shipping changes were saved — see the message shown.'), 'error');
                 return;
             }
-            showToast('Shipping details updated', 'success');
+            showToast(tx('delivery.shippingUpdated', 'Shipping details updated'), 'success');
             setIsEditModalOpen(false);
         } finally {
             savingShippingRef.current = false;
@@ -806,8 +836,8 @@ const DeliveryTracking: React.FC = () => {
                 <div style={{ padding: '24px', background: '#FEF2F2', borderRadius: '12px', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', gap: '12px', color: '#DC2626' }}>
                     <div style={{ padding: '8px', background: 'var(--color-surface)', borderRadius: '50%' }}><X size={24} /></div>
                     <div>
-                        <h4 style={{ fontWeight: 'bold' }}>Order Cancelled</h4>
-                        <p style={{ fontSize: '13px', opacity: 0.8 }}>This shipment has been cancelled.</p>
+                        <h4 style={{ fontWeight: 'bold' }}>{tx('delivery.orderCancelled', 'Order Cancelled')}</h4>
+                        <p style={{ fontSize: '13px', opacity: 0.8 }}>{tx('delivery.shipmentCancelled', 'This shipment has been cancelled.')}</p>
                     </div>
                 </div>
             );
@@ -849,7 +879,7 @@ const DeliveryTracking: React.FC = () => {
                                 fontSize: '13px',
                                 fontWeight: isCurrent ? 700 : 500,
                                 color: isCompleted ? 'var(--color-text-main)' : 'var(--color-text-muted)'
-                            }}>{step}</span>
+                            }}>{statusLabel(step)}</span>
                         </div>
                     );
                 })}
@@ -894,7 +924,7 @@ const DeliveryTracking: React.FC = () => {
                     <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                     <input
                         type="text"
-                        placeholder="Search customer, phone, tracking..."
+                        placeholder={tx('delivery.search', 'Search customer, phone, tracking...')}
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                         className="search-input"
@@ -903,7 +933,7 @@ const DeliveryTracking: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Order Date:</span>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{tx('delivery.orderDateColon', 'Order Date:')}</span>
                     <DateRangePicker value={orderDateRange} onChange={setOrderDateRange} />
                 </div>
 
@@ -923,7 +953,7 @@ const DeliveryTracking: React.FC = () => {
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '13px', color: salesmanFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                    {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen') : salesmanFilter}
+                                    {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : tx('delivery.salesmen', 'Salesmen')) : salesmanFilter}
                                 </span>
                             </div>
                             <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -952,7 +982,7 @@ const DeliveryTracking: React.FC = () => {
                                 }}
                                     onClick={() => { setSalesmanFilter('All'); setIsSalesmanOpen(false); }}
                                 >
-                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen'}</span>
+                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : tx('delivery.salesmen', 'Salesmen')}</span>
                                 </label>
                                 {currentUser?.roleId !== 'salesman' && users.filter(u => u.roleId !== 'admin').map(s => (
                                     <label key={s.id} style={{
@@ -984,7 +1014,7 @@ const DeliveryTracking: React.FC = () => {
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '13px', color: customerCareFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                    {customerCareFilter === 'All' ? 'Customer Care' : customerCareFilter}
+                                    {customerCareFilter === 'All' ? tx('delivery.customerCare', 'Customer Care') : customerCareFilter}
                                 </span>
                             </div>
                             <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -1013,7 +1043,7 @@ const DeliveryTracking: React.FC = () => {
                                 }}
                                     onClick={() => { setCustomerCareFilter('All'); setIsCustomerCareOpen(false); }}
                                 >
-                                    <span style={{ fontSize: '13px' }}>All Customer Care</span>
+                                    <span style={{ fontSize: '13px' }}>{tx('delivery.allCustomerCare', 'All Customer Care')}</span>
                                 </label>
                                 {(customerCare || []).map(cc => (
                                     <label key={cc} style={{
@@ -1045,7 +1075,7 @@ const DeliveryTracking: React.FC = () => {
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '13px', fontWeight: 500, color: shippingCoFilter.length === 0 ? '#000000' : '#000000' }}>
-                                    {shippingCoFilter.length === 0 ? 'Shipping Co' : `Shipping (${shippingCoFilter.length})`}
+                                    {shippingCoFilter.length === 0 ? tx('delivery.shippingCo', 'Shipping Co') : tx('delivery.shippingN', 'Shipping ({n})', { n: shippingCoFilter.length })}
                                 </span>
                             </div>
                             <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -1080,7 +1110,7 @@ const DeliveryTracking: React.FC = () => {
                                         }}
                                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                     />
-                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>{tx('delivery.selectAll', 'Select All')}</span>
                                 </label>
                                 {filterShippingCompanies.map(co => (
                                     <label key={co} style={{
@@ -1122,7 +1152,7 @@ const DeliveryTracking: React.FC = () => {
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '13px', fontWeight: 500, color: statusFilter.length === 0 ? '#000000' : '#000000' }}>
-                                    {statusFilter.length === 0 ? 'All Shipping' : `Shipping (${statusFilter.length})`}
+                                    {statusFilter.length === 0 ? tx('delivery.allShipping', 'All Shipping') : tx('delivery.shippingN', 'Shipping ({n})', { n: statusFilter.length })}
                                 </span>
                             </div>
                             <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -1157,7 +1187,7 @@ const DeliveryTracking: React.FC = () => {
                                         }}
                                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                     />
-                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>{tx('delivery.selectAll', 'Select All')}</span>
                                 </label>
                                 {['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returned', 'ReStock', 'Cancelled'].map(s => {
                                     const getStatusColors = (status: string) => {
@@ -1189,7 +1219,7 @@ const DeliveryTracking: React.FC = () => {
                                                 }}
                                                 style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                             />
-                                            <span style={{ fontSize: "13px", padding: '2px 6px', borderRadius: '4px', background: colors.bg, color: colors.color }}>{orderStatusLabel(s)}</span>
+                                            <span style={{ fontSize: "13px", padding: '2px 6px', borderRadius: '4px', background: colors.bg, color: colors.color }}>{statusLabel(s)}</span>
                                         </label>
                                     );
                                 })}
@@ -1203,11 +1233,11 @@ const DeliveryTracking: React.FC = () => {
                         className="search-input"
                         style={{ width: '130px' }}
                     >
-                        <option value="All">All Payment</option>
-                        <option value="Paid" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>Paid</option>
-                        <option value="Get File" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>Get File</option>
-                        <option value="Unpaid" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>Unpaid</option>
-                        <option value="Cancel" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>Cancel</option>
+                        <option value="All">{tx('delivery.allPayment', 'All Payment')}</option>
+                        <option value="Paid" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>{payLabel('Paid')}</option>
+                        <option value="Get File" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{payLabel('Get File')}</option>
+                        <option value="Unpaid" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>{payLabel('Unpaid')}</option>
+                        <option value="Cancel" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>{payLabel('Cancel')}</option>
                     </select>
 
                     <button
@@ -1229,9 +1259,9 @@ const DeliveryTracking: React.FC = () => {
                             fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px',
                             transition: 'all 0.2s ease'
                         }}
-                        title="Clear Filters"
+                        title={tx('income.clearFilters', 'Clear Filters')}
                     >
-                        <X size={16} /> Clear
+                        <X size={16} /> {tx('income.clear', 'Clear')}
                     </button>
                 </div>
 
@@ -1244,7 +1274,7 @@ const DeliveryTracking: React.FC = () => {
                             setTimeout(() => btn.style.animation = '', 1000);
                         }
                     }}
-                    title="Refresh Data"
+                    title={tx('delivery.refreshData', 'Refresh Data')}
                     style={{
                         padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
                         background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
@@ -1257,7 +1287,7 @@ const DeliveryTracking: React.FC = () => {
                 {currentUser?.roleId === 'admin' && (
                     <button
                         onClick={() => setShowTelegramSettings(true)}
-                        title="Telegram Settings"
+                        title={tx('delivery.telegramSettings', 'Telegram Settings')}
                         style={{
                             padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
                             background: 'var(--color-surface)', color: '#0088cc', cursor: 'pointer',
@@ -1283,7 +1313,7 @@ const DeliveryTracking: React.FC = () => {
                         }}
                     >
                         <Settings size={18} />
-                        Columns
+                        {tx('om2.columnsBtn', 'Columns')}
                     </button>
                     {showColumnMenu && (
                         <div className="glass-panel" style={{
@@ -1291,7 +1321,7 @@ const DeliveryTracking: React.FC = () => {
                             padding: '16px', width: '200px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
                             display: 'flex', flexDirection: 'column', gap: '8px'
                         }}>
-                            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
+                            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>{tx('delivery.toggleColumns', 'Toggle Columns')}</h4>
                             {allColumns.map(col => (
                                 <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
                                     <input
@@ -1319,7 +1349,7 @@ const DeliveryTracking: React.FC = () => {
                 <div role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#B91C1C', fontSize: '13px' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-                        Couldn't load orders — the rows below may be out of date. {loadError}
+                        {tx('delivery.loadError', "Couldn't load orders — the rows below may be out of date.")} {loadError}
                     </span>
                     <button
                         type="button"
@@ -1327,7 +1357,7 @@ const DeliveryTracking: React.FC = () => {
                         disabled={isLoadingOrders}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1px solid #FECACA', background: 'var(--color-surface)', color: '#B91C1C', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
                     >
-                        <RefreshCw size={13} /> Retry
+                        <RefreshCw size={13} /> {tx('om2.retry', 'Retry')}
                     </button>
                 </div>
             )}
@@ -1373,7 +1403,7 @@ const DeliveryTracking: React.FC = () => {
                                             cursor: 'col-resize', background: 'transparent', zIndex: 25, transform: 'translateX(50%)'
                                         }}
                                         className="resize-handle"
-                                        title="Double click to auto-fit all columns"
+                                        title={tx('deleted.autoFitAll', 'Double click to auto-fit all columns')}
                                     />
                                 </th>
                                 {allColumns.filter(col => visibleColumns.includes(col.id)).map((col) => {
@@ -1445,7 +1475,7 @@ const DeliveryTracking: React.FC = () => {
                                                 <button 
                                                     onClick={() => setReceiptSale(order)} 
                                                     className="icon-button" 
-                                                    title={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? "Print Receipt" : "Print disabled (Status must be Confirmed, Shipped, or Delivered)"}
+                                                    title={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? tx('delivery.printReceipt', 'Print Receipt') : tx('delivery.printDisabled', 'Print disabled (Status must be Confirmed, Shipped, or Delivered)')}
                                                     disabled={!['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '')}
                                                     style={{ 
                                                         padding: '4px', 
@@ -1457,10 +1487,10 @@ const DeliveryTracking: React.FC = () => {
                                                 >
                                                     <Printer size={16} color={['Confirmed', 'Shipped', 'Delivered'].includes(order.shipping?.status || '') ? (order.isPrinted ? "#2563EB" : "#DC2626") : "#ccc"} />
                                                 </button>
-                                                <button onClick={() => { setSelectedOrder(order); setIsViewModalOpen(true); }} className="icon-button" title="View Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                <button onClick={() => { setSelectedOrder(order); setIsViewModalOpen(true); }} className="icon-button" title={tx('delivery.viewDetails', 'View Details')} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                     <Eye size={16} color="var(--color-text-secondary)" />
                                                 </button>
-                                                <button onClick={() => handleOpenEdit(order)} className="icon-button" title="Edit Shipping" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                                <button onClick={() => handleOpenEdit(order)} className="icon-button" title={tx('delivery.editShipping', 'Edit Shipping')} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                     <Edit size={16} color="var(--color-text-secondary)" />
                                                 </button>
                                             </div>
@@ -1498,7 +1528,7 @@ const DeliveryTracking: React.FC = () => {
                                         {order.shipping?.trackingNumber ? (() => {
                                             const url = buildTrackingUrl(order.shipping?.company, order.shipping.trackingNumber, trackingUrlTemplates);
                                             return url ? (
-                                                <a href={url} target="_blank" rel="noopener noreferrer" title="Open carrier tracking page" style={{ background: '#EFF6FF', color: 'var(--color-primary)', padding: '2px 6px', borderRadius: '4px', textDecoration: 'none' }}>
+                                                <a href={url} target="_blank" rel="noopener noreferrer" title={tx('delivery.openTracking', 'Open carrier tracking page')} style={{ background: '#EFF6FF', color: 'var(--color-primary)', padding: '2px 6px', borderRadius: '4px', textDecoration: 'none' }}>
                                                     {order.shipping.trackingNumber} ↗
                                                 </a>
                                             ) : (
@@ -1563,7 +1593,7 @@ const DeliveryTracking: React.FC = () => {
                                     );
                                     if (index === 0) return (
                                         <td key={colId} style={{ ...style, fontWeight: 'bold' }}>
-                                            Total ({stats.totalItems})
+                                            {tx('delivery.totalN', 'Total ({n})', { n: stats.totalItems })}
                                         </td>
                                     );
                                     return <td key={colId} style={style}></td>;
@@ -1573,14 +1603,14 @@ const DeliveryTracking: React.FC = () => {
                         </tfoot>
                     </table>
                 </div>
-                {totalCount === 0 && !isLoadingOrders && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No shipments found.</div>}
+                {totalCount === 0 && !isLoadingOrders && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{tx('delivery.empty', 'No shipments found.')}</div>}
             </div>
 
             {totalCount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, totalCount)} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount} entries
+                            {tx('delivery.showing', 'Showing {from} to {to} of {total} entries', { from: Math.min((currentPage - 1) * itemsPerPage + 1, totalCount), to: Math.min(currentPage * itemsPerPage, totalCount), total: totalCount })}
                         </div>
                         <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
                             {(() => {
@@ -1615,7 +1645,7 @@ const DeliveryTracking: React.FC = () => {
                                             alignItems: 'center',
                                             gap: '2px'
                                         }}>
-                                            {orderStatusLabel(status)}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                            {statusLabel(status)}: <strong style={{ fontSize: '11px' }}>{count}</strong>
                                         </span>
                                     );
                                 });
@@ -1656,7 +1686,7 @@ const DeliveryTracking: React.FC = () => {
                                                     alignItems: 'center',
                                                     gap: '2px'
                                                 }}>
-                                                    {status}: <strong style={{ fontSize: '11px' }}>{count}</strong>
+                                                    {payLabel(status)}: <strong style={{ fontSize: '11px' }}>{count}</strong>
                                                 </span>
                                             );
                                         });
@@ -1670,7 +1700,7 @@ const DeliveryTracking: React.FC = () => {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                            <span>Rows per page:</span>
+                            <span>{tx('delivery.rowsPerPage', 'Rows per page:')}</span>
                             <select
                                 value={itemsPerPage}
                                 onChange={(e) => setItemsPerPage(Number(e.target.value))}
@@ -1708,7 +1738,7 @@ const DeliveryTracking: React.FC = () => {
                                 <ChevronLeft size={16} />
                             </button>
                             <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                                Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.max(1, Math.ceil(totalCount / itemsPerPage))}
+                                {tx('om2.table.page', 'Page')} <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> {tx('om2.table.of', 'of')} {Math.max(1, Math.ceil(totalCount / itemsPerPage))}
                             </span>
                             <button
                                 onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalCount / itemsPerPage), p + 1))}
@@ -1734,49 +1764,49 @@ const DeliveryTracking: React.FC = () => {
                     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
                         <div className="glass-panel" style={{ width: '500px', padding: '32px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>Update Shipping</h2>
+                                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>{tx('delivery.updateShipping', 'Update Shipping')}</h2>
                                 <button onClick={() => setIsEditModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Shipping Co.</label>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('delivery.col.shippingCo', 'Shipping Co.')}</label>
                                         <input type="text" className="search-input" style={{ width: '100%' }} value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })} />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Tracking Number</label>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('delivery.trackingNumber', 'Tracking Number')}</label>
                                         <input type="text" className="search-input" style={{ width: '100%' }} value={formData.trackingNumber} onChange={e => setFormData({ ...formData, trackingNumber: e.target.value })} />
                                     </div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Delivery Man</label>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('delivery.col.deliveryMan', 'Delivery Man')}</label>
                                         <input type="text" className="search-input" style={{ width: '100%' }} value={formData.staffName} onChange={e => setFormData({ ...formData, staffName: e.target.value })} />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Shipping Cost ($)</label>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('delivery.shippingCost', 'Shipping Cost ($)')}</label>
                                         <input type="number" className="search-input" style={{ width: '100%' }} value={formData.cost} onChange={e => setFormData({ ...formData, cost: Number(e.target.value) })} />
                                     </div>
                                 </div>
 
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Status</label>
+                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('delivery.status', 'Status')}</label>
                                     <select className="search-input" style={{ width: '100%' }} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as 'Drafted' | 'Pending' | 'Confirmed' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'ReStock' })}>
-                                        <option value="Drafted">Drafted</option>
-                                        <option value="Pending">Pending</option>
-                                        <option value="Confirmed">Confirmed</option>
-                                        <option value="Shipped">Shipped</option>
-                                        <option value="Delivered">Delivered</option>
-                                        <option value="Cancelled">Cancelled</option>
-                                        <option value="Returned">Returning</option>
-                                        <option value="ReStock">ReStock</option>
+                                        <option value="Drafted">{statusLabel('Drafted')}</option>
+                                        <option value="Pending">{statusLabel('Pending')}</option>
+                                        <option value="Confirmed">{statusLabel('Confirmed')}</option>
+                                        <option value="Shipped">{statusLabel('Shipped')}</option>
+                                        <option value="Delivered">{statusLabel('Delivered')}</option>
+                                        <option value="Cancelled">{statusLabel('Cancelled')}</option>
+                                        <option value="Returned">{statusLabel('Returned')}</option>
+                                        <option value="ReStock">{statusLabel('ReStock')}</option>
                                     </select>
                                 </div>
 
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
-                                    <button onClick={() => setIsEditModalOpen(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
-                                    <button onClick={handleUpdateShipping} disabled={savingShipping} className="primary-button" style={{ padding: '8px 24px' }}>{savingShipping ? 'Saving…' : 'Save Changes'}</button>
+                                    <button onClick={() => setIsEditModalOpen(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer' }}>{tx('om2.cancel', 'Cancel')}</button>
+                                    <button onClick={handleUpdateShipping} disabled={savingShipping} className="primary-button" style={{ padding: '8px 24px' }}>{savingShipping ? tx('om2.saving', 'Saving…') : tx('delivery.saveChanges', 'Save Changes')}</button>
                                 </div>
                             </div>
                         </div>
@@ -1791,7 +1821,7 @@ const DeliveryTracking: React.FC = () => {
                         <div className="glass-panel" style={{ width: '600px', padding: '32px', maxHeight: '90vh', overflowY: 'auto' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                                 <div>
-                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Tracking Order</div>
+                                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{tx('delivery.trackingOrder', 'Tracking Order')}</div>
                                     <h2 style={{ fontSize: '20px', fontWeight: 'bold' }}>#{selectedOrder.id.slice(-6)}</h2>
                                 </div>
                                 <button onClick={() => setIsViewModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
@@ -1802,29 +1832,29 @@ const DeliveryTracking: React.FC = () => {
                             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px' }}>
                                 <div>
                                     <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <Truck size={18} /> Shipment Details
+                                        <Truck size={18} /> {tx('delivery.shipmentDetails', 'Shipment Details')}
                                     </h3>
                                     <div style={{ background: 'var(--color-surface-hover)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                             <div>
-                                                <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Tracking Number</label>
-                                                <div style={{ fontWeight: 600 }}>{selectedOrder.shipping?.trackingNumber || 'N/A'}</div>
+                                                <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>{tx('delivery.trackingNumber', 'Tracking Number')}</label>
+                                                <div style={{ fontWeight: 600 }}>{selectedOrder.shipping?.trackingNumber || tx('delivery.na', 'N/A')}</div>
                                             </div>
                                             <div>
-                                                <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Shipping Co.</label>
+                                                <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>{tx('delivery.col.shippingCo', 'Shipping Co.')}</label>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                     {selectedOrder.shipping?.company && getShippingLogo(selectedOrder.shipping.company) && (
                                                         <img src={getShippingLogo(selectedOrder.shipping.company)!} alt="shipping logo" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
                                                     )}
-                                                    <span>{selectedOrder.shipping?.company || 'N/A'}</span>
+                                                    <span>{selectedOrder.shipping?.company || tx('delivery.na', 'N/A')}</span>
                                                 </div>
                                             </div>
                                             <div>
-                                                <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Delivery Staff</label>
-                                                <div>{selectedOrder.shipping?.staffName || 'Unassigned'}</div>
+                                                <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>{tx('delivery.deliveryStaff', 'Delivery Staff')}</label>
+                                                <div>{selectedOrder.shipping?.staffName || tx('delivery.unassigned', 'Unassigned')}</div>
                                             </div>
                                             <div>
-                                                <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Est. Cost</label>
+                                                <label style={{ fontSize: '12px', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>{tx('delivery.estCost', 'Est. Cost')}</label>
                                                 <div>${(selectedOrder.shipping?.cost || 0).toFixed(2)}</div>
                                             </div>
                                         </div>
@@ -1832,7 +1862,7 @@ const DeliveryTracking: React.FC = () => {
                                 </div>
 
                                 <div>
-                                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Customer</h3>
+                                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{tx('delivery.col.customer', 'Customer')}</h3>
                                     <div style={{ marginBottom: '16px' }}>
                                         <div style={{ fontWeight: 600 }}>{selectedOrder.customer?.name}</div>
                                         <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1847,7 +1877,7 @@ const DeliveryTracking: React.FC = () => {
                                         </div>
                                         <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>{selectedOrder.customer?.address}</div>
                                     </div>
-                                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Items</h3>
+                                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>{tx('delivery.items', 'Items')}</h3>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                         {selectedOrder.items.map((item, idx) => (
                                             <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
@@ -1856,7 +1886,7 @@ const DeliveryTracking: React.FC = () => {
                                             </div>
                                         ))}
                                         <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '8px', marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-                                            <span>Total</span>
+                                            <span>{tx('delivery.total', 'Total')}</span>
                                             <span>${selectedOrder.total.toFixed(2)}</span>
                                         </div>
                                     </div>
@@ -1879,11 +1909,11 @@ const DeliveryTracking: React.FC = () => {
 
             {/* Telegram Settings Modal */}
             {showTelegramSettings && (
-                <Modal isOpen={showTelegramSettings} onClose={() => setShowTelegramSettings(false)} title="Telegram Bot Settings">
+                <Modal isOpen={showTelegramSettings} onClose={() => setShowTelegramSettings(false)} title={tx('delivery.telegramBotSettings', 'Telegram Bot Settings')}>
                     <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
                         <div>
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>
-                                Bot Token
+                                {tx('delivery.botToken', 'Bot Token')}
                             </label>
                             <input
                                 type="text"
@@ -1896,7 +1926,7 @@ const DeliveryTracking: React.FC = () => {
                         </div>
                         <div>
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '5px' }}>
-                                Group Chat ID
+                                {tx('delivery.groupChatId', 'Group Chat ID')}
                             </label>
                             <input
                                 type="text"
@@ -1916,7 +1946,7 @@ const DeliveryTracking: React.FC = () => {
                                     marginRight: 'auto'
                                 }}
                             >
-                                Test Message
+                                {tx('delivery.testMessage', 'Test Message')}
                             </button>
                             <button
                                 onClick={() => setShowTelegramSettings(false)}
@@ -1925,7 +1955,7 @@ const DeliveryTracking: React.FC = () => {
                                     background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer', fontWeight: 500
                                 }}
                             >
-                                Cancel
+                                {tx('om2.cancel', 'Cancel')}
                             </button>
                             <button
                                 onClick={handleSaveTelegramConfig}
@@ -1934,7 +1964,7 @@ const DeliveryTracking: React.FC = () => {
                                     background: 'var(--color-primary)', color: 'white', cursor: 'pointer', fontWeight: 500
                                 }}
                             >
-                                Save Settings
+                                {tx('delivery.saveSettings', 'Save Settings')}
                             </button>
                         </div>
                     </div>

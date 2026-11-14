@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, Package, CreditCard } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { orderStatusLabel } from '../utils/orderStatusRules';
+import { useTx, orderStatusDisplay } from './useTx';
 
 interface BulkEditModalProps {
     isOpen: boolean;
@@ -12,6 +12,7 @@ interface BulkEditModalProps {
 
 const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply, count }) => {
     const { paymentMethods } = useStore();
+    const tx = useTx();
     const [field, setField] = useState<'date' | 'status' | 'paymentStatus' | 'settleDate'>('date');
     const [value, setValue] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
@@ -96,7 +97,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                 boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
             }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Bulk Edit {count} Orders</h3>
+                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{tx('ui.components.bulkEdit.title', 'Bulk Edit {n} Orders', { n: count })}</h3>
                     <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                         <X size={20} color="var(--color-text-secondary)" />
                     </button>
@@ -104,7 +105,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
 
                 <div style={{ marginBottom: '20px' }}>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
-                        Field to Edit
+                        {tx('ui.components.bulkEdit.field', 'Field to Edit')}
                     </label>
                     <div style={{ display: 'flex', gap: '8px' }}>
                         <button
@@ -125,7 +126,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             }}
                         >
                             <Calendar size={18} />
-                            Date
+                            {tx('orders.date', 'Date')}
                         </button>
                         <button
                             onClick={() => { setField('settleDate'); setValue(''); }}
@@ -145,7 +146,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             }}
                         >
                             <Calendar size={18} />
-                            Settle Date
+                            {tx('ui.components.settle.settleDate', 'Settle Date')}
                         </button>
                         <button
                             onClick={() => { setField('status'); setValue(''); }}
@@ -165,7 +166,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             }}
                         >
                             <Package size={18} />
-                            Status
+                            {tx('ui.components.report.status', 'Status')}
                         </button>
                         <button
                             onClick={() => { setField('paymentStatus'); setValue(''); }}
@@ -185,14 +186,14 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             }}
                         >
                             <CreditCard size={18} />
-                            Payment
+                            {tx('ui.components.orderCard.payment', 'Payment')}
                         </button>
                     </div>
                 </div>
 
                 <div style={{ marginBottom: '24px' }}>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
-                        New Value
+                        {tx('ui.components.bulkEdit.newValue', 'New Value')}
                     </label>
                     {(field === 'date' || field === 'settleDate') && (
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -228,7 +229,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                                     whiteSpace: 'nowrap'
                                 }}
                             >
-                                Now
+                                {tx('ui.components.bulkEdit.now', 'Now')}
                             </button>
                         </div>
                     )}
@@ -244,8 +245,8 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                                 fontSize: '14px'
                             }}
                         >
-                            <option value="">Select Status...</option>
-                            {statusOptions.map(s => <option key={s} value={s}>{orderStatusLabel(s)}</option>)}
+                            <option value="">{tx('ui.components.bulkEdit.selectStatus', 'Select Status...')}</option>
+                            {statusOptions.map(s => <option key={s} value={s}>{orderStatusDisplay(tx, s)}</option>)}
                         </select>
                     )}
                     {field === 'paymentStatus' && (
@@ -261,14 +262,14 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                                     fontSize: '14px'
                                 }}
                             >
-                                <option value="">Select Payment Status...</option>
-                                {paymentStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                <option value="">{tx('ui.components.bulkEdit.selectPayStatus', 'Select Payment Status...')}</option>
+                                {paymentStatusOptions.map(s => <option key={s} value={s}>{tx(`dashboard2.pay.${s}`, s)}</option>)}
                             </select>
 
                             {(value === 'Paid' || value === 'Settled') && (
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
-                                        Settle Date
+                                        {tx('ui.components.settle.settleDate', 'Settle Date')}
                                     </label>
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                         <input
@@ -303,17 +304,17 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                                                 whiteSpace: 'nowrap'
                                             }}
                                         >
-                                            Now
+                                            {tx('ui.components.bulkEdit.now', 'Now')}
                                         </button>
                                     </div>
                                     {!settleDateValid && (
                                         <div style={{ fontSize: '11px', color: 'red', marginTop: '6px' }}>
-                                            A settle date is required to mark orders {value === 'Settled' ? 'Settled' : 'Paid'}.
+                                            {value === 'Settled' ? tx('ui.components.bulkEdit.settleRequiredSettled', 'A settle date is required to mark orders Settled.') : tx('ui.components.bulkEdit.settleRequiredPaid', 'A settle date is required to mark orders Paid.')}
                                         </div>
                                     )}
 
                                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, margin: '16px 0 8px', color: 'var(--color-text-secondary)' }}>
-                                        Pay By
+                                        {tx('orders.payBy', 'Pay By')}
                                     </label>
                                     <select
                                         value={payBy}
@@ -349,7 +350,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             fontWeight: 500
                         }}
                     >
-                        Cancel
+                        {tx('common.cancel', 'Cancel')}
                     </button>
                     <button
                         onClick={handleApply}
@@ -368,7 +369,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             cursor: !canApply ? 'not-allowed' : 'pointer'
                         }}
                     >
-                        {isSubmitting ? 'Updating...' : 'Update Orders'}
+                        {isSubmitting ? tx('ui.components.bulkEdit.updating', 'Updating...') : tx('ui.components.bulkEdit.update', 'Update Orders')}
                     </button>
                 </div>
             </div>

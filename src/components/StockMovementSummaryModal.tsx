@@ -10,6 +10,7 @@ import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { useMobile } from '../hooks/useMobile';
 import DateRangePicker from './DateRangePicker';
+import { useOptionalLanguage } from '../context/LanguageContext';
 
 // One row of the summary (per-product stock recap).
 interface MovementSummaryRow {
@@ -46,6 +47,8 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
     const { products, warehouses } = useStore();
     const { showToast } = useToast();
     const isMobile = useMobile();
+    const lang = useOptionalLanguage();
+    const tx = (k: string, en: string) => { const v = lang?.t(k); return v && v !== k ? v : en; };
 
     const [isLoading, setIsLoading] = useState(false);
     const [rows, setRows] = useState<MovementSummaryRow[]>([]);
@@ -181,7 +184,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
         } catch (e: any) {
             if (isStale()) return;         // a superseded load's failure isn't news
             console.error('Failed to build movement summary:', e);
-            showToast('Failed to build summary: ' + e.message, 'error');
+            showToast(tx('ui.inventory.summary.buildFailed', 'Failed to build summary: ') + e.message, 'error');
         } finally {
             if (!isStale()) setIsLoading(false);
         }
@@ -325,7 +328,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
 
     const rangeLabel = range.start || range.end
         ? `${range.start || '…'} → ${range.end || '…'}`
-        : 'All time';
+        : tx('ui.inventory.summary.allTime', 'All time');
 
     // Tighter cells on phones so more of the table fits before scrolling.
     const numTd: React.CSSProperties = { padding: isMobile ? '7px 8px' : '9px 14px', textAlign: 'center', fontSize: isMobile ? '12px' : '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', borderBottom: '1px solid var(--color-border)' };
@@ -382,10 +385,10 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                             <Table2 size={20} />
                         </div>
                         <div style={{ minWidth: 0 }}>
-                            <h2 style={{ fontSize: '17px', fontWeight: 700, margin: 0, color: '#111827' }}>Stock Movement Summary</h2>
+                            <h2 style={{ fontSize: '17px', fontWeight: 700, margin: 0, color: '#111827' }}>{tx('ui.inventory.summary.title', 'Stock Movement Summary')}</h2>
                             <p style={{ fontSize: '12px', color: '#6B7280', margin: '2px 0 0 0' }}>
                                 {rangeLabel}
-                                {view === 'salesman' && ' · by Salesman'}
+                                {view === 'salesman' && ` · ${tx('ui.inventory.summary.bySalesmanLower', 'by Salesman')}`}
                                 {warehouseId && ` · ${warehouses.find(w => w.id === warehouseId)?.name || ''}`}
                             </p>
                         </div>
@@ -407,15 +410,15 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                                     color: '#6B7280', cursor: 'pointer', whiteSpace: 'nowrap'
                                 }}
                             >
-                                All time
+                                {tx('ui.inventory.summary.allTime', 'All time')}
                             </button>
                         )}
-                        <button onClick={exportSummary} title="Export to Excel" style={{
+                        <button onClick={exportSummary} title={tx('ui.inventory.exportExcel', 'Export to Excel')} style={{
                             display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px',
                             borderRadius: '10px', border: '1px solid var(--color-border)',
                             background: 'var(--color-bg)', color: '#111827', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
                         }}>
-                            <Download size={14} /> {!isMobile && 'Export'}
+                            <Download size={14} /> {!isMobile && tx('common.export', 'Export')}
                         </button>
                         <button onClick={onClose} style={{
                             background: 'var(--color-bg)', border: '1px solid var(--color-border)',
@@ -429,18 +432,18 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
 
                 {/* View toggle */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', padding: isMobile ? '10px 12px' : '12px 22px', borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)', flexShrink: 0 }}>
-                    <div role="tablist" aria-label="Group movements by" style={{ display: 'inline-flex', gap: '2px', padding: '2px', borderRadius: '18px', border: '1px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                        <button role="tab" aria-selected={view === 'product'} onClick={() => setView('product')} style={{ ...chip(view === 'product'), border: 'none' }}>By Product</button>
-                        <button role="tab" aria-selected={view === 'salesman'} onClick={() => setView('salesman')} style={{ ...chip(view === 'salesman'), border: 'none' }}>By Salesman</button>
+                    <div role="tablist" aria-label={tx('ui.inventory.summary.groupBy', 'Group movements by')} style={{ display: 'inline-flex', gap: '2px', padding: '2px', borderRadius: '18px', border: '1px solid var(--color-border)', background: 'var(--color-bg)' }}>
+                        <button role="tab" aria-selected={view === 'product'} onClick={() => setView('product')} style={{ ...chip(view === 'product'), border: 'none' }}>{tx('ui.inventory.summary.byProduct', 'By Product')}</button>
+                        <button role="tab" aria-selected={view === 'salesman'} onClick={() => setView('salesman')} style={{ ...chip(view === 'salesman'), border: 'none' }}>{tx('ui.inventory.summary.bySalesman', 'By Salesman')}</button>
                     </div>
                     {view === 'product' && (
                         <>
                             <span aria-hidden style={{ width: '1px', height: '20px', background: 'var(--color-border)', margin: '0 4px' }} />
                             <button onClick={() => setOnlyMovement(false)} style={chip(!onlyMovement)}>
-                                All Products ({rows.length})
+                                {tx('ui.inventory.summary.allProducts', 'All Products')} ({rows.length})
                             </button>
                             <button onClick={() => setOnlyMovement(true)} style={chip(onlyMovement)}>
-                                With Movement ({movementCount})
+                                {tx('ui.inventory.summary.withMovement', 'With Movement')} ({movementCount})
                             </button>
                         </>
                     )}
@@ -451,41 +454,41 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                     {isLoading ? (
                         <div style={{ padding: '60px', textAlign: 'center', color: '#6B7280' }}>
                             <RefreshCw size={28} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
-                            Building summary…
+                            {tx('ui.inventory.summary.building', 'Building summary…')}
                         </div>
                     ) : view === 'salesman' ? (
                         !movementsData ? (
                             // The first load failed (toast already shown): there is nothing to match yet.
                             <div style={{ padding: '48px', textAlign: 'center', color: '#6B7280', fontSize: '13px' }}>
-                                No stock movements loaded — change the period or reopen to retry.
+                                {tx('ui.inventory.summary.noneLoaded', 'No stock movements loaded — change the period or reopen to retry.')}
                             </div>
                         ) : salesmanStatus === 'idle' || salesmanStatus === 'loading' ? (
                             <div style={{ padding: '60px', textAlign: 'center', color: '#6B7280' }}>
                                 <RefreshCw size={28} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
-                                Matching orders to salesmen…
+                                {tx('ui.inventory.summary.matching', 'Matching orders to salesmen…')}
                             </div>
                         ) : salesmanStatus === 'error' ? (
                             <div style={{ padding: '48px', textAlign: 'center', color: '#B91C1C', fontSize: '13px' }}>
-                                Couldn't match movements to salesmen{salesmanError ? `: ${salesmanError}` : '.'}
+                                {tx('ui.inventory.summary.matchFailed', "Couldn't match movements to salesmen")}{salesmanError ? `: ${salesmanError}` : '.'}
                                 <div style={{ marginTop: '12px' }}>
-                                    <button onClick={() => setSalesmanStatus('idle')} style={chip(false)}>Try again</button>
+                                    <button onClick={() => setSalesmanStatus('idle')} style={chip(false)}>{tx('ui.inventory.tryAgain', 'Try again')}</button>
                                 </div>
                             </div>
                         ) : displayedSalesman.length === 0 ? (
                             <div style={{ padding: '48px', textAlign: 'center', color: '#6B7280', fontSize: '13px' }}>
-                                No stock movements in this period.
+                                {tx('ui.inventory.summary.noMovementsPeriod', 'No stock movements in this period.')}
                             </div>
                         ) : (
                             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: isMobile ? '520px' : '640px', background: 'var(--color-surface)' }}>
                                 <thead>
                                     <tr>
-                                        <th onClick={() => toggleSalesmanSort('label')} style={{ ...thBase, textAlign: 'left' }}>Salesman{salesmanArrow('label')}</th>
-                                        <th onClick={() => toggleSalesmanSort('sold')} style={{ ...thBase, color: '#DC2626' }}>Sold{salesmanArrow('sold')}</th>
-                                        <th onClick={() => toggleSalesmanSort('wholesale')} style={{ ...thBase, color: '#4F46E5' }}>Wholesale{salesmanArrow('wholesale')}</th>
-                                        <th onClick={() => toggleSalesmanSort('ret')} style={{ ...thBase, color: '#B45309' }}>ReStock{salesmanArrow('ret')}</th>
-                                        <th onClick={() => toggleSalesmanSort('buy')} style={{ ...thBase, color: '#7E22CE' }}>Buy{salesmanArrow('buy')}</th>
-                                        <th onClick={() => toggleSalesmanSort('net')} style={{ ...thBase, color: '#2563EB' }} title="Stock added (ReStock + Buy) minus stock removed (Sold + Wholesale)">Net{salesmanArrow('net')}</th>
-                                        <th onClick={() => toggleSalesmanSort('movements')} style={thBase} title="Number of stock movement lines">Movements{salesmanArrow('movements')}</th>
+                                        <th onClick={() => toggleSalesmanSort('label')} style={{ ...thBase, textAlign: 'left' }}>{tx('ui.inventory.summary.salesman', 'Salesman')}{salesmanArrow('label')}</th>
+                                        <th onClick={() => toggleSalesmanSort('sold')} style={{ ...thBase, color: '#DC2626' }}>{tx('ui.inventory.summary.sold', 'Sold')}{salesmanArrow('sold')}</th>
+                                        <th onClick={() => toggleSalesmanSort('wholesale')} style={{ ...thBase, color: '#4F46E5' }}>{tx('ui.inventory.summary.wholesale', 'Wholesale')}{salesmanArrow('wholesale')}</th>
+                                        <th onClick={() => toggleSalesmanSort('ret')} style={{ ...thBase, color: '#B45309' }}>{tx('ui.inventory.summary.restock', 'ReStock')}{salesmanArrow('ret')}</th>
+                                        <th onClick={() => toggleSalesmanSort('buy')} style={{ ...thBase, color: '#7E22CE' }}>{tx('ui.inventory.summary.buy', 'Buy')}{salesmanArrow('buy')}</th>
+                                        <th onClick={() => toggleSalesmanSort('net')} style={{ ...thBase, color: '#2563EB' }} title={tx('ui.inventory.summary.netTitle', 'Stock added (ReStock + Buy) minus stock removed (Sold + Wholesale)')}>{tx('ui.inventory.summary.net', 'Net')}{salesmanArrow('net')}</th>
+                                        <th onClick={() => toggleSalesmanSort('movements')} style={thBase} title={tx('ui.inventory.summary.movementsTitle', 'Number of stock movement lines')}>{tx('ui.inventory.summary.movements', 'Movements')}{salesmanArrow('movements')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -538,7 +541,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                                 <tfoot>
                                     <tr>
                                         <td style={{ ...footTd, textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>
-                                            Total · {namedSalesmanCount} {namedSalesmanCount === 1 ? 'salesman' : 'salesmen'}
+                                            {tx('common.total', 'Total')} · {namedSalesmanCount} {namedSalesmanCount === 1 ? tx('ui.inventory.summary.salesmanOne', 'salesman') : tx('ui.inventory.summary.salesmanMany', 'salesmen')}
                                         </td>
                                         <td style={{ ...footTd, color: '#DC2626' }}>{salesmanTotals.sold > 0 ? `-${salesmanTotals.sold}` : 0}</td>
                                         <td style={{ ...footTd, color: '#4F46E5' }}>{salesmanTotals.wholesale > 0 ? `-${salesmanTotals.wholesale}` : 0}</td>
@@ -552,19 +555,19 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                         )
                     ) : displayedRows.length === 0 ? (
                         <div style={{ padding: '48px', textAlign: 'center', color: '#6B7280', fontSize: '13px' }}>
-                            No products with movement in this period.
+                            {tx('ui.inventory.summary.noProductsMovement', 'No products with movement in this period.')}
                         </div>
                     ) : (
                         <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: isMobile ? '520px' : '640px', background: 'var(--color-surface)' }}>
                             <thead>
                                 <tr>
-                                    <th onClick={() => toggleSort('name')} style={{ ...thBase, textAlign: 'left' }}>Model{arrow('name')}</th>
-                                    <th onClick={() => toggleSort('oldStock')} style={thBase}>Old Stock{arrow('oldStock')}</th>
-                                    <th onClick={() => toggleSort('sold')} style={{ ...thBase, color: '#DC2626' }}>Sold{arrow('sold')}</th>
-                                    <th onClick={() => toggleSort('wholesale')} style={{ ...thBase, color: '#4F46E5' }}>Wholesale{arrow('wholesale')}</th>
-                                    <th onClick={() => toggleSort('ret')} style={{ ...thBase, color: '#B45309' }}>ReStock{arrow('ret')}</th>
-                                    <th onClick={() => toggleSort('buy')} style={{ ...thBase, color: '#7E22CE' }}>Buy{arrow('buy')}</th>
-                                    <th onClick={() => toggleSort('newStock')} style={{ ...thBase, color: '#2563EB' }}>New Stock{arrow('newStock')}</th>
+                                    <th onClick={() => toggleSort('name')} style={{ ...thBase, textAlign: 'left' }}>{tx('inventory.model', 'Model')}{arrow('name')}</th>
+                                    <th onClick={() => toggleSort('oldStock')} style={thBase}>{tx('ui.inventory.summary.oldStock', 'Old Stock')}{arrow('oldStock')}</th>
+                                    <th onClick={() => toggleSort('sold')} style={{ ...thBase, color: '#DC2626' }}>{tx('ui.inventory.summary.sold', 'Sold')}{arrow('sold')}</th>
+                                    <th onClick={() => toggleSort('wholesale')} style={{ ...thBase, color: '#4F46E5' }}>{tx('ui.inventory.summary.wholesale', 'Wholesale')}{arrow('wholesale')}</th>
+                                    <th onClick={() => toggleSort('ret')} style={{ ...thBase, color: '#B45309' }}>{tx('ui.inventory.summary.restock', 'ReStock')}{arrow('ret')}</th>
+                                    <th onClick={() => toggleSort('buy')} style={{ ...thBase, color: '#7E22CE' }}>{tx('ui.inventory.summary.buy', 'Buy')}{arrow('buy')}</th>
+                                    <th onClick={() => toggleSort('newStock')} style={{ ...thBase, color: '#2563EB' }}>{tx('ui.inventory.summary.newStock', 'New Stock')}{arrow('newStock')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -596,7 +599,7 @@ const StockMovementSummaryModal: React.FC<StockMovementSummaryModalProps> = ({ i
                             <tfoot>
                                 <tr>
                                     <td style={{ ...footTd, textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>
-                                        Total · {displayedRows.length} {displayedRows.length === 1 ? 'model' : 'models'}
+                                        {tx('common.total', 'Total')} · {displayedRows.length} {displayedRows.length === 1 ? tx('ui.inventory.summary.modelOne', 'model') : tx('ui.inventory.summary.modelMany', 'models')}
                                     </td>
                                     <td style={{ ...footTd, color: 'var(--color-text-secondary)' }}>{totals.oldStock}</td>
                                     <td style={{ ...footTd, color: '#DC2626' }}>{totals.sold > 0 ? `-${totals.sold}` : 0}</td>

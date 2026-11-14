@@ -4,6 +4,7 @@ import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { Modal } from '../../components';
 import { useCrm } from '../../hooks/useCrm';
+import { useLanguage } from '../../context/LanguageContext';
 import type { Interaction } from '../../types';
 import { dayKeyFromDate, parseDay } from '../../utils/dateRange';
 
@@ -20,6 +21,13 @@ const typeConfig = (t?: string) => {
 const InteractionsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { currentUser } = useStore();
+    const { t } = useLanguage();
+    const typeLabel = (s: string) => ({
+        All: t('common.all'),
+        Call: t('ui.people.crm.type.call'),
+        Email: t('ui.people.crm.type.email'),
+        Meeting: t('ui.people.crm.type.meeting'),
+    } as Record<string, string>)[s] ?? s;
     const { interactions, leads, isLoading, tableMissing, fetchInteractions, fetchLeads, saveInteraction, deleteInteraction } = useCrm();
 
     const [search, setSearch] = useState('');
@@ -33,13 +41,13 @@ const InteractionsPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Interactions</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Calls, emails and meetings logged against your leads</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('nav.interactions')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.people.crm.inter.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => { fetchInteractions(); fetchLeads(true); }, [fetchInteractions, fetchLeads]);
 
@@ -75,17 +83,17 @@ const InteractionsPage: React.FC = () => {
     };
 
     const handleDelete = async (it: Interaction) => {
-        if (confirm('Delete this interaction?')) { try { await deleteInteraction(it.id); } catch { /* hook toasts */ } }
+        if (confirm(t('ui.people.crm.inter.confirmDelete'))) { try { await deleteInteraction(it.id); } catch { /* hook toasts */ } }
     };
 
     return (
         <div style={{ padding: '24px' }}>
             {/* Summary cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                <StatCard icon={MessageSquare} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Total Interactions" value={String(counts.All)} />
-                <StatCard icon={PhoneCall} gradient="linear-gradient(135deg, #3b82f6, #60a5fa)" label="Calls" value={String(counts.Call)} />
-                <StatCard icon={Mail} gradient="linear-gradient(135deg, #8b5cf6, #a78bfa)" label="Emails" value={String(counts.Email)} />
-                <StatCard icon={UsersIcon} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Meetings" value={String(counts.Meeting)} />
+                <StatCard icon={MessageSquare} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label={t('ui.people.crm.inter.total')} value={String(counts.All)} />
+                <StatCard icon={PhoneCall} gradient="linear-gradient(135deg, #3b82f6, #60a5fa)" label={t('ui.people.crm.inter.calls')} value={String(counts.Call)} />
+                <StatCard icon={Mail} gradient="linear-gradient(135deg, #8b5cf6, #a78bfa)" label={t('ui.people.crm.inter.emails')} value={String(counts.Email)} />
+                <StatCard icon={UsersIcon} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={t('ui.people.crm.inter.meetings')} value={String(counts.Meeting)} />
             </div>
 
             {/* Toolbar */}
@@ -93,7 +101,7 @@ const InteractionsPage: React.FC = () => {
                 <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                     {(['All', ...TYPES] as const).map(tab => (
                         <button key={tab} onClick={() => setTypeFilter(tab)} style={{ padding: '7px 14px', border: 'none', background: typeFilter === tab ? 'var(--color-primary)' : 'transparent', color: typeFilter === tab ? 'white' : 'var(--color-text-secondary)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            {tab}
+                            {typeLabel(tab)}
                             <span style={{ background: typeFilter === tab ? 'rgba(255,255,255,0.25)' : 'var(--color-bg)', padding: '1px 7px', borderRadius: '12px', fontSize: '10px', fontWeight: 700 }}>{counts[tab] || 0}</span>
                         </button>
                     ))}
@@ -101,13 +109,13 @@ const InteractionsPage: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ position: 'relative', width: '240px' }}>
                         <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                        <input type="text" placeholder="Search lead, notes..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                        <input type="text" placeholder={t('ui.people.crm.inter.searchPh')} value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
                     </div>
-                    <button className="secondary-button" onClick={() => fetchInteractions()} title="Refresh" style={{ padding: '9px 12px' }}>
+                    <button className="secondary-button" onClick={() => fetchInteractions()} title={t('ui.people.common.refresh')} style={{ padding: '9px 12px' }}>
                         <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} />
                     </button>
-                    <button className="primary-button" disabled={tableMissing || leads.length === 0} onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }} title={leads.length === 0 ? 'Add a lead first' : undefined}>
-                        <Plus size={18} /> Log Interaction
+                    <button className="primary-button" disabled={tableMissing || leads.length === 0} onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }} title={leads.length === 0 ? t('ui.people.crm.inter.addLeadFirst') : undefined}>
+                        <Plus size={18} /> {t('ui.people.crm.inter.log')}
                     </button>
                 </div>
             </div>
@@ -115,20 +123,20 @@ const InteractionsPage: React.FC = () => {
             {tableMissing ? (
                 <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
-                    <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>Database setup needed</p>
-                    <p style={{ fontSize: '13px' }}>Run <code>migrations/full_schema.sql</code> in your Supabase SQL editor, then Refresh.</p>
+                    <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>{t('ui.people.crm.dbSetup')}</p>
+                    <p style={{ fontSize: '13px' }}>{t('ui.people.crm.dbRun')} <code>migrations/full_schema.sql</code> {t('ui.people.crm.dbRunAfter')}</p>
                 </div>
             ) : (
                 <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
                     <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none', minWidth: '760px' }}>
                         <thead>
                             <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                                <th style={thStyle}>Date</th>
-                                <th style={{ ...thStyle, textAlign: 'center' }}>Type</th>
-                                <th style={thStyle}>Lead</th>
-                                <th style={thStyle}>Notes</th>
-                                <th style={thStyle}>By</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+                                <th style={thStyle}>{t('ui.people.common.date')}</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>{t('ui.people.common.type')}</th>
+                                <th style={thStyle}>{t('ui.people.crm.lead')}</th>
+                                <th style={thStyle}>{t('ui.people.common.notes')}</th>
+                                <th style={thStyle}>{t('ui.people.crm.inter.by')}</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>{t('common.actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -136,7 +144,7 @@ const InteractionsPage: React.FC = () => {
                                 <tr><td colSpan={6} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', color: 'var(--color-text-secondary)' }}>
                                         <MessageSquare size={40} style={{ opacity: 0.25 }} />
-                                        <p style={{ fontSize: '14px' }}>{search || typeFilter !== 'All' ? 'No interactions match your filters.' : 'No interactions logged yet.'}</p>
+                                        <p style={{ fontSize: '14px' }}>{search || typeFilter !== 'All' ? t('ui.people.crm.inter.noMatch') : t('ui.people.crm.inter.noneYet')}</p>
                                     </div>
                                 </td></tr>
                             ) : filtered.map((it, idx) => {
@@ -147,7 +155,7 @@ const InteractionsPage: React.FC = () => {
                                         <td style={{ ...tdStyle, color: 'var(--color-text-secondary)', fontSize: '12px' }}>{it.date ? new Date(it.date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}</td>
                                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: tc.bg, color: tc.color }}>
-                                                <TypeIcon size={11} /> {it.type}
+                                                <TypeIcon size={11} /> {typeLabel(it.type)}
                                             </span>
                                         </td>
                                         <td style={{ ...tdStyle, fontWeight: 600 }}>{it.lead?.name || '—'}</td>
@@ -155,8 +163,8 @@ const InteractionsPage: React.FC = () => {
                                         <td style={{ ...tdStyle, color: 'var(--color-text-secondary)' }}>{it.performed_by || '—'}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                                                <button onClick={() => openModal(it)} title="Edit" style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px' }}><Edit size={14} /></button>
-                                                <button onClick={() => handleDelete(it)} title="Delete" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}><Trash2 size={14} /></button>
+                                                <button onClick={() => openModal(it)} title={t('common.edit')} style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px' }}><Edit size={14} /></button>
+                                                <button onClick={() => handleDelete(it)} title={t('common.delete')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}><Trash2 size={14} /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -167,29 +175,29 @@ const InteractionsPage: React.FC = () => {
                 </div>
             )}
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editing ? 'Edit Interaction' : 'Log Interaction'}>
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editing ? t('ui.people.crm.inter.edit') : t('ui.people.crm.inter.log')}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '420px' }}>
                     <div>
-                        <label style={labelStyle}>Lead *</label>
+                        <label style={labelStyle}>{t('ui.people.crm.lead')} *</label>
                         <select className="search-input" style={{ width: '100%' }} value={form.lead_id || ''} onChange={e => setForm({ ...form, lead_id: e.target.value })}>
-                            <option value="" disabled>Select lead…</option>
+                            <option value="" disabled>{t('ui.people.crm.inter.selectLead')}</option>
                             {leads.map(l => <option key={l.id} value={l.id}>{l.name}{l.company_name ? ` (${l.company_name})` : ''}</option>)}
                         </select>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
-                            <label style={labelStyle}>Type</label>
+                            <label style={labelStyle}>{t('ui.people.common.type')}</label>
                             <select className="search-input" style={{ width: '100%' }} value={form.type || 'Call'} onChange={e => setForm({ ...form, type: e.target.value as Interaction['type'] })}>
-                                {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                {TYPES.map(ty => <option key={ty} value={ty}>{typeLabel(ty)}</option>)}
                             </select>
                         </div>
-                        <div><label style={labelStyle}>Date</label><input type="date" className="search-input" style={{ width: '100%' }} value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+                        <div><label style={labelStyle}>{t('ui.people.common.date')}</label><input type="date" className="search-input" style={{ width: '100%' }} value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
                     </div>
-                    <div><label style={labelStyle}>Notes</label><textarea className="search-input" style={{ width: '100%', minHeight: '80px', resize: 'vertical' }} value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="What was discussed…" /></div>
-                    <div><label style={labelStyle}>Performed By</label><input className="search-input" style={{ width: '100%' }} value={form.performed_by || ''} onChange={e => setForm({ ...form, performed_by: e.target.value })} /></div>
+                    <div><label style={labelStyle}>{t('ui.people.common.notes')}</label><textarea className="search-input" style={{ width: '100%', minHeight: '80px', resize: 'vertical' }} value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder={t('ui.people.crm.inter.notesPh')} /></div>
+                    <div><label style={labelStyle}>{t('ui.people.crm.inter.performedBy')}</label><input className="search-input" style={{ width: '100%' }} value={form.performed_by || ''} onChange={e => setForm({ ...form, performed_by: e.target.value })} /></div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--color-border)', paddingTop: '14px' }}>
-                        <button className="secondary-button" onClick={() => setIsModalOpen(false)}>Cancel</button>
-                        <button className="primary-button" disabled={saving || !form.lead_id} onClick={handleSave}>{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Log Interaction')}</button>
+                        <button className="secondary-button" onClick={() => setIsModalOpen(false)}>{t('common.cancel')}</button>
+                        <button className="primary-button" disabled={saving || !form.lead_id} onClick={handleSave}>{saving ? t('ui.people.common.saving') : (editing ? t('ui.people.common.saveChanges') : t('ui.people.crm.inter.log'))}</button>
                     </div>
                 </div>
             </Modal>

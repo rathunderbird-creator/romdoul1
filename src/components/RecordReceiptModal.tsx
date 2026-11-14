@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Modal from './Modal';
+import { useTx } from './useTx';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
 import type { Sale } from '../types';
@@ -63,9 +64,10 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     depositAccountHint,
     finalizeMode = false,
     finalizeRow,
-    title = "Record Receipt",
-    description = "Please confirm the settle date and payment method."
+    title,
+    description
 }) => {
+    const tx = useTx();
     const { paymentMethods, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
@@ -135,8 +137,8 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     const rowCurrency = rowIsKhr ? 'KHR' : 'USD';
     const finalizeMismatch = finalizeMode && !!pickedAccount && accountCurrency(pickedAccount) !== rowCurrency;
     const mismatchText = rowCurrency === 'KHR'
-        ? `This row was received in riel (${finalizeRow ? formatMoneyLine(finalizeRow) : ''}), but ${pickedAccount?.account_name ?? 'this account'} is a dollar account.`
-        : `This row was received in dollars, but ${pickedAccount?.account_name ?? 'this account'} is a riel account.`;
+        ? tx('ui.components.receiptRecord.rielIntoUsd', 'This row was received in riel ({amt}), but {account} is a dollar account.', { amt: finalizeRow ? formatMoneyLine(finalizeRow) : '', account: pickedAccount?.account_name ?? tx('ui.components.receiptRecord.thisAccount', 'this account') })
+        : tx('ui.components.receiptRecord.usdIntoRiel', 'This row was received in dollars, but {account} is a riel account.', { account: pickedAccount?.account_name ?? tx('ui.components.receiptRecord.thisAccount', 'this account') });
 
     // A prior deposit already reduced the balance — leave it out of "remaining"
     // too, or a fully-settling receipt would still show a bogus balance.
@@ -145,13 +147,13 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     const canRecord = accountsLoaded && dateValid && amountReceived > 0 && !(!finalizeMode && field.rateInvalid) && !(paymentAccounts.length > 0 && !depositAccountId);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={title}>
+        <Modal isOpen={isOpen} onClose={onClose} title={title ?? tx('ui.components.receiptRecord.title', 'Record Receipt')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                    {description}
+                    {description ?? tx('ui.components.settle.description', 'Please confirm the settle date and payment method.')}
                 </p>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Customer</label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('ui.components.common.customer', 'Customer')}</label>
                     <div style={{
                         width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
                         background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
@@ -161,7 +163,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     </div>
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Payment date <span style={{ color: 'red' }}>*</span></label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('ui.components.receiptRecord.paymentDate', 'Payment date')} <span style={{ color: 'red' }}>*</span></label>
                     <input
                         type="date"
                         value={settleDate}
@@ -173,7 +175,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                         }}
                     />
                     <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                        {[{ label: 'Today', daysAgo: 0 }, { label: 'Yesterday', daysAgo: 1 }].map(({ label, daysAgo }) => {
+                        {[{ label: tx('ui.components.common.today', 'Today'), daysAgo: 0 }, { label: tx('ui.components.common.yesterday', 'Yesterday'), daysAgo: 1 }].map(({ label, daysAgo }) => {
                             const value = localYMD(daysAgo);
                             const active = settleDate === value;
                             return (
@@ -195,7 +197,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     </div>
                 </div>
                 <div>
-                    {finalizeMode && <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Amount received <span style={{ color: 'red' }}>*</span></label>}
+                    {finalizeMode && <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('ui.components.receiptRecord.amountReceived', 'Amount received')} <span style={{ color: 'red' }}>*</span></label>}
                     {finalizeMode ? (
                         <div style={{
                             width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
@@ -209,7 +211,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     ) : (
                         <MoneyInput
                             field={field}
-                            label="Amount received"
+                            label={tx('ui.components.receiptRecord.amountReceived', 'Amount received')}
                             required
                             allowKhr
                             onToggleCurrency={coupling.onToggleCurrency}
@@ -223,7 +225,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     still has a payment method (how the money actually arrived),
                     and the caller may need to correct it, not just view it. */}
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Method <span style={{ color: 'red' }}>*</span></label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('ui.components.recordPayment.method', 'Method')} <span style={{ color: 'red' }}>*</span></label>
                     <select
                         value={selectedMethod}
                         onChange={(e) => setSelectedMethod(e.target.value)}
@@ -239,12 +241,12 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     </select>
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Reference</label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('ui.components.receiptRecord.reference', 'Reference')}</label>
                     <input
                         type="text"
                         value={receiptReference}
                         onChange={(e) => setReceiptReference(e.target.value)}
-                        placeholder="Cheque or transfer number"
+                        placeholder={tx('ui.components.receiptRecord.referencePh', 'Cheque or transfer number')}
                         style={{
                             width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
                             background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
@@ -253,7 +255,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     />
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Deposited into <span style={{ color: 'red' }}>*</span></label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('ui.components.common.depositedInto', 'Deposited into')} <span style={{ color: 'red' }}>*</span></label>
                     <select
                         value={depositAccountId}
                         disabled={!accountsLoaded}
@@ -265,7 +267,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                             outline: 'none', boxSizing: 'border-box'
                         }}
                     >
-                        <option value="">Bank or cash account…</option>
+                        <option value="">{tx('ui.components.common.bankOrCash', 'Bank or cash account…')}</option>
                         <CashBankOptions accounts={paymentAccounts} />
                     </select>
                     {finalizeMismatch && (
@@ -275,25 +277,25 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                     )}
                     {!accountsLoaded ? (
                         <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                            Loading accounts…
+                            {tx('ui.components.common.loadingAccounts', 'Loading accounts…')}
                         </div>
                     ) : paymentAccounts.length === 0 && (
                         <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                            No cash or bank accounts in the Chart of Accounts yet — the settlement saves without one.
+                            {tx('ui.components.receiptRecord.noAccounts', 'No cash or bank accounts in the Chart of Accounts yet — the settlement saves without one.')}
                         </div>
                     )}
                 </div>
                 {!finalizeMode && (
                     <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                        Remaining balance: ${remainingBalance.toFixed(2)}
+                        {tx('ui.components.receiptRecord.remainingBalance', 'Remaining balance:')} ${remainingBalance.toFixed(2)}
                     </div>
                 )}
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Notes</label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('ui.components.common.notes', 'Notes')}</label>
                     <textarea
                         value={receiptNotes}
                         onChange={(e) => setReceiptNotes(e.target.value)}
-                        placeholder="Optional notes…"
+                        placeholder={tx('ui.components.common.optionalNotes', 'Optional notes…')}
                         style={{
                             width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
                             background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
@@ -310,13 +312,13 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                             fontSize: '14px', fontWeight: 500
                         }}
                     >
-                        Cancel
+                        {tx('common.cancel', 'Cancel')}
                     </button>
                     <button
                         onClick={() => {
                             if (!canRecord) return;
                             if (!finalizeMode && !field.confirmIfSuspicious()) return;
-                            if (finalizeMismatch && !window.confirm(`${mismatchText}\nPost it there anyway?`)) return;
+                            if (finalizeMismatch && !window.confirm(`${mismatchText}\n${tx('ui.components.receiptRecord.postAnyway', 'Post it there anyway?')}`)) return;
                             const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
                             onConfirm({
                                 paymentMethod: selectedMethod,
@@ -341,7 +343,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                             fontSize: '14px', fontWeight: 500
                         }}
                     >
-                        Record Receipt
+                        {tx('ui.components.receiptRecord.title', 'Record Receipt')}
                     </button>
                 </div>
             </div>

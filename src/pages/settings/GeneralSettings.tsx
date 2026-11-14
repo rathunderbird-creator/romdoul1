@@ -4,6 +4,7 @@ import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { useHeader } from '../../context/HeaderContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { checkRate, DEFAULT_KHR_RATE, formatRate, shopRate } from '../../utils/currency';
 
 const GeneralSettings: React.FC = () => {
@@ -45,7 +46,7 @@ const GeneralSettings: React.FC = () => {
             showToast(t('settings.khrExchangeRateInvalid'), 'error');
             return;
         }
-        if (check && !window.confirm(`The rate ${formatRate(rate)} riel per dollar is far from the usual (now ${formatRate(shopRate(khrExchangeRate))}). Save it anyway?`)) return;
+        if (check && !window.confirm(fill(t('ui.admin.settings.rateFarConfirm'), { rate: formatRate(rate), now: formatRate(shopRate(khrExchangeRate)) }))) return;
         try {
             await updateStoreProfile({
                 timezone: localState.timezone,
@@ -64,8 +65,8 @@ const GeneralSettings: React.FC = () => {
         setHeaderContent({
             title: (
                 <div>
-                    <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>General</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '14px' }}>Configure regional and tax settings</p>
+                    <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>{t('ui.admin.settings.general')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '14px' }}>{t('ui.admin.settings.generalSubtitle')}</p>
                 </div>
             ),
             actions: (
@@ -135,7 +136,7 @@ const GeneralSettings: React.FC = () => {
                         )}
                         {rateCheck && rateCheck !== 'invalid' && (
                             <p style={{ fontSize: '12px', color: '#B45309', marginTop: '4px' }}>
-                                {formatRate(Number(localState.khrExchangeRate))} is far from the usual 3,500-4,700.
+                                {fill(t('ui.admin.settings.rateFarWarning'), { rate: formatRate(Number(localState.khrExchangeRate)) })}
                             </p>
                         )}
                         <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
@@ -156,11 +157,11 @@ const GeneralSettings: React.FC = () => {
                         className="search-input"
                         style={{ width: '100%', padding: '12px' }}
                     >
-                        <option value="Asia/Phnom_Penh">Phnom Penh (GMT+7)</option>
-                        <option value="Asia/Bangkok">Bangkok (GMT+7)</option>
-                        <option value="Asia/Ho_Chi_Minh">Ho Chi Minh (GMT+7)</option>
-                        <option value="America/New_York">New York (GMT-5)</option>
-                        <option value="Europe/London">London (GMT+0)</option>
+                        <option value="Asia/Phnom_Penh">{t('ui.admin.settings.tz.phnomPenh')}</option>
+                        <option value="Asia/Bangkok">{t('ui.admin.settings.tz.bangkok')}</option>
+                        <option value="Asia/Ho_Chi_Minh">{t('ui.admin.settings.tz.hoChiMinh')}</option>
+                        <option value="America/New_York">{t('ui.admin.settings.tz.newYork')}</option>
+                        <option value="Europe/London">{t('ui.admin.settings.tz.london')}</option>
                         <option value="UTC">UTC (GMT+0)</option>
                     </select>
                     <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>

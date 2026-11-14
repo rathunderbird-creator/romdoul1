@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { tNow } from '../i18n/translate';
 
 // Journal lines, grouped by their entry.
 //
@@ -71,12 +72,12 @@ export async function fetchJournalLinesByEntry<L extends object>(
                 out.push(...page);
                 if (page.length < PAGE) return out;
                 last = page[page.length - 1].id;
-                if (out.length >= SAFETY_LIMIT) throw new Error(`${label}: more than ${SAFETY_LIMIT} journal lines — stopped instead of showing a partial ledger.`);
+                if (out.length >= SAFETY_LIMIT) throw new Error(tNow('ui.store.ledger.tooManyLines', { label, n: SAFETY_LIMIT }));
             }
         };
         const parts = await Promise.all(Array.from({ length: ID_RANGES }, (_, k) => readRange(k)));
         for (const p of parts) rows.push(...p);
-        if (rows.length >= SAFETY_LIMIT) throw new Error(`${label}: more than ${SAFETY_LIMIT} journal lines — stopped instead of showing a partial ledger.`);
+        if (rows.length >= SAFETY_LIMIT) throw new Error(tNow('ui.store.ledger.tooManyLines', { label, n: SAFETY_LIMIT }));
     }
 
     const byEntry = new Map<string, L[]>();

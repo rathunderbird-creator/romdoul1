@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Link2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
+import { useTx } from './useTx';
 
 interface ConfigModalProps {
     isOpen: boolean;
@@ -23,6 +24,7 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ isOpen, onClose, type }) => {
     } = useStore();
 
     const { showToast } = useToast();
+    const tx = useTx();
     const [newItem, setNewItem] = useState('');
     // Draft tracking-URL edits per company (saved on blur / Enter).
     const [templateDrafts, setTemplateDrafts] = useState<Record<string, string>>({});
@@ -32,7 +34,7 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ isOpen, onClose, type }) => {
     // A failed save (bad connection, a misconfigured instance rejecting the
     // app_config write…) used to vanish as an unhandled rejection — the item
     // looked added, then reappeared/disappeared on reload. Surface it.
-    const reportSaveError = (err: any) => showToast('Failed to save: ' + (err?.message || 'unknown error'), 'error');
+    const reportSaveError = (err: any) => showToast(tx('ui.components.config.saveFailed', 'Failed to save: {msg}', { msg: err?.message || tx('ui.components.config.unknownError', 'unknown error') }), 'error');
 
     const handleAddItem = () => {
         if (!newItem.trim()) return;
@@ -71,12 +73,12 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ isOpen, onClose, type }) => {
 
     const getTitle = () => {
         switch (type) {
-            case 'shipping': return 'Shipping Companies';
-            case 'salesman': return 'Salesmen';
-            case 'page': return 'Pages';
-            case 'customerCare': return 'Customer Care';
-            case 'paymentMethod': return 'Payment Methods';
-            case 'city': return 'Cities / Provinces';
+            case 'shipping': return tx('ui.components.config.shippingCompanies', 'Shipping Companies');
+            case 'salesman': return tx('ui.components.config.salesmen', 'Salesmen');
+            case 'page': return tx('ui.components.config.pages', 'Pages');
+            case 'customerCare': return tx('ui.components.config.customerCare', 'Customer Care');
+            case 'paymentMethod': return tx('ui.components.config.paymentMethods', 'Payment Methods');
+            case 'city': return tx('ui.components.config.cities', 'Cities / Provinces');
             default: return '';
         }
     };
@@ -97,17 +99,17 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ isOpen, onClose, type }) => {
             <div className="glass-panel" style={{ width: type === 'shipping' ? 'min(520px, 94vw)' : '400px', padding: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>
-                        Manage {getTitle()}
+                        {tx('ui.components.config.manage', 'Manage {what}', { what: getTitle() })}
                     </h3>
                     <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                    <input type="text" value={newItem} onChange={e => setNewItem(e.target.value)} placeholder="Add new..." className="search-input" style={{ flex: 1, padding: '8px' }} />
+                    <input type="text" value={newItem} onChange={e => setNewItem(e.target.value)} placeholder={tx('ui.components.config.addNew', 'Add new...')} className="search-input" style={{ flex: 1, padding: '8px' }} />
                     <button onClick={handleAddItem} className="primary-button" style={{ padding: '0 12px' }}><Plus size={18} /></button>
                 </div>
                 {type === 'shipping' && (
                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Link2 size={13} /> Tracking link per company — use <code style={{ background: 'var(--color-bg)', padding: '1px 5px', borderRadius: '4px' }}>{'{tracking}'}</code> where the tracking ID goes. J&amp;T is built in.
+                        <Link2 size={13} /> {tx('ui.components.config.trackingHintA', 'Tracking link per company — use')} <code style={{ background: 'var(--color-bg)', padding: '1px 5px', borderRadius: '4px' }}>{'{tracking}'}</code> {tx('ui.components.config.trackingHintB', 'where the tracking ID goes. J&T is built in.')}
                     </div>
                 )}
                 <div style={{ maxHeight: '340px', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
@@ -126,8 +128,8 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ isOpen, onClose, type }) => {
                                     <input
                                         type="url"
                                         value={draft !== undefined ? draft : saved}
-                                        placeholder={builtIn ? `Built-in: ${builtIn}` : 'https://carrier.example/track?no={tracking}'}
-                                        title={builtIn && !saved ? 'Using the built-in template — type your own to override' : 'Tracking page URL template'}
+                                        placeholder={builtIn ? tx('ui.components.config.builtIn', 'Built-in: {url}', { url: builtIn }) : 'https://carrier.example/track?no={tracking}'}
+                                        title={builtIn && !saved ? tx('ui.components.config.usingBuiltIn', 'Using the built-in template — type your own to override') : tx('ui.components.config.urlTemplate', 'Tracking page URL template')}
                                         className="search-input"
                                         onChange={e => setTemplateDrafts(prev => ({ ...prev, [item]: e.target.value }))}
                                         onBlur={() => commitTemplate(item)}

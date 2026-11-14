@@ -3,6 +3,7 @@ import { X, ChevronDown, Pin, PinOff } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useNavItems } from './useNavItems';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useTx } from './useTx';
 
 interface SidebarProps {
     isCollapsed: boolean;
@@ -15,6 +16,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile, isPinned = false, canPin = true, onTogglePin }) => {
+    const tx = useTx();
     const { logo } = useStore();
 
     const location = useLocation();
@@ -83,7 +85,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
             )}
 
             <aside
-                aria-label="Main navigation"
+                aria-label={tx('ui.components.sidebar.mainNav', 'Main navigation')}
                 onMouseEnter={() => setIsHovering(true)}
                 onMouseLeave={() => setIsHovering(false)}
                 style={{
@@ -121,7 +123,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                         overflow: 'hidden'
                     }}>
                         {logo ? (
-                            <img src={logo} alt="Store Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                            <img src={logo} alt={tx('ui.components.sidebar.storeLogo', 'Store Logo')} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                         ) : (
                             'ERP'
                         )}
@@ -137,8 +139,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                             type="button"
                             onClick={onTogglePin}
                             disabled={!isPinned && !canPin}
-                            title={isPinned ? 'Unpin sidebar (collapse to icons)' : (canPin ? 'Pin sidebar (keep it open)' : 'Pin sidebar (needs a wider window)')}
-                            aria-label="Pin sidebar"
+                            title={isPinned ? tx('ui.components.sidebar.unpin', 'Unpin sidebar (collapse to icons)') : (canPin ? tx('ui.components.sidebar.pinKeepOpen', 'Pin sidebar (keep it open)') : tx('ui.components.sidebar.pinNeedsWider', 'Pin sidebar (needs a wider window)'))}
+                            aria-label={tx('ui.components.sidebar.pin', 'Pin sidebar')}
                             aria-pressed={isPinned}
                             className="sidebar-item"
                             style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid var(--classic-sidebar-border)', color: 'var(--classic-sidebar-text)', padding: '5px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (!isPinned && !canPin) ? 0.5 : 1, cursor: (!isPinned && !canPin) ? 'not-allowed' : 'pointer' }}
@@ -173,8 +175,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                         type="button"
                         onClick={onTogglePin}
                         disabled={!canPin}
-                        title={canPin ? 'Pin sidebar (keep it open)' : 'Pin sidebar (needs a wider window)'}
-                        aria-label="Pin sidebar"
+                        title={canPin ? tx('ui.components.sidebar.pinKeepOpen', 'Pin sidebar (keep it open)') : tx('ui.components.sidebar.pinNeedsWider', 'Pin sidebar (needs a wider window)')}
+                        aria-label={tx('ui.components.sidebar.pin', 'Pin sidebar')}
                         aria-pressed={isPinned}
                         // Same accessible name as the expanded-state button
                         // above — a toggle's aria-pressed should carry the
@@ -188,7 +190,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar, isMobile,
                     </button>
                 )}
 
-                <nav aria-label="Pages" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px', overflowY: 'auto', overflowX: 'hidden' }}>
+                <nav aria-label={tx('ui.components.sidebar.pages', 'Pages')} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px', overflowY: 'auto', overflowX: 'hidden' }}>
                     {navItems.map((item) => {
                         // Bound once so TypeScript knows it stays defined past the check.
                         const subItems = item.subItems && item.subItems.length > 0 ? item.subItems : null;

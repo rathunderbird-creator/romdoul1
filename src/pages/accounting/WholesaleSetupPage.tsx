@@ -7,6 +7,8 @@ import { SlidersHorizontal, CalendarClock, Landmark, Plus, Trash2 } from 'lucide
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useAccounting } from '../../hooks/useAccounting';
 import { useWholesale } from '../../hooks/useWholesale';
 import type { WholesaleSettings, PurchaseTermPreset, WholesaleOpeningBalance } from '../../types';
@@ -15,10 +17,11 @@ import { isKhrAccountName } from '../../utils/currency';
 
 type TabKey = 'defaults' | 'terms' | 'opening';
 
-const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
-    { key: 'defaults', label: 'Defaults', icon: SlidersHorizontal },
-    { key: 'terms', label: 'Payment Terms', icon: CalendarClock },
-    { key: 'opening', label: 'AR Opening Balances', icon: Landmark },
+// labelKey: translation key of the tab's label.
+const TABS: { key: TabKey; labelKey: string; icon: React.ComponentType<{ size?: number }> }[] = [
+    { key: 'defaults', labelKey: 'ui.wholesale.setup.tabs.defaults', icon: SlidersHorizontal },
+    { key: 'terms', labelKey: 'ui.wholesale.setup.tabs.terms', icon: CalendarClock },
+    { key: 'opening', labelKey: 'ui.wholesale.setup.tabs.opening', icon: Landmark },
 ];
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
@@ -26,6 +29,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', c
 const WholesaleSetupPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const { warehouses, wholesaleSettings, updateWholesaleSettings } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
     const { customers, fetchCustomers } = useWholesale();
@@ -45,13 +49,13 @@ const WholesaleSetupPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Wholesale Setup</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Defaults for new sell-side documents, and where you started.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('ui.wholesale.setup.title')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('ui.wholesale.setup.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchAccounts();
@@ -97,10 +101,10 @@ const WholesaleSetupPage: React.FC = () => {
                 arOpeningBalances: (draft.arOpeningBalances || []).filter(b => (Number(b.amount) || 0) > 0),
             };
             await updateWholesaleSettings(clean);
-            showToast('Wholesale settings saved', 'success');
+            showToast(t('ui.wholesale.setup.saved'), 'success');
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to save settings: ' + msg, 'error');
+            showToast(t('ui.wholesale.setup.saveFailed') + msg, 'error');
         } finally {
             setSaving(false);
         }
@@ -123,7 +127,7 @@ const WholesaleSetupPage: React.FC = () => {
         <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
             {/* Tabs */}
             <div style={{ display: 'flex', gap: '4px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '4px', flexWrap: 'wrap', alignSelf: 'flex-start' }}>
-                {TABS.map(({ key, label, icon: Icon }) => (
+                {TABS.map(({ key, labelKey, icon: Icon }) => (
                     <button
                         key={key}
                         onClick={() => setTab(key)}
@@ -135,7 +139,7 @@ const WholesaleSetupPage: React.FC = () => {
                             boxShadow: tab === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
                         }}
                     >
-                        <Icon size={15} /> {label}
+                        <Icon size={15} /> {t(labelKey)}
                     </button>
                 ))}
             </div>
@@ -144,56 +148,55 @@ const WholesaleSetupPage: React.FC = () => {
             {tab === 'defaults' && (
                 <div style={{ ...cardStyle, padding: '20px 22px', maxWidth: '640px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                        Starting values for new wholesale orders only. Changing them never alters an order that has already been saved.
+                        {t('ui.wholesale.setup.defaultsIntro')}
                     </p>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                         <div>
-                            <label style={labelStyle}>Default VAT rate (%)</label>
+                            <label style={labelStyle}>{t('ui.wholesale.setup.vatRate')}</label>
                             <input type="number" min="0" step="0.01" value={draft.vatRate ?? 0}
                                 onChange={e => setDraft(d => ({ ...d, vatRate: Number(e.target.value) }))} style={inputStyle} />
                         </div>
                         <div>
-                            <label style={labelStyle}>Payment terms (days)</label>
+                            <label style={labelStyle}>{t('ui.wholesale.setup.termsDays')}</label>
                             <input type="number" min="0" step="1" value={draft.paymentTermsDays ?? 30}
                                 onChange={e => setDraft(d => ({ ...d, paymentTermsDays: Number(e.target.value) }))} style={inputStyle} />
-                            <div style={helpStyle}>New wholesale orders prefill their due date this many days after the order date.</div>
+                            <div style={helpStyle}>{t('ui.wholesale.setup.termsHelp')}</div>
                         </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                         <div>
-                            <label style={labelStyle}>Default warehouse</label>
+                            <label style={labelStyle}>{t('ui.wholesale.setup.defaultWarehouse')}</label>
                             <select value={draft.defaultWarehouseId || ''} className="d2-khmer"
                                 onChange={e => setDraft(d => ({ ...d, defaultWarehouseId: e.target.value || undefined }))}
                                 style={{ ...inputStyle, cursor: 'pointer' }}>
-                                <option value="">First warehouse</option>
+                                <option value="">{t('ui.wholesale.setup.firstWarehouse')}</option>
                                 {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label style={labelStyle}>Default payment account</label>
+                            <label style={labelStyle}>{t('ui.wholesale.setup.defaultAccount')}</label>
                             <select value={draft.defaultPaymentAccountId || ''} className="d2-khmer"
                                 onChange={e => setDraft(d => ({ ...d, defaultPaymentAccountId: e.target.value || undefined }))}
                                 style={{ ...inputStyle, cursor: 'pointer' }}>
-                                <option value="">Bank or cash account…</option>
+                                <option value="">{t('ui.wholesale.setup.bankOrCash')}</option>
                                 {/* A riel account as the default opens the payment forms in riel. */}
-                                <CashBankOptions accounts={paymentAccounts} label={a => `${a.account_code} · ${a.account_name}${isKhrAccountName(a.account_name) ? ' (riel)' : ''}`} />
+                                <CashBankOptions accounts={paymentAccounts} label={a => `${a.account_code} · ${a.account_name}${isKhrAccountName(a.account_name) ? ` (${t('ui.wholesale.setup.riel')})` : ''}`} />
                             </select>
                         </div>
                     </div>
 
                     <div>
-                        <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)', marginBottom: '4px' }}>Document numbering</div>
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)', marginBottom: '4px' }}>{t('ui.wholesale.setup.numbering')}</div>
                         <div style={{ ...helpStyle, marginTop: 0, marginBottom: '10px' }}>
-                            Prefixes only. Changing a prefix affects new records only — invoices that already exist keep their number
-                            and the sequence restarts per prefix.
+                            {t('ui.wholesale.setup.numberingHelp')}
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '10px', maxWidth: '360px' }}>
                             {([
-                                ['Orders', 'orders', 'WO'],
-                                ['Receipts', 'receipts', 'RCT'],
-                                ['Opening', 'opening', 'OB'],
+                                [t('ui.wholesale.setup.prefix.orders'), 'orders', 'WO'],
+                                [t('ui.wholesale.setup.prefix.receipts'), 'receipts', 'RCT'],
+                                [t('ui.wholesale.setup.prefix.opening'), 'opening', 'OB'],
                             ] as const).map(([label, key, def]) => (
                                 <div key={key}>
                                     <label style={{ ...labelStyle, whiteSpace: 'nowrap' }}>{label}</label>
@@ -205,11 +208,11 @@ const WholesaleSetupPage: React.FC = () => {
                     </div>
 
                     <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                        The GL accounts a sale posts to — receivables, output VAT and sales revenue — are configured in the{' '}
-                        <b style={{ color: 'var(--color-text-main)' }}>Chart of Accounts</b>, where the ledger pages read them.
+                        {t('ui.wholesale.setup.glBefore')}{' '}
+                        <b style={{ color: 'var(--color-text-main)' }}>{t('ui.wholesale.setup.chartOfAccounts')}</b>{t('ui.wholesale.setup.glAfter')}
                     </div>
 
-                    <button onClick={handleSave} disabled={saving} style={saveBtn}>{saving ? 'Saving…' : 'Save settings'}</button>
+                    <button onClick={handleSave} disabled={saving} style={saveBtn}>{saving ? t('ui.wholesale.common.saving') : t('ui.wholesale.setup.saveSettings')}</button>
                 </div>
             )}
 
@@ -217,24 +220,23 @@ const WholesaleSetupPage: React.FC = () => {
             {tab === 'terms' && (
                 <div style={{ ...cardStyle, padding: '20px 22px', maxWidth: '640px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                        Named terms you can quote to wholesale customers. The default above ({draft.paymentTermsDays ?? 30} days) is
-                        used when an order doesn't pick one.
+                        {fill(t('ui.wholesale.setup.termsIntro'), { n: draft.paymentTermsDays ?? 30 })}
                     </p>
                     {terms.length === 0 && (
                         <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', borderRadius: '10px', border: '1px solid var(--color-border)' }}>
-                            No terms yet — add the ones you use, e.g. Due on receipt (0), Net 15, Net 30.
+                            {t('ui.wholesale.setup.noTerms')}
                         </div>
                     )}
-                    {terms.map((t, i) => (
+                    {terms.map((term, i) => (
                         <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                            <input type="text" placeholder="e.g. Net 30" value={t.name}
+                            <input type="text" placeholder={t('ui.wholesale.setup.termPlaceholder')} value={term.name}
                                 onChange={e => setTerm(i, { name: e.target.value })} style={{ ...inputStyle, flex: 2 }} />
-                            <input type="number" min="0" step="1" placeholder="Days" value={t.days}
+                            <input type="number" min="0" step="1" placeholder={t('ui.wholesale.setup.daysPlaceholder')} value={term.days}
                                 onChange={e => setTerm(i, { days: Number(e.target.value) })} style={{ ...inputStyle, flex: 1, maxWidth: '110px' }} />
-                            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>days</span>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{t('ui.wholesale.setup.days')}</span>
                             <button
                                 onClick={() => setDraft(d => ({ ...d, paymentTerms: (d.paymentTerms || []).filter((_, idx) => idx !== i) }))}
-                                aria-label="Remove term"
+                                aria-label={t('ui.wholesale.setup.removeTerm')}
                                 style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', padding: '6px', display: 'flex' }}
                             ><Trash2 size={15} /></button>
                         </div>
@@ -243,9 +245,9 @@ const WholesaleSetupPage: React.FC = () => {
                         onClick={() => setDraft(d => ({ ...d, paymentTerms: [...(d.paymentTerms || []), { name: '', days: 30 }] }))}
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' }}
                     >
-                        <Plus size={15} /> Add term
+                        <Plus size={15} /> {t('ui.wholesale.setup.addTerm')}
                     </button>
-                    <button onClick={handleSave} disabled={saving} style={saveBtn}>{saving ? 'Saving…' : 'Save settings'}</button>
+                    <button onClick={handleSave} disabled={saving} style={saveBtn}>{saving ? t('ui.wholesale.common.saving') : t('ui.wholesale.setup.saveSettings')}</button>
                 </div>
             )}
 
@@ -253,12 +255,11 @@ const WholesaleSetupPage: React.FC = () => {
             {tab === 'opening' && (
                 <div style={{ ...cardStyle, padding: '20px 22px', maxWidth: '640px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                        What each wholesale customer still owed you when you started using the system. Reference figures only —
-                        ongoing receivables live in Accounts Receivable.
+                        {t('ui.wholesale.setup.openingIntro')}
                     </p>
                     {customers.length === 0 ? (
                         <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', borderRadius: '10px', border: '1px solid var(--color-border)' }}>
-                            No wholesale customers yet — add them under Wholesale → Customers first.
+                            {t('ui.wholesale.setup.noCustomers')}
                         </div>
                     ) : (
                         <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
@@ -272,25 +273,25 @@ const WholesaleSetupPage: React.FC = () => {
                                             value={b?.amount ?? ''}
                                             onChange={e => setBalance(c.id, { amount: Number(e.target.value) })}
                                             style={{ ...inputStyle, width: '130px', textAlign: 'right' }}
-                                            aria-label={`Opening balance for ${c.name}`}
+                                            aria-label={fill(t('ui.wholesale.setup.openingFor'), { name: c.name })}
                                         />
                                         <input
                                             type="date"
                                             value={b?.as_of || ''}
                                             onChange={e => setBalance(c.id, { as_of: e.target.value })}
                                             style={{ ...inputStyle, width: '150px' }}
-                                            aria-label={`As-of date for ${c.name}`}
+                                            aria-label={fill(t('ui.wholesale.setup.asOfFor'), { name: c.name })}
                                         />
                                     </div>
                                 );
                             })}
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontSize: '13px', fontWeight: 800 }}>
-                                <span style={{ color: 'var(--color-text-main)' }}>Total opening receivables</span>
+                                <span style={{ color: 'var(--color-text-main)' }}>{t('ui.wholesale.setup.totalOpening')}</span>
                                 <span style={{ color: '#059669', fontVariantNumeric: 'tabular-nums' }}>{fmt(openingTotal)}</span>
                             </div>
                         </div>
                     )}
-                    <button onClick={handleSave} disabled={saving} style={saveBtn}>{saving ? 'Saving…' : 'Save settings'}</button>
+                    <button onClick={handleSave} disabled={saving} style={saveBtn}>{saving ? t('ui.wholesale.common.saving') : t('ui.wholesale.setup.saveSettings')}</button>
                 </div>
             )}
         </div>

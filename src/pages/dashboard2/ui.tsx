@@ -117,8 +117,10 @@ export const Chip: React.FC<{ children: React.ReactNode; color?: string; bg?: st
 // "▼ 44.8%" — null renders "—" (no previous figure). `suffix` carries the
 // comparison label, e.g. "vs Sep 7 ($678.00)".
 export const DeltaBadge: React.FC<{ value: number | null; suffix?: string; invert?: boolean }> = ({ value, suffix, invert }) => {
+    const lang = useOptionalLanguage();
     if (value === null || !Number.isFinite(value)) {
-        return <span style={{ fontSize: 11, color: D2.muted }} title="No previous figure to compare">— {suffix}</span>;
+        const noPrev = (() => { const v = lang?.t('ui.people.dashboard2.noPrevious'); return v && v !== 'ui.people.dashboard2.noPrevious' ? v : 'No previous figure to compare'; })();
+        return <span style={{ fontSize: 11, color: D2.muted }} title={noPrev}>— {suffix}</span>;
     }
     const up = value > 0;
     const flat = Math.abs(value) < 0.0005;

@@ -1,3 +1,4 @@
+import { tNow } from '../i18n/translate';
 /**
  * Sends a notification to a Telegram group when a new order is confirmed.
  */
@@ -92,7 +93,7 @@ ${order.items.map((item: any) => `- ${escapeHtml(item.name)} x${item.quantity} (
         const failures = results.filter((r): r is any => r.status === 'rejected');
         if (failures.length > 0) {
             const errorMsg = failures.map(f => f.reason.message).join(', ');
-            throw new Error(`Failed for some groups: ${errorMsg}`);
+            throw new Error(tNow('ui.store.telegram.someGroupsFailed', { error: errorMsg }));
         }
     } catch (error) {
         console.error('Failed to send Telegram notification:', error);
@@ -105,7 +106,7 @@ ${order.items.map((item: any) => `- ${escapeHtml(item.name)} x${item.quantity} (
  */
 export const sendTelegramTestMessage = async (botToken: string, chatIds: string) => {
     const idList = chatIds.split(',').map(id => id.trim()).filter(id => id.length > 0);
-    if (idList.length === 0) throw new Error('No Chat IDs provided');
+    if (idList.length === 0) throw new Error(tNow('ui.store.telegram.noChatIds'));
 
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
     
@@ -140,7 +141,7 @@ export const sendTelegramTestMessage = async (botToken: string, chatIds: string)
     const failures = results.filter((r): r is any => r.status === 'rejected');
     if (failures.length > 0) {
         const errorMsg = failures.map(f => f.reason.message).join(', ');
-        throw new Error(`Failed for some groups: ${errorMsg}`);
+        throw new Error(tNow('ui.store.telegram.someGroupsFailed', { error: errorMsg }));
     }
 
     return true;

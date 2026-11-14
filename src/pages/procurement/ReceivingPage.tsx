@@ -5,7 +5,7 @@
 // Supplier Bills has to Received+invoiced ones. Reference ("GRN-...") and
 // the received date are both derived, never stored, same tradeoff as
 // Supplier Bills' and Supplier Payments' own display-only references.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Eye, Printer, Tag, RotateCcw, XCircle, Download, RefreshCw, PackageCheck } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
@@ -16,6 +16,8 @@ import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
 import Modal from '../../components/Modal';
 import type { PurchaseOrder } from '../../types';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 const fmtUsd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const fmtDate = (d?: string | null) => d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB') : '—';
@@ -27,9 +29,10 @@ const STATUS_CFG: Record<ReceiptStatus, { color: string; bg: string }> = {
     Draft: { color: '#92400e', bg: '#fef3c7' },
     Posted: { color: '#4c5fd0', bg: 'rgba(84, 105, 212, 0.12)' },
 };
-const statusChip = (status: ReceiptStatus) => (
+// label: the status as shown (translated); status stays the lookup code.
+const statusChip = (status: ReceiptStatus, label: string = status) => (
     <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', whiteSpace: 'nowrap', background: STATUS_CFG[status].bg, color: STATUS_CFG[status].color }}>
-        {status}
+        {label}
     </span>
 );
 
@@ -61,18 +64,21 @@ const ReceivingPage: React.FC = () => {
     const { purchaseOrders, isLoading, fetchPurchaseOrders, savePurchaseOrder } = useProcurement();
     const { journalEntries, fetchJournalEntries } = useAccounting();
     const isAdmin = currentUser?.roleId === 'admin';
+    const { t } = useLanguage();
+    const tp = useCallback((k: string) => t('ui.purchase.' + k), [t]);
+    const statusLabel = (s: ReceiptStatus) => tp('status.' + s);
 
     useEffect(() => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Goods Receipts</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Stock arriving from suppliers</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{tp('receiving.title')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{tp('receiving.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, tp]);
 
     useEffect(() => {
         fetchPurchaseOrders();
@@ -159,7 +165,7 @@ const ReceivingPage: React.FC = () => {
             // One transaction: adds only what hasn't arrived yet, marks the PO
             // Received and books the purchase — or, on failure, changes nothing.
             const notices = await receivePurchaseOrder(po.id);
-            showToast(`${poShortId(po.id)} received successfully`, 'success');
+            showToast(fill(tp('receiving.toast.received'), { ref: poShortId(po.id) }), 'success');
             for (const n of notices) showToast(n, 'info');
             setIsPicking(false);
             setReceiveTargetId('');
@@ -167,7 +173,7 @@ const ReceivingPage: React.FC = () => {
             await fetchJournalEntries();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Error receiving: ' + msg, 'error');
+            showToast(tp('receiving.toast.receiveError') + msg, 'error');
         } finally {
             processingIds.current.delete(po.id);
             setReceivingId(null);
@@ -183,11 +189,11 @@ const ReceivingPage: React.FC = () => {
         try {
             const { error } = await supabase.from('journal_entries').update({ status: 'Draft' }).eq('id', je.id);
             if (error) throw error;
-            showToast('Receipt unposted', 'success');
+            showToast(tp('receiving.toast.unposted'), 'success');
             await fetchJournalEntries();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            showToast('Failed to unpost: ' + msg, 'error');
+            showToast(tp('receiving.toast.unpostFailed') + msg, 'error');
         } finally {
             setUnpostingId(null);
         }
@@ -198,7 +204,7 @@ const ReceivingPage: React.FC = () => {
     // one) — see cancelPurchaseReceiptEntry in useProcurement.ts. ──
     const [cancellingId, setCancellingId] = useState<string | null>(null);
     const handleCancel = async (po: PurchaseOrder) => {
-        if (!confirm(`Cancel ${referenceOf.get(po.id) || poShortId(po.id)}? Only a receipt whose goods never reached stock can be cancelled. If they are in stock, record a return to the supplier with Adjust Stock instead.`)) return;
+        if (!confirm(fill(tp('receiving.confirmCancel'), { ref: referenceOf.get(po.id) || poShortId(po.id) }))) return;
         setCancellingId(po.id);
         try {
             await savePurchaseOrder({ ...po, status: 'Cancelled' }, po.items || []);
@@ -278,10 +284,10 @@ const ReceivingPage: React.FC = () => {
                 <button
                     onClick={() => { setReceiveTargetId(pendingPOs[0]?.id || ''); setIsPicking(true); }}
                     disabled={pendingPOs.length === 0}
-                    title={pendingPOs.length === 0 ? 'No pending orders to receive' : undefined}
+                    title={pendingPOs.length === 0 ? tp('receiving.noPending') : undefined}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '8px', border: 'none', background: pendingPOs.length === 0 ? 'var(--color-border)' : '#4c5fd0', color: 'white', fontSize: '14px', fontWeight: 600, cursor: pendingPOs.length === 0 ? 'not-allowed' : 'pointer' }}
                 >
-                    <Plus size={16} /> New Receipt
+                    <Plus size={16} /> {tp('receiving.newReceipt')}
                 </button>
             </div>
 
@@ -289,40 +295,40 @@ const ReceivingPage: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '340px' }}>
                     <Search size={15} color="var(--color-text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                    <input type="text" placeholder="Search reference or supplier ref…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
+                    <input type="text" placeholder={tp('receiving.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
                 </div>
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | ReceiptStatus)} style={{ ...inputStyle, width: 'auto', minWidth: '140px', cursor: 'pointer' }}>
-                    <option value="All">All statuses</option>
-                    <option value="Posted">Posted</option>
-                    <option value="Draft">Draft</option>
+                    <option value="All">{tp('receiving.allStatuses')}</option>
+                    <option value="Posted">{statusLabel('Posted')}</option>
+                    <option value="Draft">{statusLabel('Draft')}</option>
                 </select>
-                <button onClick={() => { fetchPurchaseOrders(); fetchJournalEntries(); }} title="Refresh" style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
+                <button onClick={() => { fetchPurchaseOrders(); fetchJournalEntries(); }} title={tp('common.refresh')} style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} />
                 </button>
                 {hasActiveFilters && (
                     <button onClick={() => { setSearch(''); setStatusFilter('All'); }} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
-                        Clear
+                        {tp('common.clear')}
                     </button>
                 )}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     <button onClick={printList} disabled={isLoading || filteredReceipts.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredReceipts.length === 0) ? 0.5 : 1 }}>
-                        <Printer size={13} /> Print list
+                        <Printer size={13} /> {tp('receiving.printList')}
                     </button>
                     <button onClick={exportCsv} disabled={isLoading || filteredReceipts.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredReceipts.length === 0) ? 0.5 : 1 }}>
-                        <Download size={13} /> Export CSV
+                        <Download size={13} /> {tp('receiving.exportCsv')}
                     </button>
                 </div>
             </div>
 
             <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                 {isLoading ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading receipts...</div>
+                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{tp('receiving.loading')}</div>
                 ) : filteredReceipts.length === 0 ? (
                     <div className="glass-panel" style={{ textAlign: 'center', padding: '60px', border: 'none' }}>
                         <PackageCheck size={40} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-                        <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>No goods receipts found</h3>
+                        <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{tp('receiving.empty')}</h3>
                         <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                            {hasActiveFilters ? 'Try adjusting your filters.' : 'Receive a pending order to get started.'}
+                            {hasActiveFilters ? tp('common.tryFilters') : tp('receiving.emptyHint')}
                         </p>
                     </div>
                 ) : (
@@ -330,8 +336,8 @@ const ReceivingPage: React.FC = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '760px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                    {['Reference', 'Date', 'Supplier', 'Warehouse', 'Lines', 'Total', 'Status', ''].map((h, i) => (
-                                        <th key={h || 'actions'} style={{ padding: '12px 20px', textAlign: i === 4 || i === 5 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{h}</th>
+                                    {['reference', 'date', 'supplier', 'warehouse', 'lines', 'total', 'status', ''].map((h, i) => (
+                                        <th key={h || 'actions'} style={{ padding: '12px 20px', textAlign: i === 4 || i === 5 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{h ? tp('col.' + h) : ''}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -346,18 +352,18 @@ const ReceivingPage: React.FC = () => {
                                             <td style={{ padding: '12px 20px', color: 'var(--color-text-secondary)' }}>{warehouseName}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)' }}>{po.items?.length || 0}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(po.total_amount)}</td>
-                                            <td style={{ padding: '12px 20px' }}>{statusChip(status)}</td>
+                                            <td style={{ padding: '12px 20px' }}>{statusChip(status, statusLabel(status))}</td>
                                             <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                                                    <button onClick={() => setViewPO(po)} title="View" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
-                                                    <button onClick={() => printReceipt(po)} title="Print" style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
+                                                    <button onClick={() => setViewPO(po)} title={tp('common.view')} style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
+                                                    <button onClick={() => printReceipt(po)} title={tp('receiving.print')} style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
                                                     {!po.invoice_number && (
-                                                        <button onClick={() => navigate('/procurement/supplier-bills')} title="Bill this delivery" style={{ background: 'rgba(16,185,129,0.1)', border: 'none', cursor: 'pointer', color: '#10b981', padding: '6px', borderRadius: '6px' }}><Tag size={15} /></button>
+                                                        <button onClick={() => navigate('/procurement/supplier-bills')} title={tp('receiving.billDelivery')} style={{ background: 'rgba(16,185,129,0.1)', border: 'none', cursor: 'pointer', color: '#10b981', padding: '6px', borderRadius: '6px' }}><Tag size={15} /></button>
                                                     )}
                                                     {status === 'Posted' && isAdmin && (
-                                                        <button onClick={() => handleUnpost(po)} disabled={unpostingId === po.id} title="Unpost" style={{ background: 'rgba(245,158,11,0.1)', border: 'none', cursor: unpostingId === po.id ? 'not-allowed' : 'pointer', color: '#f59e0b', padding: '6px', borderRadius: '6px', opacity: unpostingId === po.id ? 0.6 : 1 }}><RotateCcw size={15} /></button>
+                                                        <button onClick={() => handleUnpost(po)} disabled={unpostingId === po.id} title={tp('receiving.unpost')} style={{ background: 'rgba(245,158,11,0.1)', border: 'none', cursor: unpostingId === po.id ? 'not-allowed' : 'pointer', color: '#f59e0b', padding: '6px', borderRadius: '6px', opacity: unpostingId === po.id ? 0.6 : 1 }}><RotateCcw size={15} /></button>
                                                     )}
-                                                    <button onClick={() => handleCancel(po)} disabled={cancellingId === po.id} title="Cancel" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: cancellingId === po.id ? 'not-allowed' : 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px', opacity: cancellingId === po.id ? 0.6 : 1 }}><XCircle size={15} /></button>
+                                                    <button onClick={() => handleCancel(po)} disabled={cancellingId === po.id} title={t('common.cancel')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: cancellingId === po.id ? 'not-allowed' : 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px', opacity: cancellingId === po.id ? 0.6 : 1 }}><XCircle size={15} /></button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -373,25 +379,25 @@ const ReceivingPage: React.FC = () => {
             {isPicking && (
                 <div onClick={() => { setIsPicking(false); setReceiveTargetId(''); }} style={{ position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
                     <div onClick={e => e.stopPropagation()} className="glass-panel" style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '100%', maxWidth: '420px', padding: '24px' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 14px', color: 'var(--color-text-main)' }}>Which order arrived?</h3>
-                        <label style={labelStyle}>Purchase Order</label>
+                        <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 14px', color: 'var(--color-text-main)' }}>{tp('receiving.whichOrder')}</h3>
+                        <label style={labelStyle}>{tp('receiving.purchaseOrder')}</label>
                         <select value={receiveTargetId} onChange={e => setReceiveTargetId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                             {pendingPOs.map(po => (
                                 <option key={po.id} value={po.id}>
-                                    {poShortId(po.id)} · {po.supplier?.name || '—'} · {fmtUsd(po.total_amount)} · {po.items?.length || 0} line{po.items?.length === 1 ? '' : 's'}
+                                    {poShortId(po.id)} · {po.supplier?.name || '—'} · {fmtUsd(po.total_amount)} · {fill(tp(po.items?.length === 1 ? 'receiving.lines1' : 'receiving.linesN'), { n: po.items?.length || 0 })}
                                 </option>
                             ))}
                         </select>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
                             <button onClick={() => { setIsPicking(false); setReceiveTargetId(''); }} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                                Cancel
+                                {t('common.cancel')}
                             </button>
                             <button
                                 onClick={() => { const po = purchaseOrders.find(p => p.id === receiveTargetId); if (po) handleReceive(po); }}
                                 disabled={!receiveTargetId || receivingId === receiveTargetId}
                                 style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: (!receiveTargetId || receivingId === receiveTargetId) ? 'not-allowed' : 'pointer', opacity: (!receiveTargetId || receivingId === receiveTargetId) ? 0.6 : 1 }}
                             >
-                                {receivingId === receiveTargetId ? 'Receiving…' : 'Receive'}
+                                {receivingId === receiveTargetId ? tp('common.receiving') : tp('receiving.receive')}
                             </button>
                         </div>
                     </div>
@@ -399,26 +405,26 @@ const ReceivingPage: React.FC = () => {
             )}
 
             {viewPO && (
-                <Modal isOpen={!!viewPO} onClose={() => setViewPO(null)} title="Goods Receipt" width="520px">
+                <Modal isOpen={!!viewPO} onClose={() => setViewPO(null)} title={tp('receiving.modalTitle')} width="520px">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '8px' }}>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Reference</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{tp('col.reference')}</span>
                             <span style={{ fontWeight: 600 }}>{referenceOf.get(viewPO.id) || '—'}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Date</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{tp('col.date')}</span>
                             <span>{fmtDate(receiptDateOf(viewPO))}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Supplier</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{tp('col.supplier')}</span>
                             <span className="d2-khmer">{viewPO.supplier?.name || '—'}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Warehouse</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{tp('col.warehouse')}</span>
                             <span>{warehouseName}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Status</span>
-                            <span>{statusChip(receiptStatusOf(viewPO))}</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{tp('col.status')}</span>
+                            <span>{statusChip(receiptStatusOf(viewPO), statusLabel(receiptStatusOf(viewPO)))}</span>
                         </div>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                    <th style={{ textAlign: 'left', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Item</th>
-                                    <th style={{ textAlign: 'right', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Qty</th>
-                                    <th style={{ textAlign: 'right', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Amount</th>
+                                    <th style={{ textAlign: 'left', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{tp('col.item')}</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{tp('col.qty')}</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 0', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{tp('col.amount')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -432,7 +438,7 @@ const ReceivingPage: React.FC = () => {
                             </tbody>
                         </table>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '12px 0', borderTop: '1px solid var(--color-border)' }}>
-                            <span style={{ fontWeight: 700 }}>Total</span>
+                            <span style={{ fontWeight: 700 }}>{tp('col.total')}</span>
                             <span style={{ fontWeight: 800, fontSize: '18px', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(viewPO.total_amount)}</span>
                         </div>
                     </div>

@@ -26,13 +26,13 @@ const SettingsLayout: React.FC = () => {
 
     const navItems = [
         { path: '/settings/store-profile', icon: Store, label: t('settings.storeProfile') },
-        { path: '/settings/general', icon: Globe, label: 'General' },
+        { path: '/settings/general', icon: Globe, label: t('ui.admin.settings.general') },
         { path: '/settings/telegram', icon: Bell, label: 'Telegram' },
         { path: '/settings/security', icon: Shield, label: t('settings.security') },
         // SEC-4: Backup/Restore/Migrate has its own permission (admin-only by
         // default) — manage_settings alone no longer shows it. The route is
         // guarded too (App.tsx), so typing the URL doesn't bypass this.
-        ...(hasPermission('manage_database') ? [{ path: '/settings/database', icon: Database, label: 'Database' }] : [])
+        ...(hasPermission('manage_database') ? [{ path: '/settings/database', icon: Database, label: t('ui.admin.settings.database') }] : [])
     ];
 
     return (

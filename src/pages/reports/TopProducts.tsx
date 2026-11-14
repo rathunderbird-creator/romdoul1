@@ -2,9 +2,11 @@ import React, { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ShoppingBag, TrendingUp, DollarSign } from 'lucide-react';
+import { useLanguage } from '../../context/LanguageContext';
 
 const TopProducts: React.FC = () => {
     const { reportSales, startDate, endDate } = useOutletContext<any>();
+    const { t } = useLanguage();
     const [sortStrategy, setSortStrategy] = useState<'quantity' | 'revenue'>('quantity');
 
     const { productData, kpis } = useMemo(() => {
@@ -50,15 +52,15 @@ const TopProducts: React.FC = () => {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>Top Selling Products</h2>
+                <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>{t('ui.people.reports.top.title')}</h2>
                 <select 
                     value={sortStrategy}
                     onChange={(e) => setSortStrategy(e.target.value as any)}
                     className="search-input"
                     style={{ padding: '8px 12px', fontSize: '14px', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}
                 >
-                    <option value="quantity">Rank by Quantity Sold</option>
-                    <option value="revenue">Rank by Revenue Generated</option>
+                    <option value="quantity">{t('ui.people.reports.top.rankQty')}</option>
+                    <option value="revenue">{t('ui.people.reports.top.rankRevenue')}</option>
                 </select>
             </div>
 
@@ -66,7 +68,7 @@ const TopProducts: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Units Sold</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.top.unitsSold')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.15)', color: '#3B82F6' }}><ShoppingBag size={18} /></div>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>{kpis.totalItemsSold.toLocaleString()}</div>
@@ -74,7 +76,7 @@ const TopProducts: React.FC = () => {
 
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Product Revenue</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.top.productRevenue')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981' }}><DollarSign size={18} /></div>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>${kpis.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -82,7 +84,7 @@ const TopProducts: React.FC = () => {
 
                 <div className="stats-card hover-lift" style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.02))', padding: '20px', borderRadius: '16px', border: '1px solid rgba(245, 158, 11, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>Unique Products</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, textTransform: 'uppercase' }}>{t('ui.people.reports.top.uniqueProducts')}</span>
                         <div style={{ padding: '8px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B' }}><TrendingUp size={18} /></div>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--color-text-main)' }}>{kpis.uniqueProducts}</div>
@@ -91,7 +93,7 @@ const TopProducts: React.FC = () => {
 
             {/* Top 10 Chart */}
             <div className="glass-panel hover-lift" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>Top 10 Performers</h3>
+                <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>{t('ui.people.reports.top.top10')}</h3>
                 {chartData.length > 0 ? (
                     <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
@@ -116,33 +118,33 @@ const TopProducts: React.FC = () => {
                             <Tooltip 
                                 cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
                                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                formatter={(value: any) => [sortStrategy === 'revenue' ? `$${Number(value).toFixed(2)}` : value, sortStrategy === 'revenue' ? 'Revenue' : 'Quantity Sold']}
+                                formatter={(value: any) => [sortStrategy === 'revenue' ? `$${Number(value).toFixed(2)}` : value, sortStrategy === 'revenue' ? t('ui.people.reports.revenue') : t('ui.people.reports.top.qtySold')]}
                             />
                             <Bar dataKey={sortStrategy} fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={32} />
                         </BarChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No product data found.</div>
+                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.people.reports.top.noData')}</div>
                 )}
             </div>
 
             {/* Detailed Table */}
             <div className="glass-panel hover-lift" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>Product Breakdown</h3>
+                <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: 'var(--color-text-main)' }}>{t('ui.people.reports.pc.breakdown')}</h3>
                 <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
-                                <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Rank</th>
-                                <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Product Name</th>
-                                <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>Units Sold</th>
-                                <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'right' }}>Revenue</th>
+                                <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.people.reports.top.rank')}</th>
+                                <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{t('ui.people.reports.top.productName')}</th>
+                                <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center' }}>{t('ui.people.reports.top.unitsSold')}</th>
+                                <th style={{ padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'right' }}>{t('ui.people.reports.revenue')}</th>
                             </tr>
                         </thead>
                         <tbody>
                             {productData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} style={{ padding: '30px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No data available.</td>
+                                    <td colSpan={4} style={{ padding: '30px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.people.reports.noData')}</td>
                                 </tr>
                             ) : (
                                 productData.map((item, index) => (

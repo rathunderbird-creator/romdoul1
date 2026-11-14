@@ -12,6 +12,8 @@ import StockMovementSummaryModal from '../../components/StockMovementSummaryModa
 import { attributeMovement, SPECIAL_LABELS, SPECIAL_ORDER, type Portion, type SpecialRow } from '../../utils/stockMovementSummary';
 import { fetchSalesmanLookups } from '../../utils/stockMovementSalesmen';
 import { dayKeyFromDate } from '../../utils/dateRange';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -53,6 +55,7 @@ const StockMovementsPage: React.FC = () => {
     const isAdmin = currentUser?.roleId === 'admin';
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const isMobile = useMobile();
 
     const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
@@ -105,13 +108,13 @@ const StockMovementsPage: React.FC = () => {
             title: (
                 <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <ArrowLeftRight size={16} /> Stock Movements
+                        <ArrowLeftRight size={16} /> {t('ui.inventory.mv.title')}
                     </h1>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     const fetchMovements = async () => {
         setIsLoading(true);
@@ -136,7 +139,7 @@ const StockMovementsPage: React.FC = () => {
             if (data) setMovements(data as StockMovement[]);
         } catch (error: any) {
             console.error('Error fetching stock movements:', error);
-            showToast('Failed to fetch stock movements', 'error');
+            showToast(t('ui.inventory.mv.fetchFailed'), 'error');
         } finally {
             setIsLoading(false);
         }
@@ -355,10 +358,10 @@ const StockMovementsPage: React.FC = () => {
         // layers and ledger entry): reverse them there, not here.
         const systemRecords = recordsToDelete.filter(isSystemMovement);
         if (systemRecords.length > 0) {
-            showToast(`${systemRecords.length} of the selected records come from orders, purchases, Add Stock or stock adjustments and can't be deleted here. Reverse them from their own page (or post a stock adjustment). Nothing was deleted.`, 'error');
+            showToast(fill(t('ui.inventory.mv.systemRecords'), { n: systemRecords.length }), 'error');
             return;
         }
-        if (!confirm(`Are you sure you want to delete ${selectedRecordIds.size} stock movement records? This will revert the inventory for these items (each product's stock is set back with a Count correction stock adjustment).`)) return;
+        if (!confirm(fill(t('ui.inventory.mv.confirmDelete'), { n: selectedRecordIds.size }))) return;
 
         setIsLoading(true);
         try {
@@ -383,7 +386,7 @@ const StockMovementsPage: React.FC = () => {
                 const { data: fresh, error: freshError } = await supabase
                     .from('products').select('stock').eq('id', productId).single();
                 if (freshError || !fresh) {
-                    throw new Error(`could not read the current stock of product ${productId} (${freshError?.message || 'not found'})`);
+                    throw new Error(fill(t('ui.inventory.mv.readStockFailed'), { id: productId, msg: freshError?.message || t('ui.inventory.mv.notFound') }));
                 }
                 const next = Number(fresh.stock) + delta;
                 if (next < 0) {
@@ -407,9 +410,9 @@ const StockMovementsPage: React.FC = () => {
 
             setMovements(prev => prev.filter(r => !selectedRecordIds.has(r.id)));
             setSelectedRecordIds(new Set());
-            showToast(`Successfully deleted ${selectedRecordIds.size} records`, 'success');
+            showToast(fill(t('ui.inventory.mv.deleted'), { n: selectedRecordIds.size }), 'success');
         } catch (err: any) {
-            showToast('Failed to delete records: ' + err.message, 'error');
+            showToast(t('ui.inventory.mv.deleteFailed') + err.message, 'error');
             fetchMovements();
         } finally {
             setIsLoading(false);
@@ -426,7 +429,7 @@ const StockMovementsPage: React.FC = () => {
 
     const exportToExcel = () => {
         if (filteredMovements.length === 0) {
-            showToast('No records to export', 'error');
+            showToast(t('ui.inventory.mv.noRecordsExport'), 'error');
             return;
         }
         
@@ -516,14 +519,14 @@ const StockMovementsPage: React.FC = () => {
                 {/* Summary Stats Cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                     <StatsCard 
-                        title="Total Records" 
+                        title={t('ui.inventory.mv.totalRecords')} 
                         value={stats.totalMovements.toLocaleString()} 
                         icon={Activity} 
                         color="#6366f1"
                         bgColor="rgba(99, 102, 241, 0.1)"
                     />
                     <StatsCard 
-                        title="Qty In" 
+                        title={t('ui.inventory.mv.qtyIn')} 
                         value={`+${stats.totalIn.toLocaleString()}`} 
                         icon={PackagePlus} 
                         color="#10B981"
@@ -531,7 +534,7 @@ const StockMovementsPage: React.FC = () => {
                         trend={<span style={{ color: '#10B981' }}>{formatCurrency(stats.valueIn)}</span>}
                     />
                     <StatsCard 
-                        title="Qty Out" 
+                        title={t('ui.inventory.mv.qtyOut')} 
                         value={`-${stats.totalOut.toLocaleString()}`} 
                         icon={PackageMinus} 
                         color="#EF4444"
@@ -539,12 +542,12 @@ const StockMovementsPage: React.FC = () => {
                         trend={<span style={{ color: '#EF4444' }}>{formatCurrency(stats.valueOut)}</span>}
                     />
                     <StatsCard 
-                        title="Net Change" 
+                        title={t('ui.inventory.mv.netChange')} 
                         value={`${stats.netChange > 0 ? '+' : ''}${stats.netChange.toLocaleString()}`} 
                         icon={ArrowLeftRight} 
                         color={stats.netChange > 0 ? '#10B981' : stats.netChange < 0 ? '#EF4444' : 'var(--color-text-secondary)'}
                         bgColor={stats.netChange > 0 ? 'rgba(16, 185, 129, 0.1)' : stats.netChange < 0 ? 'rgba(239, 68, 68, 0.1)' : 'var(--color-bg)'}
-                        trend={<span>Net value: {formatCurrency(stats.valueIn - stats.valueOut)}</span>}
+                        trend={<span>{t('ui.inventory.adjust.netValue')}: {formatCurrency(stats.valueIn - stats.valueOut)}</span>}
                     />
                 </div>
 
@@ -567,7 +570,7 @@ const StockMovementsPage: React.FC = () => {
                             <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                             <input
                                 type="text"
-                                placeholder="Search product, supplier..."
+                                placeholder={t('ui.inventory.mv.searchPlaceholder')}
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 style={{
@@ -586,12 +589,12 @@ const StockMovementsPage: React.FC = () => {
                         
                         {/* Type Filter - Segmented Control */}
                         <div style={{ display: 'flex', gap: '4px', background: 'var(--color-bg)', borderRadius: '10px', padding: '3px', border: '1px solid var(--color-border)' }}>
-                            <button onClick={() => setTypeFilter('all')} style={segmentBtnStyle(typeFilter === 'all', '#6366f1')}>All</button>
+                            <button onClick={() => setTypeFilter('all')} style={segmentBtnStyle(typeFilter === 'all', '#6366f1')}>{t('common.all')}</button>
                             <button onClick={() => setTypeFilter('in')} style={segmentBtnStyle(typeFilter === 'in', '#10B981')}>
-                                <TrendingUp size={14} /> In
+                                <TrendingUp size={14} /> {t('ui.inventory.mv.in')}
                             </button>
                             <button onClick={() => setTypeFilter('out')} style={segmentBtnStyle(typeFilter === 'out', '#EF4444')}>
-                                <TrendingDown size={14} /> Out
+                                <TrendingDown size={14} /> {t('ui.inventory.mv.out')}
                             </button>
                         </div>
 
@@ -614,7 +617,7 @@ const StockMovementsPage: React.FC = () => {
                                         fontWeight: 500,
                                     }}
                                 >
-                                    <option value="all">All Warehouses</option>
+                                    <option value="all">{t('ui.inventory.allWarehouses')}</option>
                                     {warehouses.map(w => (
                                         <option key={w.id} value={w.id}>{w.name}</option>
                                     ))}
@@ -643,7 +646,7 @@ const StockMovementsPage: React.FC = () => {
                                     maxWidth: '220px',
                                 }}
                             >
-                                <option value="all">All Salesmen</option>
+                                <option value="all">{t('ui.inventory.mv.allSalesmen')}</option>
                                 {salesmanFilter !== 'all' && !salesmanOptions.some(o => o.value === salesmanFilter) && (
                                     <option value={salesmanFilter}>{salesmanFilterLabel}</option>
                                 )}
@@ -671,7 +674,7 @@ const StockMovementsPage: React.FC = () => {
                                 fontWeight: 500,
                                 transition: 'all 0.2s',
                             }}>
-                                Clear Filters
+                                {t('ui.inventory.mv.clearFilters')}
                             </button>
                         )}
                     </div>
@@ -686,7 +689,7 @@ const StockMovementsPage: React.FC = () => {
                             boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)',
                             transition: 'all 0.2s',
                         }}>
-                            <Table2 size={14} /> Show Movements
+                            <Table2 size={14} /> {t('ui.inventory.mv.showMovements')}
                         </button>
                         <button onClick={fetchMovements} style={{
                             display: 'flex', alignItems: 'center', gap: '6px',
@@ -696,7 +699,7 @@ const StockMovementsPage: React.FC = () => {
                             fontSize: '13px', fontWeight: 500, cursor: 'pointer',
                             transition: 'all 0.2s',
                         }}>
-                            <RefreshCw size={14} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} /> Refresh
+                            <RefreshCw size={14} style={isLoading ? { animation: 'spin 1s linear infinite' } : {}} /> {t('ui.inventory.refresh')}
                         </button>
                         <button onClick={exportToExcel} style={{
                             display: 'flex', alignItems: 'center', gap: '6px',
@@ -706,7 +709,7 @@ const StockMovementsPage: React.FC = () => {
                             fontSize: '13px', fontWeight: 500, cursor: 'pointer',
                             transition: 'all 0.2s',
                         }}>
-                            <Download size={14} /> Export
+                            <Download size={14} /> {t('common.export')}
                         </button>
                     </div>
                 </div>
@@ -716,13 +719,13 @@ const StockMovementsPage: React.FC = () => {
                     {isLoading || (salesmanFilter !== 'all' && attrib === null) ? (
                         <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                             <RefreshCw size={32} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 16px', display: 'block', opacity: 0.4 }} />
-                            <p style={{ fontSize: '14px' }}>{isLoading ? 'Loading movements...' : 'Resolving salesmen...'}</p>
+                            <p style={{ fontSize: '14px' }}>{isLoading ? t('ui.inventory.mv.loadingMovements') : t('ui.inventory.mv.resolvingSalesmen')}</p>
                         </div>
                     ) : paginatedMovements.length === 0 ? (
                         <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                             <ArrowLeftRight size={48} style={{ opacity: 0.15, marginBottom: '16px', margin: '0 auto 16px', display: 'block' }} />
-                            <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px' }}>No movements found</h3>
-                            <p style={{ fontSize: '14px', opacity: 0.7 }}>Adjust your filters or date range.</p>
+                            <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px' }}>{t('ui.inventory.mv.none')}</h3>
+                            <p style={{ fontSize: '14px', opacity: 0.7 }}>{t('ui.inventory.mv.noneHelp')}</p>
                         </div>
                     ) : isMobile ? (
                         // Mobile: flat inbox-style rows — tap for the detail popup.
@@ -762,7 +765,7 @@ const StockMovementsPage: React.FC = () => {
                             })}
                             {/* Compact page totals */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'var(--color-bg)' }}>
-                                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Page Totals</span>
+                                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('ui.inventory.mv.pageTotals')}</span>
                                 <span style={{ fontSize: '13px', fontWeight: 800 }}>
                                     <span style={{ color: '#10B981' }}>+{pageTotals.qtyIn}</span>
                                     {' / '}
@@ -782,16 +785,16 @@ const StockMovementsPage: React.FC = () => {
                                             style={{ cursor: 'pointer', accentColor: '#6366f1' }}
                                         />
                                     </th>
-                                    <th onClick={() => handleSort('movement_date')} style={thStyle}>Date{sortArrow('movement_date')}</th>
-                                    <th onClick={() => handleSort('type')} style={{ ...thStyle, textAlign: 'center' }}>Type{sortArrow('type')}</th>
-                                    <th onClick={() => handleSort('product_name')} style={thStyle}>Product{sortArrow('product_name')}</th>
-                                    <th onClick={() => handleSort('quantity')} style={{ ...thStyle, textAlign: 'center' }}>Qty{sortArrow('quantity')}</th>
-                                    <th onClick={() => handleSort('value')} style={{ ...thStyle, textAlign: 'right' }}>Value{sortArrow('value')}</th>
-                                    <th onClick={() => handleSort('warehouse_id')} style={thStyle}>Warehouse{sortArrow('warehouse_id')}</th>
-                                    <th onClick={() => handleSort('source')} style={thStyle}>Source / Reason{sortArrow('source')}</th>
-                                    <th onClick={() => handleSort('supplier')} style={thStyle}>Supplier / Customer{sortArrow('supplier')}</th>
-                                    <th onClick={() => handleSort('salesman')} style={thStyle}>Salesman{sortArrow('salesman')}</th>
-                                    <th onClick={() => handleSort('reference_id')} style={thStyle}>Reference / Note{sortArrow('reference_id')}</th>
+                                    <th onClick={() => handleSort('movement_date')} style={thStyle}>{t('orders.date')}{sortArrow('movement_date')}</th>
+                                    <th onClick={() => handleSort('type')} style={{ ...thStyle, textAlign: 'center' }}>{t('ui.inventory.reports.type')}{sortArrow('type')}</th>
+                                    <th onClick={() => handleSort('product_name')} style={thStyle}>{t('ui.inventory.priceList.product')}{sortArrow('product_name')}</th>
+                                    <th onClick={() => handleSort('quantity')} style={{ ...thStyle, textAlign: 'center' }}>{t('ui.inventory.reports.qty')}{sortArrow('quantity')}</th>
+                                    <th onClick={() => handleSort('value')} style={{ ...thStyle, textAlign: 'right' }}>{t('ui.inventory.reports.value')}{sortArrow('value')}</th>
+                                    <th onClick={() => handleSort('warehouse_id')} style={thStyle}>{t('ui.inventory.warehouse')}{sortArrow('warehouse_id')}</th>
+                                    <th onClick={() => handleSort('source')} style={thStyle}>{t('ui.inventory.mv.col.sourceReason')}{sortArrow('source')}</th>
+                                    <th onClick={() => handleSort('supplier')} style={thStyle}>{t('ui.inventory.mv.col.supplierCustomer')}{sortArrow('supplier')}</th>
+                                    <th onClick={() => handleSort('salesman')} style={thStyle}>{t('ui.inventory.summary.salesman')}{sortArrow('salesman')}</th>
+                                    <th onClick={() => handleSort('reference_id')} style={thStyle}>{t('ui.inventory.mv.col.referenceNote')}{sortArrow('reference_id')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -833,11 +836,11 @@ const StockMovementsPage: React.FC = () => {
                                             <td style={{ padding: '11px 14px', textAlign: 'center' }}>
                                                 {record.type === 'in' ? (
                                                     <span style={{ padding: '4px 10px', borderRadius: '20px', background: 'rgba(16, 185, 129, 0.1)', color: '#10B981', fontSize: '11px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px', textTransform: 'uppercase' }}>
-                                                        <TrendingUp size={11} /> In
+                                                        <TrendingUp size={11} /> {t('ui.inventory.mv.in')}
                                                     </span>
                                                 ) : (
                                                     <span style={{ padding: '4px 10px', borderRadius: '20px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', fontSize: '11px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px', textTransform: 'uppercase' }}>
-                                                        <TrendingDown size={11} /> Out
+                                                        <TrendingDown size={11} /> {t('ui.inventory.mv.out')}
                                                     </span>
                                                 )}
                                             </td>
@@ -878,7 +881,7 @@ const StockMovementsPage: React.FC = () => {
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontWeight: 700 }}>
                                     <td colSpan={4} style={{ padding: '12px 14px', fontSize: '12px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                        Page Totals
+                                        {t('ui.inventory.mv.pageTotals')}
                                     </td>
                                     <td style={{ padding: '12px 14px', textAlign: 'center', fontSize: '13px' }}>
                                         <span style={{ color: '#10B981' }}>+{pageTotals.qtyIn}</span>
@@ -900,11 +903,11 @@ const StockMovementsPage: React.FC = () => {
                 {filteredMovements.length > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 0', flexWrap: 'wrap', gap: '12px' }}>
                         <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredMovements.length)} to {Math.min(currentPage * itemsPerPage, filteredMovements.length)} of {filteredMovements.length} entries
+                            {fill(t('ui.inventory.mv.showingEntries'), { from: Math.min((currentPage - 1) * itemsPerPage + 1, filteredMovements.length), to: Math.min(currentPage * itemsPerPage, filteredMovements.length), total: filteredMovements.length })}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('ui.inventory.mv.show')}</span>
                                 <select 
                                     value={itemsPerPage} 
                                     onChange={(e) => setItemsPerPage(Number(e.target.value))}
@@ -922,7 +925,7 @@ const StockMovementsPage: React.FC = () => {
                                     <ChevronLeft size={16} />
                                 </button>
                                 <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', margin: '0 8px' }}>
-                                    Page <span style={{ color: 'var(--color-text-main)', fontWeight: 700 }}>{currentPage}</span> of {totalPages}
+                                    {t('ui.inventory.mv.page')} <span style={{ color: 'var(--color-text-main)', fontWeight: 700 }}>{currentPage}</span> {fill(t('ui.inventory.mv.ofTotal'), { n: totalPages })}
                                 </span>
                                 <button
                                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
@@ -956,10 +959,10 @@ const StockMovementsPage: React.FC = () => {
                     animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}>
                     <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-main)', borderRight: '1px solid var(--color-border)', paddingRight: '16px' }}>
-                        {selectedRecordIds.size} Selected
+                        {fill(t('ui.inventory.mv.nSelected'), { n: selectedRecordIds.size })}
                     </div>
                     <button type="button" onClick={handleBulkDelete} disabled={isLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: '8px', border: 'none', cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.6 : 1, fontWeight: 500 }}>
-                        <Trash2 size={18} /> {isLoading ? 'Deleting…' : 'Delete'}
+                        <Trash2 size={18} /> {isLoading ? t('ui.inventory.mv.deleting') : t('common.delete')}
                     </button>
                 </div>
             )}
@@ -1018,7 +1021,7 @@ const StockMovementsPage: React.FC = () => {
                                 </div>
                                 <div>
                                     <h2 style={{ fontSize: '17px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>
-                                        Stock {detailRecord.type === 'in' ? 'In' : 'Out'} Detail
+                                        {detailRecord.type === 'in' ? t('ui.inventory.mv.detailIn') : t('ui.inventory.mv.detailOut')}
                                     </h2>
                                     <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>
                                         {formatDateTime(detailRecord.movement_date || detailRecord.created_at)}
@@ -1042,21 +1045,21 @@ const StockMovementsPage: React.FC = () => {
                             <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
                                     <Package size={15} style={{ color: 'var(--color-text-muted)' }} />
-                                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Product & Quantity</span>
+                                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('ui.inventory.mv.sec.productQty')}</span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                    <DetailField label="Product" value={detailRecord.product_name} />
+                                    <DetailField label={t('ui.inventory.priceList.product')} value={detailRecord.product_name} />
                                     <DetailField
-                                        label="Quantity"
+                                        label={t('ui.inventory.quantity')}
                                         value={
                                             <span style={{ color: detailRecord.type === 'in' ? '#10B981' : '#EF4444', fontWeight: 700, fontSize: '16px' }}>
                                                 {detailRecord.type === 'in' ? '+' : '-'}{detailRecord.quantity}
                                             </span>
                                         }
                                     />
-                                    <DetailField label="Unit Price" value={detailRecord.unit_price ? formatCurrency(detailRecord.unit_price) : '-'} />
+                                    <DetailField label={t('ui.inventory.mv.unitPrice')} value={detailRecord.unit_price ? formatCurrency(detailRecord.unit_price) : '-'} />
                                     <DetailField
-                                        label="Total Value"
+                                        label={t('ui.inventory.stats.totalValue')}
                                         value={detailRecord.unit_price ? formatCurrency(detailRecord.quantity * detailRecord.unit_price) : '-'}
                                     />
                                 </div>
@@ -1066,11 +1069,11 @@ const StockMovementsPage: React.FC = () => {
                             <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
                                     <WarehouseIcon size={15} style={{ color: 'var(--color-text-muted)' }} />
-                                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Location & Source</span>
+                                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('ui.inventory.mv.sec.locationSource')}</span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                    <DetailField label="Warehouse" value={warehouses.find(w => w.id === detailRecord.warehouse_id)?.name || '-'} />
-                                    <DetailField label={detailRecord.type === 'in' ? 'Source' : 'Reason'} value={(detailRecord.type === 'in' ? detailRecord.source : detailRecord.reason) || '-'} />
+                                    <DetailField label={t('ui.inventory.warehouse')} value={warehouses.find(w => w.id === detailRecord.warehouse_id)?.name || '-'} />
+                                    <DetailField label={detailRecord.type === 'in' ? t('ui.inventory.reports.source') : t('ui.inventory.reason')} value={(detailRecord.type === 'in' ? detailRecord.source : detailRecord.reason) || '-'} />
                                 </div>
                             </div>
 
@@ -1078,14 +1081,14 @@ const StockMovementsPage: React.FC = () => {
                             <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
                                     <User size={15} style={{ color: 'var(--color-text-muted)' }} />
-                                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>People & Shipping</span>
+                                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('ui.inventory.mv.sec.peopleShipping')}</span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                    <DetailField label="Supplier" value={detailRecord.supplier || '-'} />
-                                    <DetailField label="Customer" value={detailRecord.customer_name || '-'} />
-                                    <DetailField label="Salesman" value={salesmanTextOf(detailRecord.id).text} />
-                                    <DetailField label="Phone" value={detailRecord.customer_phone || '-'} />
-                                    <DetailField label="Shipping Co" value={detailRecord.shipping_co || '-'} />
+                                    <DetailField label={t('ui.inventory.col.supplier')} value={detailRecord.supplier || '-'} />
+                                    <DetailField label={t('orders.customer')} value={detailRecord.customer_name || '-'} />
+                                    <DetailField label={t('ui.inventory.summary.salesman')} value={salesmanTextOf(detailRecord.id).text} />
+                                    <DetailField label={t('orders.phone')} value={detailRecord.customer_phone || '-'} />
+                                    <DetailField label={t('orders.shippingCo')} value={detailRecord.shipping_co || '-'} />
                                 </div>
                             </div>
 
@@ -1093,15 +1096,15 @@ const StockMovementsPage: React.FC = () => {
                             <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
                                     <FileText size={15} style={{ color: 'var(--color-text-muted)' }} />
-                                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Reference & Notes</span>
+                                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('ui.inventory.mv.sec.referenceNotes')}</span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                    <DetailField label="Reference ID" value={detailRecord.reference_id || '-'} />
-                                    <DetailField label="Created By" value={detailRecord.created_by || '-'} />
+                                    <DetailField label={t('ui.inventory.mv.referenceId')} value={detailRecord.reference_id || '-'} />
+                                    <DetailField label={t('ui.inventory.mv.createdBy')} value={detailRecord.created_by || '-'} />
                                 </div>
                                 {detailRecord.note && (
                                     <div style={{ marginTop: '12px' }}>
-                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>Note</div>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>{t('ui.inventory.note')}</div>
                                         <div style={{ fontSize: '13px', color: 'var(--color-text)', lineHeight: '1.5', padding: '10px 12px', background: 'var(--color-surface)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
                                             {detailRecord.note}
                                         </div>

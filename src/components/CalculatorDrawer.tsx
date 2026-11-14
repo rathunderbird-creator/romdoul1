@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { Calculator, X, Copy, Check, Trash2 } from 'lucide-react';
+import { useTx } from './useTx';
 
 interface CalcHistoryEntry {
     id: string;
@@ -68,6 +69,7 @@ const formatResult = (n: number): string => {
 const HISTORY_KEY = 'header_calc_history';
 
 const CalculatorDrawer: React.FC<CalculatorDrawerProps> = ({ isOpen, onClose, isMobile }) => {
+    const tx = useTx();
     const [expr, setExpr] = useState('');
     const [history, setHistory] = useState<CalcHistoryEntry[]>(() => {
         try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
@@ -201,7 +203,7 @@ const CalculatorDrawer: React.FC<CalculatorDrawerProps> = ({ isOpen, onClose, is
                         <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #6366F1, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
                             <Calculator size={18} />
                         </div>
-                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Calculator</h3>
+                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>{tx('ui.components.calculator.title', 'Calculator')}</h3>
                     </div>
                     <button onClick={onClose} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <X size={18} />
@@ -221,7 +223,7 @@ const CalculatorDrawer: React.FC<CalculatorDrawerProps> = ({ isOpen, onClose, is
                             {(preview || (expr && !isNaN(Number(expr)))) && (
                                 <button
                                     onClick={() => copyText(preview || expr, 'display')}
-                                    title="Copy result"
+                                    title={tx('ui.components.calculator.copyResult', 'Copy result')}
                                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: copiedId === 'display' ? '#10B981' : 'var(--color-text-muted)', display: 'flex', padding: '2px' }}
                                 >
                                     {copiedId === 'display' ? <Check size={14} /> : <Copy size={14} />}
@@ -252,16 +254,16 @@ const CalculatorDrawer: React.FC<CalculatorDrawerProps> = ({ isOpen, onClose, is
                 {/* History */}
                 <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px 6px' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--color-text-secondary)' }}>History</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--color-text-secondary)' }}>{tx('ui.components.calculator.history', 'History')}</span>
                         {history.length > 0 && (
-                            <button onClick={() => setHistory([])} title="Clear history" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600 }}>
-                                <Trash2 size={12} /> Clear
+                            <button onClick={() => setHistory([])} title={tx('ui.components.calculator.clearHistory', 'Clear history')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600 }}>
+                                <Trash2 size={12} /> {tx('ui.components.mobileFilter.clear', 'Clear')}
                             </button>
                         )}
                     </div>
                     {history.length === 0 ? (
                         <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '12px' }}>
-                            No calculations yet
+                            {tx('ui.components.calculator.noHistory', 'No calculations yet')}
                         </div>
                     ) : (
                         history.map(h => (
@@ -269,7 +271,7 @@ const CalculatorDrawer: React.FC<CalculatorDrawerProps> = ({ isOpen, onClose, is
                                 {/* Tap to reuse the result as the new starting value */}
                                 <button
                                     onClick={() => setExpr(h.result)}
-                                    title="Use this result"
+                                    title={tx('ui.components.calculator.useResult', 'Use this result')}
                                     style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'right', padding: 0 }}
                                 >
                                     <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.expr}</div>
@@ -277,7 +279,7 @@ const CalculatorDrawer: React.FC<CalculatorDrawerProps> = ({ isOpen, onClose, is
                                 </button>
                                 <button
                                     onClick={() => copyText(h.result, h.id)}
-                                    title="Copy result"
+                                    title={tx('ui.components.calculator.copyResult', 'Copy result')}
                                     style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: copiedId === h.id ? '#10B981' : 'var(--color-text-muted)', width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                                 >
                                     {copiedId === h.id ? <Check size={13} /> : <Copy size={13} />}

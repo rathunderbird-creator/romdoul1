@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { MapPin, Search, Map as MapIcon, X, Trash2, Navigation, ChevronUp, ChevronDown, Save, Copy, Edit2, Power, AlertTriangle } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useToast } from '../context/ToastContext';
+import { useTx } from './useTx';
 import { CambodiaMap } from '../components/CambodiaMap';
 import { supabase } from '../lib/supabase';
 import { getShippingCoColor } from '../utils/orderUtils';
@@ -73,6 +74,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
 }) => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const tx = useTx();
 
     // States
     // Gazetteer + Sales Setup's custom / hidden districts and communes
@@ -173,13 +175,13 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                 title: (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <MapPin size={20} />
-                        <span className="font-semibold text-color-text-main" style={{ fontSize: '18px' }}>{headerTitle || 'កំណត់ទីតាំងដឹកជញ្ជូនកនែ្លងផ្សេងៗ (Shipping Points)'}</span>
+                        <span className="font-semibold text-color-text-main" style={{ fontSize: '18px' }}>{headerTitle || tx('ui.components.shippingPoint.headerTitle', 'កំណត់ទីតាំងដឹកជញ្ជូនកនែ្លងផ្សេងៗ (Shipping Points)')}</span>
                     </div>
                 )
             });
             return () => setHeaderContent(null);
         }
-    }, [setHeaderContent, mode, headerTitle, hideHeaderEffect]);
+    }, [setHeaderContent, mode, headerTitle, hideHeaderEffect, tx]);
 
     // Computed properties based on selection
     const selectedProvince = useMemo(() =>
@@ -604,12 +606,12 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
     const submitSaveLocation = async () => {
         setSavingError(null);
         if (!editMarkerLatLng) {
-            setSavingError("No marker location selected.");
+            setSavingError(tx('ui.components.shippingPoint.noMarker', 'No marker location selected.'));
             return;
         }
 
         if (!modalData.name.trim()) {
-            setSavingError("សូមបញ្ចូលឈ្មោះទីតាំង (Enter custom location name)");
+            setSavingError(tx('ui.components.shippingPoint.enterName', 'សូមបញ្ចូលឈ្មោះទីតាំង (Enter custom location name)'));
             return;
         }
 
@@ -626,7 +628,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             setEditingLocationId(null);
             setIsSaveModalOpen(false);
             await loadCustomLocations();
-            showToast(`Location saved: ${modalData.name}`, 'success');
+            showToast(tx('ui.components.shippingPoint.saved', 'Location saved: {name}', { name: modalData.name }), 'success');
         } catch (e: unknown) {
             console.error('Catch Block Error in submitSaveLocation API:', e);
             setSavingError(errorMessage(e));
@@ -641,10 +643,10 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         try {
             await setShippingPointShutdown(loc.id, newStatus, tableName);
             await loadCustomLocations();
-            showToast(`Location "${loc.name}" is now ${newStatus ? 'Temporarily Shutdown' : 'Reactivated'}`, 'success');
+            showToast(newStatus ? tx('ui.components.shippingPoint.nowShutdown', 'Location "{name}" is now Temporarily Shutdown', { name: loc.name }) : tx('ui.components.shippingPoint.nowReactivated', 'Location "{name}" is now Reactivated', { name: loc.name }), 'success');
         } catch (e: unknown) {
             console.error('Error toggling shutdown status', e);
-            showToast('Failed to toggle status: ' + errorMessage(e), 'error');
+            showToast(tx('ui.components.shippingPoint.toggleFailed', 'Failed to toggle status: {msg}', { msg: errorMessage(e) }), 'error');
         } finally {
             setIsSavingLocation(false);
         }
@@ -659,10 +661,10 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             setIsConfirmingDelete(false);
             setEditMarkerLatLng(null);
             await loadCustomLocations();
-            showToast(`Location pin removed: ${name}`, 'success');
+            showToast(tx('ui.components.shippingPoint.pinRemoved', 'Location pin removed: {name}', { name }), 'success');
         } catch (e: unknown) {
             console.error('Exception during delete', e);
-            showToast('Error removing location pin: ' + errorMessage(e), 'error');
+            showToast(tx('ui.components.shippingPoint.removeError', 'Error removing location pin: {msg}', { msg: errorMessage(e) }), 'error');
         } finally {
             setIsSavingLocation(false);
         }
@@ -699,7 +701,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         console.log('Target to remove:', targetPcode, targetName);
 
         if (!targetPcode) {
-            showToast('Please select a custom pin or a geographic location first.', 'error');
+            showToast(tx('ui.components.shippingPoint.selectFirst', 'Please select a custom pin or a geographic location first.'), 'error');
             return;
         }
 
@@ -715,16 +717,16 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             }
             if (!data || data.length === 0) {
                 console.warn('No rows deleted - RLS issue?');
-                showToast('No map pin was deleted — that location has no pin, or the database refused it.', 'error');
+                showToast(tx('ui.components.shippingPoint.noneDeleted', 'No map pin was deleted — that location has no pin, or the database refused it.'), 'error');
             } else {
                 setEditMarkerLatLng(null);
                 await loadCustomLocations();
                 setIsConfirmingDelete(false);
-                showToast(`Location pin removed: ${targetName}`, 'success');
+                showToast(tx('ui.components.shippingPoint.pinRemoved', 'Location pin removed: {name}', { name: targetName }), 'success');
             }
         } catch (e: unknown) {
             console.error('Exception during delete', e);
-            showToast('Error removing location pin: ' + errorMessage(e), 'error');
+            showToast(tx('ui.components.shippingPoint.removeError', 'Error removing location pin: {msg}', { msg: errorMessage(e) }), 'error');
         } finally {
             setIsSavingLocation(false);
         }
@@ -736,7 +738,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         // A checkpoint marked "temporarily shutdown" must not be dispatched
         // to — that is exactly what the flag is for.
         if (activeCustomLocation?.is_shutdown) {
-            showToast(`"${activeCustomLocation.name}" ត្រូវបានផ្អាកបណ្តោះអាសន្ន (temporarily shutdown) — pick another checkpoint.`, 'error');
+            showToast(tx('ui.components.shippingPoint.isShutdown', '"{name}" ត្រូវបានផ្អាកបណ្តោះអាសន្ន (temporarily shutdown) — pick another checkpoint.', { name: activeCustomLocation.name }), 'error');
             return;
         }
 
@@ -777,7 +779,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
         else if (selectedProvinceCode) targetPcode = selectedProvinceCode;
 
         if (!targetPcode && !focusedPinLatLng) {
-            showToast('សូមជ្រើសរើសទីតាំងជាមុនសិន (Please select a location first)', 'error');
+            showToast(tx('ui.components.shippingPoint.selectLocationFirst', 'សូមជ្រើសរើសទីតាំងជាមុនសិន (Please select a location first)'), 'error');
             return;
         }
 
@@ -802,10 +804,10 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
             {!hideHeader && (
                 <div className="shipping-header" style={{ padding: '24px 24px 16px', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                        <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{mode === 'selector' ? 'ជ្រើសរើសទីតាំង (Select Location)' : (pageTitle || 'កំណត់ទីតាំងទម្លាក់ប៉ាល់ (Map Pinning)')}</h1>
+                        <h1 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{mode === 'selector' ? tx('ui.components.shippingPoint.selectLocation', 'ជ្រើសរើសទីតាំង (Select Location)') : (pageTitle || tx('ui.components.shippingPoint.mapPinning', 'កំណត់ទីតាំងទម្លាក់ប៉ាល់ (Map Pinning)'))}</h1>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: '15px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <MapIcon size={18} />
-                            {mode === 'selector' ? 'Select a location to dispatch the order' : (pageSubtitle || 'បង្កើតទីតាំងដែលបានកំណត់សម្រាប់ការចាត់ថ្នាក់ ឬស្វែងរក (Pin specific locations for easier access)')}
+                            {mode === 'selector' ? tx('ui.components.shippingPoint.selectSubtitle', 'Select a location to dispatch the order') : (pageSubtitle || tx('ui.components.shippingPoint.pinSubtitle', 'បង្កើតទីតាំងដែលបានកំណត់សម្រាប់ការចាត់ថ្នាក់ ឬស្វែងរក (Pin specific locations for easier access)'))}
                         </p>
                     </div>
                     {mode === 'selector' && onClose && (
@@ -1184,7 +1186,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                             <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
                                                 {customLocations.length === 0
                                                     ? 'មិនទាន់មានទីតាំងបានកំណត់ទេ'
-                                                    : 'គ្មានទីតាំងត្រូវនឹងការស្វែងរកនេះទេ (No matching pins)'}
+                                                    : tx('ui.components.shippingPoint.noMatching', 'គ្មានទីតាំងត្រូវនឹងការស្វែងរកនេះទេ (No matching pins)')}
                                             </div>
                                         ) : (
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -1280,7 +1282,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                                                         fontWeight: 600,
                                                                                         display: 'inline-block' 
                                                                                     }}>
-                                                                                        Shutdown
+                                                                                        {tx('ui.components.shippingPoint.shutdownBadge', 'Shutdown')}
                                                                                     </span>
                                                                                 )}
                                                                             </span>
@@ -1292,12 +1294,12 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                                                     const cleanProv = loc.province?.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim();
                                                                                     const addressString = [loc.name, loc.commune, loc.district, cleanProv].filter(Boolean).join(', ');
                                                                                     navigator.clipboard.writeText(addressString);
-                                                                                    showToast('Location copied to clipboard', 'success');
+                                                                                    showToast(tx('ui.components.shippingPoint.copied', 'Location copied to clipboard'), 'success');
                                                                                 }}
                                                                                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--color-text-secondary)', transition: 'color 0.2s' }}
                                                                                 onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-primary)'}
                                                                                 onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
-                                                                                title="ចម្លងទីតាំង (Copy Location)"
+                                                                                title={tx('ui.components.shippingPoint.copyTitle', 'ចម្លងទីតាំង (Copy Location)')}
                                                                             >
                                                                                 <Copy size={13} />
                                                                             </button>
@@ -1311,7 +1313,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                                                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: loc.is_shutdown ? 'var(--color-success)' : 'var(--color-text-secondary)', transition: 'color 0.2s' }}
                                                                                         onMouseEnter={(e) => e.currentTarget.style.color = loc.is_shutdown ? 'var(--color-success)' : 'var(--color-danger)'}
                                                                                         onMouseLeave={(e) => e.currentTarget.style.color = loc.is_shutdown ? 'var(--color-success)' : 'var(--color-text-secondary)'}
-                                                                                        title={loc.is_shutdown ? "បើកដំណើរការឡើងវិញ (Reactivate)" : "បិទជាបណ្តោះអាសន្ន (Temporary Shutdown)"}
+                                                                                        title={loc.is_shutdown ? tx('ui.components.shippingPoint.reactivateTitle', 'បើកដំណើរការឡើងវិញ (Reactivate)') : tx('ui.components.shippingPoint.shutdownTitle', 'បិទជាបណ្តោះអាសន្ន (Temporary Shutdown)')}
                                                                                     >
                                                                                         <Power size={13} />
                                                                                     </button>
@@ -1323,7 +1325,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                                                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--color-text-secondary)', transition: 'color 0.2s' }}
                                                                                         onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-primary)'}
                                                                                         onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-secondary)'}
-                                                                                        title="កែពត៌មានទីតាំង(Edit)"
+                                                                                        title={tx('ui.components.shippingPoint.editTitle', 'កែពត៌មានទីតាំង(Edit)')}
                                                                                     >
                                                                                         <Edit2 size={13} />
                                                                                     </button>
@@ -1376,7 +1378,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <AlertTriangle size={18} color="var(--color-danger, #ef4444)" />
                                     <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-text-main)' }}>
-                                        ទីតាំងផ្អាកជាបណ្តោះអាសន្ន (Shutdown Checkpoints) ({customLocations.filter(loc => loc.is_shutdown).length})
+                                        {tx('ui.components.shippingPoint.shutdownPanel', 'ទីតាំងផ្អាកជាបណ្តោះអាសន្ន (Shutdown Checkpoints)')} ({customLocations.filter(loc => loc.is_shutdown).length})
                                     </h3>
                                 </div>
                                 <div style={{ color: 'var(--color-text-secondary)' }}>
@@ -1418,7 +1420,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                     borderRadius: '6px',
                                                     fontWeight: 500
                                                 }}
-                                                title="បើកដំណើរការឡើងវិញ (Reactivate)"
+                                                title={tx('ui.components.shippingPoint.reactivateTitle', 'បើកដំណើរការឡើងវិញ (Reactivate)')}
                                             >
                                                 <Power size={12} /> បើកឡើងវិញ
                                             </button>
@@ -1501,14 +1503,14 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                             onClick={() => setIsConfirmingDelete(false)}
                                             style={{ padding: '6px 12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
                                         >
-                                            ទេ (No)
+                                            {tx('ui.components.shippingPoint.no', 'ទេ (No)')}
                                         </button>
                                         <button
                                             onClick={handleRemoveLocation}
                                             disabled={isSavingLocation}
                                             style={{ padding: '6px 12px', background: 'var(--color-danger, #ef4444)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', fontWeight: 500, cursor: isSavingLocation ? 'not-allowed' : 'pointer', opacity: isSavingLocation ? 0.7 : 1 }}
                                         >
-                                            {isSavingLocation ? '...' : 'យល់ព្រម (Yes)'}
+                                            {isSavingLocation ? '...' : tx('ui.components.shippingPoint.yes', 'យល់ព្រម (Yes)')}
                                         </button>
                                     </div>
                                 ) : (
@@ -1532,7 +1534,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                     boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
                                                 }}
                                             >
-                                                <X size={16} /> Exit Selected Point
+                                                <X size={16} /> {tx('ui.components.shippingPoint.exitSelected', 'Exit Selected Point')}
                                             </button>
                                         )}
                                         {mode === 'selector' && (
@@ -1550,7 +1552,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                     boxShadow: '0 2px 8px rgba(16, 185, 129, 0.2)'
                                                 }}
                                             >
-                                                <MapPin size={16} /> បញ្ជាក់ទីតាំង (Confirm)
+                                                <MapPin size={16} /> {tx('ui.components.shippingPoint.confirm', 'បញ្ជាក់ទីតាំង (Confirm)')}
                                             </button>
                                         )}
                                         {!isConfirmingDelete && (
@@ -1580,7 +1582,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                     </div>
                     {isEditing && (
                         <div style={{ position: 'absolute', top: 16, left: 16, right: 'auto', zIndex: 10, background: 'var(--color-primary-light)', color: 'var(--color-primary)', padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--color-primary)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                            <MapPin size={18} /> សូមចុចលើផែនទីដើម្បីទម្លាក់ប៉ាល់, រួចទាញ (Tap on map to drop pin, drag to refine)
+                            <MapPin size={18} /> {tx('ui.components.shippingPoint.tapHint', 'សូមចុចលើផែនទីដើម្បីទម្លាក់ប៉ាល់, រួចទាញ (Tap on map to drop pin, drag to refine)')}
                         </div>
                     )}
 
@@ -1593,7 +1595,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                 width: '400px', background: 'var(--color-surface)', borderRadius: '16px', padding: '24px', boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
                                 display: 'flex', flexDirection: 'column', gap: '16px'
                             }}>
-                                <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-text-main)', margin: 0 }}>{editingLocationId ? 'កែពត៌មានទីតាំង (Edit Location)' : 'រក្សាទុកទីតាំង (Save Location)'}</h3>
+                                <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-text-main)', margin: 0 }}>{editingLocationId ? tx('ui.components.shippingPoint.editLocation', 'កែពត៌មានទីតាំង (Edit Location)') : tx('ui.components.shippingPoint.saveLocationTitle', 'រក្សាទុកទីតាំង (Save Location)')}</h3>
 
                                 {savingError && (
                                     <div style={{ padding: '12px', background: '#ffebee', color: '#d32f2f', borderRadius: '8px', fontSize: '13px', fontWeight: 500 }}>
@@ -1602,7 +1604,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                 )}
 
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Location Name / ឈ្មោះទីតាំង *</label>
+                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('ui.components.shippingPoint.form.name', 'Location Name / ឈ្មោះទីតាំង')} *</label>
                                     <input
                                         type="text" value={modalData.name} onChange={(e) => setModalData({ ...modalData, name: e.target.value })}
                                         style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none' }}
@@ -1610,47 +1612,47 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                 </div>
 
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Courier / សេវាដឹកជញ្ជូន</label>
+                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('ui.components.shippingPoint.form.courier', 'Courier / សេវាដឹកជញ្ជូន')}</label>
                                     <select
                                         value={modalData.courier} onChange={(e) => setModalData({ ...modalData, courier: e.target.value })}
                                         style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}
                                     >
-                                        <option value="">Select Courier</option>
+                                        <option value="">{tx('ui.components.shippingPoint.form.selectCourier', 'Select Courier')}</option>
                                         {shippingCompanies.map(c => <option key={c} value={c} style={{ color: getShippingCoColor(c) }}>{c}</option>)}
                                     </select>
                                 </div>
 
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Province / ខេត្ត</label>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('ui.components.shippingPoint.form.province', 'Province / ខេត្ត')}</label>
                                         <select value={modalProvincePicker.value} onChange={(e) => setModalData({ ...modalData, province: e.target.value, district: '', commune: '' })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
-                                            <option value="">Select Province</option>
+                                            <option value="">{tx('ui.components.shippingPoint.form.selectProvince', 'Select Province')}</option>
                                             {modalProvincePicker.options.map(p => <option key={p.code} value={p.khmer}>{locLabel(p)}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>District / ស្រុក</label>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('ui.components.shippingPoint.form.district', 'District / ស្រុក')}</label>
                                         <select value={modalDistrictPicker.value} onChange={(e) => setModalData({ ...modalData, district: e.target.value, commune: '' })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
-                                            <option value="">Select District</option>
+                                            <option value="">{tx('ui.components.shippingPoint.form.selectDistrict', 'Select District')}</option>
                                             {modalDistrictPicker.options.map(d => <option key={d.code} value={d.khmer}>{locLabel(d)}</option>)}
                                         </select>
                                     </div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Commune / ឃុំ</label>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('ui.components.shippingPoint.form.commune', 'Commune / ឃុំ')}</label>
                                         <select value={modalCommunePicker.value} onChange={(e) => setModalData({ ...modalData, commune: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none', background: 'var(--color-surface)' }}>
-                                            <option value="">Select Commune</option>
+                                            <option value="">{tx('ui.components.shippingPoint.form.selectCommune', 'Select Commune')}</option>
                                             {modalCommunePicker.options.map(c => <option key={c.code} value={c.khmer}>{locLabel(c)}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Phone / លេខទូរស័ព្ទ</label>
+                                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('ui.components.shippingPoint.form.phone', 'Phone / លេខទូរស័ព្ទ')}</label>
                                         <input type="text" value={modalData.phone} onChange={(e) => setModalData({ ...modalData, phone: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none' }} />
                                     </div>
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Contact Name / ឈ្មោះអ្នកទទួល</label>
+                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('ui.components.shippingPoint.form.contact', 'Contact Name / ឈ្មោះអ្នកទទួល')}</label>
                                     <input type="text" value={modalData.contactName} onChange={(e) => setModalData({ ...modalData, contactName: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', outline: 'none' }} />
                                 </div>
                                 <div>
@@ -1661,7 +1663,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                             onChange={(e) => setModalData({ ...modalData, isShutdown: e.target.checked })}
                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                         />
-                                        <span>បិទទីតាំងនេះជាបណ្តោះអាសន្ន (Temporarily Shutdown)</span>
+                                        <span>{tx('ui.components.shippingPoint.form.shutdown', 'បិទទីតាំងនេះជាបណ្តោះអាសន្ន (Temporarily Shutdown)')}</span>
                                     </label>
                                 </div>
 
@@ -1669,12 +1671,12 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                     <button
                                         onClick={() => setIsSaveModalOpen(false)}
                                         style={{ flex: 1, padding: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', color: 'var(--color-text-main)', fontWeight: 500, cursor: 'pointer' }}
-                                    >Cancel</button>
+                                    >{tx('common.cancel', 'Cancel')}</button>
                                     <button
                                         onClick={submitSaveLocation}
                                         disabled={isSavingLocation}
                                         style={{ flex: 1, padding: '12px', background: 'var(--color-primary)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 500, cursor: isSavingLocation ? 'not-allowed' : 'pointer', opacity: isSavingLocation ? 0.7 : 1 }}
-                                    >{isSavingLocation ? 'Saving...' : 'Save Location'}</button>
+                                    >{isSavingLocation ? tx('ui.components.checkout.saving', 'Saving...') : tx('ui.components.shippingPoint.saveLocation', 'Save Location')}</button>
                                 </div>
                             </div>
                         </div>

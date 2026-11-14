@@ -12,6 +12,8 @@ import { useHeader } from '../context/HeaderContext';
 import { useAccounting } from '../hooks/useAccounting';
 import { useStore } from '../context/StoreContext';
 import { useMobile } from '../hooks/useMobile';
+import { useLanguage } from '../context/LanguageContext';
+import { tNow, fill } from '../i18n/translate';
 import type { ChartOfAccount, JournalEntry } from '../types';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
@@ -30,7 +32,7 @@ const statusChip = (status?: string) => (
         padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, flexShrink: 0,
         background: status === 'Draft' ? '#fef3c7' : 'rgba(84, 105, 212, 0.12)',
         color: status === 'Draft' ? '#92400e' : '#4c5fd0',
-    }}>{status === 'Draft' ? 'Draft' : 'Posted'}</span>
+    }}>{status === 'Draft' ? tNow('ui.admin.dashboard.draft') : tNow('ui.admin.dashboard.posted')}</span>
 );
 
 const KpiCard: React.FC<{
@@ -82,18 +84,19 @@ const AdminDashboardPage: React.FC = () => {
     const { accounts, journalEntries, isLoading, fetchAccounts, fetchJournalEntries } = useAccounting();
     const { products, sales } = useStore();
     const isMobile = useMobile();
+    const { t } = useLanguage();
 
     useEffect(() => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Dashboard</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>Financial overview and key performance indicators</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.dashboard')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{t('ui.admin.dashboard.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => { fetchAccounts(); fetchJournalEntries(); }, [fetchAccounts, fetchJournalEntries]);
 
@@ -187,51 +190,51 @@ const AdminDashboardPage: React.FC = () => {
             <div className="acct-page" style={{ flex: isMobile ? undefined : '18 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <button className="secondary-button" onClick={() => { fetchAccounts(); fetchJournalEntries(); }}>
-                        <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> Refresh
+                        <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> {t('ui.admin.activity.refresh')}
                     </button>
                 </div>
 
                 {/* KPI row 1 — Balance Sheet snapshot. Phones get a fixed
                     2-per-row grid (compact cards); desktop keeps auto-fit. */}
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: isMobile ? '12px' : '16px' }}>
-                    <KpiCard label="Total Assets" value={fmt(totalAssets)} color={BLUE} icon={BarChart3} compact={isMobile} />
-                    <KpiCard label="Total Liabilities" value={fmt(totalLiabilities)} color={RED} icon={TrendingDown} compact={isMobile} />
-                    <KpiCard label="Total Equity" value={fmt(totalEquity)} color={PURPLE} icon={PieChart} compact={isMobile} />
+                    <KpiCard label={t('ui.admin.dashboard.totalAssets')} value={fmt(totalAssets)} color={BLUE} icon={BarChart3} compact={isMobile} />
+                    <KpiCard label={t('ui.admin.dashboard.totalLiabilities')} value={fmt(totalLiabilities)} color={RED} icon={TrendingDown} compact={isMobile} />
+                    <KpiCard label={t('ui.admin.dashboard.totalEquity')} value={fmt(totalEquity)} color={PURPLE} icon={PieChart} compact={isMobile} />
                 </div>
 
                 {/* KPI row 2 — performance indicators */}
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: isMobile ? '12px' : '16px' }}>
                     <KpiCard
-                        label="Net Income" value={fmt(netIncome)} color={BLUE} icon={TrendingUp} compact={isMobile}
-                        trend={netIncome >= 0 ? 'up' : 'down'} trendLabel={netIncome >= 0 ? 'Positive trend' : 'Negative trend'}
+                        label={t('ui.admin.dashboard.netIncome')} value={fmt(netIncome)} color={BLUE} icon={TrendingUp} compact={isMobile}
+                        trend={netIncome >= 0 ? 'up' : 'down'} trendLabel={netIncome >= 0 ? t('ui.admin.dashboard.positiveTrend') : t('ui.admin.dashboard.negativeTrend')}
                     />
                     <KpiCard
-                        label="Current Ratio" value={currentRatio === null ? '—' : currentRatio.toFixed(2)} sub="Assets/Liabilities" color={AMBER} icon={Activity} compact={isMobile}
-                        trend={currentRatio !== null && currentRatio >= 1 ? 'up' : 'down'} trendLabel={currentRatio !== null && currentRatio >= 1 ? 'Positive trend' : 'Negative trend'}
+                        label={t('ui.admin.dashboard.currentRatio')} value={currentRatio === null ? '—' : currentRatio.toFixed(2)} sub={t('ui.admin.dashboard.assetsOverLiabilities')} color={AMBER} icon={Activity} compact={isMobile}
+                        trend={currentRatio !== null && currentRatio >= 1 ? 'up' : 'down'} trendLabel={currentRatio !== null && currentRatio >= 1 ? t('ui.admin.dashboard.positiveTrend') : t('ui.admin.dashboard.negativeTrend')}
                     />
                     <KpiCard
-                        label="Net Profit Margin" value={`${netProfitMargin.toFixed(1)}%`} sub="Income/Revenue" color={TEAL} icon={TrendingUp} compact={isMobile}
-                        trend={netProfitMargin >= 0 ? 'up' : 'down'} trendLabel={netProfitMargin >= 0 ? 'Positive trend' : 'Negative trend'}
+                        label={t('ui.admin.dashboard.netProfitMargin')} value={`${netProfitMargin.toFixed(1)}%`} sub={t('ui.admin.dashboard.incomeOverRevenue')} color={TEAL} icon={TrendingUp} compact={isMobile}
+                        trend={netProfitMargin >= 0 ? 'up' : 'down'} trendLabel={netProfitMargin >= 0 ? t('ui.admin.dashboard.positiveTrend') : t('ui.admin.dashboard.negativeTrend')}
                     />
                 </div>
 
                 {/* Accounting equation */}
                 <div style={{ ...cardStyle, padding: '20px 24px' }}>
                     <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '16px' }}>
-                        Accounting Equation: Assets = Liabilities + Equity
+                        {t('ui.admin.dashboard.accountingEquation')}
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'stretch', justifyContent: 'center' }}>
-                        <EquationBox label="Assets" value={fmt(totalAssets)} color={BLUE} fill grow />
+                        <EquationBox label={t('ui.admin.dashboard.assets')} value={fmt(totalAssets)} color={BLUE} fill grow />
                         <Operator symbol="+" />
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: '1 1 260px' }}>
-                            <EquationBox label="Liabilities" value={fmt(totalLiabilities)} color={RED} />
-                            <EquationBox label="Equity" value={fmt(totalEquity)} color={PURPLE} />
+                            <EquationBox label={t('ui.admin.dashboard.liabilities')} value={fmt(totalLiabilities)} color={RED} />
+                            <EquationBox label={t('ui.admin.dashboard.equity')} value={fmt(totalEquity)} color={PURPLE} />
                         </div>
                     </div>
                     <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Equation Balance:</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>{t('ui.admin.dashboard.equationBalance')}</div>
                         <div style={{ background: `${BLUE}14`, border: `1px solid ${BLUE}33`, borderRadius: '8px', padding: '10px 14px', color: isBalanced ? BLUE : RED, fontWeight: 700, fontSize: '13px' }}>
-                            {isBalanced ? '✓ Balanced (A = L + E)' : '✗ Out of balance'}
+                            {isBalanced ? t('ui.admin.dashboard.balanced') : t('ui.admin.dashboard.outOfBalance')}
                         </div>
                     </div>
                 </div>
@@ -239,15 +242,15 @@ const AdminDashboardPage: React.FC = () => {
                 {/* Income statement */}
                 <div style={{ ...cardStyle, padding: '20px 24px' }}>
                     <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '16px' }}>
-                        Income Statement: Revenue - Expenses = Net Income
+                        {t('ui.admin.dashboard.incomeStatementEq')}
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', justifyContent: 'center' }}>
-                        <EquationBox label="Revenue" value={fmt(revenue)} color={BLUE} grow />
+                        <EquationBox label={t('ui.admin.dashboard.revenue')} value={fmt(revenue)} color={BLUE} grow />
                         <Operator symbol="-" />
-                        <EquationBox label="Expenses" value={fmt(expenses)} color={AMBER} grow />
+                        <EquationBox label={t('ui.admin.dashboard.expenses')} value={fmt(expenses)} color={AMBER} grow />
                     </div>
                     <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>Net Income:</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>{t('ui.admin.dashboard.netIncomeColon')}</div>
                         <div style={{ background: `${BLUE}14`, border: `1px solid ${BLUE}33`, borderRadius: '8px', padding: '10px 14px', color: netIncome >= 0 ? BLUE : RED, fontWeight: 700, fontSize: '20px' }}>
                             {fmt(netIncome)}
                         </div>
@@ -259,10 +262,10 @@ const AdminDashboardPage: React.FC = () => {
                     <div style={{ ...cardStyle, padding: '18px 20px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
                             <Calendar size={16} color={BLUE} />
-                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Recent Journal Entries</span>
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.admin.dashboard.recentJournalEntries')}</span>
                         </div>
                         {recentEntries.length === 0 ? (
-                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>No journal entries yet.</div>
+                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.dashboard.noJournalEntries')}</div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                 {recentEntries.map(e => (
@@ -281,14 +284,14 @@ const AdminDashboardPage: React.FC = () => {
                     <div style={{ ...cardStyle, padding: '18px 20px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
                             <Activity size={16} color={TEAL} />
-                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>Account Summary</span>
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.admin.dashboard.accountSummary')}</span>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {ACCOUNT_TYPES.map(type => (
                                 <div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--color-bg)', borderRadius: '8px' }}>
                                     <div>
-                                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)' }}>{type}</div>
-                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{typeCounts[type]} account{typeCounts[type] === 1 ? '' : 's'}</div>
+                                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t(`ui.admin.dashboard.types.${type}`)}</div>
+                                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{fill(typeCounts[type] === 1 ? t('ui.admin.dashboard.accountOne') : t('ui.admin.dashboard.accountMany'), { n: typeCounts[type] })}</div>
                                     </div>
                                     <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>
                                         {/* Equity shows the same balance-sheet total as the Accounting
@@ -307,21 +310,21 @@ const AdminDashboardPage: React.FC = () => {
                 <div style={{ ...cardStyle, padding: '20px 24px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
                         <Package size={16} color={GREEN} />
-                        <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)' }}>Inventory Details</span>
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)' }}>{t('ui.admin.dashboard.inventoryDetails')}</span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: (topSellingProducts.length > 0 || attentionProducts.length > 0) ? '20px' : 0 }}>
-                        <KpiCard label="Total Products" value={inventoryStats.totalProducts.toLocaleString()} color={BLUE} icon={Package} />
-                        <KpiCard label="Total Stock" value={inventoryStats.totalStock.toLocaleString()} color={TEAL} icon={Layers} />
-                        <KpiCard label="Low Stock" value={inventoryStats.lowStock.toLocaleString()} color={AMBER} icon={AlertTriangle} />
-                        <KpiCard label="Out of Stock" value={inventoryStats.outOfStock.toLocaleString()} color={RED} icon={XCircle} />
-                        <KpiCard label="Inventory Value" value={fmt(inventoryStats.inventoryValue)} color={PURPLE} icon={DollarSign} />
+                        <KpiCard label={t('ui.admin.dashboard.totalProducts')} value={inventoryStats.totalProducts.toLocaleString()} color={BLUE} icon={Package} />
+                        <KpiCard label={t('ui.admin.dashboard.totalStock')} value={inventoryStats.totalStock.toLocaleString()} color={TEAL} icon={Layers} />
+                        <KpiCard label={t('ui.admin.dashboard.lowStock')} value={inventoryStats.lowStock.toLocaleString()} color={AMBER} icon={AlertTriangle} />
+                        <KpiCard label={t('ui.admin.dashboard.outOfStock')} value={inventoryStats.outOfStock.toLocaleString()} color={RED} icon={XCircle} />
+                        <KpiCard label={t('ui.admin.dashboard.inventoryValue')} value={fmt(inventoryStats.inventoryValue)} color={PURPLE} icon={DollarSign} />
                     </div>
                     {(topSellingProducts.length > 0 || attentionProducts.length > 0) && (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
                             {topSellingProducts.length > 0 && (
                                 <div>
                                     <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                                        Top Selling Products
+                                        {t('ui.admin.dashboard.topSelling')}
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                         {topSellingProducts.map((p, i) => (
@@ -338,7 +341,7 @@ const AdminDashboardPage: React.FC = () => {
                                                     background: 'rgba(16, 185, 129, 0.12)',
                                                     color: GREEN,
                                                 }}>
-                                                    {`${p.quantity.toLocaleString()} sold`}
+                                                    {fill(t('ui.admin.dashboard.sold'), { n: p.quantity.toLocaleString() })}
                                                 </span>
                                             </div>
                                         ))}
@@ -348,7 +351,7 @@ const AdminDashboardPage: React.FC = () => {
                             {attentionProducts.length > 0 && (
                                 <div>
                                     <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                                        Needs Attention
+                                        {t('ui.admin.dashboard.needsAttention')}
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                         {attentionProducts.map(p => (
@@ -362,7 +365,7 @@ const AdminDashboardPage: React.FC = () => {
                                                     background: 'rgba(245, 158, 11, 0.12)',
                                                     color: AMBER,
                                                 }}>
-                                                    {`${p.stock} left`}
+                                                    {fill(t('ui.admin.dashboard.left'), { n: p.stock })}
                                                 </span>
                                             </div>
                                         ))}

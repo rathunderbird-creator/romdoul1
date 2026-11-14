@@ -3,6 +3,8 @@ import { Plus, Trash2, DollarSign, ShoppingCart, RefreshCw, X, Database, Search,
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useWholesale } from '../../hooks/useWholesale';
 import type { WholesaleOrder, WholesaleOrderItem } from '../../types';
 import { printWholesaleInvoice } from '../../utils/wholesaleInvoice';
@@ -35,6 +37,10 @@ const orderStatusConfig = (s?: string) => {
 const WholesaleOrdersPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
+    // Display labels for stored status codes (the codes themselves stay English).
+    const orderStatusLabel = (s?: string) => s === 'Delivered' ? t('status.delivered') : s === 'Cancelled' ? t('status.cancelled') : (!s || s === 'Open') ? t('ui.wholesale.status.open') : s;
+    const payStatusLabel = (s?: string) => s === 'Paid' ? t('status.paid') : s === 'Partial' ? t('status.partial') : (!s || s === 'Unpaid') ? t('status.unpaid') : s;
     const { products, warehouses, currentUser, refreshData, storeName, storeAddress, phone, email, logo, wholesaleSettings } = useStore();
     const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, nextInvoiceNumber, createWholesaleOrder, updateWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
     const isAdmin = currentUser?.roleId === 'admin';
@@ -135,13 +141,13 @@ const WholesaleOrdersPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Wholesale Orders</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Credit sales to customers — the source of Accounts Receivable</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('ui.wholesale.orders.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.wholesale.orders.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => { fetchWholesaleOrders(); fetchCustomers(); }, [fetchWholesaleOrders, fetchCustomers]);
 
@@ -197,10 +203,10 @@ const WholesaleOrdersPage: React.FC = () => {
     };
 
     const submitCreate = async () => {
-        if (!customerName.trim()) { showToast('Enter the customer name', 'error'); return; }
+        if (!customerName.trim()) { showToast(t('ui.wholesale.orders.toast.enterCustomer'), 'error'); return; }
         const validLines = lines.filter(l => l.product_id && (Number(l.quantity) || 0) > 0);
-        if (validLines.length === 0) { showToast('Add at least one product line', 'error'); return; }
-        if (validLines.some(l => !Number.isInteger(Number(l.quantity)))) { showToast('Quantities must be whole numbers.', 'error'); return; }
+        if (validLines.length === 0) { showToast(t('ui.wholesale.orders.toast.addLine'), 'error'); return; }
+        if (validLines.some(l => !Number.isInteger(Number(l.quantity)))) { showToast(t('ui.wholesale.orders.toast.wholeQty'), 'error'); return; }
         if (savingRef.current) return;
 
         savingRef.current = true;
@@ -249,32 +255,32 @@ const WholesaleOrdersPage: React.FC = () => {
         const balance = (o.total_amount || 0) - paid;
         const whName = warehouses.find(w => w.id === o.warehouse_id)?.name;
         const lines: string[] = [
-            '🛒 Wholesale Order',
+            `🛒 ${t('ui.wholesale.orders.copy.heading')}`,
             '',
-            `#️⃣ Invoice: ${o.invoice_number || `WO-${o.id.slice(0, 8).toUpperCase()}`}`,
-            `👤 Customer: ${o.customer_name}`,
+            `#️⃣ ${t('ui.wholesale.orders.copy.invoice')}: ${o.invoice_number || `WO-${o.id.slice(0, 8).toUpperCase()}`}`,
+            `👤 ${t('ui.wholesale.orders.copy.customer')}: ${o.customer_name}`,
         ];
-        if (o.customer_phone) lines.push(`📞 Phone: ${o.customer_phone}`);
-        if (whName) lines.push(`🏬 Warehouse: ${whName}`);
-        lines.push(`📅 Order Date: ${d(o.order_date)}`);
-        if (o.due_date) lines.push(`⏰ Due: ${d(o.due_date)}`);
-        lines.push('', '📦 Items:');
+        if (o.customer_phone) lines.push(`📞 ${t('ui.wholesale.orders.copy.phone')}: ${o.customer_phone}`);
+        if (whName) lines.push(`🏬 ${t('ui.wholesale.orders.copy.warehouse')}: ${whName}`);
+        lines.push(`📅 ${t('ui.wholesale.orders.copy.orderDate')}: ${d(o.order_date)}`);
+        if (o.due_date) lines.push(`⏰ ${t('ui.wholesale.orders.copy.due')}: ${d(o.due_date)}`);
+        lines.push('', `📦 ${t('ui.wholesale.orders.copy.items')}:`);
         for (const item of o.items || []) {
-            lines.push(`- ${item.product_name || 'Unknown'} x${item.quantity} (${fmt(item.unit_price || 0)})`);
+            lines.push(`- ${item.product_name || t('ui.wholesale.common.unknown')} x${item.quantity} (${fmt(item.unit_price || 0)})`);
         }
         lines.push(
             '',
-            `💰 Total: ${fmt(o.total_amount || 0)}`,
-            `💵 Paid: ${fmt(paid)}`,
-            `🔴 Balance: ${fmt(balance)}`,
-            `📊 Status: ${o.status || 'Open'} | Payment: ${o.payment_status || 'Unpaid'}`
+            `💰 ${t('ui.wholesale.orders.copy.total')}: ${fmt(o.total_amount || 0)}`,
+            `💵 ${t('ui.wholesale.orders.copy.paid')}: ${fmt(paid)}`,
+            `🔴 ${t('ui.wholesale.orders.copy.balance')}: ${fmt(balance)}`,
+            `📊 ${t('ui.wholesale.orders.copy.status')}: ${orderStatusLabel(o.status)} | ${t('ui.wholesale.orders.copy.payment')}: ${payStatusLabel(o.payment_status)}`
         );
-        if (o.notes) lines.push(`📝 Notes: ${o.notes}`);
+        if (o.notes) lines.push(`📝 ${t('ui.wholesale.orders.copy.notes')}: ${o.notes}`);
         try {
             await navigator.clipboard.writeText(lines.join('\n'));
-            showToast('Order details copied to clipboard', 'success');
+            showToast(t('ui.wholesale.orders.toast.copied'), 'success');
         } catch {
-            showToast('Failed to copy to clipboard', 'error');
+            showToast(t('ui.wholesale.orders.toast.copyFailed'), 'error');
         }
     };
 
@@ -292,7 +298,7 @@ const WholesaleOrdersPage: React.FC = () => {
 
     const handleDelete = async (o: WholesaleOrder) => {
         if (busyOrderRef.current.has(o.id)) return;
-        if (!confirm(`Delete wholesale order for ${o.customer_name}? Stock will be returned.`)) return;
+        if (!confirm(fill(t('ui.wholesale.orders.confirm.delete'), { name: o.customer_name }))) return;
         await runOrderAction(o.id, () => deleteWholesaleOrder(o));
     };
 
@@ -300,7 +306,7 @@ const WholesaleOrdersPage: React.FC = () => {
     // removes the linked Income transaction (handled inside deleteCustomerPayment).
     const handleDeleteViewPayment = async (p: { id: string; amount: number }) => {
         if (!viewOrder || busyOrderRef.current.has(viewOrder.id)) return;
-        if (!confirm(`Delete this payment of ${fmt(Number(p.amount) || 0)}? The order balance will be restored.`)) return;
+        if (!confirm(fill(t('ui.wholesale.orders.confirm.deletePayment'), { amount: fmt(Number(p.amount) || 0) }))) return;
         await runOrderAction(viewOrder.id, async () => {
             await deleteCustomerPayment(p.id);
             const newPaid = Math.max(0, (viewOrder.amount_paid || 0) - Number(p.amount));
@@ -311,13 +317,13 @@ const WholesaleOrdersPage: React.FC = () => {
 
     const handleMarkDelivered = async (o: WholesaleOrder) => {
         if (busyOrderRef.current.has(o.id)) return;
-        if (!confirm(`Mark ${o.invoice_number || `WO-${o.id.slice(0, 8).toUpperCase()}`} as Delivered?`)) return;
+        if (!confirm(fill(t('ui.wholesale.orders.confirm.markDelivered'), { invoice: o.invoice_number || `WO-${o.id.slice(0, 8).toUpperCase()}` }))) return;
         await runOrderAction(o.id, () => updateWholesaleOrderStatus(o, 'Delivered'));
     };
 
     const handleCancelOrder = async (o: WholesaleOrder) => {
         if (busyOrderRef.current.has(o.id)) return;
-        if (!confirm(`Cancel this order for ${o.customer_name}? Stock will be returned to inventory.`)) return;
+        if (!confirm(fill(t('ui.wholesale.orders.confirm.cancel'), { name: o.customer_name }))) return;
         await runOrderAction(o.id, () => updateWholesaleOrderStatus(o, 'Cancelled'));
     };
 
@@ -419,17 +425,17 @@ const WholesaleOrdersPage: React.FC = () => {
         <div style={{ padding: isMobile ? '12px' : '24px' }}>
             {isMobile ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' }}>
-                    <MiniStatCard icon={ShoppingCart} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Sales" value={fmt(totals.sales)} />
-                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Collected" value={fmt(totals.collected)} valueColor="#10b981" />
-                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={fmt(totals.outstanding)} valueColor={totals.outstanding > 0 ? '#ef4444' : '#10b981'} />
-                    <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={`Overdue${totals.overdueCount > 0 ? ` (${totals.overdueCount})` : ''}`} value={fmt(totals.overdue)} valueColor={totals.overdue > 0 ? '#ef4444' : undefined} />
+                    <MiniStatCard icon={ShoppingCart} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label={t('ui.wholesale.orders.stats.sales')} value={fmt(totals.sales)} />
+                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #10b981, #34d399)" label={t('ui.wholesale.orders.stats.collected')} value={fmt(totals.collected)} valueColor="#10b981" />
+                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label={t('ui.wholesale.orders.stats.outstanding')} value={fmt(totals.outstanding)} valueColor={totals.outstanding > 0 ? '#ef4444' : '#10b981'} />
+                    <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={`${t('ui.wholesale.orders.stats.overdue')}${totals.overdueCount > 0 ? ` (${totals.overdueCount})` : ''}`} value={fmt(totals.overdue)} valueColor={totals.overdue > 0 ? '#ef4444' : undefined} />
                 </div>
             ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                    <SummaryCard icon={ShoppingCart} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Total Wholesale Sales" value={fmt(totals.sales)} />
-                    <SummaryCard icon={DollarSign} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Collected" value={fmt(totals.collected)} valueColor="#10b981" />
-                    <SummaryCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={fmt(totals.outstanding)} valueColor={totals.outstanding > 0 ? '#ef4444' : '#10b981'} />
-                    <SummaryCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={`Overdue${totals.overdueCount > 0 ? ` (${totals.overdueCount})` : ''}`} value={fmt(totals.overdue)} valueColor={totals.overdue > 0 ? '#ef4444' : undefined} />
+                    <SummaryCard icon={ShoppingCart} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label={t('ui.wholesale.orders.stats.totalSales')} value={fmt(totals.sales)} />
+                    <SummaryCard icon={DollarSign} gradient="linear-gradient(135deg, #10b981, #34d399)" label={t('ui.wholesale.orders.stats.collected')} value={fmt(totals.collected)} valueColor="#10b981" />
+                    <SummaryCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label={t('ui.wholesale.orders.stats.outstanding')} value={fmt(totals.outstanding)} valueColor={totals.outstanding > 0 ? '#ef4444' : '#10b981'} />
+                    <SummaryCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={`${t('ui.wholesale.orders.stats.overdue')}${totals.overdueCount > 0 ? ` (${totals.overdueCount})` : ''}`} value={fmt(totals.overdue)} valueColor={totals.overdue > 0 ? '#ef4444' : undefined} />
                 </div>
             )}
 
@@ -439,7 +445,7 @@ const WholesaleOrdersPage: React.FC = () => {
                     <MobileSearchBar
                         searchValue={search}
                         onSearchChange={setSearch}
-                        placeholder="Search customer, phone, invoice…"
+                        placeholder={t('ui.wholesale.orders.searchPlaceholder')}
                         activeCount={activeFilterCount}
                         onOpenFilter={() => setIsFilterDrawerOpen(true)}
                         onAdd={openCreate}
@@ -451,36 +457,36 @@ const WholesaleOrdersPage: React.FC = () => {
                         onClear={clearFilters}
                         searchValue={search}
                         onSearchChange={setSearch}
-                        searchPlaceholder="Search customer, phone, invoice…"
+                        searchPlaceholder={t('ui.wholesale.orders.searchPlaceholder')}
                         onRefresh={() => fetchWholesaleOrders()}
                         isRefreshing={isLoading}
                     >
                         <MobileChipGroup
-                            title="Pay Status"
-                            options={(['All', 'Unpaid', 'Partial', 'Paid'] as const).map(v => ({ value: v, count: payCounts[v] || 0 }))}
+                            title={t('ui.wholesale.orders.filters.payStatus')}
+                            options={(['All', 'Unpaid', 'Partial', 'Paid'] as const).map(v => ({ value: v, label: v === 'All' ? t('common.all') : payStatusLabel(v), count: payCounts[v] || 0 }))}
                             selected={payFilter}
                             onSelect={(v) => setPayFilter(v as any)}
                         />
                         <MobileChipGroup
-                            title="Order Status"
-                            options={['All', 'Open', 'Delivered', 'Cancelled'].map(v => ({ value: v }))}
+                            title={t('ui.wholesale.orders.filters.orderStatus')}
+                            options={['All', 'Open', 'Delivered', 'Cancelled'].map(v => ({ value: v, label: v === 'All' ? t('common.all') : orderStatusLabel(v) }))}
                             selected={statusFilter}
                             onSelect={(v) => setStatusFilter(v as any)}
                         />
                         <MobileChipGroup
-                            title="Customer"
-                            options={['All', ...customerNames].map(v => ({ value: v }))}
+                            title={t('ui.wholesale.common.customer')}
+                            options={['All', ...customerNames].map(v => ({ value: v, label: v === 'All' ? t('common.all') : v }))}
                             selected={customerFilter}
                             onSelect={setCustomerFilter}
                         />
                         <div>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>Order Date</div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>{t('ui.wholesale.orders.filters.orderDate')}</div>
                             <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
                                 <DateRangePicker value={dateRange} onChange={setDateRange} />
                             </div>
                         </div>
                         <div>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>Payment Date (Due)</div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>{t('ui.wholesale.orders.filters.paymentDateDue')}</div>
                             <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
                                 <DateRangePicker value={dueRange} onChange={setDueRange} />
                             </div>
@@ -493,7 +499,7 @@ const WholesaleOrdersPage: React.FC = () => {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
                 <div style={{ position: 'relative', flex: '1 1 240px', minWidth: '200px' }}>
                     <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-                    <input className="search-input" style={{ width: '100%', paddingLeft: '36px' }} placeholder="Search customer, phone, invoice…" value={search} onChange={e => setSearch(e.target.value)} />
+                    <input className="search-input" style={{ width: '100%', paddingLeft: '36px' }} placeholder={t('ui.wholesale.orders.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
                 <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                     {(['All', 'Unpaid', 'Partial', 'Paid'] as const).map(tab => (
@@ -508,7 +514,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                 display: 'flex', alignItems: 'center', gap: '5px',
                             }}
                         >
-                            {tab}
+                            {tab === 'All' ? t('common.all') : payStatusLabel(tab)}
                             <span style={{ background: payFilter === tab ? 'rgba(255,255,255,0.25)' : 'var(--color-bg)', padding: '1px 7px', borderRadius: '12px', fontSize: '10px', fontWeight: 700 }}>{payCounts[tab] || 0}</span>
                         </button>
                     ))}
@@ -518,10 +524,10 @@ const WholesaleOrdersPage: React.FC = () => {
                     onChange={e => setStatusFilter(e.target.value as any)}
                     style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
                 >
-                    <option value="All">All Statuses</option>
-                    <option value="Open">Open</option>
-                    <option value="Delivered">Delivered</option>
-                    <option value="Cancelled">Cancelled</option>
+                    <option value="All">{t('ui.wholesale.orders.filters.allStatuses')}</option>
+                    <option value="Open">{orderStatusLabel('Open')}</option>
+                    <option value="Delivered">{orderStatusLabel('Delivered')}</option>
+                    <option value="Cancelled">{orderStatusLabel('Cancelled')}</option>
                 </select>
                 <select
                     value={customerFilter}
@@ -529,22 +535,22 @@ const WholesaleOrdersPage: React.FC = () => {
                     className="d2-khmer"
                     style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '12px', fontWeight: 500, cursor: 'pointer', maxWidth: '200px' }}
                 >
-                    <option value="All">All Customers</option>
+                    <option value="All">{t('ui.wholesale.common.allCustomers')}</option>
                     {customerNames.map(n => <option key={n} value={n}>{n}</option>)}
                 </select>
                 <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px 2px 2px 10px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Order</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{t('ui.wholesale.orders.filters.order')}</span>
                     <DateRangePicker value={dateRange} onChange={setDateRange} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px 2px 2px 10px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Payment</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{t('ui.wholesale.orders.filters.payment')}</span>
                     <DateRangePicker value={dueRange} onChange={setDueRange} />
                 </div>
                 {/* Clear every filter (payment, status, search) */}
                 <button
                     onClick={clearFilters}
                     disabled={!hasActiveFilters}
-                    title={hasActiveFilters ? 'Clear all filters' : 'No filters applied'}
+                    title={hasActiveFilters ? t('ui.wholesale.common.clearAllFilters') : t('ui.wholesale.common.noFilters')}
                     style={{
                         display: 'flex', alignItems: 'center', gap: '6px',
                         padding: '8px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
@@ -556,25 +562,25 @@ const WholesaleOrdersPage: React.FC = () => {
                         transition: 'all 0.2s ease', whiteSpace: 'nowrap',
                     }}
                 >
-                    <FilterX size={15} /> Clear
+                    <FilterX size={15} /> {t('ui.wholesale.common.clear')}
                 </button>
                 <button className="secondary-button" onClick={() => fetchWholesaleOrders()}>
-                    <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> Refresh
+                    <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} /> {t('ui.wholesale.common.refresh')}
                 </button>
-                <button className="primary-button" disabled={tableMissing} onClick={openCreate}><Plus size={18} /> New Wholesale Order</button>
+                <button className="primary-button" disabled={tableMissing} onClick={openCreate}><Plus size={18} /> {t('ui.wholesale.orders.newOrder')}</button>
             </div>
             )}
 
             {tableMissing ? (
                 <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
-                    <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>Database setup needed</p>
-                    <p style={{ fontSize: '13px' }}>Run <code>migrations/full_schema.sql</code> in your Supabase SQL editor, then Refresh.</p>
+                    <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>{t('ui.wholesale.common.dbSetupNeeded')}</p>
+                    <p style={{ fontSize: '13px' }}>{t('ui.wholesale.common.dbSetupRun')} <code>migrations/full_schema.sql</code> {t('ui.wholesale.common.dbSetupThen')}</p>
                 </div>
             ) : filtered.length === 0 ? (
                 <div className="glass-panel" style={{ padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <ShoppingCart size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
-                    <p>No wholesale orders yet. Create one to start tracking customer credit.</p>
+                    <p>{t('ui.wholesale.orders.empty')}</p>
                 </div>
             ) : isMobile ? (
                 // Mobile: inbox-style rows (same pattern as Purchase Orders) — tap for details.
@@ -591,12 +597,12 @@ const WholesaleOrdersPage: React.FC = () => {
                                 onClick={() => setViewOrder(o)}
                                 style={{ borderBottom: '1px solid var(--color-border)' }}
                                 actions={[
-                                    { icon: Eye, label: 'View', color: '#6366F1', onClick: () => setViewOrder(o) },
-                                    ...(isAdmin && o.status !== 'Cancelled' ? [{ icon: Pencil, label: 'Edit', color: '#8B5CF6', onClick: () => openEdit(o) }] : []),
+                                    { icon: Eye, label: t('ui.wholesale.common.view'), color: '#6366F1', onClick: () => setViewOrder(o) },
+                                    ...(isAdmin && o.status !== 'Cancelled' ? [{ icon: Pencil, label: t('common.edit'), color: '#8B5CF6', onClick: () => openEdit(o) }] : []),
                                     canPay
-                                        ? { icon: DollarSign, label: 'Pay', color: '#10B981', onClick: () => openPay(o) }
-                                        : { icon: Printer, label: 'Invoice', color: '#2563EB', onClick: () => handlePrintInvoice(o) },
-                                    { icon: Copy, label: 'Copy', color: '#6B7280', onClick: () => handleCopyOrder(o) },
+                                        ? { icon: DollarSign, label: t('ui.wholesale.common.pay'), color: '#10B981', onClick: () => openPay(o) }
+                                        : { icon: Printer, label: t('ui.wholesale.common.invoice'), color: '#2563EB', onClick: () => handlePrintInvoice(o) },
+                                    { icon: Copy, label: t('ui.wholesale.common.copy'), color: '#6B7280', onClick: () => handleCopyOrder(o) },
                                 ]}
                             >
                             <div
@@ -616,14 +622,14 @@ const WholesaleOrdersPage: React.FC = () => {
                                     </span>
                                     {balance > 0.005 && o.status !== 'Cancelled' && (
                                         <span style={{ fontSize: '12px', fontWeight: 700, color: '#ef4444', flexShrink: 0 }}>
-                                            Owe {fmt(balance)}
+                                            {fill(t('ui.wholesale.orders.owe'), { amount: fmt(balance) })}
                                         </span>
                                     )}
                                 </div>
                                 <div style={{ display: 'flex', gap: '4px', marginTop: '6px', flexWrap: 'wrap' }}>
-                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: oc.bg, color: oc.color }}>{o.status || 'Open'}</span>
-                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: pc.bg, color: pc.color }}>{o.payment_status || 'Unpaid'}</span>
-                                    {late !== null && <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>{late}d OVERDUE</span>}
+                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: oc.bg, color: oc.color }}>{orderStatusLabel(o.status)}</span>
+                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: pc.bg, color: pc.color }}>{payStatusLabel(o.payment_status)}</span>
+                                    {late !== null && <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>{fill(t('ui.wholesale.orders.daysOverdue'), { n: late })}</span>}
                                 </div>
                             </div>
                             </SwipeRow>
@@ -632,20 +638,20 @@ const WholesaleOrdersPage: React.FC = () => {
                     {/* Column totals across every filtered order */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 14px', background: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}>
                         <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                            Total · {footerTotals.count} order{footerTotals.count === 1 ? '' : 's'} · {footerTotals.items} items
+                            {fill(t(footerTotals.count === 1 ? 'ui.wholesale.orders.footerMobileOne' : 'ui.wholesale.orders.footerMobile'), { count: footerTotals.count, items: footerTotals.items })}
                         </span>
                         <span style={{ fontSize: '12.5px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
                             <span style={{ color: 'var(--color-text-main)' }}>{fmt(footerTotals.total)}</span>
-                            <span style={{ color: '#059669' }}> · {fmt(footerTotals.paid)} paid</span>
-                            <span style={{ color: footerTotals.balance > 0.005 ? '#ef4444' : '#059669' }}> · {fmt(footerTotals.balance)} due</span>
+                            <span style={{ color: '#059669' }}> · {fill(t('ui.wholesale.orders.paidAmt'), { amount: fmt(footerTotals.paid) })}</span>
+                            <span style={{ color: footerTotals.balance > 0.005 ? '#ef4444' : '#059669' }}> · {fill(t('ui.wholesale.orders.dueAmt'), { amount: fmt(footerTotals.balance) })}</span>
                         </span>
                     </div>
                     {/* Compact pager */}
                     {totalPages > 1 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'var(--color-bg)' }}>
-                            <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage === 1} style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: safePage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: safePage === 1 ? 'not-allowed' : 'pointer' }}>Prev</button>
-                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Page {safePage} / {totalPages}</span>
-                            <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages} style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: safePage >= totalPages ? 'var(--color-text-muted)' : 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: safePage >= totalPages ? 'not-allowed' : 'pointer' }}>Next</button>
+                            <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage === 1} style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: safePage === 1 ? 'var(--color-text-muted)' : 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: safePage === 1 ? 'not-allowed' : 'pointer' }}>{t('ui.wholesale.common.prev')}</button>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{fill(t('ui.wholesale.common.pageOfShort'), { page: safePage, total: totalPages })}</span>
+                            <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages} style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: safePage >= totalPages ? 'var(--color-text-muted)' : 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: safePage >= totalPages ? 'not-allowed' : 'pointer' }}>{t('common.next')}</button>
                         </div>
                     )}
                 </div>
@@ -655,25 +661,25 @@ const WholesaleOrdersPage: React.FC = () => {
                         <thead>
                             <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
                                 {([
-                                    { key: 'invoice', label: 'Invoice', align: 'left' },
-                                    { key: 'customer', label: 'Customer', align: 'left' },
-                                    { key: 'order_date', label: 'Date', align: 'left' },
-                                    { key: 'due_date', label: 'Due', align: 'left' },
-                                    { key: 'payment_date', label: 'Payment Date', align: 'left' },
-                                    { key: 'items', label: 'Items', align: 'center' },
-                                    { key: 'total', label: 'Total', align: 'right' },
-                                    { key: 'paid', label: 'Paid', align: 'right' },
-                                    { key: 'balance', label: 'Balance', align: 'right' },
-                                    { key: 'ostatus', label: 'Status', align: 'center' },
-                                    { key: 'status', label: 'Payment', align: 'center' },
-                                    { key: null, label: 'Actions', align: 'center' },
+                                    { key: 'invoice', label: t('ui.wholesale.common.invoice'), align: 'left' },
+                                    { key: 'customer', label: t('ui.wholesale.common.customer'), align: 'left' },
+                                    { key: 'order_date', label: t('ui.wholesale.common.date'), align: 'left' },
+                                    { key: 'due_date', label: t('ui.wholesale.common.due'), align: 'left' },
+                                    { key: 'payment_date', label: t('ui.wholesale.common.paymentDate'), align: 'left' },
+                                    { key: 'items', label: t('ui.wholesale.common.items'), align: 'center' },
+                                    { key: 'total', label: t('common.total'), align: 'right' },
+                                    { key: 'paid', label: t('status.paid'), align: 'right' },
+                                    { key: 'balance', label: t('ui.wholesale.common.balance'), align: 'right' },
+                                    { key: 'ostatus', label: t('ui.wholesale.common.status'), align: 'center' },
+                                    { key: 'status', label: t('ui.wholesale.common.payment'), align: 'center' },
+                                    { key: null, label: t('common.actions'), align: 'center' },
                                 ] as Array<{ key: WsSortKey | null; label: string; align: 'left' | 'center' | 'right' }>).map(col => {
                                     const isSorted = col.key !== null && sortConfig?.key === col.key;
                                     return (
                                         <th
-                                            key={col.label}
+                                            key={col.key ?? 'actions'}
                                             onClick={col.key ? () => handleSort(col.key!) : undefined}
-                                            title={col.key ? 'Click to sort' : undefined}
+                                            title={col.key ? t('ui.wholesale.common.clickToSort') : undefined}
                                             style={{ ...thStyle, textAlign: col.align, cursor: col.key ? 'pointer' : 'default', userSelect: 'none', color: isSorted ? 'var(--color-primary)' : thStyle.color }}
                                         >
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', verticalAlign: 'middle' }}>
@@ -707,7 +713,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                             {o.due_date ? (
                                                 <span style={{ color: late !== null ? '#ef4444' : 'var(--color-text-secondary)', fontWeight: late !== null ? 600 : 400 }}>
                                                     {new Date(o.due_date).toLocaleDateString('en-GB').replace(/\//g, '-')}
-                                                    {late !== null && <span style={{ marginLeft: '6px', fontSize: '11px', fontWeight: 700 }}>{late}d late</span>}
+                                                    {late !== null && <span style={{ marginLeft: '6px', fontSize: '11px', fontWeight: 700 }}>{fill(t('ui.wholesale.orders.daysLate'), { n: late })}</span>}
                                                 </span>
                                             ) : '—'}
                                         </td>
@@ -719,10 +725,10 @@ const WholesaleOrdersPage: React.FC = () => {
                                         <td style={{ ...tdStyle, textAlign: 'right', color: 'var(--color-text-secondary)' }}>{fmt(o.amount_paid || 0)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: balance > 0.005 ? '#ef4444' : '#059669' }}>{fmt(balance)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'center' }}>
-                                            <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: orderStatusConfig(o.status).bg, color: orderStatusConfig(o.status).color }}>{o.status || 'Open'}</span>
+                                            <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: orderStatusConfig(o.status).bg, color: orderStatusConfig(o.status).color }}>{orderStatusLabel(o.status)}</span>
                                         </td>
                                         <td style={{ ...tdStyle, textAlign: 'center' }}>
-                                            <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: pc.bg, color: pc.color }}>{o.payment_status || 'Unpaid'}</span>
+                                            <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: pc.bg, color: pc.color }}>{payStatusLabel(o.payment_status)}</span>
                                             {paidPercent > 0 && paidPercent < 100 && (
                                                 <div style={{ marginTop: '6px' }}>
                                                     <div style={{ width: '60px', height: '4px', borderRadius: '2px', background: 'var(--color-border)', margin: '0 auto', overflow: 'hidden' }}>
@@ -734,36 +740,36 @@ const WholesaleOrdersPage: React.FC = () => {
                                         </td>
                                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                                                <button onClick={() => setViewOrder(o)} title="View Details" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                <button onClick={() => setViewOrder(o)} title={t('ui.wholesale.common.viewDetails')} style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                     <Eye size={15} />
                                                 </button>
                                                 {isAdmin && o.status !== 'Cancelled' && (
-                                                    <button onClick={() => openEdit(o)} title="Edit Order" style={{ background: 'rgba(139,92,246,0.1)', border: 'none', cursor: 'pointer', color: '#8b5cf6', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                    <button onClick={() => openEdit(o)} title={t('ui.wholesale.orders.editOrder')} style={{ background: 'rgba(139,92,246,0.1)', border: 'none', cursor: 'pointer', color: '#8b5cf6', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                         <Pencil size={15} />
                                                     </button>
                                                 )}
-                                                <button onClick={() => handleCopyOrder(o)} title="Copy Details" style={{ background: 'rgba(107,114,128,0.08)', border: 'none', cursor: 'pointer', color: '#6b7280', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                <button onClick={() => handleCopyOrder(o)} title={t('ui.wholesale.orders.copyDetails')} style={{ background: 'rgba(107,114,128,0.08)', border: 'none', cursor: 'pointer', color: '#6b7280', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                     <Copy size={15} />
                                                 </button>
-                                                <button onClick={() => handlePrintInvoice(o)} title="Print Invoice" style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                <button onClick={() => handlePrintInvoice(o)} title={t('ui.wholesale.common.printInvoice')} style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                     <Printer size={15} />
                                                 </button>
                                                 {o.status === 'Open' && (
-                                                    <button onClick={() => handleMarkDelivered(o)} disabled={busyOrderIds.has(o.id)} title="Mark Delivered" style={{ background: 'rgba(16,185,129,0.12)', border: 'none', cursor: busyOrderIds.has(o.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(o.id) ? 0.6 : 1, color: '#059669', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                    <button onClick={() => handleMarkDelivered(o)} disabled={busyOrderIds.has(o.id)} title={t('ui.wholesale.orders.markDelivered')} style={{ background: 'rgba(16,185,129,0.12)', border: 'none', cursor: busyOrderIds.has(o.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(o.id) ? 0.6 : 1, color: '#059669', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                         <PackageCheck size={15} />
                                                     </button>
                                                 )}
                                                 {o.status !== 'Cancelled' && (
-                                                    <button onClick={() => handleCancelOrder(o)} disabled={busyOrderIds.has(o.id)} title="Cancel Order (returns stock)" style={{ background: 'rgba(245,158,11,0.1)', border: 'none', cursor: busyOrderIds.has(o.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(o.id) ? 0.6 : 1, color: '#d97706', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                    <button onClick={() => handleCancelOrder(o)} disabled={busyOrderIds.has(o.id)} title={t('ui.wholesale.orders.cancelOrder')} style={{ background: 'rgba(245,158,11,0.1)', border: 'none', cursor: busyOrderIds.has(o.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(o.id) ? 0.6 : 1, color: '#d97706', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                         <Ban size={15} />
                                                     </button>
                                                 )}
                                                 {o.status !== 'Cancelled' && balance > 0.005 && (
-                                                    <button onClick={() => openPay(o)} title="Record Payment" style={{ background: 'rgba(16,185,129,0.08)', border: 'none', cursor: 'pointer', color: '#10b981', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                    <button onClick={() => openPay(o)} title={t('ui.wholesale.common.recordPayment')} style={{ background: 'rgba(16,185,129,0.08)', border: 'none', cursor: 'pointer', color: '#10b981', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                         <DollarSign size={15} />
                                                     </button>
                                                 )}
-                                                <button onClick={() => handleDelete(o)} disabled={busyOrderIds.has(o.id)} title="Delete" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: busyOrderIds.has(o.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(o.id) ? 0.6 : 1, color: '#ef4444', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
+                                                <button onClick={() => handleDelete(o)} disabled={busyOrderIds.has(o.id)} title={t('common.delete')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: busyOrderIds.has(o.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(o.id) ? 0.6 : 1, color: '#ef4444', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}>
                                                     <Trash2 size={15} />
                                                 </button>
                                             </div>
@@ -775,7 +781,7 @@ const WholesaleOrdersPage: React.FC = () => {
                         <tfoot>
                             <tr style={{ fontWeight: 700 }}>
                                 <td colSpan={5} style={{ ...tdStyle, fontWeight: 700, color: 'var(--color-text-main)', textTransform: 'uppercase', fontSize: '12px', letterSpacing: '0.4px' }}>
-                                    Total · {footerTotals.count} order{footerTotals.count === 1 ? '' : 's'}
+                                    {fill(t(footerTotals.count === 1 ? 'ui.wholesale.orders.footerOne' : 'ui.wholesale.orders.footer'), { count: footerTotals.count })}
                                 </td>
                                 <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700 }}>{footerTotals.items}</td>
                                 <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800, color: 'var(--color-text-main)' }}>{fmt(footerTotals.total)}</td>
@@ -788,11 +794,11 @@ const WholesaleOrdersPage: React.FC = () => {
                     {/* Pagination */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap', gap: '10px' }}>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                            Showing {sortedOrders.length === 0 ? 0 : (safePage - 1) * itemsPerPage + 1} to {Math.min(safePage * itemsPerPage, sortedOrders.length)} of {sortedOrders.length} entries
+                            {fill(t('ui.wholesale.common.showing'), { from: sortedOrders.length === 0 ? 0 : (safePage - 1) * itemsPerPage + 1, to: Math.min(safePage * itemsPerPage, sortedOrders.length), total: sortedOrders.length })}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.show')}</span>
                                 <select value={itemsPerPage} onChange={e => setItemsPerPage(Number(e.target.value))} style={{ padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '12px', cursor: 'pointer', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
                                     {[100, 200, 500].map(n => <option key={n} value={n}>{n}</option>)}
                                 </select>
@@ -802,7 +808,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                     <ChevronLeft size={15} />
                                 </button>
                                 <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', margin: '0 8px' }}>
-                                    Page <span style={{ fontWeight: 700, color: 'var(--color-text)' }}>{safePage}</span> of {totalPages}
+                                    {t('ui.wholesale.common.page')} <span style={{ fontWeight: 700, color: 'var(--color-text)' }}>{safePage}</span> {t('ui.wholesale.common.of')} {totalPages}
                                 </span>
                                 <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} style={{ padding: '5px', opacity: safePage === totalPages ? 0.4 : 1, border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface)', cursor: safePage === totalPages ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', color: 'var(--color-text)' }}>
                                     <ChevronRight size={15} />
@@ -827,8 +833,8 @@ const WholesaleOrdersPage: React.FC = () => {
                                     {editingOrder ? <Pencil size={20} /> : <ShoppingCart size={20} />}
                                 </div>
                                 <div>
-                                    <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>{editingOrder ? `Edit ${editingOrder.invoice_number || 'Wholesale Order'}` : 'New Wholesale Order'}</h2>
-                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{editingOrder ? 'Changing products or quantities reconciles stock and the cost-of-goods entry' : 'Sale on credit — stock leaves now, payment comes later'}</p>
+                                    <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>{editingOrder ? fill(t('ui.wholesale.orders.editTitle'), { invoice: editingOrder.invoice_number || t('ui.wholesale.orders.copy.heading') }) : t('ui.wholesale.orders.newOrder')}</h2>
+                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{editingOrder ? t('ui.wholesale.orders.editHint') : t('ui.wholesale.orders.newHint')}</p>
                                 </div>
                             </div>
                             <button onClick={closeOrderModal} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -840,46 +846,46 @@ const WholesaleOrdersPage: React.FC = () => {
                         <div style={{ padding: isMobile ? '12px' : '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '20px' }}>
                             {/* Customer */}
                             <div style={sectionCard}>
-                                <h4 style={sectionHeading}><User size={15} /> Customer Information</h4>
+                                <h4 style={sectionHeading}><User size={15} /> {t('ui.wholesale.orders.form.customerInfo')}</h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
-                                        <label style={fieldLabel}>Customer *</label>
-                                        <input list="ws-customer-names" style={fieldInput} value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Type or pick a customer" />
+                                        <label style={fieldLabel}>{t('ui.wholesale.common.customer')} *</label>
+                                        <input list="ws-customer-names" style={fieldInput} value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder={t('ui.wholesale.orders.form.pickCustomer')} />
                                         <datalist id="ws-customer-names">
                                             {customers.map(c => <option key={c.id} value={c.name} />)}
                                         </datalist>
                                     </div>
                                     <div>
-                                        <label style={fieldLabel}>Phone</label>
-                                        <input style={fieldInput} value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="Optional" />
+                                        <label style={fieldLabel}>{t('ui.wholesale.common.phone')}</label>
+                                        <input style={fieldInput} value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder={t('ui.wholesale.common.optional')} />
                                     </div>
                                 </div>
                             </div>
 
                             {/* Order details */}
                             <div style={sectionCard}>
-                                <h4 style={sectionHeading}><Calendar size={15} /> Order Details</h4>
+                                <h4 style={sectionHeading}><Calendar size={15} /> {t('ui.wholesale.orders.form.orderDetails')}</h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : '1fr 1fr 1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
-                                        <label style={fieldLabel}>From Warehouse</label>
+                                        <label style={fieldLabel}>{t('ui.wholesale.orders.form.fromWarehouse')}</label>
                                         <select style={fieldInput} value={warehouseId} onChange={e => setWarehouseId(e.target.value)}>
                                             <option value="">—</option>
                                             {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label style={fieldLabel}>Order Date *</label>
+                                        <label style={fieldLabel}>{t('ui.wholesale.orders.filters.orderDate')} *</label>
                                         <input type="date" style={fieldInput} value={orderDate} onChange={e => setOrderDate(e.target.value)} />
                                     </div>
                                     <div>
-                                        <label style={fieldLabel}>Due Date</label>
+                                        <label style={fieldLabel}>{t('ui.wholesale.common.dueDate')}</label>
                                         <input type="date" style={fieldInput} value={dueDate} onChange={e => setDueDate(e.target.value)} />
                                     </div>
                                     <div>
-                                        <label style={fieldLabel}>Status</label>
+                                        <label style={fieldLabel}>{t('ui.wholesale.common.status')}</label>
                                         <select style={fieldInput} value={orderStatus} onChange={e => setOrderStatus(e.target.value as 'Open' | 'Delivered')}>
-                                            <option value="Open">Open</option>
-                                            <option value="Delivered">Delivered</option>
+                                            <option value="Open">{orderStatusLabel('Open')}</option>
+                                            <option value="Delivered">{orderStatusLabel('Delivered')}</option>
                                         </select>
                                     </div>
                                 </div>
@@ -887,15 +893,15 @@ const WholesaleOrdersPage: React.FC = () => {
 
                             {/* Reference */}
                             <div style={sectionCard}>
-                                <h4 style={sectionHeading}><FileSignature size={15} /> Reference & Notes</h4>
+                                <h4 style={sectionHeading}><FileSignature size={15} /> {t('ui.wholesale.orders.form.referenceNotes')}</h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
-                                        <label style={fieldLabel}>Invoice Number</label>
-                                        <input style={fieldInput} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="e.g. WS-2026-001" />
+                                        <label style={fieldLabel}>{t('ui.wholesale.orders.form.invoiceNumber')}</label>
+                                        <input style={fieldInput} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder={t('ui.wholesale.orders.form.invoicePlaceholder')} />
                                     </div>
                                     <div>
-                                        <label style={fieldLabel}>Notes</label>
-                                        <input style={fieldInput} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." />
+                                        <label style={fieldLabel}>{t('ui.wholesale.common.notes')}</label>
+                                        <input style={fieldInput} value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('ui.wholesale.common.optionalNotes')} />
                                     </div>
                                 </div>
                             </div>
@@ -904,11 +910,11 @@ const WholesaleOrdersPage: React.FC = () => {
                             <div style={sectionCard}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                     <h4 style={{ ...sectionHeading, marginBottom: 0 }}>
-                                        <Package size={15} /> Line Items
+                                        <Package size={15} /> {t('ui.wholesale.orders.form.lineItems')}
                                         <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{lines.length}</span>
                                     </h4>
                                     <button className="primary-button" style={{ padding: '7px 14px', fontSize: '12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600 }} onClick={() => setLines(prev => [...prev, { product_id: '', quantity: 1, unit_price: 0 }])}>
-                                        <Plus size={14} /> Add Product
+                                        <Plus size={14} /> {t('ui.wholesale.orders.form.addProduct')}
                                     </button>
                                 </div>
                                 {/* Mobile: the fixed-width columns need sideways scroll inside the card */}
@@ -917,10 +923,10 @@ const WholesaleOrdersPage: React.FC = () => {
                                         <thead>
                                             <tr style={{ background: 'var(--color-bg)' }}>
                                                 <th style={liTh(36)}>#</th>
-                                                <th style={{ ...liTh(), textAlign: 'left' }}>Product</th>
-                                                <th style={{ ...liTh(90), textAlign: 'right' }}>Qty</th>
-                                                <th style={{ ...liTh(130), textAlign: 'right' }}>Unit Price</th>
-                                                <th style={{ ...liTh(130), textAlign: 'right' }}>Subtotal</th>
+                                                <th style={{ ...liTh(), textAlign: 'left' }}>{t('ui.wholesale.common.product')}</th>
+                                                <th style={{ ...liTh(90), textAlign: 'right' }}>{t('ui.wholesale.common.qty')}</th>
+                                                <th style={{ ...liTh(130), textAlign: 'right' }}>{t('ui.wholesale.common.unitPrice')}</th>
+                                                <th style={{ ...liTh(130), textAlign: 'right' }}>{t('ui.wholesale.common.subtotal')}</th>
                                                 <th style={liTh(44)}></th>
                                             </tr>
                                         </thead>
@@ -930,7 +936,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                                     <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-muted)' }}>{idx + 1}</td>
                                                     <td style={{ padding: '10px 12px' }}>
                                                         <select style={{ ...fieldInput, padding: '8px 10px', fontSize: '13px' }} value={l.product_id || ''} onChange={e => setLine(idx, { product_id: e.target.value })}>
-                                                            <option value="">Select product...</option>
+                                                            <option value="">{t('ui.wholesale.orders.form.selectProduct')}</option>
                                                             {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                                         </select>
                                                     </td>
@@ -957,14 +963,14 @@ const WholesaleOrdersPage: React.FC = () => {
                         {/* Footer */}
                         <div style={{ padding: isMobile ? '12px 14px' : '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: isMobile ? '8px' : '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total</span>
+                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('common.total')}</span>
                                 <span style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 800, color: 'var(--color-primary)', letterSpacing: '-0.5px' }}>{fmt(orderTotal)}</span>
-                                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', padding: '3px 10px', borderRadius: '12px', fontWeight: 600 }}>{lines.length} item{lines.length !== 1 ? 's' : ''}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', padding: '3px 10px', borderRadius: '12px', fontWeight: 600 }}>{fill(lines.length !== 1 ? t('ui.wholesale.common.nItems') : t('ui.wholesale.common.oneItem'), { n: lines.length })}</span>
                             </div>
                             <div style={{ display: 'flex', gap: '10px', flex: isMobile ? '1 1 100%' : 'none' }}>
-                                <button className="secondary-button" onClick={closeOrderModal} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
+                                <button className="secondary-button" onClick={closeOrderModal} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, flex: isMobile ? '0 0 auto' : undefined }}>{t('common.cancel')}</button>
                                 <button className="primary-button" onClick={submitCreate} disabled={saving} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined }}>
-                                    <CheckCircle2 size={16} /> {saving ? 'Saving…' : (editingOrder ? 'Save Changes' : 'Create Order')}
+                                    <CheckCircle2 size={16} /> {saving ? t('ui.wholesale.common.saving') : (editingOrder ? t('ui.wholesale.common.saveChanges') : t('ui.wholesale.orders.createOrder'))}
                                 </button>
                             </div>
                         </div>
@@ -995,10 +1001,10 @@ const WholesaleOrdersPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: orderStatusConfig(viewOrder.status).bg, color: orderStatusConfig(viewOrder.status).color }}>{viewOrder.status || 'Open'}</span>
-                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: pc.bg, color: pc.color }}>{viewOrder.payment_status || 'Unpaid'}</span>
-                                    <button onClick={() => handlePrintInvoice(viewOrder)} title="Print Invoice" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 12px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #3B82F6, #2563EB)', color: 'white', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-                                        <Printer size={14} /> Invoice
+                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: orderStatusConfig(viewOrder.status).bg, color: orderStatusConfig(viewOrder.status).color }}>{orderStatusLabel(viewOrder.status)}</span>
+                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: pc.bg, color: pc.color }}>{payStatusLabel(viewOrder.payment_status)}</span>
+                                    <button onClick={() => handlePrintInvoice(viewOrder)} title={t('ui.wholesale.common.printInvoice')} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 12px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #3B82F6, #2563EB)', color: 'white', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                                        <Printer size={14} /> {t('ui.wholesale.common.invoice')}
                                     </button>
                                     <button onClick={() => setViewOrder(null)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                         <X size={18} />
@@ -1010,17 +1016,17 @@ const WholesaleOrdersPage: React.FC = () => {
                             <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                 {/* Info grid */}
                                 <div style={{ ...sectionCard, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px' }}>
-                                    <WDetail label="Order Date" value={viewOrder.order_date ? new Date(viewOrder.order_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
-                                    <WDetail label="Due Date" value={viewOrder.due_date ? new Date(viewOrder.due_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
-                                    <WDetail label="From Warehouse" value={whName} />
-                                    <WDetail label="Created By" value={viewOrder.created_by || '—'} />
-                                    {viewOrder.notes && <WDetail label="Notes" value={viewOrder.notes} span />}
+                                    <WDetail label={t('ui.wholesale.orders.filters.orderDate')} value={viewOrder.order_date ? new Date(viewOrder.order_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
+                                    <WDetail label={t('ui.wholesale.common.dueDate')} value={viewOrder.due_date ? new Date(viewOrder.due_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
+                                    <WDetail label={t('ui.wholesale.orders.form.fromWarehouse')} value={whName} />
+                                    <WDetail label={t('ui.wholesale.common.createdBy')} value={viewOrder.created_by || '—'} />
+                                    {viewOrder.notes && <WDetail label={t('ui.wholesale.common.notes')} value={viewOrder.notes} span />}
                                 </div>
 
                                 {/* Line items */}
                                 <div style={sectionCard}>
                                     <h4 style={{ ...sectionHeading, marginBottom: '14px' }}>
-                                        <Package size={15} /> Line Items
+                                        <Package size={15} /> {t('ui.wholesale.orders.form.lineItems')}
                                         <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewOrder.items?.length || 0}</span>
                                     </h4>
                                     <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
@@ -1030,10 +1036,10 @@ const WholesaleOrdersPage: React.FC = () => {
                                             <thead>
                                                 <tr style={{ background: 'var(--color-bg)' }}>
                                                     <th style={liTh(36)}>#</th>
-                                                    <th style={{ ...liTh(), textAlign: 'left' }}>Product</th>
-                                                    <th style={{ ...liTh(80), textAlign: 'right' }}>Qty</th>
-                                                    <th style={{ ...liTh(110), textAlign: 'right' }}>Unit Price</th>
-                                                    <th style={{ ...liTh(110), textAlign: 'right' }}>Subtotal</th>
+                                                    <th style={{ ...liTh(), textAlign: 'left' }}>{t('ui.wholesale.common.product')}</th>
+                                                    <th style={{ ...liTh(80), textAlign: 'right' }}>{t('ui.wholesale.common.qty')}</th>
+                                                    <th style={{ ...liTh(110), textAlign: 'right' }}>{t('ui.wholesale.common.unitPrice')}</th>
+                                                    <th style={{ ...liTh(110), textAlign: 'right' }}>{t('ui.wholesale.common.subtotal')}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -1055,11 +1061,11 @@ const WholesaleOrdersPage: React.FC = () => {
                                 {/* Payments */}
                                 <div style={sectionCard}>
                                     <h4 style={{ ...sectionHeading, marginBottom: '14px' }}>
-                                        <DollarSign size={15} /> Payment History
+                                        <DollarSign size={15} /> {t('ui.wholesale.common.paymentHistory')}
                                         <span style={{ background: '#10b981', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{payments.length}</span>
                                     </h4>
                                     {payments.length === 0 ? (
-                                        <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>No payments recorded yet.</div>
+                                        <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{t('ui.wholesale.common.noPaymentsYet')}</div>
                                     ) : (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             {payments.map(p => (
@@ -1070,7 +1076,7 @@ const WholesaleOrdersPage: React.FC = () => {
                                                     </div>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                         <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }}>{fmt(Number(p.amount) || 0)}</div>
-                                                        <button onClick={() => handleDeleteViewPayment(p)} disabled={busyOrderIds.has(viewOrder.id)} title="Delete Payment" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: busyOrderIds.has(viewOrder.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(viewOrder.id) ? 0.6 : 1, color: '#ef4444', padding: '6px', borderRadius: '6px' }}>
+                                                        <button onClick={() => handleDeleteViewPayment(p)} disabled={busyOrderIds.has(viewOrder.id)} title={t('ui.wholesale.common.deletePayment')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: busyOrderIds.has(viewOrder.id) ? 'not-allowed' : 'pointer', opacity: busyOrderIds.has(viewOrder.id) ? 0.6 : 1, color: '#ef4444', padding: '6px', borderRadius: '6px' }}>
                                                             <Trash2 size={14} />
                                                         </button>
                                                     </div>
@@ -1084,25 +1090,25 @@ const WholesaleOrdersPage: React.FC = () => {
                             {/* Footer */}
                             <div style={{ padding: '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Total </span><span style={{ fontSize: '18px', fontWeight: 800 }}>{fmt(viewOrder.total_amount || 0)}</span></div>
-                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Paid </span><span style={{ fontSize: '18px', fontWeight: 800, color: '#10b981' }}>{fmt(paid)}</span></div>
-                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Balance </span><span style={{ fontSize: '18px', fontWeight: 800, color: balance > 0.005 ? '#ef4444' : '#10b981' }}>{fmt(balance)}</span></div>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('common.total')} </span><span style={{ fontSize: '18px', fontWeight: 800 }}>{fmt(viewOrder.total_amount || 0)}</span></div>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('status.paid')} </span><span style={{ fontSize: '18px', fontWeight: 800, color: '#10b981' }}>{fmt(paid)}</span></div>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.balance')} </span><span style={{ fontSize: '18px', fontWeight: 800, color: balance > 0.005 ? '#ef4444' : '#10b981' }}>{fmt(balance)}</span></div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '10px' }}>
                                     {viewOrder.status !== 'Cancelled' && balance > 0.005 && (
                                         <button className="primary-button" onClick={() => { const o = viewOrder; setViewOrder(null); openPay(o); }} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <DollarSign size={16} /> Record Payment
+                                            <DollarSign size={16} /> {t('ui.wholesale.common.recordPayment')}
                                         </button>
                                     )}
                                     {isAdmin && viewOrder.status !== 'Cancelled' && (
                                         <button className="secondary-button" onClick={() => { const o = viewOrder; setViewOrder(null); openEdit(o); }} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <Pencil size={15} /> Edit
+                                            <Pencil size={15} /> {t('common.edit')}
                                         </button>
                                     )}
                                     <button className="secondary-button" onClick={() => handleCopyOrder(viewOrder)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <Copy size={15} /> Copy Details
+                                        <Copy size={15} /> {t('ui.wholesale.orders.copyDetails')}
                                     </button>
-                                    <button className="secondary-button" onClick={() => setViewOrder(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Close</button>
+                                    <button className="secondary-button" onClick={() => setViewOrder(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>{t('common.close')}</button>
                                 </div>
                             </div>
                         </div>

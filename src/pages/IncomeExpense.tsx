@@ -3,6 +3,8 @@ import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, DollarSign, Calendar, Ta
 import * as XLSX from 'xlsx';
 import { useStore } from '../context/StoreContext';
 import { useHeader } from '../context/HeaderContext';
+import { useLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
 import { useMobile } from '../hooks/useMobile';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { DateRangePicker } from '../components';
@@ -34,6 +36,16 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
     const location = useLocation();
+    // `t` is the transaction everywhere below, so the translator is `translate`.
+    const { t: translate } = useLanguage();
+    // Text under ui.orderFlow; the English text is the fallback for a missing key.
+    const tx = React.useCallback((key: string, en: string, vars?: Record<string, string | number>) => {
+        const k = `ui.orderFlow.${key}`;
+        const v = translate(k);
+        return fill(v !== k ? v : en, vars);
+    }, [translate]);
+    // Display label of a stored type ('Income' / 'Expense' / the 'All' filter value).
+    const typeLabel = (ty: string) => ty === 'Income' ? tx('income.income', 'Income') : ty === 'Expense' ? tx('income.expense', 'Expense') : ty === 'All' ? tx('income.all', 'All') : ty;
 
     // Derive filter type from URL path
     const getFilterFromPath = (): 'All' | 'Income' | 'Expense' => {
@@ -324,13 +336,13 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Income & Expense</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Track your cash flow manually</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{tx('income.title', 'Income & Expense')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{tx('income.subtitle', 'Track your cash flow manually')}</p>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, isModal]);
+    }, [setHeaderContent, isModal, tx]);
 
     // Computed list of shipping companies (including custom drivers)
     const allShippingCo = useMemo(() => {
@@ -590,7 +602,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
     const handleSave = async () => {
         if (!formData.amount || isNaN(Number(formData.amount))) {
-            alert('Please enter a valid amount');
+            alert(tx('income.invalidAmount', 'Please enter a valid amount'));
             return;
         }
 
@@ -600,7 +612,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
         if (formData.currency === 'KHR') {
             const rate = Number(formData.exchangeRate);
             if (!rate || isNaN(rate) || rate <= 0) {
-                alert('Please enter a valid exchange rate');
+                alert(tx('income.invalidRate', 'Please enter a valid exchange rate'));
                 return;
             }
             // Rounded to cents (older rows kept the raw division, e.g.
@@ -634,7 +646,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             if (editingTransaction && isKhrRow(editingTransaction)
                 && Math.abs(khrToUsd(Number(editingTransaction.original_amount), Number(editingTransaction.exchange_rate)) - Number(editingTransaction.amount)) >= 0.01
                 && Math.abs(Number(editingTransaction.amount) - finalAmount) >= 0.01
-                && !window.confirm(`This row was booked at ${formatUsd(Number(editingTransaction.amount))}. Saving books ${formatUsd(finalAmount)} instead. Continue?`)) return;
+                && !window.confirm(tx('income.rebookConfirm', 'This row was booked at {from}. Saving books {to} instead. Continue?', { from: formatUsd(Number(editingTransaction.amount)), to: formatUsd(finalAmount) }))) return;
         }
 
         try {
@@ -667,32 +679,32 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
             fetchAllCategories(); // Refresh global categories since a new one might have been added
         } catch (error) {
             console.error(error);
-            alert('Failed to save transaction');
+            alert(tx('income.saveFailed', 'Failed to save transaction'));
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (confirm('Are you sure you want to delete this transaction?')) {
+        if (confirm(tx('income.confirmDelete', 'Are you sure you want to delete this transaction?'))) {
             try {
                 await deleteTransaction(id);
                 await fetchTransactions();
             } catch (error) {
                 console.error(error);
-                alert('Failed to delete transaction');
+                alert(tx('income.deleteFailed', 'Failed to delete transaction'));
             }
         }
     };
 
     const handleBulkDelete = async () => {
         if (selectedIds.size === 0) return;
-        if (confirm(`Are you sure you want to delete ${selectedIds.size} transaction(s)?`)) {
+        if (confirm(tx('income.confirmBulkDelete', 'Are you sure you want to delete {n} transaction(s)?', { n: selectedIds.size }))) {
             try {
                 await deleteTransactions(Array.from(selectedIds));
                 setSelectedIds(new Set());
                 await fetchTransactions();
             } catch (error) {
                 console.error(error);
-                alert('Failed to delete transactions');
+                alert(tx('income.bulkDeleteFailed', 'Failed to delete transactions'));
             }
         }
     };
@@ -735,7 +747,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
     if (!hasPermission('manage_income_expense')) {
         return (
             <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                You do not have permission to view Income & Expense.
+                {tx('income.noPermission', 'You do not have permission to view Income & Expense.')}
             </div>
         );
     }
@@ -754,25 +766,25 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     compact={isMobile}
                     icon={TrendingUp}
                     gradient="linear-gradient(135deg, #3b82f6, #60a5fa)"
-                    label={isMobile ? 'Income' : 'Total Income'}
+                    label={isMobile ? tx('income.income', 'Income') : tx('income.totalIncome', 'Total Income')}
                     value={`$${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                    sub={`${stats.incomeCount} record${stats.incomeCount === 1 ? '' : 's'}`}
+                    sub={stats.incomeCount === 1 ? tx('income.recordOne', '{n} record', { n: stats.incomeCount }) : tx('income.recordMany', '{n} records', { n: stats.incomeCount })}
                     valueColor="var(--color-blue)"
                 />
                 <IeStatCard
                     compact={isMobile}
                     icon={TrendingDown}
                     gradient="linear-gradient(135deg, #ef4444, #f87171)"
-                    label={isMobile ? 'Expense' : 'Total Expense'}
+                    label={isMobile ? tx('income.expense', 'Expense') : tx('income.totalExpense', 'Total Expense')}
                     value={`$${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                    sub={`${stats.expenseCount} record${stats.expenseCount === 1 ? '' : 's'}`}
+                    sub={stats.expenseCount === 1 ? tx('income.recordOne', '{n} record', { n: stats.expenseCount }) : tx('income.recordMany', '{n} records', { n: stats.expenseCount })}
                     valueColor="var(--color-red)"
                 />
                 <IeStatCard
                     compact={isMobile}
                     icon={DollarSign}
                     gradient={stats.netBalance >= 0 ? 'linear-gradient(135deg, #10b981, #34d399)' : 'linear-gradient(135deg, #f59e0b, #fbbf24)'}
-                    label={isMobile ? 'Net' : 'Net Balance'}
+                    label={isMobile ? tx('income.net', 'Net') : tx('income.netBalance', 'Net Balance')}
                     value={`$${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     valueColor={stats.netBalance >= 0 ? '#10b981' : 'var(--color-red)'}
                 />
@@ -780,9 +792,9 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     compact={isMobile}
                     icon={ArrowRightLeft}
                     gradient="linear-gradient(135deg, #6366f1, #8b5cf6)"
-                    label={isMobile ? 'Txns' : 'Transactions'}
+                    label={isMobile ? tx('income.txnsShort', 'Txns') : tx('income.transactions', 'Transactions')}
                     value={String(filteredTransactions.length)}
-                    sub={`${stats.incomeCount} in · ${stats.expenseCount} out`}
+                    sub={tx('income.inOut', '{in} in · {out} out', { in: stats.incomeCount, out: stats.expenseCount })}
                 />
             </div>
 
@@ -795,7 +807,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                             <input
                                 type="text"
-                                placeholder="Search transactions..."
+                                placeholder={tx('income.searchShort', 'Search transactions...')}
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '14px', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}
@@ -811,11 +823,11 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             )}
                         </button>
                         {selectedIds.size > 0 && currentUser?.roleId === 'admin' && (
-                            <button onClick={handleBulkDelete} title="Delete Selected" style={{ width: '42px', height: '42px', borderRadius: '12px', border: 'none', background: 'var(--color-red)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                            <button onClick={handleBulkDelete} title={tx('income.deleteSelected', 'Delete Selected')} style={{ width: '42px', height: '42px', borderRadius: '12px', border: 'none', background: 'var(--color-red)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
                                 <Trash2 size={18} />
                             </button>
                         )}
-                        <button onClick={handleOpenAddModal} className="primary-button" title="Add Transaction" style={{ width: '42px', height: '42px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}>
+                        <button onClick={handleOpenAddModal} className="primary-button" title={tx('income.addTransaction', 'Add Transaction')} style={{ width: '42px', height: '42px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}>
                             <Plus size={22} />
                         </button>
                     </div>
@@ -835,7 +847,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     }}>
                         {/* Header */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Filter</h3>
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>{tx('income.filter', 'Filter')}</h3>
                             <button onClick={() => setIsFilterDrawerOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <X size={18} />
                             </button>
@@ -846,7 +858,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                             <input
                                 type="text"
-                                placeholder="Search transactions..."
+                                placeholder={tx('income.searchShort', 'Search transactions...')}
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '14px', background: 'var(--color-bg)', color: 'var(--color-text-main)' }}
@@ -860,7 +872,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             </div>
                             <button
                                 onClick={() => { refreshData(true); fetchTransactions(); }}
-                                title="Refresh"
+                                title={tx('deleted.refresh', 'Refresh')}
                                 style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                             >
                                 <RefreshCw size={17} />
@@ -868,19 +880,19 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         </div>
 
                         {/* Expanded filter groups */}
-                        <IeChipGroup title="Type" options={['All', 'Income', 'Expense']} selected={filterType} onSelect={(v) => setFilterType(v as any)} />
-                        <IeChipGroup title="Category" options={['All', ...uniqueCategories]} selected={filterCategory} onSelect={setFilterCategory} optionColor={cat => cat === 'All' ? undefined : categoryColorOf(cat)} />
-                        <IeChipGroup title="Shipping Co" options={['All', ...allShippingCo]} selected={filterShippingCo} onSelect={setFilterShippingCo} />
+                        <IeChipGroup title={tx('income.type', 'Type')} options={['All', 'Income', 'Expense']} selected={filterType} onSelect={(v) => setFilterType(v as any)} label={typeLabel} />
+                        <IeChipGroup title={tx('income.category', 'Category')} options={['All', ...uniqueCategories]} selected={filterCategory} onSelect={setFilterCategory} optionColor={cat => cat === 'All' ? undefined : categoryColorOf(cat)} label={opt => opt === 'All' ? tx('income.all', 'All') : opt} />
+                        <IeChipGroup title={tx('income.shippingCo', 'Shipping Co')} options={['All', ...allShippingCo]} selected={filterShippingCo} onSelect={setFilterShippingCo} label={opt => opt === 'All' ? tx('income.all', 'All') : opt} />
 
                         {/* Tools */}
                         <div>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Tools</div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{tx('income.tools', 'Tools')}</div>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <button onClick={() => { setShowBreakdown(v => !v); setIsFilterDrawerOpen(false); }} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: `1px solid ${showBreakdown ? 'var(--color-primary)' : 'var(--color-border)'}`, background: showBreakdown ? 'var(--color-primary)' : 'var(--color-bg)', color: showBreakdown ? 'white' : 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                    <PieChart size={15} /> Breakdown
+                                    <PieChart size={15} /> {tx('income.breakdown', 'Breakdown')}
                                 </button>
                                 <button onClick={exportToExcel} disabled={filteredTransactions.length === 0} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: filteredTransactions.length === 0 ? 0.5 : 1 }}>
-                                    <Download size={15} /> Export
+                                    <Download size={15} /> {tx('income.export', 'Export')}
                                 </button>
                             </div>
                         </div>
@@ -897,14 +909,14 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 }}
                                 style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}
                             >
-                                Clear
+                                {tx('income.clear', 'Clear')}
                             </button>
                             <button
                                 onClick={() => setIsFilterDrawerOpen(false)}
                                 className="primary-button"
                                 style={{ flex: 1, padding: '12px', borderRadius: '12px', fontWeight: 600, fontSize: '14px' }}
                             >
-                                Filter
+                                {tx('income.filter', 'Filter')}
                             </button>
                         </div>
                     </div>
@@ -933,7 +945,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                         <input
                             type="text"
-                            placeholder="Search name, category, phone, tracking ID..."
+                            placeholder={tx('income.search', 'Search name, category, phone, tracking ID...')}
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             style={{
@@ -967,10 +979,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                     setFilterShippingCo('All');
                                 }}
                                 style={{ padding: '8px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', height: '38px', borderRadius: '10px', color: '#EF4444', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s', flexShrink: 0 }}
-                                title="Clear Filters"
+                                title={tx('income.clearFilters', 'Clear Filters')}
                             >
                                 <FilterX size={16} />
-                                {!isMobile && 'Clear'}
+                                {!isMobile && tx('income.clear', 'Clear')}
                             </button>
                         )}
                     </div>
@@ -981,27 +993,27 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 onClick={handleBulkDelete}
                                 className="secondary-button hover-lift"
                                 style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', height: '38px', borderRadius: '10px', color: 'white', backgroundColor: 'var(--color-red)', border: 'none' }}
-                                title="Delete Selected"
+                                title={tx('income.deleteSelected', 'Delete Selected')}
                             >
                                 <Trash2 size={16} />
-                                {!isMobile && `Delete (${selectedIds.size})`}
+                                {!isMobile && tx('income.deleteN', 'Delete ({n})', { n: selectedIds.size })}
                             </button>
                         )}
                         <button
                             onClick={() => setShowBreakdown(v => !v)}
                             className="secondary-button"
                             style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', height: '38px', borderRadius: '10px', flexShrink: 0, background: showBreakdown ? 'var(--color-primary)' : undefined, color: showBreakdown ? 'white' : undefined, border: showBreakdown ? 'none' : undefined }}
-                            title="Category Breakdown"
+                            title={tx('income.categoryBreakdown', 'Category Breakdown')}
                         >
                             <PieChart size={18} />
-                            {!isMobile && 'Breakdown'}
+                            {!isMobile && tx('income.breakdown', 'Breakdown')}
                         </button>
                         <button
                             onClick={exportToExcel}
                             disabled={filteredTransactions.length === 0}
                             className="secondary-button"
                             style={{ padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '38px', width: '38px', borderRadius: '10px', flexShrink: 0, opacity: filteredTransactions.length === 0 ? 0.5 : 1 }}
-                            title="Export to Excel"
+                            title={tx('income.exportExcel', 'Export to Excel')}
                         >
                             <Download size={18} />
                         </button>
@@ -1016,14 +1028,14 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             }}
                             className="secondary-button"
                             style={{ padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '38px', width: '38px', borderRadius: '10px', flexShrink: 0 }}
-                            title="Refresh Transactions"
+                            title={tx('income.refreshTransactions', 'Refresh Transactions')}
                         >
                             <RefreshCw id="ie-refresh-btn" size={20} />
                         </button>
 
                         <button onClick={handleOpenAddModal} className="primary-button hover-lift" style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', height: '38px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)' }}>
                             <Plus size={20} />
-                            Add Transaction
+                            {tx('income.addTransaction', 'Add Transaction')}
                         </button>
                     </div>
                 </div>
@@ -1034,15 +1046,15 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         <button
                             onClick={() => setFilterType('All')}
                             style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'All' ? 'var(--color-surface)' : 'transparent', color: filterType === 'All' ? 'var(--color-text-main)' : 'var(--color-text-secondary)', fontWeight: filterType === 'All' ? 600 : 500, boxShadow: filterType === 'All' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
-                        >All</button>
+                        >{tx('income.all', 'All')}</button>
                         <button
                             onClick={() => setFilterType('Income')}
                             style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'Income' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Income' ? 'var(--color-blue)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Income' ? 600 : 500, boxShadow: filterType === 'Income' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
-                        >Income</button>
+                        >{tx('income.income', 'Income')}</button>
                         <button
                             onClick={() => setFilterType('Expense')}
                             style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', border: 'none', background: filterType === 'Expense' ? 'var(--color-surface)' : 'transparent', color: filterType === 'Expense' ? 'var(--color-red)' : 'var(--color-text-secondary)', fontWeight: filterType === 'Expense' ? 600 : 500, boxShadow: filterType === 'Expense' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', transition: 'all 0.2s', flex: 1 }}
-                        >Expense</button>
+                        >{tx('income.expense', 'Expense')}</button>
                     </div>
 
                     <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '1 1 200px', display: 'flex', alignItems: 'center' }}>
@@ -1066,7 +1078,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
                             onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                         >
-                            <option value="All" style={{ color: 'var(--color-text-main)' }}>All Categories</option>
+                            <option value="All" style={{ color: 'var(--color-text-main)' }}>{tx('income.allCategories', 'All Categories')}</option>
                             {uniqueCategories.map(cat => (
                                 <option key={cat} value={cat} style={{ color: categoryColorOf(cat) }}>{cat}</option>
                             ))}
@@ -1095,7 +1107,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             onFocus={e => e.target.style.borderColor = 'var(--color-primary)'}
                             onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                         >
-                            <option value="All">All Shipping Co</option>
+                            <option value="All">{tx('income.allShippingCo', 'All Shipping Co')}</option>
                             {allShippingCo.map(co => (
                                 <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
                             ))}
@@ -1111,21 +1123,21 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                 <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '16px', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px' }}>
                         {([
-                            { label: 'Income by Category', rows: categoryBreakdown.income, total: stats.totalIncome, color: 'var(--color-blue)', barColor: '#3b82f6' },
-                            { label: 'Expense by Category', rows: categoryBreakdown.expense, total: stats.totalExpense, color: 'var(--color-red)', barColor: '#ef4444' },
+                            { label: tx('income.incomeByCategory', 'Income by Category'), rows: categoryBreakdown.income, total: stats.totalIncome, color: 'var(--color-blue)', barColor: '#3b82f6' },
+                            { label: tx('income.expenseByCategory', 'Expense by Category'), rows: categoryBreakdown.expense, total: stats.totalExpense, color: 'var(--color-red)', barColor: '#ef4444' },
                         ]).map(section => (
                             <div key={section.label}>
                                 <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{section.label}</h4>
                                 {section.rows.length === 0 ? (
-                                    <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>No data in this range.</div>
+                                    <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{tx('income.noDataRange', 'No data in this range.')}</div>
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                         {section.rows.map(([cat, v]) => {
                                             const pct = section.total > 0 ? Math.round((v.amount / section.total) * 100) : 0;
                                             return (
-                                                <div key={cat} onClick={() => setFilterCategory(cat === 'Uncategorized' ? 'All' : cat)} style={{ cursor: 'pointer' }} title="Click to filter by this category">
+                                                <div key={cat} onClick={() => setFilterCategory(cat === 'Uncategorized' ? 'All' : cat)} style={{ cursor: 'pointer' }} title={tx('income.clickToFilter', 'Click to filter by this category')}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
-                                                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>{cat} <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({v.count})</span></span>
+                                                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>{cat === 'Uncategorized' ? tx('income.uncategorized', 'Uncategorized') : cat} <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({v.count})</span></span>
                                                         <span style={{ fontWeight: 700, color: section.color }}>${v.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ color: 'var(--color-text-muted)', fontWeight: 500, fontSize: '11px' }}>{pct}%</span></span>
                                                     </div>
                                                     <div style={{ width: '100%', height: '6px', borderRadius: '4px', background: 'var(--color-border)', overflow: 'hidden' }}>
@@ -1150,8 +1162,8 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--color-background)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                                 <Wallet size={32} color="var(--color-text-secondary)" style={{ opacity: 0.5 }} />
                             </div>
-                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '4px' }}>No transactions found</h3>
-                            <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', textAlign: 'center' }}>Try adjusting your filters or add a new record.</p>
+                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '4px' }}>{tx('income.emptyTitle', 'No transactions found')}</h3>
+                            <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', textAlign: 'center' }}>{tx('income.emptyHintShort', 'Try adjusting your filters or add a new record.')}</p>
                         </div>
                     ) : (
                         paginatedTransactions.map(t => {
@@ -1187,7 +1199,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                         <div className="moc-info">
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                 <span className="moc-customer-name">
-                                                    {t.category || 'Uncategorized'}
+                                                    {t.category || tx('income.uncategorized', 'Uncategorized')}
                                                 </span>
                                                 <span style={{ color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', fontWeight: 'bold', fontSize: '15px' }}>
                                                     {t.type === 'Income' ? '+' : '-'}${Number(t.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -1196,13 +1208,13 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                             </div>
                                             {!isExpanded && (
                                                 <div className="moc-products-summary" style={{ fontSize: '13px', color: '#4B5563', marginTop: '2px', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                    {t.description || 'No description'}
+                                                    {t.description || tx('income.noDescription', 'No description')}
                                                 </div>
                                             )}
                                             <div className="moc-meta-row" style={{ marginTop: '2px' }}>
                                                 <span>{parseDate(t.date).toLocaleDateString()}</span>
                                                 <span>•</span>
-                                                <span>{t.type}</span>
+                                                <span>{typeLabel(t.type)}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -1211,7 +1223,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                             {relatedOrder && (
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                                     <Wallet size={14} />
-                                                    <strong>Pay By:</strong>
+                                                    <strong>{tx('income.payByColon', 'Pay By:')}</strong>
                                                     <span style={{ color: 'var(--color-text-main)', fontWeight: 500 }}>
                                                         {relatedOrder.paymentMethod}
                                                     </span>
@@ -1224,7 +1236,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                     ) : (
                                                         <Truck size={14} />
                                                     )}
-                                                    <strong>Shipping Co:</strong>
+                                                    <strong>{tx('income.shippingCoColon', 'Shipping Co:')}</strong>
                                                     <span style={{ background: 'var(--color-primary-light)', color: 'var(--color-primary-dark)', padding: '2px 8px', borderRadius: '6px', fontWeight: 500, fontSize: '12px' }}>
                                                         {t.shipping_co}
                                                     </span>
@@ -1237,11 +1249,11 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                             )}
                                             <div className="moc-actions" style={{ padding: 0, marginTop: t.description ? 0 : '12px', justifyContent: 'flex-end', gap: '8px', borderTop: t.description ? 'none' : '1px dashed var(--color-border)', paddingTop: t.description ? 0 : '12px' }}>
                                                 <button onClick={(e) => { e.stopPropagation(); handleOpenEditModal(t); }} className="moc-action-btn" style={{ padding: '6px 16px', fontSize: '13px' }}>
-                                                    <Edit2 size={14} style={{ marginRight: '6px' }} /> Edit
+                                                    <Edit2 size={14} style={{ marginRight: '6px' }} /> {tx('income.edit', 'Edit')}
                                                 </button>
                                                 {currentUser?.roleId === 'admin' && (
                                                     <button onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }} className="moc-action-btn" style={{ padding: '6px 16px', fontSize: '13px', color: 'var(--color-red)' }}>
-                                                        <Trash2 size={14} style={{ marginRight: '6px' }} /> Delete
+                                                        <Trash2 size={14} style={{ marginRight: '6px' }} /> {tx('income.delete', 'Delete')}
                                                     </button>
                                                 )}
                                             </div>
@@ -1266,21 +1278,21 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                     />
                                 </th>
                                 {([
-                                    { key: 'date', label: 'Date', align: 'left' },
-                                    { key: 'type', label: 'Type', align: 'left' },
-                                    { key: 'category', label: 'Category', align: 'left' },
-                                    { key: 'shipping', label: 'Shipping Co', align: 'left' },
-                                    { key: 'description', label: 'Description', align: 'left' },
-                                    { key: 'payby', label: 'Pay By', align: 'left' },
-                                    { key: 'amount', label: 'Amount', align: 'right' },
-                                    { key: null, label: 'Actions', align: 'center' },
+                                    { key: 'date', label: tx('income.col.date', 'Date'), align: 'left' },
+                                    { key: 'type', label: tx('income.type', 'Type'), align: 'left' },
+                                    { key: 'category', label: tx('income.category', 'Category'), align: 'left' },
+                                    { key: 'shipping', label: tx('income.shippingCo', 'Shipping Co'), align: 'left' },
+                                    { key: 'description', label: tx('income.col.description', 'Description'), align: 'left' },
+                                    { key: 'payby', label: tx('income.col.payBy', 'Pay By'), align: 'left' },
+                                    { key: 'amount', label: tx('income.col.amount', 'Amount'), align: 'right' },
+                                    { key: null, label: tx('income.col.actions', 'Actions'), align: 'center' },
                                 ] as Array<{ key: IeSortKey | null; label: string; align: 'left' | 'right' | 'center' }>).map(col => {
                                     const isSorted = col.key !== null && sortConfig?.key === col.key;
                                     return (
                                         <th
                                             key={col.label}
                                             onClick={col.key ? () => handleSort(col.key!) : undefined}
-                                            title={col.key ? 'Click to sort' : undefined}
+                                            title={col.key ? tx('income.clickToSort', 'Click to sort') : undefined}
                                             style={{ padding: '10px 12px', color: isSorted ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontWeight: 600, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: col.align, position: 'sticky', top: headerTop, zIndex: 10, backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 0 var(--color-border)', cursor: col.key ? 'pointer' : 'default', userSelect: 'none', whiteSpace: 'nowrap' }}
                                         >
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', verticalAlign: 'middle' }}>
@@ -1304,8 +1316,8 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                             <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'var(--color-background)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                                                 <Wallet size={36} color="var(--color-text-secondary)" style={{ opacity: 0.5 }} />
                                             </div>
-                                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>No transactions found</h3>
-                                            <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>Try adjusting your filters or add a new record to see it here.</p>
+                                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{tx('income.emptyTitle', 'No transactions found')}</h3>
+                                            <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>{tx('income.emptyHint', 'Try adjusting your filters or add a new record to see it here.')}</p>
                                         </div>
                                     </td>
                                 </tr>
@@ -1342,7 +1354,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 color: t.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)'
                                             }}>
                                                 {t.type === 'Income' ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                                                {t.type}
+                                                {typeLabel(t.type)}
                                             </span>
                                         </td>
                                         <td style={{ padding: '10px 12px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)' }}>
@@ -1389,7 +1401,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                 <button
                                                     onClick={() => handleOpenEditModal(t)}
                                                     className="icon-button"
-                                                    title="Edit"
+                                                    title={tx('income.edit', 'Edit')}
                                                 >
                                                     <Edit2 size={16} />
                                                 </button>
@@ -1398,7 +1410,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                                         onClick={() => handleDelete(t.id)}
                                                         className="icon-button"
                                                         style={{ color: 'var(--color-red)' }}
-                                                        title="Delete"
+                                                        title={tx('income.delete', 'Delete')}
                                                     >
                                                         <Trash2 size={16} />
                                                     </button>
@@ -1432,15 +1444,15 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     gap: isMobile ? '12px' : '18px',
                     flexWrap: 'wrap'
                 }}>
-                    <span style={{ color: 'var(--color-text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals</span>
+                    <span style={{ color: 'var(--color-text-secondary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{tx('income.totals', 'Totals')}</span>
                     <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-blue)' }}>
-                        Income +${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {tx('income.income', 'Income')} +${stats.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-red)' }}>
-                        Expense −${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {tx('income.expense', 'Expense')} −${stats.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     <span style={{ fontSize: '14px', fontWeight: 800, color: stats.netBalance >= 0 ? 'var(--color-primary)' : 'var(--color-red)' }}>
-                        Net ${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {tx('income.net', 'Net')} ${stats.netBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                 </div>
             )}
@@ -1462,10 +1474,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                            Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, filteredTransactions.length)} of {filteredTransactions.length} transactions
+                            {tx('income.showing', 'Showing {from}–{to} of {total} transactions', { from: ((currentPage - 1) * pageSize) + 1, to: Math.min(currentPage * pageSize, filteredTransactions.length), total: filteredTransactions.length })}
                         </span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{tx('income.show', 'Show:')}</span>
                             <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '12px', cursor: 'pointer', background: 'var(--color-surface)', color: 'var(--color-text-main)' }}>
                                 {[50, 100, 200].map(n => <option key={n} value={n}>{n}</option>)}
                             </select>
@@ -1488,7 +1500,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 alignItems: 'center',
                                 justifyContent: 'center'
                             }}
-                            title="First page"
+                            title={tx('income.firstPage', 'First page')}
                         >
                             ««
                         </button>
@@ -1508,7 +1520,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 alignItems: 'center',
                                 justifyContent: 'center'
                             }}
-                            title="Previous page"
+                            title={tx('income.prevPage', 'Previous page')}
                         >
                             <ChevronLeft size={16} />
                         </button>
@@ -1564,7 +1576,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 alignItems: 'center',
                                 justifyContent: 'center'
                             }}
-                            title="Next page"
+                            title={tx('income.nextPage', 'Next page')}
                         >
                             <ChevronRight size={16} />
                         </button>
@@ -1584,7 +1596,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 alignItems: 'center',
                                 justifyContent: 'center'
                             }}
-                            title="Last page"
+                            title={tx('income.lastPage', 'Last page')}
                         >
                             »»
                         </button>
@@ -1608,8 +1620,8 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                     {formData.type === 'Income' ? <TrendingUp size={isMobile ? 17 : 20} /> : <TrendingDown size={isMobile ? 17 : 20} />}
                                 </div>
                                 <div>
-                                    <h2 style={{ fontSize: isMobile ? '15px' : '17px', fontWeight: 700, margin: 0 }}>{editingTransaction ? 'Edit Transaction' : 'New Transaction'}</h2>
-                                    {!isMobile && <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{formData.type === 'Income' ? 'Money coming in' : 'Money going out'}</p>}
+                                    <h2 style={{ fontSize: isMobile ? '15px' : '17px', fontWeight: 700, margin: 0 }}>{editingTransaction ? tx('income.editTransaction', 'Edit Transaction') : tx('income.newTransaction', 'New Transaction')}</h2>
+                                    {!isMobile && <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{formData.type === 'Income' ? tx('income.moneyIn', 'Money coming in') : tx('income.moneyOut', 'Money going out')}</p>}
                                 </div>
                             </div>
                             <button onClick={() => setIsAddModalOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1623,7 +1635,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
                     {/* Section: Type & Amount */}
                     <div style={{ ...ieSection, padding: isMobile ? '12px' : '16px', gap: isMobile ? '10px' : '14px' }}>
-                    <h4 style={ieSectionTitle}><DollarSign size={14} /> Type & Amount</h4>
+                    <h4 style={ieSectionTitle}><DollarSign size={14} /> {tx('income.typeAmount', 'Type & Amount')}</h4>
                     <div style={{ display: 'flex', gap: '8px', padding: '4px', background: 'var(--color-background)', borderRadius: '12px' }}>
                         <button
                             onClick={() => setFormData({ ...formData, type: 'Income' })}
@@ -1644,7 +1656,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             }}
                         >
                             <TrendingUp size={18} />
-                            Income
+                            {tx('income.income', 'Income')}
                         </button>
                         <button
                             onClick={() => setFormData({ ...formData, type: 'Expense' })}
@@ -1665,13 +1677,13 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             }}
                         >
                             <TrendingDown size={18} />
-                            Expense
+                            {tx('income.expense', 'Expense')}
                         </button>
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Amount*</label>
+                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tx('income.amountReq', 'Amount*')}</label>
                             <div style={{ display: 'flex', background: 'var(--color-background)', borderRadius: '6px', padding: '2px' }}>
                                 <button
                                     onClick={() => setFormData({ ...formData, currency: 'USD' })}
@@ -1734,7 +1746,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             {formData.currency === 'KHR' && (
                                 <div style={{ position: 'relative', width: '120px' }}>
                                     <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                                        Rate
+                                        {tx('income.rate', 'Rate')}
                                     </span>
                                     <input
                                         type="number"
@@ -1766,7 +1778,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     {txnUsdPreview !== null && (
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '-8px', display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: '8px' }}>
                             <DollarSign size={13} style={{ color: 'var(--color-primary)' }} />
-                            Will be saved as <strong style={{ color: 'var(--color-primary)' }}>${txnUsdPreview.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</strong>
+                            {tx('income.willBeSavedAs', 'Will be saved as')} <strong style={{ color: 'var(--color-primary)' }}>${txnUsdPreview.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</strong>
                             <span style={{ color: 'var(--color-text-muted)' }}>(៛{Number(formData.amount).toLocaleString()} ÷ {Number(formData.exchangeRate).toLocaleString()})</span>
                         </div>
                     )}
@@ -1775,12 +1787,12 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
                     {/* Section: Details */}
                     <div style={{ ...ieSection, padding: isMobile ? '12px' : '16px', gap: isMobile ? '10px' : '14px' }}>
-                    <h4 style={ieSectionTitle}><Tag size={14} /> Details</h4>
+                    <h4 style={ieSectionTitle}><Tag size={14} /> {tx('income.details', 'Details')}</h4>
                     {/* Mobile: one field per row (selects clip their text side by side on phones).
                         minmax(0, 1fr) + minWidth 0 stop the native date input from overflowing. */}
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: isMobile ? '10px' : '16px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: isMobile ? '1 / -1' : undefined, minWidth: 0 }}>
-                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Date</label>
+                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tx('income.col.date', 'Date')}</label>
                             <div style={{ position: 'relative', minWidth: 0 }}>
                                 <Calendar size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />
                                 <input
@@ -1806,7 +1818,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                 />
                             </div>
                             <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                                {[{ label: 'Today', off: 0 }, { label: 'Yesterday', off: 1 }].map(d => {
+                                {[{ label: tx('income.today', 'Today'), off: 0 }, { label: tx('income.yesterday', 'Yesterday'), off: 1 }].map(d => {
                                     const val = new Date(Date.now() - d.off * 86400000 - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
                                     const active = formData.date === val;
                                     return (
@@ -1817,12 +1829,12 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: isMobile ? '1 / -1' : undefined }}>
-                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Category</label>
+                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tx('income.category', 'Category')}</label>
                             <div style={{ position: 'relative' }} ref={categoryRef}>
                                 <Tag size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                                 <input
                                     type="text"
-                                    placeholder="e.g. Utility, Salary"
+                                    placeholder={tx('income.categoryPlaceholder', 'e.g. Utility, Salary')}
                                     value={formData.category}
                                     onFocus={() => setShowCategoryDropdown(true)}
                                     onChange={(e) => {
@@ -1879,7 +1891,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Shipping Co</label>
+                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tx('income.shippingCo', 'Shipping Co')}</label>
                             <div style={{ position: 'relative' }}>
                                 <Truck size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                                 <select
@@ -1898,7 +1910,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                         cursor: 'pointer'
                                     }}
                                 >
-                                    <option value="">None (No shipping)</option>
+                                    <option value="">{tx('income.noneShipping', 'None (No shipping)')}</option>
                                     {allShippingCo.map(co => (
                                         <option key={co} value={co} style={{ color: getShippingCoColor(co) }}>{co}</option>
                                     ))}
@@ -1907,7 +1919,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             </div>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Pay By</label>
+                            <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tx('income.col.payBy', 'Pay By')}</label>
                             <div style={{ position: 'relative' }}>
                                 <Wallet size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                                 <select
@@ -1926,7 +1938,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                                         cursor: 'pointer'
                                     }}
                                 >
-                                    <option value="">None</option>
+                                    <option value="">{tx('income.none', 'None')}</option>
                                     {paymentMethods.map(method => (
                                         <option key={method} value={method}>{method}</option>
                                     ))}
@@ -1938,7 +1950,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
 
                     {topFormCategories.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
-                            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Quick:</span>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{tx('income.quick', 'Quick:')}</span>
                             {topFormCategories.map(cat => {
                                 const active = formData.category === cat;
                                 return (
@@ -1949,10 +1961,10 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                     )}
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Description / Note</label>
+                        <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tx('income.descriptionNote', 'Description / Note')}</label>
                         <textarea
                             rows={isMobile ? 2 : 3}
-                            placeholder="Optional details..."
+                            placeholder={tx('income.optionalDetails', 'Optional details...')}
                             value={formData.description}
                             onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))}
                             style={{
@@ -1978,7 +1990,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             className="secondary-button"
                             style={{ padding: isMobile ? '12px 16px' : '11px 20px', borderRadius: '10px', fontWeight: 600, flex: isMobile ? '0 0 auto' : undefined }}
                         >
-                            Cancel
+                            {tx('om2.cancel', 'Cancel')}
                         </button>
                         <button
                             onClick={handleSave}
@@ -1987,7 +1999,7 @@ const IncomeExpense: React.FC<{ isModal?: boolean }> = ({ isModal }) => {
                             style={{ padding: isMobile ? '12px 16px' : '11px 24px', borderRadius: '10px', fontWeight: 600, background: formData.type === 'Income' ? 'var(--color-blue)' : 'var(--color-red)', opacity: canSaveTxn ? 1 : 0.5, cursor: canSaveTxn ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined, fontSize: isMobile ? '15px' : undefined }}
                         >
                             {formData.type === 'Income' ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                            Save {formData.type}
+                            {formData.type === 'Income' ? tx('income.saveIncome', 'Save Income') : tx('income.saveExpense', 'Save Expense')}
                         </button>
                     </div>
                 </div>
@@ -2030,7 +2042,7 @@ const IeStatCard: React.FC<{ icon: React.ComponentType<{ size?: number }>; gradi
 
 // Single-select chip group for the mobile filter drawer (always expanded).
 // optionColor tints an inactive chip's text (e.g. blue/red income/expense categories).
-const IeChipGroup: React.FC<{ title: string; options: string[]; selected: string; onSelect: (v: string) => void; optionColor?: (opt: string) => string | undefined }> = ({ title, options, selected, onSelect, optionColor }) => (
+const IeChipGroup: React.FC<{ title: string; options: string[]; selected: string; onSelect: (v: string) => void; optionColor?: (opt: string) => string | undefined; label?: (opt: string) => string }> = ({ title, options, selected, onSelect, optionColor, label }) => (
     <div>
         <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>{title}</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -2042,7 +2054,7 @@ const IeChipGroup: React.FC<{ title: string; options: string[]; selected: string
                         onClick={() => onSelect(opt)}
                         style={{ padding: '6px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`, background: active ? 'var(--color-primary)' : 'var(--color-surface)', color: active ? 'white' : (optionColor?.(opt) || 'var(--color-text-main)'), cursor: 'pointer', transition: 'all 0.15s' }}
                     >
-                        {opt}
+                        {label ? label(opt) : opt}
                     </button>
                 );
             })}

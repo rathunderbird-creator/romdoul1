@@ -9,7 +9,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useMobile } from '../../hooks/useMobile';
 import { useToast } from '../../context/ToastContext';
 import { useActivityLog } from '../../context/ActivityLogContext';
-import { useUrlFilters, UndoToast, type UndoToastHandle } from './ui2';
+import { useUrlFilters, UndoToast, useOM2Lang, type UndoToastHandle } from './ui2';
 import { useOrdersM2Data } from './useOrdersM2Data';
 import { exportOrdersXlsx } from './exportOrders';
 import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal } from '../../utils/orderStatusRules';
@@ -30,6 +30,9 @@ const OrdersManagement2Page: React.FC = () => {
     const { updateOrderStatus, updateOrder, updateOrders, currentUser, salesmen, shippingCompanies, pages, customerCare, paymentMethods, hasPermission } = useStore();
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
+    const { tx } = useOM2Lang();
+    // Column names shown in the Columns menu / table header (keys stay English ids).
+    const columnLabels = useMemo(() => Object.fromEntries(Object.entries(COLUMN_LABELS).map(([k, v]) => [k, tx(`om2.columns.${k}`, v)])), [tx]);
     const isMobile = useMobile();
     const navigate = useNavigate();
     const { showToast } = useToast();
@@ -45,13 +48,13 @@ const OrdersManagement2Page: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Orders Management 2</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Frozen columns, a real detail drawer, batch tracking entry</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{tx('om2.title', 'Orders Management 2')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{tx('om2.subtitle', 'Frozen columns, a real detail drawer, batch tracking entry')}</p>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, tx]);
 
     // PAY-1/ORD-9: the row drawer (the single-order edit path) obeys the same
     // per-order rules as the single-row badges and Bulk Edit — RowDrawer
@@ -126,13 +129,13 @@ const OrdersManagement2Page: React.FC = () => {
         // Everything the filters match (the summary strip's set), not just
         // the visible page — that is what "export this view" means.
         onExport: async () => {
-            if (data.rangeOrders.length === 0) { showToast('Nothing to export for these filters.', 'error'); return; }
+            if (data.rangeOrders.length === 0) { showToast(tx('om2.toast.nothingToExport', 'Nothing to export for these filters.'), 'error'); return; }
             try {
                 await exportOrdersXlsx(data.rangeOrders, 'Filtered');
-                showToast(`Exported ${data.rangeOrders.length} order(s).`, 'success');
+                showToast(tx('om2.toast.exportedN', 'Exported {n} order(s).', { n: data.rangeOrders.length }), 'success');
             } catch (e) {
                 console.error('Export failed', e);
-                showToast('Export failed. Check console for details.', 'error');
+                showToast(tx('om2.toast.exportFailed', 'Export failed. Check console for details.'), 'error');
             }
         },
         onSaveEdit: async (edit) => {
@@ -160,9 +163,9 @@ const OrdersManagement2Page: React.FC = () => {
             });
             data.refresh();
             if (!saved) return false;
-            toastHandle.current?.show('Order updated.', () => {
+            toastHandle.current?.show(tx('om2.toast.orderUpdated', 'Order updated.'), () => {
                 applyEdit(previousEdit, false).catch((e: unknown) => { console.error('Undo failed:', e); return false; }).then(ok => {
-                    if (!ok) showToast('The undo was not saved.', 'error');
+                    if (!ok) showToast(tx('om2.toast.undoNotSaved', 'The undo was not saved.'), 'error');
                     data.refresh();
                 });
             });
@@ -170,7 +173,7 @@ const OrdersManagement2Page: React.FC = () => {
         },
         onUndoEdit: async (edit) => {
             const ok = await applyEdit(edit, false).catch((e: unknown) => { console.error('Undo failed:', e); return false; });
-            if (!ok) showToast('The undo was not saved.', 'error');
+            if (!ok) showToast(tx('om2.toast.undoNotSaved', 'The undo was not saved.'), 'error');
             data.refresh();
         },
         onBulkAddTracking: async (updates) => {
@@ -185,8 +188,8 @@ const OrdersManagement2Page: React.FC = () => {
             }
             await logActivity('bulk_tracking', `Added tracking IDs to ${saved} order(s)`, currentUser?.id, currentUser?.name, { count: saved });
             data.refresh();
-            if (saved < updates.length) showToast(`Tracking IDs saved for ${saved} order(s); ${updates.length - saved} could not be saved: ${lastReason}`, 'error');
-            else showToast(`Tracking IDs saved for ${saved} order(s).`, 'success');
+            if (saved < updates.length) showToast(tx('om2.toast.trackingPartial', 'Tracking IDs saved for {saved} order(s); {failed} could not be saved: {reason}', { saved, failed: updates.length - saved, reason: lastReason }), 'error');
+            else showToast(tx('om2.toast.trackingSaved', 'Tracking IDs saved for {n} order(s).', { n: saved }), 'success');
         },
         onBulkMarkShipped: async (orderIds) => {
             // One run at a time: a second click while the first is still going sent
@@ -219,22 +222,22 @@ const OrdersManagement2Page: React.FC = () => {
                 const notShipped = orderIds.length - shipped;
                 await logActivity('bulk_ship', `Marked ${shipped} order(s) Shipped`, currentUser?.id, currentUser?.name, { count: shipped });
                 data.refresh();
-                if (notShipped > 0) showToast(`${shipped} order(s) marked Shipped; ${notShipped} could not be: ${lastReason}`, 'error');
-                else showToast(`${shipped} order(s) marked Shipped.`, 'success');
+                if (notShipped > 0) showToast(tx('om2.toast.shippedPartial', '{shipped} order(s) marked Shipped; {failed} could not be: {reason}', { shipped, failed: notShipped, reason: lastReason }), 'error');
+                else showToast(tx('om2.toast.shippedN', '{n} order(s) marked Shipped.', { n: shipped }), 'success');
             } finally {
                 markingShippedRef.current = false;
             }
         },
-        onBulkPrint: () => showToast('Printing runs from the classic Orders page for now.', 'info'),
+        onBulkPrint: () => showToast(tx('om2.toast.printClassic', 'Printing runs from the classic Orders page for now.'), 'info'),
         onBulkExport: async (orderIds) => {
             const selected = data.orders.filter(o => orderIds.includes(o.id));
-            if (selected.length === 0) { showToast('No orders selected to export.', 'error'); return; }
+            if (selected.length === 0) { showToast(tx('om2.toast.noneSelectedExport', 'No orders selected to export.'), 'error'); return; }
             try {
                 await exportOrdersXlsx(selected, 'Selected');
-                showToast(`Exported ${selected.length} order(s).`, 'success');
+                showToast(tx('om2.toast.exportedN', 'Exported {n} order(s).', { n: selected.length }), 'success');
             } catch (e) {
                 console.error('Export failed', e);
-                showToast('Export failed. Check console for details.', 'error');
+                showToast(tx('om2.toast.exportFailed', 'Export failed. Check console for details.'), 'error');
             }
         },
         // Mirrors classic Orders.tsx's handleBulkEdit (../Orders.tsx ~L1768)
@@ -327,14 +330,14 @@ const OrdersManagement2Page: React.FC = () => {
             const savedCount = orderIds.length - notSaved;
             await logActivity('bulk_edit', `Bulk edited ${savedCount} order(s): ${field}`, currentUser?.id, currentUser?.name, { count: savedCount, field, value });
             data.refresh();
-            if (notSaved > 0) showToast(`Updated ${savedCount} of ${orderIds.length} order(s); ${notSaved} not saved${lastReason ? ': ' + lastReason : ''}`, 'error');
-            else showToast(`Updated ${orderIds.length} order(s).`, 'success');
+            if (notSaved > 0) showToast(tx('om2.toast.bulkPartial', 'Updated {saved} of {n} order(s); {failed} not saved', { saved: savedCount, n: orderIds.length, failed: notSaved }) + (lastReason ? ': ' + lastReason : ''), 'error');
+            else showToast(tx('om2.toast.bulkUpdated', 'Updated {n} order(s).', { n: orderIds.length }), 'success');
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [setFilters, data, navigate, showToast, updateOrder, updateOrders, updateOrderStatus, logActivity, currentUser]);
+    }), [setFilters, data, navigate, showToast, updateOrder, updateOrders, updateOrderStatus, logActivity, currentUser, tx]);
 
     if (!hasPermission('manage_orders') && !hasPermission('create_orders') && !hasPermission('view_orders')) {
-        return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>You do not have permission to view Orders Management.</div>;
+        return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{tx('om2.noPermission', 'You do not have permission to view Orders Management.')}</div>;
     }
 
     return (
@@ -353,7 +356,7 @@ const OrdersManagement2Page: React.FC = () => {
                 pageSources={pages}
                 customerCare={customerCare}
                 paymentMethods={paymentMethods}
-                columnLabels={COLUMN_LABELS}
+                columnLabels={columnLabels}
                 visibleColumns={visibleColumns}
                 onVisibleColumnsChange={setVisibleColumns}
             />

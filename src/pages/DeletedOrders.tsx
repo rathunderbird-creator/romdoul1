@@ -5,6 +5,8 @@ import { RefreshCw, ArrowLeft, RefreshCcw, Search, Trash2, ChevronLeft, ChevronR
 import { useNavigate } from 'react-router-dom';
 import { useHeader } from '../context/HeaderContext';
 import { useToast } from '../context/ToastContext';
+import { useLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
 import { StatusBadge } from '../components';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -50,7 +52,13 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
     const navigate = useNavigate();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
-
+    const { t } = useLanguage();
+    // Text under ui.orderFlow; the English text is the fallback for a missing key.
+    const tx = React.useCallback((key: string, en: string, vars?: Record<string, string | number>) => {
+        const k = `ui.orderFlow.${key}`;
+        const v = t(k);
+        return fill(v !== k ? v : en, vars);
+    }, [t]);
 
     React.useEffect(() => {
         if (isModal) return;
@@ -59,14 +67,14 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                 <div style={{ marginBottom: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => navigate('/orders')}>
                         <ArrowLeft size={18} color="var(--color-text-secondary)" />
-                        <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px', color: 'var(--color-text-main)' }}>Deleted Orders</h1>
+                        <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px', color: 'var(--color-text-main)' }}>{tx('deleted.title', 'Deleted Orders')}</h1>
                     </div>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>View and restore deleted orders</p>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{tx('deleted.subtitle', 'View and restore deleted orders')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, navigate, isModal]);
+    }, [setHeaderContent, navigate, isModal, tx]);
 
     const fetchDeletedOrders = async () => {
         setIsLoading(true);
@@ -108,7 +116,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
             setMappedOrders(mapped);
         } catch (err: any) {
             console.error('Error fetching deleted orders:', err);
-            showToast('Failed to load deleted orders', 'error');
+            showToast(tx('deleted.loadFailed', 'Failed to load deleted orders'), 'error');
         } finally {
             setIsLoading(false);
         }
@@ -119,29 +127,29 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
     }, []);
 
     const handleRestore = async (ids: string[]) => {
-        if (!window.confirm(`Are you sure you want to restore ${ids.length} order(s)?`)) return;
+        if (!window.confirm(tx('deleted.confirmRestore', 'Are you sure you want to restore {n} order(s)?', { n: ids.length }))) return;
         try {
             await restoreOrders(ids);
-            showToast(`${ids.length} order(s) restored successfully`, 'success');
+            showToast(tx('deleted.restored', '{n} order(s) restored successfully', { n: ids.length }), 'success');
             setSelectedIds(new Set());
             fetchDeletedOrders();
         } catch (err: any) {
-            showToast('Failed to restore order(s)', 'error');
+            showToast(tx('deleted.restoreFailed', 'Failed to restore order(s)'), 'error');
         }
     };
 
     const handlePermanentDelete = async (ids: string[]) => {
-        if (!window.confirm(`Permanently delete ${ids.length} order(s)? This cannot be undone.`)) return;
+        if (!window.confirm(tx('deleted.confirmDelete', 'Permanently delete {n} order(s)? This cannot be undone.', { n: ids.length }))) return;
         try {
             for (const id of ids) {
                 await supabase.from('deleted_sale_items').delete().eq('sale_id', id);
                 await supabase.from('deleted_orders').delete().eq('id', id);
             }
-            showToast(`${ids.length} order(s) permanently deleted`, 'success');
+            showToast(tx('deleted.deleted', '{n} order(s) permanently deleted', { n: ids.length }), 'success');
             setSelectedIds(new Set());
             fetchDeletedOrders();
         } catch (err: any) {
-            showToast('Failed to delete order(s)', 'error');
+            showToast(tx('deleted.deleteFailed', 'Failed to delete order(s)'), 'error');
         }
     };
 
@@ -187,22 +195,22 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
     };
 
     const columns = [
-        { id: 'date', label: 'Date', width: 100 },
-        { id: 'deletedAt', label: 'Deleted At', width: 160 },
-        { id: 'customer', label: 'Customer', width: 140 },
-        { id: 'phone', label: 'Phone', width: 130 },
-        { id: 'address', label: 'Address', width: 150 },
-        { id: 'page', label: 'Page Name', width: 100 },
-        { id: 'salesman', label: 'Salesman', width: 100 },
-        { id: 'items', label: 'Products', width: 200 },
-        { id: 'total', label: 'Total', width: 90 },
-        { id: 'payBy', label: 'Pay By', width: 100 },
-        { id: 'status', label: 'Order Status', width: 130 },
-        { id: 'payStatus', label: 'Pay Status', width: 130 },
-        { id: 'shippingCo', label: 'Shipping Co', width: 120 },
-        { id: 'remark', label: 'Remark', width: 150 },
-        { id: 'tracking', label: 'Tracking ID', width: 130 },
-        { id: 'actions', label: 'Actions', width: 120 },
+        { id: 'date', label: tx('deleted.col.date', 'Date'), width: 100 },
+        { id: 'deletedAt', label: tx('deleted.col.deletedAt', 'Deleted At'), width: 160 },
+        { id: 'customer', label: tx('deleted.col.customer', 'Customer'), width: 140 },
+        { id: 'phone', label: tx('deleted.col.phone', 'Phone'), width: 130 },
+        { id: 'address', label: tx('deleted.col.address', 'Address'), width: 150 },
+        { id: 'page', label: tx('deleted.col.page', 'Page Name'), width: 100 },
+        { id: 'salesman', label: tx('deleted.col.salesman', 'Salesman'), width: 100 },
+        { id: 'items', label: tx('deleted.col.items', 'Products'), width: 200 },
+        { id: 'total', label: tx('deleted.col.total', 'Total'), width: 90 },
+        { id: 'payBy', label: tx('deleted.col.payBy', 'Pay By'), width: 100 },
+        { id: 'status', label: tx('deleted.col.status', 'Order Status'), width: 130 },
+        { id: 'payStatus', label: tx('deleted.col.payStatus', 'Pay Status'), width: 130 },
+        { id: 'shippingCo', label: tx('deleted.col.shippingCo', 'Shipping Co'), width: 120 },
+        { id: 'remark', label: tx('deleted.col.remark', 'Remark'), width: 150 },
+        { id: 'tracking', label: tx('deleted.col.tracking', 'Tracking ID'), width: 130 },
+        { id: 'actions', label: tx('deleted.col.actions', 'Actions'), width: 120 },
     ];
 
     // Persist column widths
@@ -321,7 +329,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                     <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                     <input
                         type="text"
-                        placeholder="Search deleted orders..."
+                        placeholder={tx('deleted.search', 'Search deleted orders...')}
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                         className="search-input"
@@ -343,7 +351,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                                 transition: 'all 0.2s'
                             }}
                         >
-                            <RefreshCcw size={16} /> Restore ({selectedIds.size})
+                            <RefreshCcw size={16} /> {tx('deleted.restoreN', 'Restore ({n})', { n: selectedIds.size })}
                         </button>
                         <button
                             onClick={() => handlePermanentDelete(Array.from(selectedIds))}
@@ -355,7 +363,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                                 transition: 'all 0.2s'
                             }}
                         >
-                            <Trash2 size={16} /> Delete Forever ({selectedIds.size})
+                            <Trash2 size={16} /> {tx('deleted.deleteForeverN', 'Delete Forever ({n})', { n: selectedIds.size })}
                         </button>
                     </>
                 )}
@@ -377,7 +385,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                         color: 'var(--color-text-secondary)',
                         cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}
-                    title="Refresh"
+                    title={tx('deleted.refresh', 'Refresh')}
                 >
                     <RefreshCw id="refresh-deleted-btn" size={18} />
                 </button>
@@ -422,7 +430,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                                     onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); autoFitAllColumns(); }}
                                     style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '10px', cursor: 'col-resize', background: 'transparent', zIndex: 25, transform: 'translateX(50%)' }}
                                     className="resize-handle"
-                                    title="Double click to auto-fit all columns"
+                                    title={tx('deleted.autoFitAll', 'Double click to auto-fit all columns')}
                                 />
                             </th>
                             {columns.map(col => (
@@ -463,13 +471,13 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                         {isLoading ? (
                             <tr>
                                 <td colSpan={columns.length + 2} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>
-                                    Loading deleted orders...
+                                    {tx('deleted.loading', 'Loading deleted orders...')}
                                 </td>
                             </tr>
                         ) : paginatedOrders.length === 0 ? (
                             <tr>
                                 <td colSpan={columns.length + 2} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>
-                                    No deleted orders found.
+                                    {tx('deleted.empty', 'No deleted orders found.')}
                                 </td>
                             </tr>
                         ) : (
@@ -606,9 +614,9 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                                                         fontWeight: 600, fontSize: '12px',
                                                         transition: 'all 0.2s'
                                                     }}
-                                                    title="Restore Order"
+                                                    title={tx('deleted.restoreOrder', 'Restore Order')}
                                                 >
-                                                    <RefreshCcw size={13} /> Restore
+                                                    <RefreshCcw size={13} /> {tx('deleted.restore', 'Restore')}
                                                 </button>
                                                 <button
                                                     onClick={() => handlePermanentDelete([order.id])}
@@ -619,7 +627,7 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                                                         display: 'flex', alignItems: 'center',
                                                         transition: 'all 0.2s'
                                                     }}
-                                                    title="Delete Forever"
+                                                    title={tx('deleted.deleteForever', 'Delete Forever')}
                                                 >
                                                     <Trash2 size={13} />
                                                 </button>
@@ -641,8 +649,8 @@ export const DeletedOrdersContent: React.FC<{ isModal?: boolean }> = ({ isModal 
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px'
             }}>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                    Showing {filteredOrders.length === 0 ? 0 : ((currentPage - 1) * PAGE_SIZE + 1)}–{Math.min(currentPage * PAGE_SIZE, filteredOrders.length)} of {filteredOrders.length} deleted orders
-                    {selectedIds.size > 0 && <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}> · {selectedIds.size} selected</span>}
+                    {tx('deleted.showing', 'Showing {from}–{to} of {total} deleted orders', { from: filteredOrders.length === 0 ? 0 : ((currentPage - 1) * PAGE_SIZE + 1), to: Math.min(currentPage * PAGE_SIZE, filteredOrders.length), total: filteredOrders.length })}
+                    {selectedIds.size > 0 && <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}> · {tx('om2.bulk.selectedN', '{n} selected', { n: selectedIds.size })}</span>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <button

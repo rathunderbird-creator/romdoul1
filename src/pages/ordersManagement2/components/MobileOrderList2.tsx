@@ -7,12 +7,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Flag } from 'lucide-react';
 import { D2, tabular, fmtMoney } from '../../dashboard2/theme';
-import { MutedPill, AlertPill, ORDER_STATUS_TONE, PAY_STATUS_TONE } from '../ui2';
+import { MutedPill, AlertPill, ORDER_STATUS_TONE, PAY_STATUS_TONE, useOM2Lang } from '../ui2';
 import { orderStatusOf, payStatusOf, orderBalance, trackingStateOf, type Order } from '../metrics';
 import { DEFAULT_FILTERS, activeFilterCount, type OM2Filters } from '../urlFilters';
 import { MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../../components/MobileFilterKit';
 import { getOperatorForPhone } from '../../../utils/telecom';
-import { orderStatusLabel } from '../../../utils/orderStatusRules';
 
 const ORDER_STATUSES = ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'];
 const PAY_STATUSES = ['Unpaid', 'Deposit', 'Paid', 'Get File', 'Cancel'];
@@ -37,12 +36,13 @@ const toggleSingle = (current: string[], value: string): string[] =>
 // a saturated "no tracking" alert when missing, muted "own driver" text for
 // the in-house courier, else a small courier + tracking number line.
 const TrackingIndicator: React.FC<{ order: Order }> = ({ order }) => {
+    const { tx } = useOM2Lang();
     const state = trackingStateOf(order);
     if (state === 'missing') {
-        return <AlertPill icon={<Flag size={11} />} title="No tracking number added">No tracking</AlertPill>;
+        return <AlertPill icon={<Flag size={11} />} title={tx('om2.mobile.noTrackingTitle', 'No tracking number added')}>{tx('om2.mobile.noTracking', 'No tracking')}</AlertPill>;
     }
     if (state === 'own-driver') {
-        return <span style={{ fontSize: 11, fontWeight: 600, color: D2.muted }}>Own driver</span>;
+        return <span style={{ fontSize: 11, fontWeight: 600, color: D2.muted }}>{tx('om2.mobile.ownDriver', 'Own driver')}</span>;
     }
     const company = order.shipping?.company || '';
     const tracking = order.shipping?.trackingNumber || '';
@@ -59,17 +59,18 @@ const TrackingIndicator: React.FC<{ order: Order }> = ({ order }) => {
 };
 
 const OrderCard: React.FC<{ order: Order; onOpen: () => void }> = ({ order, onOpen }) => {
+    const { tx, statusLabel, payLabel } = useOM2Lang();
     const status = orderStatusOf(order);
     const pay = payStatusOf(order);
     const balance = orderBalance(order);
     const items = order.items;
     const firstItem = items[0];
     const extraCount = items.length - 1;
-    const customerName = order.customer?.name || 'Unknown';
+    const customerName = order.customer?.name || tx('om2.unknown', 'Unknown');
     const operator = getOperatorForPhone(order.customer?.phone);
     const productSummary = firstItem
-        ? `${firstItem.name} x${firstItem.quantity}${extraCount > 0 ? ` +${extraCount} more` : ''}`
-        : 'No items';
+        ? `${firstItem.name} x${firstItem.quantity}${extraCount > 0 ? ` ${tx('om2.table.moreN', '+{n} more', { n: extraCount })}` : ''}`
+        : tx('om2.mobile.noItems', 'No items');
 
     return (
         <button
@@ -110,8 +111,8 @@ const OrderCard: React.FC<{ order: Order; onOpen: () => void }> = ({ order, onOp
 
             {/* Row 4: pills, on their own line — never touching the name text */}
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                <MutedPill tone={ORDER_STATUS_TONE[status] || 'neutral'}>{orderStatusLabel(status)}</MutedPill>
-                <MutedPill tone={PAY_STATUS_TONE[pay] || 'neutral'}>{pay === 'Get File' ? 'File' : pay}</MutedPill>
+                <MutedPill tone={ORDER_STATUS_TONE[status] || 'neutral'}>{statusLabel(status)}</MutedPill>
+                <MutedPill tone={PAY_STATUS_TONE[pay] || 'neutral'}>{pay === 'Get File' ? 'File' : payLabel(pay)}</MutedPill>
                 <TrackingIndicator order={order} />
             </div>
         </button>
@@ -119,6 +120,7 @@ const OrderCard: React.FC<{ order: Order; onOpen: () => void }> = ({ order, onOp
 };
 
 const MobileOrderList2: React.FC<MobileOrderList2Props> = ({ orders, totalCount, filters, onFiltersChange, onOpenOrder, salesmen, shippingCompanies }) => {
+    const { tx, statusLabel, payLabel } = useOM2Lang();
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [searchInput, setSearchInput] = useState(filters.search);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -164,7 +166,7 @@ const MobileOrderList2: React.FC<MobileOrderList2Props> = ({ orders, totalCount,
             <MobileSearchBar
                 searchValue={searchInput}
                 onSearchChange={handleSearchChange}
-                placeholder="Search customer, phone, product..."
+                placeholder={tx('om2.mobile.search', 'Search customer, phone, product...')}
                 activeCount={activeFilterCount(filters)}
                 onOpenFilter={() => setIsFilterOpen(true)}
             />
@@ -175,23 +177,23 @@ const MobileOrderList2: React.FC<MobileOrderList2Props> = ({ orders, totalCount,
                 onClear={clearDrawerFilters}
                 searchValue={searchInput}
                 onSearchChange={handleSearchChange}
-                searchPlaceholder="Search customer, phone, product..."
+                searchPlaceholder={tx('om2.mobile.search', 'Search customer, phone, product...')}
             >
                 <MobileChipGroup
-                    title="Status"
-                    options={ORDER_STATUSES.map(s => ({ value: s }))}
+                    title={tx('om2.mobile.status', 'Status')}
+                    options={ORDER_STATUSES.map(s => ({ value: s, label: statusLabel(s) }))}
                     selected={filters.statuses.length === 1 ? filters.statuses[0] : ''}
                     onSelect={(v) => onFiltersChange(prev => ({ ...prev, statuses: toggleSingle(prev.statuses, v), page: 1 }))}
                 />
                 <MobileChipGroup
-                    title="Payment status"
-                    options={PAY_STATUSES.map(s => ({ value: s }))}
+                    title={tx('om2.filters.paymentStatus', 'Payment status')}
+                    options={PAY_STATUSES.map(s => ({ value: s, label: payLabel(s) }))}
                     selected={filters.payStatuses.length === 1 ? filters.payStatuses[0] : ''}
                     onSelect={(v) => onFiltersChange(prev => ({ ...prev, payStatuses: toggleSingle(prev.payStatuses, v), page: 1 }))}
                 />
                 {shippingCompanies.length > 0 && (
                     <MobileChipGroup
-                        title="Shipping company"
+                        title={tx('om2.filters.shippingCompany', 'Shipping company')}
                         options={shippingCompanies.map(s => ({ value: s }))}
                         selected={filters.shippingCos.length === 1 ? filters.shippingCos[0] : ''}
                         onSelect={(v) => onFiltersChange(prev => ({ ...prev, shippingCos: toggleSingle(prev.shippingCos, v), page: 1 }))}
@@ -200,7 +202,7 @@ const MobileOrderList2: React.FC<MobileOrderList2Props> = ({ orders, totalCount,
 
                 <div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: D2.muted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-                        Salesman
+                        {tx('om2.filters.salesman', 'Salesman')}
                     </div>
                     <select
                         className="om2-tap-target"
@@ -208,14 +210,14 @@ const MobileOrderList2: React.FC<MobileOrderList2Props> = ({ orders, totalCount,
                         onChange={(e) => onFiltersChange(prev => ({ ...prev, salesman: e.target.value, page: 1 }))}
                         style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${D2.border}`, fontSize: 14, background: 'var(--color-surface)', color: D2.ink }}
                     >
-                        <option value="">All</option>
+                        <option value="">{tx('om2.sum.all', 'All')}</option>
                         {salesmen.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                 </div>
 
                 <div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: D2.muted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-                        Tracking
+                        {tx('om2.mobile.tracking', 'Tracking')}
                     </div>
                     <button
                         type="button"
@@ -230,7 +232,7 @@ const MobileOrderList2: React.FC<MobileOrderList2Props> = ({ orders, totalCount,
                             color: filters.noTrackingOnly ? D2.red : D2.ink,
                         }}
                     >
-                        <Flag size={13} /> No tracking only
+                        <Flag size={13} /> {tx('om2.mobile.noTrackingOnly', 'No tracking only')}
                     </button>
                 </div>
             </MobileFilterDrawer>
@@ -240,7 +242,7 @@ const MobileOrderList2: React.FC<MobileOrderList2Props> = ({ orders, totalCount,
                 // page is empty even though totalCount > 0 — the parent view
                 // only renders EmptyState when totalCount itself is 0.
                 <div style={{ textAlign: 'center', padding: '40px 16px', color: D2.muted, fontSize: 13 }}>
-                    No orders on this page. Try loading more or adjusting filters.
+                    {tx('om2.mobile.emptyPage', 'No orders on this page. Try loading more or adjusting filters.')}
                 </div>
             ) : (
                 <>
@@ -257,7 +259,7 @@ const MobileOrderList2: React.FC<MobileOrderList2Props> = ({ orders, totalCount,
                             onClick={() => onFiltersChange(prev => ({ ...prev, pageSize: prev.pageSize + 25, page: 1 }))}
                             style={{ width: '100%', padding: 12, borderRadius: 11, border: `1px solid ${D2.border}`, background: D2.card, color: D2.ink, fontWeight: 700, fontSize: 13, textAlign: 'center', cursor: 'pointer' }}
                         >
-                            Load more ({remaining} remaining)
+                            {tx('om2.mobile.loadMore', 'Load more ({n} remaining)', { n: remaining })}
                         </button>
                     )}
                 </>

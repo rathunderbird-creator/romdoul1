@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useWholesale } from '../../hooks/useWholesale';
 import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
@@ -60,6 +62,7 @@ const AccountsReceivablePage: React.FC = () => {
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const navigate = useNavigate();
     const { warehouses, products, currentUser, wholesaleSettings, khrExchangeRate } = useStore();
     const { wholesaleOrders, tableMissing: woMissing, fetchWholesaleOrders, recordCustomerPayment } = useWholesale();
@@ -112,13 +115,13 @@ const AccountsReceivablePage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Accounts Receivable</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Money owed to you — wholesale customer orders and warehouse transfers on credit.</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('ui.wholesale.ar.title')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('ui.wholesale.ar.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     const fetchTransfers = async () => {
         setLoading(true);
@@ -140,15 +143,15 @@ const AccountsReceivablePage: React.FC = () => {
     const receivables = useMemo<Receivable[]>(() => {
         const rows: Receivable[] = [];
         // Warehouse transfers (exclude any legacy 'wholesale' kind; those live in wholesale_orders now).
-        for (const t of transfers) {
-            if (t.kind === 'wholesale') continue;
-            const balance = (t.total_amount || 0) - (t.amount_received || 0);
+        for (const tr of transfers) {
+            if (tr.kind === 'wholesale') continue;
+            const balance = (tr.total_amount || 0) - (tr.amount_received || 0);
             if (balance <= 0.005) continue;
             rows.push({
-                key: 'wt-' + t.id, source: 'transfer', id: t.id, date: t.transfer_date,
-                party: t.to_warehouse_name || warehouseName(t.to_warehouse_id),
-                desc: `${t.product_name || ''} ×${t.quantity}`,
-                due_date: t.due_date, total: t.total_amount || 0, received: t.amount_received || 0, balance
+                key: 'wt-' + tr.id, source: 'transfer', id: tr.id, date: tr.transfer_date,
+                party: tr.to_warehouse_name || warehouseName(tr.to_warehouse_id),
+                desc: `${tr.product_name || ''} ×${tr.quantity}`,
+                due_date: tr.due_date, total: tr.total_amount || 0, received: tr.amount_received || 0, balance
             });
         }
         // Wholesale orders (customer credit sales).
@@ -158,12 +161,12 @@ const AccountsReceivablePage: React.FC = () => {
             if (balance <= 0.005) continue;
             rows.push({
                 key: 'wo-' + o.id, source: 'wholesale', id: o.id, date: o.order_date,
-                party: o.customer_name, desc: `${o.items?.length || 0} item(s)`,
+                party: o.customer_name, desc: fill(t('ui.wholesale.ar.nItems'), { n: o.items?.length || 0 }),
                 due_date: o.due_date, total: o.total_amount || 0, received: o.amount_paid || 0, balance
             });
         }
         return rows.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
-    }, [transfers, wholesaleOrders, warehouses]);
+    }, [transfers, wholesaleOrders, warehouses, t]);
 
     const totals = useMemo(() => {
         const totalReceivable = receivables.reduce((s, r) => s + r.balance, 0);
@@ -201,11 +204,11 @@ const AccountsReceivablePage: React.FC = () => {
 
     const submitTransfer = async () => {
         const q = Number(qty), up = Number(unitPrice);
-        if (!fromWh || !toWh) { showToast('Choose both warehouses', 'error'); return; }
-        if (fromWh === toWh) { showToast('Source and destination must differ', 'error'); return; }
-        if (!productId) { showToast('Choose a product', 'error'); return; }
-        if (!q || q <= 0) { showToast('Enter a valid quantity', 'error'); return; }
-        if (up < 0) { showToast('Enter a valid unit price', 'error'); return; }
+        if (!fromWh || !toWh) { showToast(t('ui.wholesale.ar.toast.chooseWarehouses'), 'error'); return; }
+        if (fromWh === toWh) { showToast(t('ui.wholesale.ar.toast.mustDiffer'), 'error'); return; }
+        if (!productId) { showToast(t('ui.wholesale.ar.toast.chooseProduct'), 'error'); return; }
+        if (!q || q <= 0) { showToast(t('ui.wholesale.ar.toast.validQty'), 'error'); return; }
+        if (up < 0) { showToast(t('ui.wholesale.ar.toast.validPrice'), 'error'); return; }
         setSaving(true);
         try {
             const product = products.find(p => p.id === productId);
@@ -218,7 +221,7 @@ const AccountsReceivablePage: React.FC = () => {
                 .select('quantity').eq('warehouse_id', fromWh).eq('product_id', productId).maybeSingle();
             const availableAtSource = sourceRow?.quantity || 0;
             if (q > availableAtSource) {
-                showToast(`Insufficient stock in the source warehouse: have ${availableAtSource}, need ${q}`, 'error');
+                showToast(fill(t('ui.wholesale.ar.toast.insufficient'), { have: availableAtSource, need: q }), 'error');
                 setSaving(false);
                 return;
             }
@@ -234,10 +237,10 @@ const AccountsReceivablePage: React.FC = () => {
             if (error) throw error;
             await adjustWarehouseStock(fromWh, productId, -q);
             await adjustWarehouseStock(toWh, productId, q);
-            showToast('Transfer on credit recorded', 'success');
+            showToast(t('ui.wholesale.ar.toast.transferRecorded'), 'success');
             setIsCreateOpen(false); resetCreate(); fetchTransfers();
         } catch (e: any) {
-            showToast('Failed to record transfer: ' + (e.message || ''), 'error');
+            showToast(t('ui.wholesale.ar.toast.transferFailed') + (e.message || ''), 'error');
         } finally { setSaving(false); }
     };
 
@@ -259,17 +262,17 @@ const AccountsReceivablePage: React.FC = () => {
         const rate = Number(receiptField.rate) > 0 ? Number(receiptField.rate) : receiptField.shopRate;
         const amount = receiptField.currency === 'KHR' && Math.abs(khrToUsd(receiptField.typed, rate) - receiptFor.balance) <= 0.03
             ? receiptFor.balance : receiptField.usd;
-        if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
-        if (receiptField.rateInvalid) { showToast('Enter a riel rate above 0', 'error'); return; }
+        if (!amount || amount <= 0) { showToast(t('ui.wholesale.ar.toast.validAmount'), 'error'); return; }
+        if (receiptField.rateInvalid) { showToast(t('ui.wholesale.ar.toast.rielRate'), 'error'); return; }
         if (!receiptField.confirmIfSuspicious()) return;
         // More than is still owed would over-credit the receivable.
         if (receiptFor.source === 'wholesale' && amount > receiptFor.balance + 0.005) {
-            showToast(`That's more than the ${receiptFor.balance.toFixed(2)} still owed on this order`, 'error');
+            showToast(fill(t('ui.wholesale.ar.toast.tooMuch'), { amount: receiptFor.balance.toFixed(2) }), 'error');
             return;
         }
         // "Received into" is required for wholesale receipts whenever cash/bank accounts exist.
         if (receiptFor.source === 'wholesale' && paymentAccounts.length > 0 && !receiveAccountId) {
-            showToast('Choose the account this payment is received into', 'error');
+            showToast(t('ui.wholesale.ar.toast.chooseAccount'), 'error');
             return;
         }
         setSaving(true);
@@ -286,12 +289,12 @@ const AccountsReceivablePage: React.FC = () => {
                 const newReceived = receiptFor.received + amount;
                 const status = newReceived >= receiptFor.total ? 'Paid' : (newReceived > 0 ? 'Partial' : 'Unpaid');
                 await supabase.from('warehouse_transfers').update({ amount_received: newReceived, payment_status: status }).eq('id', receiptFor.id);
-                showToast('Receipt recorded', 'success');
+                showToast(t('ui.wholesale.ar.toast.receiptRecorded'), 'success');
             }
             setReceiptFor(null);
             refreshAll();
         } catch (e: any) {
-            showToast('Failed to record receipt: ' + (e.message || ''), 'error');
+            showToast(t('ui.wholesale.ar.toast.receiptFailed') + (e.message || ''), 'error');
         } finally { setSaving(false); }
     };
 
@@ -301,20 +304,20 @@ const AccountsReceivablePage: React.FC = () => {
         <div className="acct-page" style={{ maxWidth: '100%', margin: '0 auto', background: 'var(--color-bg)', minHeight: 'var(--vh-full)' }}>
             {/* Summary — same flat cards as the financial statements */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
-                <SummaryCard color="#059669" label="Total Receivable" value={fmt(totals.totalReceivable)} />
-                <SummaryCard color="#D97706" label="Overdue" value={fmt(totals.overdue)} />
-                <SummaryCard color="#3B82F6" label="Open Items" value={String(totals.count)} />
+                <SummaryCard color="#059669" label={t('ui.wholesale.ar.totalReceivable')} value={fmt(totals.totalReceivable)} />
+                <SummaryCard color="#D97706" label={t('ui.wholesale.orders.stats.overdue')} value={fmt(totals.overdue)} />
+                <SummaryCard color="#3B82F6" label={t('ui.wholesale.ar.openItems')} value={String(totals.count)} />
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
                 <button className="secondary-button" onClick={refreshAll}>
-                    <RefreshCw size={16} style={loading ? { animation: 'spin 1s linear infinite' } : undefined} /> Refresh
+                    <RefreshCw size={16} style={loading ? { animation: 'spin 1s linear infinite' } : undefined} /> {t('ui.wholesale.common.refresh')}
                 </button>
                 <button className="secondary-button" onClick={() => navigate('/wholesale/orders')}>
-                    <ShoppingCart size={18} /> New Wholesale Order
+                    <ShoppingCart size={18} /> {t('ui.wholesale.orders.newOrder')}
                 </button>
                 <button className="primary-button" disabled={transferTableMissing} onClick={() => { resetCreate(); setIsCreateOpen(true); }}>
-                    <Plus size={18} /> New Transfer on Credit
+                    <Plus size={18} /> {t('ui.wholesale.ar.newTransfer')}
                 </button>
             </div>
 
@@ -322,25 +325,25 @@ const AccountsReceivablePage: React.FC = () => {
             <div style={{ ...cardStyle, padding: '14px 16px', marginBottom: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ position: 'relative', flex: '1 1 220px', minWidth: '180px' }}>
                     <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                    <input className="search-input d2-khmer" style={{ width: '100%', paddingLeft: '32px' }} placeholder="Search customer, details…" value={search} onChange={e => setSearch(e.target.value)} />
+                    <input className="search-input d2-khmer" style={{ width: '100%', paddingLeft: '32px' }} placeholder={t('ui.wholesale.ar.search')} value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
                 <select className="search-input" style={{ width: 'auto' }} value={sourceFilter} onChange={e => setSourceFilter(e.target.value as 'all' | 'wholesale' | 'transfer')}>
-                    <option value="all">All Types</option>
-                    <option value="wholesale">Wholesale</option>
-                    <option value="transfer">Transfer</option>
+                    <option value="all">{t('ui.wholesale.ar.allTypes')}</option>
+                    <option value="wholesale">{t('ui.wholesale.ar.wholesale')}</option>
+                    <option value="transfer">{t('ui.wholesale.ar.transfer')}</option>
                 </select>
                 <select className="search-input" style={{ width: 'auto' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'all' | 'overdue')}>
-                    <option value="all">All Items</option>
-                    <option value="overdue">Overdue Only</option>
+                    <option value="all">{t('ui.wholesale.ar.allItems')}</option>
+                    <option value="overdue">{t('ui.wholesale.ar.overdueOnly')}</option>
                 </select>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <input type="date" className="search-input" style={{ width: 'auto' }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>to</span>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>{t('ui.wholesale.common.to')}</span>
                     <input type="date" className="search-input" style={{ width: 'auto' }} value={dateTo} onChange={e => setDateTo(e.target.value)} />
                 </div>
                 {hasActiveFilters && (
                     <button className="secondary-button" style={{ padding: '7px 12px', fontSize: '12px' }} onClick={clearFilters}>
-                        <FilterX size={14} /> Clear
+                        <FilterX size={14} /> {t('ui.wholesale.common.clear')}
                     </button>
                 )}
             </div>
@@ -348,22 +351,22 @@ const AccountsReceivablePage: React.FC = () => {
             {bothMissing ? (
                 <div style={{ ...cardStyle, padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
-                    <p style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>Database setup needed</p>
+                    <p style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{t('ui.wholesale.common.dbSetupNeeded')}</p>
                     <p style={{ fontSize: '13px' }}>
-                        Run <code>migrations/full_schema.sql</code> in your Supabase SQL editor, then Refresh.
+                        {t('ui.wholesale.common.dbSetupRun')} <code>migrations/full_schema.sql</code> {t('ui.wholesale.common.dbSetupThen')}
                     </p>
                 </div>
             ) : receivables.length === 0 ? (
                 <div style={{ ...cardStyle, padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <HandCoins size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
-                    <p>No outstanding receivables. Everything is collected. 🎉</p>
+                    <p>{t('ui.wholesale.ar.noneOutstanding')} 🎉</p>
                 </div>
             ) : filteredReceivables.length === 0 ? (
                 <div style={{ ...cardStyle, padding: '48px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Search size={40} style={{ opacity: 0.2, margin: '0 auto 12px' }} />
-                    <p>No receivables match your filters.</p>
+                    <p>{t('ui.wholesale.ar.noMatch')}</p>
                     <button className="secondary-button" style={{ marginTop: '12px' }} onClick={clearFilters}>
-                        <FilterX size={14} /> Clear filters
+                        <FilterX size={14} /> {t('ui.wholesale.ar.clearFilters')}
                     </button>
                 </div>
             ) : isMobile ? (
@@ -376,21 +379,21 @@ const AccountsReceivablePage: React.FC = () => {
                             <div key={r.key} style={{ padding: '12px 14px', borderBottom: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                                     <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', color: isWholesale ? '#7E22CE' : '#0369A1', background: isWholesale ? 'rgba(126,34,206,0.1)' : 'rgba(3,105,161,0.1)', flexShrink: 0 }}>
-                                        {isWholesale ? 'WHOLESALE' : 'TRANSFER'}
+                                        {isWholesale ? t('ui.wholesale.ar.badgeWholesale') : t('ui.wholesale.ar.badgeTransfer')}
                                     </span>
                                     <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{r.date ? new Date(r.date).toLocaleDateString() : '—'}</span>
                                 </div>
                                 <div className="d2-khmer" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--color-text-main)', margin: '6px 0 2px' }}>{r.party}</div>
                                 <div className="d2-khmer" style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                     {r.desc}
-                                    {r.due_date && <> · Due {new Date(r.due_date).toLocaleDateString()}</>}
-                                    {od !== null && od > 0 && <span style={{ marginLeft: '6px', color: '#DC2626', fontWeight: 600 }}>{od}d late</span>}
+                                    {r.due_date && <> · {t('ui.wholesale.common.due')} {new Date(r.due_date).toLocaleDateString()}</>}
+                                    {od !== null && od > 0 && <span style={{ marginLeft: '6px', color: '#DC2626', fontWeight: 600 }}>{fill(t('ui.wholesale.orders.daysLate'), { n: od })}</span>}
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', gap: '10px' }}>
                                     <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
                                         {fmt(r.total)} − {fmt(r.received)} = <span style={{ fontWeight: 700, color: '#059669' }}>{fmt(r.balance)}</span>
                                     </span>
-                                    <button className="primary-button" style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }} onClick={() => openReceipt(r)}>Record Receipt</button>
+                                    <button className="primary-button" style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }} onClick={() => openReceipt(r)}>{t('ui.wholesale.ar.recordReceipt')}</button>
                                 </div>
                             </div>
                         );
@@ -401,14 +404,14 @@ const AccountsReceivablePage: React.FC = () => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '860px' }}>
                         <thead>
                             <tr style={{ background: 'var(--color-bg)' }}>
-                                <th style={thStyle}>Date</th>
-                                <th style={thStyle}>Type</th>
-                                <th style={thStyle}>Owed By</th>
-                                <th style={thStyle}>Details</th>
-                                <th style={thStyle}>Due</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Received</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Balance</th>
+                                <th style={thStyle}>{t('ui.wholesale.common.date')}</th>
+                                <th style={thStyle}>{t('ui.wholesale.common.type')}</th>
+                                <th style={thStyle}>{t('ui.wholesale.ar.owedBy')}</th>
+                                <th style={thStyle}>{t('ui.wholesale.ar.details')}</th>
+                                <th style={thStyle}>{t('ui.wholesale.common.due')}</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>{t('common.total')}</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>{t('ui.wholesale.details.received')}</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>{t('ui.wholesale.common.balance')}</th>
                                 <th style={{ ...thStyle, textAlign: 'right' }}></th>
                             </tr>
                         </thead>
@@ -421,7 +424,7 @@ const AccountsReceivablePage: React.FC = () => {
                                         <td style={tdStyle}>{r.date ? new Date(r.date).toLocaleDateString() : '—'}</td>
                                         <td style={tdStyle}>
                                             <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', color: isWholesale ? '#7E22CE' : '#0369A1', background: isWholesale ? 'rgba(126,34,206,0.1)' : 'rgba(3,105,161,0.1)' }}>
-                                                {isWholesale ? 'WHOLESALE' : 'TRANSFER'}
+                                                {isWholesale ? t('ui.wholesale.ar.badgeWholesale') : t('ui.wholesale.ar.badgeTransfer')}
                                             </span>
                                         </td>
                                         <td style={tdStyle}>
@@ -434,13 +437,13 @@ const AccountsReceivablePage: React.FC = () => {
                                         <td style={tdStyle}>{r.desc}</td>
                                         <td style={tdStyle}>
                                             {r.due_date ? new Date(r.due_date).toLocaleDateString() : '—'}
-                                            {od !== null && od > 0 && <span style={{ marginLeft: '6px', fontSize: '11px', color: '#DC2626', fontWeight: 600 }}>{od}d late</span>}
+                                            {od !== null && od > 0 && <span style={{ marginLeft: '6px', fontSize: '11px', color: '#DC2626', fontWeight: 600 }}>{fill(t('ui.wholesale.orders.daysLate'), { n: od })}</span>}
                                         </td>
                                         <td style={{ ...tdStyle, textAlign: 'right' }}>{fmt(r.total)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right', color: 'var(--color-text-secondary)' }}>{fmt(r.received)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#059669' }}>{fmt(r.balance)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right' }}>
-                                            <button className="primary-button" style={{ padding: '5px 10px', fontSize: '12px' }} onClick={() => openReceipt(r)}>Record Receipt</button>
+                                            <button className="primary-button" style={{ padding: '5px 10px', fontSize: '12px' }} onClick={() => openReceipt(r)}>{t('ui.wholesale.ar.recordReceipt')}</button>
                                         </td>
                                     </tr>
                                 );
@@ -451,86 +454,86 @@ const AccountsReceivablePage: React.FC = () => {
             )}
 
             {/* Transfer-on-credit create modal */}
-            <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Transfer Stock to Another Warehouse (on Credit)">
+            <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title={t('ui.wholesale.ar.transferTitle')}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
-                            <label style={labelStyle}>From Warehouse</label>
+                            <label style={labelStyle}>{t('ui.wholesale.orders.form.fromWarehouse')}</label>
                             <select className="search-input" style={{ width: '100%' }} value={fromWh} onChange={e => setFromWh(e.target.value)}>
-                                <option value="">Select…</option>
+                                <option value="">{t('ui.wholesale.common.select')}</option>
                                 {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label style={labelStyle}>To Warehouse (owes you)</label>
+                            <label style={labelStyle}>{t('ui.wholesale.ar.toWarehouse')}</label>
                             <select className="search-input" style={{ width: '100%' }} value={toWh} onChange={e => setToWh(e.target.value)}>
-                                <option value="">Select…</option>
+                                <option value="">{t('ui.wholesale.common.select')}</option>
                                 {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                             </select>
                         </div>
                     </div>
                     <div>
-                        <label style={labelStyle}>Product</label>
+                        <label style={labelStyle}>{t('ui.wholesale.common.product')}</label>
                         <select className="search-input" style={{ width: '100%' }} value={productId} onChange={e => setProductId(e.target.value)}>
-                            <option value="">Select…</option>
+                            <option value="">{t('ui.wholesale.common.select')}</option>
                             {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                        <div><label style={labelStyle}>Quantity</label><input type="number" className="search-input" style={{ width: '100%' }} value={qty} onChange={e => setQty(e.target.value)} min="0" step="1" /></div>
-                        <div><label style={labelStyle}>Unit Price ($)</label><input type="number" className="search-input" style={{ width: '100%' }} value={unitPrice} onChange={e => setUnitPrice(e.target.value)} min="0" step="0.01" /></div>
+                        <div><label style={labelStyle}>{t('ui.wholesale.common.quantity')}</label><input type="number" className="search-input" style={{ width: '100%' }} value={qty} onChange={e => setQty(e.target.value)} min="0" step="1" /></div>
+                        <div><label style={labelStyle}>{t('ui.wholesale.ar.unitPriceUsd')}</label><input type="number" className="search-input" style={{ width: '100%' }} value={unitPrice} onChange={e => setUnitPrice(e.target.value)} min="0" step="0.01" /></div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', alignItems: 'end' }}>
-                        <div><label style={labelStyle}>Due Date (optional)</label><input type="date" className="search-input" style={{ width: '100%' }} value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
-                        <div style={{ textAlign: 'right', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Total: <strong style={{ color: 'var(--color-text-main)', fontSize: '16px' }}>{fmt((Number(qty) || 0) * (Number(unitPrice) || 0))}</strong></div>
+                        <div><label style={labelStyle}>{t('ui.wholesale.ar.dueDateOptional')}</label><input type="date" className="search-input" style={{ width: '100%' }} value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
+                        <div style={{ textAlign: 'right', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.ar.totalColon')} <strong style={{ color: 'var(--color-text-main)', fontSize: '16px' }}>{fmt((Number(qty) || 0) * (Number(unitPrice) || 0))}</strong></div>
                     </div>
-                    <div><label style={labelStyle}>Note (optional)</label><input type="text" className="search-input" style={{ width: '100%' }} value={note} onChange={e => setNote(e.target.value)} /></div>
+                    <div><label style={labelStyle}>{t('ui.wholesale.ar.noteOptional')}</label><input type="text" className="search-input" style={{ width: '100%' }} value={note} onChange={e => setNote(e.target.value)} /></div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                        <button className="secondary-button" onClick={() => setIsCreateOpen(false)}>Cancel</button>
-                        <button className="primary-button" disabled={saving} onClick={submitTransfer}>{saving ? 'Saving…' : 'Record Transfer'}</button>
+                        <button className="secondary-button" onClick={() => setIsCreateOpen(false)}>{t('common.cancel')}</button>
+                        <button className="primary-button" disabled={saving} onClick={submitTransfer}>{saving ? t('ui.wholesale.common.saving') : t('ui.wholesale.ar.recordTransfer')}</button>
                     </div>
                 </div>
             </Modal>
 
             {/* Receipt modal */}
-            <Modal isOpen={!!receiptFor} onClose={() => setReceiptFor(null)} title="Record Receipt">
+            <Modal isOpen={!!receiptFor} onClose={() => setReceiptFor(null)} title={t('ui.wholesale.ar.recordReceipt')}>
                 {receiptFor && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                             {receiptFor.party} · {receiptFor.desc}
-                            <div style={{ marginTop: '4px', color: '#059669', fontWeight: 600 }}>Balance: {fmt(receiptFor.balance)}</div>
+                            <div style={{ marginTop: '4px', color: '#059669', fontWeight: 600 }}>{t('ui.wholesale.ar.balanceColon')} {fmt(receiptFor.balance)}</div>
                         </div>
                         {/* Warehouse-transfer receipts have no currency columns: USD only (with the warning). */}
                         <MoneyInput
                             field={receiptField}
-                            label="Amount"
+                            label={t('common.amount')}
                             allowKhr={receiptFor.source === 'wholesale'}
                             onToggleCurrency={receiptCoupling.onToggleCurrency}
                             khrUnavailableReason={receiptCoupling.khrUnavailableReason}
                             labelStyle={labelStyle}
                         />
-                        <div><label style={labelStyle}>Method</label>
+                        <div><label style={labelStyle}>{t('ui.wholesale.common.method')}</label>
                             <select className="search-input" style={{ width: '100%' }} value={receiptMethod} onChange={e => setReceiptMethod(e.target.value)}>
-                                <option>Cash</option><option>Bank Transfer</option><option>Credit Card</option><option>Cheque</option>
+                                <option value="Cash">{t('ui.wholesale.methods.cash')}</option><option value="Bank Transfer">{t('ui.wholesale.methods.bankTransfer')}</option><option value="Credit Card">{t('ui.wholesale.methods.creditCard')}</option><option value="Cheque">{t('ui.wholesale.methods.cheque')}</option>
                             </select>
                         </div>
                         {receiptFor.source === 'wholesale' && (
-                            <div><label style={labelStyle}>Received into *</label>
+                            <div><label style={labelStyle}>{t('ui.wholesale.ar.receivedInto')} *</label>
                                 <select className="search-input d2-khmer" style={{ width: '100%' }} value={receiveAccountId} onChange={e => receiptCoupling.onAccountChange(e.target.value)}>
-                                    <option value="">Bank or cash account…</option>
+                                    <option value="">{t('ui.wholesale.setup.bankOrCash')}</option>
                                     <CashBankOptions accounts={paymentAccounts} />
                                 </select>
                                 {paymentAccounts.length === 0 && (
                                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                                        No cash or bank accounts in the Chart of Accounts yet — the receipt saves without one.
+                                        {t('ui.wholesale.ar.noCashAccounts')}
                                     </div>
                                 )}
                             </div>
                         )}
-                        <div><label style={labelStyle}>Note (optional)</label><input type="text" className="search-input" style={{ width: '100%' }} value={receiptNote} onChange={e => setReceiptNote(e.target.value)} /></div>
+                        <div><label style={labelStyle}>{t('ui.wholesale.ar.noteOptional')}</label><input type="text" className="search-input" style={{ width: '100%' }} value={receiptNote} onChange={e => setReceiptNote(e.target.value)} /></div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                            <button className="secondary-button" onClick={() => setReceiptFor(null)}>Cancel</button>
-                            <button className="primary-button" disabled={saving} onClick={submitReceipt}>{saving ? 'Saving…' : 'Record Receipt'}</button>
+                            <button className="secondary-button" onClick={() => setReceiptFor(null)}>{t('common.cancel')}</button>
+                            <button className="primary-button" disabled={saving} onClick={submitReceipt}>{saving ? t('ui.wholesale.common.saving') : t('ui.wholesale.ar.recordReceipt')}</button>
                         </div>
                     </div>
                 )}

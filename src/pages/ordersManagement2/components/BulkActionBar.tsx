@@ -5,6 +5,7 @@ import React from 'react';
 import { Truck, PackageCheck, Printer, Download, X, Pencil } from 'lucide-react';
 import { D2, tabular } from '../../dashboard2/theme';
 import type { Order } from '../metrics';
+import { useOM2Lang } from '../ui2';
 
 interface BulkActionBarProps {
     selectedOrders: Order[];
@@ -27,10 +28,11 @@ const secondaryBtn: React.CSSProperties = {
 
 const BulkActionBar: React.FC<BulkActionBarProps> = ({ selectedOrders, onClear, onAddTracking, onMarkShipped, markShippedBusy = false, onBulkEdit, onPrint, onExport }) => {
     const count = selectedOrders.length;
+    const { tx } = useOM2Lang();
     return (
         <div
             role="toolbar"
-            aria-label="Bulk actions"
+            aria-label={tx('om2.bulk.aria', 'Bulk actions')}
             style={{
                 position: 'fixed', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 1250,
                 maxWidth: 'calc(100vw - 24px)', boxSizing: 'border-box',
@@ -43,7 +45,7 @@ const BulkActionBar: React.FC<BulkActionBarProps> = ({ selectedOrders, onClear, 
                 grows tall enough to cover most of a narrow screen. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflowX: 'auto', whiteSpace: 'nowrap' }}>
                 <span style={{ ...tabular, fontSize: 13, fontWeight: 700, color: D2.ink, flexShrink: 0 }}>
-                    {count} selected
+                    {tx('om2.bulk.selectedN', '{n} selected', { n: count })}
                 </span>
 
                 <span aria-hidden style={{ width: 1, height: 20, background: D2.border, flexShrink: 0 }} />
@@ -54,7 +56,7 @@ const BulkActionBar: React.FC<BulkActionBarProps> = ({ selectedOrders, onClear, 
                     className="primary-button d2-clickable om2-tap-target"
                     style={{ height: 34, padding: '0 14px', borderRadius: 8, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}
                 >
-                    <Truck size={15} aria-hidden /> Add tracking IDs
+                    <Truck size={15} aria-hidden /> {tx('om2.bulk.addTracking', 'Add tracking IDs')}
                 </button>
 
                 <button
@@ -65,26 +67,26 @@ const BulkActionBar: React.FC<BulkActionBarProps> = ({ selectedOrders, onClear, 
                     className="d2-clickable om2-tap-target"
                     style={{ ...secondaryBtn, ...(markShippedBusy ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
                 >
-                    <PackageCheck size={15} aria-hidden /> {markShippedBusy ? 'Marking shipped…' : 'Mark shipped'}
+                    <PackageCheck size={15} aria-hidden /> {markShippedBusy ? tx('om2.bulk.markingShipped', 'Marking shipped…') : tx('om2.bulk.markShipped', 'Mark shipped')}
                 </button>
 
                 <button type="button" onClick={onBulkEdit} className="d2-clickable om2-tap-target" style={secondaryBtn}>
-                    <Pencil size={15} aria-hidden /> Edit
+                    <Pencil size={15} aria-hidden /> {tx('om2.bulk.edit', 'Edit')}
                 </button>
 
                 <button type="button" onClick={onPrint} className="d2-clickable om2-tap-target" style={secondaryBtn}>
-                    <Printer size={15} aria-hidden /> Print receipts
+                    <Printer size={15} aria-hidden /> {tx('om2.bulk.printReceipts', 'Print receipts')}
                 </button>
 
                 <button type="button" onClick={onExport} className="d2-clickable om2-tap-target" style={secondaryBtn}>
-                    <Download size={15} aria-hidden /> Export
+                    <Download size={15} aria-hidden /> {tx('om2.bulk.export', 'Export')}
                 </button>
 
                 <button
                     type="button"
                     onClick={onClear}
-                    aria-label="Clear selection"
-                    title="Clear selection"
+                    aria-label={tx('om2.bulk.clearSelection', 'Clear selection')}
+                    title={tx('om2.bulk.clearSelection', 'Clear selection')}
                     className="d2-clickable om2-tap-target"
                     style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 8, border: `1px solid ${D2.border}`, background: D2.card, color: D2.muted, flexShrink: 0 }}
                 >

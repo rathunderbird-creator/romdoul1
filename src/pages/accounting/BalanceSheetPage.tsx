@@ -14,6 +14,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Printer, Download, RefreshCw } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { supabase } from '../../lib/supabase';
 import type { ChartOfAccount } from '../../types';
 import { fetchPostedLedgerLines } from '../../utils/fetchPostedLedgerLines';
@@ -22,8 +24,9 @@ type AccountType = ChartOfAccount['account_type'];
 type Granularity = 'monthly' | 'quarterly' | 'annual';
 interface LedgerLine { accountId: string; debit: number; credit: number; date: string }
 interface AccountGroup { label: string | null; accounts: ChartOfAccount[] }
-interface PeriodColumn { key: string; label: string; endYmd: string }
-interface ReportRow { kind: 'section' | 'group' | 'account' | 'subtotal' | 'total'; cells: (string | number)[] }
+// label is the English text the CSV/print use; disp is the on-screen text.
+interface PeriodColumn { key: string; label: string; disp: string; endYmd: string }
+interface ReportRow { kind: 'section' | 'group' | 'account' | 'subtotal' | 'total'; cells: (string | number)[]; disp?: string }
 
 const DEBIT_NORMAL = (t: AccountType): boolean => t === 'Asset' || t === 'Expense';
 const fmt = (n: number): string => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -36,6 +39,7 @@ const monthEndYmd = (year: number, monthIndex0: number): string => {
 };
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const GRANULARITY_LABEL: Record<Granularity, string> = { monthly: 'Monthly', quarterly: 'Quarterly', annual: 'Annual' };
+const MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 const BLUE = '#3B82F6', RED = '#EF4444', PURPLE = '#8B5CF6';
 const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
@@ -117,6 +121,7 @@ function earningsOf(accounts: ChartOfAccount[], bal: Map<string, number>): numbe
 const BalanceSheetPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const isMobile = useMobile();
+    const { t } = useLanguage();
     const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
     const [lines, setLines] = useState<LedgerLine[] | null>(null);
     const [refreshKey, setRefreshKey] = useState(0);
@@ -128,13 +133,13 @@ const BalanceSheetPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Balance Sheet — {GRANULARITY_LABEL[granularity]}</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>Cumulative account balances at each period end</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.balanceSheet')} — {t('ui.accounting.common.granularity.' + granularity)}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{t('ui.accounting.bs.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, granularity]);
+    }, [setHeaderContent, granularity, t]);
 
     useEffect(() => {
         let alive = true;
@@ -174,16 +179,16 @@ const BalanceSheetPage: React.FC = () => {
     const columns = useMemo<PeriodColumn[]>(() => {
         const cols: PeriodColumn[] = [];
         if (granularity === 'monthly') {
-            for (let m = 0; m < 12; m++) cols.push({ key: `m${m}`, label: MONTH_LABELS[m], endYmd: monthEndYmd(year, m) });
+            for (let m = 0; m < 12; m++) cols.push({ key: `m${m}`, label: MONTH_LABELS[m], disp: t('ui.accounting.common.month.' + MONTH_KEYS[m]), endYmd: monthEndYmd(year, m) });
         } else if (granularity === 'quarterly') {
-            [2, 5, 8, 11].forEach((m, i) => cols.push({ key: `q${i}`, label: `Q${i + 1}`, endYmd: monthEndYmd(year, m) }));
+            [2, 5, 8, 11].forEach((m, i) => cols.push({ key: `q${i}`, label: `Q${i + 1}`, disp: `Q${i + 1}`, endYmd: monthEndYmd(year, m) }));
         } else {
-            cols.push({ key: 'y', label: String(year), endYmd: monthEndYmd(year, 11) });
+            cols.push({ key: 'y', label: String(year), disp: String(year), endYmd: monthEndYmd(year, 11) });
         }
-        cols.push({ key: 'ytd', label: 'YTD', endYmd: monthEndYmd(year, 11) });
-        if (compare) cols.push({ key: 'ytd-prev', label: `YTD ${year - 1}`, endYmd: monthEndYmd(year - 1, 11) });
+        cols.push({ key: 'ytd', label: 'YTD', disp: t('ui.accounting.common.ytd'), endYmd: monthEndYmd(year, 11) });
+        if (compare) cols.push({ key: 'ytd-prev', label: `YTD ${year - 1}`, disp: fill(t('ui.accounting.common.ytdYear'), { year: year - 1 }), endYmd: monthEndYmd(year - 1, 11) });
         return cols;
-    }, [granularity, year, compare]);
+    }, [granularity, year, compare, t]);
 
     const balancesByColumn = useMemo(() => {
         const src = lines || [];
@@ -210,31 +215,31 @@ const BalanceSheetPage: React.FC = () => {
 
     const reportRows = useMemo((): ReportRow[] => {
         const rows: ReportRow[] = [];
-        const emitSection = (label: string) => rows.push({ kind: 'section', cells: ['', label, ...columns.map(() => '')] });
+        const emitSection = (label: string, disp: string) => rows.push({ kind: 'section', cells: ['', label, ...columns.map(() => '')], disp });
         const emitGroups = (groups: AccountGroup[]) => {
             for (const g of groups) {
-                if (g.label) rows.push({ kind: 'group', cells: ['', g.label.toUpperCase(), ...columns.map(() => '')] });
+                if (g.label) rows.push({ kind: 'group', cells: ['', g.label.toUpperCase(), ...columns.map(() => '')], disp: g.label === 'Other' ? t('ui.accounting.common.other') : undefined });
                 for (const a of g.accounts) rows.push({ kind: 'account', cells: [a.account_code, a.account_name, ...columns.map((_, i) => valueOf(a.id, i))] });
-                if (g.label) rows.push({ kind: 'subtotal', cells: ['', `Total ${g.label}`, ...columns.map((_, i) => groupTotal(g, i))] });
+                if (g.label) rows.push({ kind: 'subtotal', cells: ['', `Total ${g.label}`, ...columns.map((_, i) => groupTotal(g, i))], disp: fill(t('ui.accounting.common.totalOf'), { name: g.label === 'Other' ? t('ui.accounting.common.other') : g.label }) });
             }
         };
 
-        emitSection('ASSETS');
+        emitSection('ASSETS', t('ui.accounting.common.assetsCaps'));
         emitGroups(assetGroups);
-        rows.push({ kind: 'total', cells: ['', 'Total Assets', ...columns.map((_, i) => typeTotal(assetGroups, i))] });
+        rows.push({ kind: 'total', cells: ['', 'Total Assets', ...columns.map((_, i) => typeTotal(assetGroups, i))], disp: t('ui.accounting.common.totalAssets') });
 
-        emitSection('LIABILITIES');
+        emitSection('LIABILITIES', t('ui.accounting.common.liabilitiesCaps'));
         emitGroups(liabilityGroups);
-        rows.push({ kind: 'total', cells: ['', 'Total Liabilities', ...columns.map((_, i) => typeTotal(liabilityGroups, i))] });
+        rows.push({ kind: 'total', cells: ['', 'Total Liabilities', ...columns.map((_, i) => typeTotal(liabilityGroups, i))], disp: t('ui.accounting.common.totalLiabilities') });
 
-        emitSection('EQUITY');
+        emitSection('EQUITY', t('ui.accounting.common.equityCaps'));
         emitGroups(equityGroups);
-        rows.push({ kind: 'account', cells: ['', 'Retained Earnings (to date)', ...columns.map((_, i) => retainedEarningsAt(i))] });
-        rows.push({ kind: 'total', cells: ['', 'Total Equity', ...columns.map((_, i) => equityTotal(i))] });
+        rows.push({ kind: 'account', cells: ['', 'Retained Earnings (to date)', ...columns.map((_, i) => retainedEarningsAt(i))], disp: t('ui.accounting.common.retainedEarningsToDate') });
+        rows.push({ kind: 'total', cells: ['', 'Total Equity', ...columns.map((_, i) => equityTotal(i))], disp: t('ui.accounting.common.totalEquity') });
 
-        rows.push({ kind: 'total', cells: ['', 'Total Liabilities & Equity', ...columns.map((_, i) => typeTotal(liabilityGroups, i) + equityTotal(i))] });
+        rows.push({ kind: 'total', cells: ['', 'Total Liabilities & Equity', ...columns.map((_, i) => typeTotal(liabilityGroups, i) + equityTotal(i))], disp: t('ui.accounting.common.totalLiabilitiesEquity') });
         return rows;
-    }, [columns, assetGroups, liabilityGroups, equityGroups, valueOf, groupTotal, typeTotal, retainedEarningsAt, equityTotal]);
+    }, [columns, assetGroups, liabilityGroups, equityGroups, valueOf, groupTotal, typeTotal, retainedEarningsAt, equityTotal, t]);
 
     const header = useMemo(() => ['Account', ...columns.map(c => c.label)], [columns]);
 
@@ -298,27 +303,27 @@ const BalanceSheetPage: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer', userSelect: 'none' }}>
                         <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} style={{ accentColor: BLUE, cursor: 'pointer' }} />
-                        Compare with previous period
+                        {t('ui.accounting.common.comparePrevious')}
                     </label>
                     <select value={granularity} onChange={e => setGranularity(e.target.value as Granularity)} style={selectStyle}>
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="annual">Annual</option>
+                        <option value="monthly">{t('ui.accounting.common.granularity.monthly')}</option>
+                        <option value="quarterly">{t('ui.accounting.common.granularity.quarterly')}</option>
+                        <option value="annual">{t('ui.accounting.common.granularity.annual')}</option>
                     </select>
                     <select value={year} onChange={e => setYear(Number(e.target.value))} style={selectStyle}>
                         {years.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
-                    <button onClick={printReport} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> Print / PDF</button>
+                    <button onClick={printReport} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Printer size={14} /> {t('ui.accounting.common.printPdf')}</button>
                     <button onClick={exportCsv} disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.5 : 1 }}><Download size={14} /> CSV</button>
-                    <button onClick={() => setRefreshKey(k => k + 1)} title="Reload the ledger" style={{ ...btnStyle, padding: '7px 10px' }}>
+                    <button onClick={() => setRefreshKey(k => k + 1)} title={t('ui.accounting.common.reloadLedger')} style={{ ...btnStyle, padding: '7px 10px' }}>
                         <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
                     </button>
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>All figures are in USD.</div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.allUsd')}</div>
 
                 {!loading && Math.abs(imbalance) > 0.005 && (
                     <div style={{ ...cardStyle, padding: '10px 16px', borderColor: '#F59E0B', color: '#B45309', fontSize: '13px', fontWeight: 600 }}>
-                        This sheet does not balance: Assets differ from Liabilities + Equity by {fmt(imbalance)} (YTD). Check for unbalanced or misclassified journal entries.
+                        {fill(t('ui.accounting.common.notBalancedYtd'), { amount: fmt(imbalance) })}
                     </div>
                 )}
 
@@ -326,28 +331,28 @@ const BalanceSheetPage: React.FC = () => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead>
                             <tr>
-                                <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', whiteSpace: 'nowrap' }}>Account</th>
+                                <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', whiteSpace: 'nowrap' }}>{t('ui.accounting.common.account')}</th>
                                 {columns.map(c => (
-                                    <th key={c.key} style={{ textAlign: 'right', padding: '10px 14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', background: c.key.startsWith('ytd') ? 'var(--color-bg)' : undefined, fontWeight: c.key.startsWith('ytd') ? 700 : 500, whiteSpace: 'nowrap' }}>{c.label}</th>
+                                    <th key={c.key} style={{ textAlign: 'right', padding: '10px 14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', background: c.key.startsWith('ytd') ? 'var(--color-bg)' : undefined, fontWeight: c.key.startsWith('ytd') ? 700 : 500, whiteSpace: 'nowrap' }}>{c.disp}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr><td colSpan={columns.length + 1} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading the ledger…</td></tr>
+                                <tr><td colSpan={columns.length + 1} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.loadingLedger')}</td></tr>
                             ) : reportRows.map((r, idx) => {
                                 if (r.kind === 'section') {
                                     const color = r.cells[1] === 'ASSETS' ? BLUE : r.cells[1] === 'LIABILITIES' ? RED : PURPLE;
                                     return (
                                         <tr key={idx}>
-                                            <td colSpan={columns.length + 1} style={{ padding: '16px 16px 6px', fontSize: '12px', fontWeight: 800, letterSpacing: '0.6px', color, background: 'var(--color-bg)' }}>{r.cells[1]}</td>
+                                            <td colSpan={columns.length + 1} style={{ padding: '16px 16px 6px', fontSize: '12px', fontWeight: 800, letterSpacing: '0.6px', color, background: 'var(--color-bg)' }}>{r.disp ?? r.cells[1]}</td>
                                         </tr>
                                     );
                                 }
                                 if (r.kind === 'group') {
                                     return (
                                         <tr key={idx}>
-                                            <td colSpan={columns.length + 1} style={{ padding: '8px 16px 4px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{r.cells[1]}</td>
+                                            <td colSpan={columns.length + 1} style={{ padding: '8px 16px 4px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{r.disp ?? r.cells[1]}</td>
                                         </tr>
                                     );
                                 }
@@ -356,7 +361,7 @@ const BalanceSheetPage: React.FC = () => {
                                     <tr key={idx} style={{ borderTop: r.kind === 'total' ? '2px solid var(--color-border)' : r.kind === 'subtotal' ? '1px solid var(--color-border)' : 'none', background: r.kind === 'total' ? 'var(--color-bg)' : undefined }}>
                                         <td style={{ padding: '7px 16px', paddingLeft: r.kind === 'account' ? '28px' : '16px', fontWeight: isTotal ? 700 : 400, whiteSpace: 'nowrap' }}>
                                             {r.kind === 'account' && r.cells[0] ? <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginRight: '8px' }}>{r.cells[0]}</span> : null}
-                                            <span style={{ color: 'var(--color-text-main)' }}>{r.cells[1]}</span>
+                                            <span style={{ color: 'var(--color-text-main)' }}>{r.disp ?? r.cells[1]}</span>
                                         </td>
                                         {columns.map((c, i) => {
                                             const raw = r.cells[2 + i];

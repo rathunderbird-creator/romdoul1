@@ -5,6 +5,8 @@ import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
 import { Modal, StatusBadge } from '../../components';
 import { useHR, isPayableEmployee } from '../../hooks/useHR';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import type { LeaveRequest } from '../../types';
 
 const getInitials = (firstName: string, lastName: string) => {
@@ -31,6 +33,7 @@ const STATUS_TABS = ['All', 'Pending', 'Approved', 'Rejected'] as const;
 const LeavesPage = () => {
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const isMobile = useMobile();
     const { leaveRequests, employees, isLoading, fetchLeaveRequests, fetchEmployees, saveLeaveRequest, deleteLeaveRequest } = useHR();
 
@@ -51,17 +54,31 @@ const LeavesPage = () => {
 
     const [formData, setFormData] = useState<Partial<LeaveRequest>>(defaultFormData);
 
+    const statusLabel = (s: string) => ({
+        All: t('common.all'),
+        Pending: t('status.pending'),
+        Approved: t('ui.people.hr.leave.st.approved'),
+        Rejected: t('ui.people.hr.leave.st.rejected'),
+    } as Record<string, string>)[s] ?? s;
+    const typeLabel = (s: string) => ({
+        Vacation: t('ui.people.hr.leave.type.vacation'),
+        Sick: t('ui.people.hr.leave.type.sick'),
+        Unpaid: t('ui.people.hr.leave.type.unpaid'),
+        Maternity: t('ui.people.hr.leave.type.maternity'),
+        Other: t('ui.people.hr.leave.type.other'),
+    } as Record<string, string>)[s] ?? s;
+
     useEffect(() => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Leave Requests</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage employee time off</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('ui.people.hr.leave.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.people.hr.leave.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchLeaveRequests();
@@ -107,7 +124,7 @@ const LeavesPage = () => {
         if (!formData.employee_id || !formData.start_date || !formData.end_date || isSaving) return;
         // The date input's `min` only styles the field — a typed end date can still precede the start.
         if (formData.end_date < formData.start_date) {
-            showToast('End date cannot be before the start date', 'error');
+            showToast(t('ui.people.hr.leave.endBeforeStart'), 'error');
             return;
         }
         setIsSaving(true);
@@ -131,7 +148,7 @@ const LeavesPage = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (confirm('Are you sure you want to delete this leave request?')) {
+        if (confirm(t('ui.people.hr.leave.confirmDelete'))) {
             await deleteLeaveRequest(id);
         }
     };
@@ -174,7 +191,7 @@ const LeavesPage = () => {
                                     boxShadow: active ? 'var(--shadow-sm)' : 'none'
                                 }}
                             >
-                                {status}
+                                {statusLabel(status)}
                                 <span style={{
                                     background: active ? 'rgba(255,255,255,0.25)' : (status === 'Pending' && count > 0 ? '#FEF3C7' : 'var(--color-surface)'),
                                     color: active ? '#fff' : (status === 'Pending' && count > 0 ? '#D97706' : 'inherit'),
@@ -189,7 +206,7 @@ const LeavesPage = () => {
                     onClick={() => handleOpenModal()}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '12px', fontWeight: 500, boxShadow: 'var(--shadow-sm)' }}
                 >
-                    <Plus size={18} /> {isMobile ? 'Leave' : 'Log Leave Request'}
+                    <Plus size={18} /> {isMobile ? t('ui.people.hr.leave.leave') : t('ui.people.hr.leave.logRequest')}
                 </button>
             </div>
 
@@ -197,17 +214,17 @@ const LeavesPage = () => {
                 <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', border: 'none' }}>
                     <thead>
                         <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Employee</th>
-                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Leave Type</th>
-                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Duration</th>
-                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Reason</th>
-                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>Status</th>
-                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'right', borderBottom: '1px solid var(--color-border)' }}>Actions</th>
+                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.people.hr.emp.employee')}</th>
+                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.people.hr.leave.leaveType')}</th>
+                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.people.hr.leave.duration')}</th>
+                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.people.hr.leave.reason')}</th>
+                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>{t('ui.people.hr.status.label')}</th>
+                            <th style={{ padding: cell, fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'right', borderBottom: '1px solid var(--color-border)' }}>{t('common.actions')}</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading leave requests...</td></tr>
+                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.people.hr.leave.loading')}</td></tr>
                         ) : filteredLeaves.length === 0 ? (
                             <tr>
                                 <td colSpan={6} style={{ padding: '60px 20px', textAlign: 'center' }}>
@@ -216,8 +233,8 @@ const LeavesPage = () => {
                                             <Calendar size={32} style={{ opacity: 0.5 }} />
                                         </div>
                                         <div>
-                                            <h3 style={{ color: 'var(--color-text-main)', marginBottom: '4px', fontSize: '16px' }}>No leave requests found</h3>
-                                            <p style={{ fontSize: '14px' }}>There are no {filterStatus.toLowerCase()} leave requests at this time.</p>
+                                            <h3 style={{ color: 'var(--color-text-main)', marginBottom: '4px', fontSize: '16px' }}>{t('ui.people.hr.leave.noneFound')}</h3>
+                                            <p style={{ fontSize: '14px' }}>{fill(t('ui.people.hr.leave.noneOfStatus'), { status: statusLabel(filterStatus).toLowerCase() })}</p>
                                         </div>
                                     </div>
                                 </td>
@@ -245,16 +262,16 @@ const LeavesPage = () => {
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>Unknown Employee</span>
+                                                <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{t('ui.people.hr.leave.unknownEmployee')}</span>
                                             )}
                                         </td>
                                         <td style={{ padding: cell, fontWeight: 500, whiteSpace: 'nowrap' }}>
-                                            {req.leave_type}
+                                            {typeLabel(req.leave_type)}
                                         </td>
                                         <td style={{ padding: cell }}>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                                 <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                                                    {calculateDays(req.start_date, req.end_date)} day(s)
+                                                    {fill(t('ui.people.hr.leave.days'), { n: calculateDays(req.start_date, req.end_date) })}
                                                 </div>
                                                 <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
                                                     {new Date(req.start_date).toLocaleDateString()} – {new Date(req.end_date).toLocaleDateString()}
@@ -275,17 +292,17 @@ const LeavesPage = () => {
                                                             onClick={() => handleStatusChange(req, 'Approved')}
                                                             disabled={isBusy}
                                                             style={{ padding: '6px 8px', borderRadius: '6px', background: 'rgba(34, 197, 94, 0.1)', color: 'var(--color-success)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 600 }}
-                                                            title="Approve"
+                                                            title={t('ui.people.hr.leave.approve')}
                                                         >
-                                                            <CheckCircle size={14} /> {!isMobile && 'Approve'}
+                                                            <CheckCircle size={14} /> {!isMobile && t('ui.people.hr.leave.approve')}
                                                         </button>
                                                         <button
                                                             onClick={() => handleStatusChange(req, 'Rejected')}
                                                             disabled={isBusy}
                                                             style={{ padding: '6px 8px', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-danger)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 600 }}
-                                                            title="Reject"
+                                                            title={t('ui.people.hr.leave.reject')}
                                                         >
-                                                            <XCircle size={14} /> {!isMobile && 'Reject'}
+                                                            <XCircle size={14} /> {!isMobile && t('ui.people.hr.leave.reject')}
                                                         </button>
                                                     </>
                                                 )}
@@ -293,7 +310,7 @@ const LeavesPage = () => {
                                                     className="secondary-button"
                                                     style={{ padding: '6px', borderRadius: '6px', background: 'var(--color-bg)' }}
                                                     onClick={() => handleOpenModal(req)}
-                                                    title="Edit"
+                                                    title={t('common.edit')}
                                                 >
                                                     <Edit size={14} />
                                                 </button>
@@ -301,7 +318,7 @@ const LeavesPage = () => {
                                                     className="danger-button"
                                                     style={{ padding: '6px', borderRadius: '6px', background: 'var(--color-red-light)', color: 'var(--color-red)', border: 'none' }}
                                                     onClick={() => handleDelete(req.id)}
-                                                    title="Delete"
+                                                    title={t('common.delete')}
                                                 >
                                                     <Trash2 size={14} />
                                                 </button>
@@ -318,18 +335,18 @@ const LeavesPage = () => {
             <Modal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                title={editingLeave ? 'Edit Leave Request' : 'New Leave Request'}
+                title={editingLeave ? t('ui.people.hr.leave.editRequest') : t('ui.people.hr.leave.newRequest')}
             >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px 0', minWidth: isMobile ? undefined : '400px' }}>
                     <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Employee *</label>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.people.hr.emp.employee')} *</label>
                         <select
                             className="input-field"
                             style={{ width: '100%', padding: '10px 12px' }}
                             value={formData.employee_id || ''}
                             onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
                         >
-                            {selectableEmployees.length === 0 && <option value="">No active employees</option>}
+                            {selectableEmployees.length === 0 && <option value="">{t('ui.people.hr.leave.noActiveEmployees')}</option>}
                             {selectableEmployees.map(emp => (
                                 <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>
                             ))}
@@ -338,38 +355,38 @@ const LeavesPage = () => {
 
                     <div style={{ display: 'grid', gridTemplateColumns: grid2, gap: '16px' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Leave Type</label>
+                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.people.hr.leave.leaveType')}</label>
                             <select
                                 className="input-field"
                                 style={{ width: '100%', padding: '10px 12px' }}
                                 value={formData.leave_type || 'Vacation'}
                                 onChange={(e) => setFormData({ ...formData, leave_type: e.target.value })}
                             >
-                                <option value="Vacation">Vacation / Annual</option>
-                                <option value="Sick">Sick Leave</option>
-                                <option value="Unpaid">Unpaid Leave</option>
-                                <option value="Maternity">Maternity/Paternity</option>
-                                <option value="Other">Other</option>
+                                <option value="Vacation">{t('ui.people.hr.leave.type.vacationAnnual')}</option>
+                                <option value="Sick">{t('ui.people.hr.leave.type.sickLeave')}</option>
+                                <option value="Unpaid">{t('ui.people.hr.leave.type.unpaidLeave')}</option>
+                                <option value="Maternity">{t('ui.people.hr.leave.type.maternityPaternity')}</option>
+                                <option value="Other">{t('ui.people.hr.leave.type.other')}</option>
                             </select>
                         </div>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Status</label>
+                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.people.hr.status.label')}</label>
                             <select
                                 className="input-field"
                                 style={{ width: '100%', padding: '10px 12px' }}
                                 value={formData.status || 'Pending'}
                                 onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                             >
-                                <option value="Pending">Pending</option>
-                                <option value="Approved">Approved</option>
-                                <option value="Rejected">Rejected</option>
+                                <option value="Pending">{statusLabel('Pending')}</option>
+                                <option value="Approved">{statusLabel('Approved')}</option>
+                                <option value="Rejected">{statusLabel('Rejected')}</option>
                             </select>
                         </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: grid2, gap: '16px' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Start Date *</label>
+                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.people.hr.leave.startDate')} *</label>
                             <input
                                 type="date"
                                 className="input-field"
@@ -383,7 +400,7 @@ const LeavesPage = () => {
                             />
                         </div>
                         <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>End Date *</label>
+                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.people.hr.leave.endDate')} *</label>
                             <input
                                 type="date"
                                 className="input-field"
@@ -396,30 +413,30 @@ const LeavesPage = () => {
                     </div>
                     {requestedDays > 0 && (
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '-8px' }}>
-                            {requestedDays} day(s) requested
+                            {fill(t('ui.people.hr.leave.daysRequested'), { n: requestedDays })}
                         </div>
                     )}
 
                     <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>Reason (Optional)</label>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>{t('ui.people.hr.leave.reasonOptional')}</label>
                         <textarea
                             className="input-field"
                             style={{ width: '100%', padding: '10px 12px', minHeight: '80px', resize: 'vertical' }}
                             value={formData.reason || ''}
                             onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                            placeholder="Brief reason for the leave..."
+                            placeholder={t('ui.people.hr.leave.reasonPh')}
                         />
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
-                        <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px' }}>Cancel</button>
+                        <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '8px' }}>{t('common.cancel')}</button>
                         <button
                             className="primary-button"
                             onClick={handleSave}
                             disabled={!formData.employee_id || !formData.start_date || !formData.end_date || isSaving}
                             style={{ padding: '10px 24px', borderRadius: '8px', fontWeight: 600 }}
                         >
-                            {isSaving ? 'Saving…' : (editingLeave ? 'Save Changes' : 'Submit Request')}
+                            {isSaving ? t('ui.people.common.saving') : (editingLeave ? t('ui.people.common.saveChanges') : t('ui.people.hr.leave.submit'))}
                         </button>
                     </div>
                 </div>

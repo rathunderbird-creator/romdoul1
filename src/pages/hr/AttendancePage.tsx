@@ -4,6 +4,8 @@ import type { User as UserType, StaffAttendance } from '../../types';
 import { Calendar, CheckCircle2, AlertCircle, UserCheck, Play, Square, Edit2, User, Check, X, Users } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 // Helper to get initials
 const getInitials = (name: string) => {
@@ -30,6 +32,7 @@ const getCurrentTimeStr = () => {
 
 const AttendancePage: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
     const isMobile = useMobile();
     const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     const [selectedDate, setSelectedDate] = useState<string>(today);
@@ -66,13 +69,13 @@ const AttendancePage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Attendance Log</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage daily shifts and staff attendance records.</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('ui.people.hr.att.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.people.hr.att.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchAttendanceData(selectedDate);
@@ -155,7 +158,7 @@ const AttendancePage: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                 <h2 style={{ fontSize: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <UserCheck size={24} color="var(--color-primary)" />
-                    Daily Attendance
+                    {t('ui.people.hr.att.daily')}
                 </h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--color-surface)', padding: '8px 14px', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
@@ -180,10 +183,10 @@ const AttendancePage: React.FC = () => {
                         <button
                             onClick={handleMarkAllPresent}
                             disabled={isMarkingAll}
-                            title="Mark every staff member without a record as Present, clocked in now"
+                            title={t('ui.people.hr.att.markAllHint')}
                             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', background: 'var(--color-success)', color: 'white', border: 'none', borderRadius: '12px', cursor: isMarkingAll ? 'wait' : 'pointer', fontSize: '13px', fontWeight: 600, opacity: isMarkingAll ? 0.7 : 1 }}
                         >
-                            <Users size={16} /> {isMarkingAll ? 'Marking…' : `Mark all present (${unmarkedStaff.length})`}
+                            <Users size={16} /> {isMarkingAll ? t('ui.people.hr.att.marking') : fill(t('ui.people.hr.att.markAll'), { n: unmarkedStaff.length })}
                         </button>
                     )}
                 </div>
@@ -202,7 +205,7 @@ const AttendancePage: React.FC = () => {
                         <User size={24} color="var(--color-text-muted)" />
                     </div>
                     <div>
-                        <h3 style={{ fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '4px', fontWeight: 600 }}>Total Staff</h3>
+                        <h3 style={{ fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '4px', fontWeight: 600 }}>{t('ui.people.hr.att.totalStaff')}</h3>
                         <p style={{ fontSize: '24px', fontWeight: '800' }}>{staff.length}</p>
                     </div>
                 </div>
@@ -211,7 +214,7 @@ const AttendancePage: React.FC = () => {
                         <CheckCircle2 size={24} color="var(--color-success)" />
                     </div>
                     <div>
-                        <h3 style={{ fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '4px', fontWeight: 600 }}>Present Today</h3>
+                        <h3 style={{ fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '4px', fontWeight: 600 }}>{t('ui.people.hr.att.presentToday')}</h3>
                         <p style={{ fontSize: '24px', fontWeight: '800', color: 'var(--color-success)' }}>
                             {attendances.filter((a: StaffAttendance) => a.status === 'Present').length} <span style={{ fontSize: '14px', color: 'var(--color-text-muted)', fontWeight: 600 }}>/ {staff.length}</span>
                         </p>
@@ -222,7 +225,7 @@ const AttendancePage: React.FC = () => {
                         <AlertCircle size={24} color="var(--color-danger)" />
                     </div>
                     <div>
-                        <h3 style={{ fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '4px', fontWeight: 600 }}>Absent / Leave</h3>
+                        <h3 style={{ fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '4px', fontWeight: 600 }}>{t('ui.people.hr.att.absentLeave')}</h3>
                         <p style={{ fontSize: '24px', fontWeight: '800', color: 'var(--color-danger)' }}>
                             {attendances.filter((a: StaffAttendance) => a.status === 'Absent' || a.status === 'Leave').length}
                         </p>
@@ -233,14 +236,14 @@ const AttendancePage: React.FC = () => {
             <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
                 {isLoading ? (
                     <div style={{ padding: '64px', display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '16px' }}>
-                        <div className="loader" style={{ width: '48px', height: '48px' }}>Loading...</div>
-                        <p style={{ color: 'var(--color-text-muted)' }}>Retrieving records...</p>
+                        <div className="loader" style={{ width: '48px', height: '48px' }}>{t('common.loading')}</div>
+                        <p style={{ color: 'var(--color-text-muted)' }}>{t('ui.people.hr.att.retrieving')}</p>
                     </div>
                 ) : staff.length === 0 ? (
                     <div style={{ padding: '64px', textAlign: 'center' }}>
                         <User size={48} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-                        <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' }}>No Staff Found</h3>
-                        <p style={{ color: 'var(--color-text-muted)', marginTop: '8px' }}>Users added in User Management will appear here.</p>
+                        <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' }}>{t('ui.people.hr.att.noStaff')}</h3>
+                        <p style={{ color: 'var(--color-text-muted)', marginTop: '8px' }}>{t('ui.people.hr.att.noStaffHint')}</p>
                     </div>
                 ) : (
                     // Frozen while "Mark all present" runs so a row can't be changed
@@ -249,11 +252,11 @@ const AttendancePage: React.FC = () => {
                         <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
                             <thead>
                                 <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
-                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Staff Member</th>
-                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Status</th>
-                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Clock In</th>
-                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Clock Out</th>
-                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>Notes</th>
+                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>{t('ui.people.hr.att.staffMember')}</th>
+                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>{t('ui.people.hr.status.label')}</th>
+                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>{t('ui.people.hr.att.clockIn')}</th>
+                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>{t('ui.people.hr.att.clockOut')}</th>
+                                    <th style={{ padding: cell, textAlign: 'left', fontWeight: 600, color: 'var(--color-text-secondary)', borderRight: 'none' }}>{t('ui.people.common.notes')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -309,12 +312,12 @@ const AttendancePage: React.FC = () => {
                                                         fontSize: '13px',
                                                     }}
                                                 >
-                                                    <option value="" disabled>Select Status...</option>
-                                                    <option value="Present">🟢 Present</option>
-                                                    <option value="Absent">🔴 Absent</option>
-                                                    <option value="Late">🟠 Late</option>
-                                                    <option value="Half Day">🟡 Half Day</option>
-                                                    <option value="Leave">🔵 Leave</option>
+                                                    <option value="" disabled>{t('ui.people.hr.att.selectStatus')}</option>
+                                                    <option value="Present">🟢 {t('ui.people.hr.att.st.present')}</option>
+                                                    <option value="Absent">🔴 {t('ui.people.hr.att.st.absent')}</option>
+                                                    <option value="Late">🟠 {t('ui.people.hr.att.st.late')}</option>
+                                                    <option value="Half Day">🟡 {t('ui.people.hr.att.st.halfDay')}</option>
+                                                    <option value="Leave">🔵 {t('ui.people.hr.att.st.leave')}</option>
                                                 </select>
                                             </td>
 
@@ -356,7 +359,7 @@ const AttendancePage: React.FC = () => {
                                                             onClick={() => handleQuickClockIn(user.id, attRecord?.status)}
                                                             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px 12px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}
                                                         >
-                                                            <Play size={14} fill="currentColor" /> Clock In
+                                                            <Play size={14} fill="currentColor" /> {t('ui.people.hr.att.clockIn')}
                                                         </button>
                                                     )}
                                                 </div>
@@ -406,7 +409,7 @@ const AttendancePage: React.FC = () => {
                                                                 borderRadius: '8px', cursor: attRecord?.clockIn ? 'pointer' : 'not-allowed', fontSize: '13px', fontWeight: 600 
                                                             }}
                                                         >
-                                                            <Square size={14} fill="currentColor" /> Clock Out
+                                                            <Square size={14} fill="currentColor" /> {t('ui.people.hr.att.clockOut')}
                                                         </button>
                                                     )}
                                                 </div>
@@ -417,7 +420,7 @@ const AttendancePage: React.FC = () => {
                                                     key={`notes-${selectedDate}-${user.id}`}
                                                     type="text"
                                                     defaultValue={attRecord?.notes || ''}
-                                                    placeholder="Add notes..."
+                                                    placeholder={t('ui.people.hr.att.addNotes')}
                                                     onBlur={(e) => {
                                                         if (e.target.value !== (attRecord?.notes || '')) {
                                                             handleNotesChange(user.id, e.target.value);

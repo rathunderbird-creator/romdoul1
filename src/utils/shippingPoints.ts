@@ -4,6 +4,7 @@
 import { supabase } from '../lib/supabase';
 import { fetchAll } from './fetchAll';
 import { resolveByCode, resolvePath, type LocProvince, type LocDistrict, type LocCommune } from './locationTree';
+import { tNow } from '../i18n/translate';
 
 export const SHIPPING_POINTS_TABLE = 'custom_locations';
 
@@ -60,8 +61,8 @@ const rowFields = (f: ShippingPointFields) => ({
 
 /** Insert a new custom point (id null) or update an existing one. */
 export async function saveShippingPoint(fields: ShippingPointFields, id: string | null, table: string = SHIPPING_POINTS_TABLE): Promise<void> {
-    if (!fields.name.trim()) throw new Error('សូមបញ្ចូលឈ្មោះទីតាំង (Enter custom location name)');
-    if (!Number.isFinite(fields.lat) || !Number.isFinite(fields.lng)) throw new Error('A valid latitude and longitude are required.');
+    if (!fields.name.trim()) throw new Error(tNow('ui.store.shippingPoints.nameRequired'));
+    if (!Number.isFinite(fields.lat) || !Number.isFinite(fields.lng)) throw new Error(tNow('ui.store.shippingPoints.latLngRequired'));
     if (id) {
         const { error } = await supabase.from(table).update(rowFields(fields)).eq('id', id);
         if (error) throw error;
@@ -83,7 +84,7 @@ export async function setShippingPointShutdown(id: string, isShutdown: boolean, 
 export async function deleteShippingPoint(id: string, table: string = SHIPPING_POINTS_TABLE): Promise<void> {
     const { error, data } = await supabase.from(table).delete().eq('id', id).select('id');
     if (error) throw error;
-    if (!data || data.length === 0) throw new Error('Nothing was deleted — the point is already gone, or the database refused it.');
+    if (!data || data.length === 0) throw new Error(tNow('ui.store.shippingPoints.nothingDeleted'));
 }
 
 /**
@@ -146,8 +147,8 @@ export function placeShippingPoints(tree: LocProvince[], points: ShippingPoint[]
             const byCode = resolveByCode(tree, pt.pcode);
             const path = [byCode.province, byCode.district, byCode.commune, byCode.village].filter(Boolean).map(n => n!.khmer).join(' › ');
             out.notes.set(pt.id, pt.province
-                ? `Province "${pt.province}" not found`
-                : path ? `No province saved · area code ${pt.pcode} (${path})` : 'No province saved');
+                ? tNow('ui.store.shippingPoints.provinceNotFound', { province: pt.province })
+                : path ? tNow('ui.store.shippingPoints.noProvinceCode', { code: pt.pcode, path }) : tNow('ui.store.shippingPoints.noProvince'));
             out.unplaced.push(pt);
             continue;
         }

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, FileSpreadsheet, X } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useTx } from './useTx';
 
 interface DataImportModalProps {
     isOpen: boolean;
@@ -19,6 +20,8 @@ const TYPE_LABEL: Record<DataImportModalProps['type'], string> = {
 
 const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type, onImport }) => {
     const { showToast } = useToast();
+    const tx = useTx();
+    const typeLabel = (k: DataImportModalProps['type']) => tx(`ui.components.dataImport.type.${k === 'stock-adjustment' ? 'stockAdjustment' : k === 'purchase-opening-balance' ? 'openingBalance' : k}`, TYPE_LABEL[k]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [file, setFile] = useState<File | null>(null);
     const [previewData, setPreviewData] = useState<any[]>([]);
@@ -55,7 +58,7 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
                 }
             } catch (error) {
                 console.error("Error parsing file:", error);
-                showToast('Failed to parse Excel file', 'error');
+                showToast(tx('ui.components.dataImport.parseFailed', 'Failed to parse Excel file'), 'error');
             }
         };
         reader.readAsBinaryString(file);
@@ -120,7 +123,7 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
 
     const handleImport = async () => {
         if (selectedIndices.size === 0) {
-            showToast('Please select at least one item to import', 'error');
+            showToast(tx('ui.components.dataImport.selectOne', 'Please select at least one item to import'), 'error');
             return;
         }
 
@@ -139,11 +142,11 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
             });
 
             await onImport(formattedData);
-            showToast(`Successfully imported ${formattedData.length} items`, 'success');
+            showToast(tx('ui.components.dataImport.imported', 'Successfully imported {n} items', { n: formattedData.length }), 'success');
             handleClose();
         } catch (error) {
             console.error("Import error:", error);
-            showToast('Failed to import data', 'error');
+            showToast(tx('ui.components.dataImport.importFailed', 'Failed to import data'), 'error');
         } finally {
             setIsProcessing(false);
         }
@@ -160,8 +163,8 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
                 {/* Header */}
                 <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                        <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Import {TYPE_LABEL[type]}</h3>
-                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>Upload an Excel file to bulk import data</p>
+                        <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{tx('ui.components.dataImport.title', 'Import {what}', { what: typeLabel(type) })}</h3>
+                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>{tx('ui.components.dataImport.subtitle', 'Upload an Excel file to bulk import data')}</p>
                     </div>
                     <button onClick={handleClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>
                         <X size={24} />
@@ -186,8 +189,8 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
                                 <Upload size={20} />
                             </div>
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontWeight: 500, marginBottom: '4px' }}>Click to upload Excel file</div>
-                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{file ? file.name : 'XLSX or CSV files'}</div>
+                                <div style={{ fontWeight: 500, marginBottom: '4px' }}>{tx('ui.components.dataImport.clickUpload', 'Click to upload Excel file')}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{file ? file.name : tx('ui.components.dataImport.xlsxCsv', 'XLSX or CSV files')}</div>
                             </div>
                             <input
                                 type="file"
@@ -208,8 +211,8 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
                         >
                             <FileSpreadsheet size={24} style={{ color: '#10B981' }} />
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontWeight: 500 }}>Download Template</div>
-                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Get the correct format</div>
+                                <div style={{ fontWeight: 500 }}>{tx('ui.components.dataImport.downloadTemplate', 'Download Template')}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{tx('ui.components.dataImport.correctFormat', 'Get the correct format')}</div>
                             </div>
                         </button>
                     </div>
@@ -218,8 +221,8 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
                     {previewData.length > 0 && (
                         <div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                <h4 style={{ fontSize: '14px', fontWeight: 600 }}>Preview ({previewData.length} items)</h4>
-                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Showing first 5 rows</div>
+                                <h4 style={{ fontSize: '14px', fontWeight: 600 }}>{tx('ui.components.dataImport.preview', 'Preview ({n} items)', { n: previewData.length })}</h4>
+                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{tx('ui.components.dataImport.first5', 'Showing first 5 rows')}</div>
                             </div>
                             <div style={{ overflow: 'auto', maxHeight: '600px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
                                 <table className="spreadsheet-table" style={{ border: 'none', borderCollapse: 'separate', borderSpacing: 0 }}>
@@ -281,7 +284,7 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
                         onClick={handleClose}
                         style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', cursor: 'pointer' }}
                     >
-                        Cancel
+                        {tx('common.cancel', 'Cancel')}
                     </button>
                     <button
                         onClick={handleImport}
@@ -289,7 +292,7 @@ const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClose, type
                         className="primary-button"
                         style={{ padding: '10px 24px', opacity: (previewData.length === 0 || isProcessing) ? 0.5 : 1 }}
                     >
-                        {isProcessing ? 'Importing...' : `Confirm Import (${selectedIndices.size})`}
+                        {isProcessing ? tx('ui.components.dataImport.importing', 'Importing...') : tx('ui.components.dataImport.confirmImport', 'Confirm Import ({n})', { n: selectedIndices.size })}
                     </button>
                 </div>
             </div>

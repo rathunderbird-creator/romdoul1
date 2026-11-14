@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Modal from './Modal';
+import { useTx } from './useTx';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
 import { dayKeyFromDate } from '../utils/dateRange';
@@ -55,9 +56,10 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     preferRiel,
     amountDue,
     khrExpected,
-    title = "Settle Payment",
-    description = "Please confirm the settle date and payment method."
+    title,
+    description
 }) => {
+    const tx = useTx();
     const { paymentMethods, khrExchangeRate } = useStore();
     // The riel actually received (only when the account / toggle says riel).
     // Settle books the order's amount due whatever riel is typed; the riel
@@ -133,13 +135,13 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     const hasKhrAccounts = paymentAccounts.some(a => isKhrAccountName(a.account_name));
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={title}>
+        <Modal isOpen={isOpen} onClose={onClose} title={title ?? tx('ui.components.settle.title', 'Settle Payment')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                    {description}
+                    {description ?? tx('ui.components.settle.description', 'Please confirm the settle date and payment method.')}
                 </p>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Settle Date <span style={{ color: 'red' }}>*</span></label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('ui.components.settle.settleDate', 'Settle Date')} <span style={{ color: 'red' }}>*</span></label>
                     <input
                         type="date"
                         value={settleDate}
@@ -151,7 +153,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                         }}
                     />
                     <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                        {[{ label: 'Today', daysAgo: 0 }, { label: 'Yesterday', daysAgo: 1 }].map(({ label, daysAgo }) => {
+                        {[{ label: tx('ui.components.common.today', 'Today'), daysAgo: 0 }, { label: tx('ui.components.common.yesterday', 'Yesterday'), daysAgo: 1 }].map(({ label, daysAgo }) => {
                             const value = localYMD(daysAgo);
                             const active = settleDate === value;
                             return (
@@ -173,7 +175,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                     </div>
                 </div>
                 <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>Pay By <span style={{ color: 'red' }}>*</span></label>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('orders.payBy', 'Pay By')} <span style={{ color: 'red' }}>*</span></label>
                     <select
                         value={selectedMethod}
                         onChange={(e) => setSelectedMethod(e.target.value)}
@@ -190,7 +192,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                 </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>
-                        Deposited into {accountsLoaded && paymentAccounts.length > 0 && <span style={{ color: 'red' }}>*</span>}
+                        {tx('ui.components.common.depositedInto', 'Deposited into')} {accountsLoaded && paymentAccounts.length > 0 && <span style={{ color: 'red' }}>*</span>}
                     </label>
                     <select
                         value={depositAccountId}
@@ -204,15 +206,15 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                             outline: 'none', boxSizing: 'border-box', opacity: accountsLoaded ? 1 : 0.6
                         }}
                     >
-                        <option value="">{accountsLoaded ? 'Bank or cash account…' : 'Loading accounts…'}</option>
+                        <option value="">{accountsLoaded ? tx('ui.components.common.bankOrCash', 'Bank or cash account…') : tx('ui.components.common.loadingAccounts', 'Loading accounts…')}</option>
                         <CashBankOptions accounts={paymentAccounts} />
                     </select>
                     <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
                         {!accountsLoaded
-                            ? 'Loading the Chart of Accounts…'
+                            ? tx('ui.components.common.loadingCoa', 'Loading the Chart of Accounts…')
                             : paymentAccounts.length > 0
-                                ? 'Settling also books the receipt to this account as a Draft journal entry.'
-                                : 'No cash or bank accounts in the Chart of Accounts yet — the settlement saves without a ledger entry account.'}
+                                ? tx('ui.components.settle.booksDraft', 'Settling also books the receipt to this account as a Draft journal entry.')
+                                : tx('ui.components.settle.noAccounts', 'No cash or bank accounts in the Chart of Accounts yet — the settlement saves without a ledger entry account.')}
                     </p>
                     {amountDue !== undefined && hasKhrAccounts && (
                         <button
@@ -223,15 +225,15 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                             }}
                             style={{ marginTop: '6px', background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
                         >
-                            {inRiel ? 'Received in dollars instead' : 'Received in riel (៛)?'}
+                            {inRiel ? tx('ui.components.common.inDollarsInstead', 'Received in dollars instead') : tx('ui.components.common.inRiel', 'Received in riel (៛)?')}
                         </button>
                     )}
                 </div>
                 {inRiel && amountDue !== undefined && (
                     <div>
-                        <MoneyInput field={rielField} label="Riel received" required />
+                        <MoneyInput field={rielField} label={tx('ui.components.common.rielReceived', 'Riel received')} required />
                         <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                            Books the order's {formatUsd(amountDue)}; the riel amount and rate are recorded with it.
+                            {tx('ui.components.settle.booksOrder', "Books the order's {amt}; the riel amount and rate are recorded with it.", { amt: formatUsd(amountDue) })}
                         </p>
                     </div>
                 )}
@@ -244,7 +246,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                             fontSize: '14px', fontWeight: 500
                         }}
                     >
-                        Cancel
+                        {tx('common.cancel', 'Cancel')}
                     </button>
                     {(() => {
                         // An account is required only when there is one to pick —
@@ -278,7 +280,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                                     fontSize: '14px', fontWeight: 500
                                 }}
                             >
-                                Confirm
+                                {tx('common.confirm', 'Confirm')}
                             </button>
                         );
                     })()}

@@ -7,6 +7,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Eye, Printer, XCircle, Download, RefreshCw, Receipt } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import { useWholesale } from '../../hooks/useWholesale';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
@@ -26,9 +28,10 @@ const STATUS_CFG: Record<PayStatus, { color: string; bg: string }> = {
     Draft: { color: '#92400e', bg: '#fef3c7' },
     Posted: { color: '#4c5fd0', bg: 'rgba(84, 105, 212, 0.12)' },
 };
-const statusChip = (status: PayStatus) => (
+// label: the translated display text (the status code itself stays English).
+const statusChip = (status: PayStatus, label?: string) => (
     <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', whiteSpace: 'nowrap', background: STATUS_CFG[status].bg, color: STATUS_CFG[status].color }}>
-        {status}
+        {label ?? status}
     </span>
 );
 
@@ -52,6 +55,8 @@ const PRINT_CSS = `
 
 const WholesalePaymentsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
+    const payStatusLabel = (s: PayStatus) => s === 'Posted' ? t('ui.wholesale.payments.posted') : t('ui.wholesale.payments.draft');
     const {
         wholesaleOrders, customerPayments, isLoading,
         fetchWholesaleOrders, fetchCustomerPayments,
@@ -63,13 +68,13 @@ const WholesalePaymentsPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Wholesale Payment</h1>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Money collected, and which order it settled</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('ui.wholesale.payments.title')}</h1>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('ui.wholesale.payments.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         fetchWholesaleOrders();
@@ -188,7 +193,7 @@ const WholesalePaymentsPage: React.FC = () => {
     const [viewPayment, setViewPayment] = useState<CustomerPayment | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const handleDelete = async (p: CustomerPayment) => {
-        if (!confirm(`Delete ${referenceOf.get(p.id) || 'this payment'}? The order it settled goes back to its previous balance.`)) return;
+        if (!confirm(fill(t('ui.wholesale.payments.confirmDelete'), { ref: referenceOf.get(p.id) || t('ui.wholesale.payments.thisPayment') }))) return;
         setDeletingId(p.id);
         try {
             await deleteCustomerPayment(p.id);
@@ -251,10 +256,10 @@ const WholesalePaymentsPage: React.FC = () => {
                 <button
                     onClick={() => { setPayTargetId(payableOrders[0]?.id || ''); setIsPicking(true); }}
                     disabled={payableOrders.length === 0}
-                    title={payableOrders.length === 0 ? 'No outstanding orders to collect on' : undefined}
+                    title={payableOrders.length === 0 ? t('ui.wholesale.payments.noOutstanding') : undefined}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '8px', border: 'none', background: payableOrders.length === 0 ? 'var(--color-border)' : '#4c5fd0', color: 'white', fontSize: '14px', fontWeight: 600, cursor: payableOrders.length === 0 ? 'not-allowed' : 'pointer' }}
                 >
-                    <Plus size={16} /> Record Payment
+                    <Plus size={16} /> {t('ui.wholesale.common.recordPayment')}
                 </button>
             </div>
 
@@ -262,40 +267,40 @@ const WholesalePaymentsPage: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '340px' }}>
                     <Search size={15} color="var(--color-text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                    <input type="text" placeholder="Search reference or customer…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
+                    <input type="text" placeholder={t('ui.wholesale.payments.search')} value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: '34px' }} />
                 </div>
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | PayStatus)} style={{ ...inputStyle, width: 'auto', minWidth: '140px', cursor: 'pointer' }}>
-                    <option value="All">All statuses</option>
-                    <option value="Posted">Posted</option>
-                    <option value="Draft">Draft</option>
+                    <option value="All">{t('ui.wholesale.payments.allStatuses')}</option>
+                    <option value="Posted">{payStatusLabel('Posted')}</option>
+                    <option value="Draft">{payStatusLabel('Draft')}</option>
                 </select>
-                <button onClick={() => { fetchCustomerPayments(); fetchJournalEntries(); }} title="Refresh" style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
+                <button onClick={() => { fetchCustomerPayments(); fetchJournalEntries(); }} title={t('ui.wholesale.common.refresh')} style={{ ...inputStyle, width: 'auto', padding: '10px', cursor: 'pointer', display: 'flex' }}>
                     <RefreshCw size={15} />
                 </button>
                 {hasActiveFilters && (
                     <button onClick={() => { setSearch(''); setStatusFilter('All'); }} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 500 }}>
-                        Clear
+                        {t('ui.wholesale.common.clear')}
                     </button>
                 )}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     <button onClick={printList} disabled={isLoading || filteredPayments.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredPayments.length === 0) ? 0.5 : 1 }}>
-                        <Printer size={13} /> Print list
+                        <Printer size={13} /> {t('ui.wholesale.common.printList')}
                     </button>
                     <button onClick={exportCsv} disabled={isLoading || filteredPayments.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: (isLoading || filteredPayments.length === 0) ? 0.5 : 1 }}>
-                        <Download size={13} /> Export CSV
+                        <Download size={13} /> {t('ui.wholesale.common.exportCsv')}
                     </button>
                 </div>
             </div>
 
             <div style={{ background: 'var(--color-surface)', borderRadius: '12px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                 {isLoading ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>Loading payments...</div>
+                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.wholesale.payments.loading')}</div>
                 ) : filteredPayments.length === 0 ? (
                     <div className="glass-panel" style={{ textAlign: 'center', padding: '60px', border: 'none' }}>
                         <Receipt size={40} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-                        <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>No payments found</h3>
+                        <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '8px' }}>{t('ui.wholesale.payments.noneFound')}</h3>
                         <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                            {hasActiveFilters ? 'Try adjusting your filters.' : 'Record a payment against an outstanding order to get started.'}
+                            {hasActiveFilters ? t('ui.wholesale.common.tryAdjusting') : t('ui.wholesale.payments.emptyHint')}
                         </p>
                     </div>
                 ) : (
@@ -303,8 +308,8 @@ const WholesalePaymentsPage: React.FC = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '720px' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg)' }}>
-                                    {['Reference', 'Date', 'Customer', 'Amount', 'Unapplied', 'Status', ''].map((h, i) => (
-                                        <th key={h || 'actions'} style={{ padding: '12px 20px', textAlign: i === 3 || i === 4 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{h}</th>
+                                    {[t('ui.wholesale.common.reference'), t('ui.wholesale.common.date'), t('ui.wholesale.common.customer'), t('common.amount'), t('ui.wholesale.payments.unapplied'), t('ui.wholesale.common.status'), ''].map((h, i) => (
+                                        <th key={i} style={{ padding: '12px 20px', textAlign: i === 3 || i === 4 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-text-secondary)' }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -316,12 +321,12 @@ const WholesalePaymentsPage: React.FC = () => {
                                         <td className="d2-khmer" style={{ padding: '12px 20px', color: 'var(--color-text-main)' }}>{p.wholesale_order?.customer_name || '—'}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(p.amount)}{isKhrRow(p) && <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(p)}</div>}</td>
                                         <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(0)}</td>
-                                        <td style={{ padding: '12px 20px' }}>{statusChip(paymentStatus.get(p.id) || 'Draft')}</td>
+                                        <td style={{ padding: '12px 20px' }}>{statusChip(paymentStatus.get(p.id) || 'Draft', payStatusLabel(paymentStatus.get(p.id) || 'Draft'))}</td>
                                         <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                                                <button onClick={() => setViewPayment(p)} title="View" style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
-                                                <button onClick={printList} title="Print" style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
-                                                <button onClick={() => handleDelete(p)} disabled={deletingId === p.id} title="Delete" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: deletingId === p.id ? 'not-allowed' : 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px', opacity: deletingId === p.id ? 0.6 : 1 }}><XCircle size={15} /></button>
+                                                <button onClick={() => setViewPayment(p)} title={t('ui.wholesale.common.view')} style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px' }}><Eye size={15} /></button>
+                                                <button onClick={printList} title={t('ui.wholesale.common.print')} style={{ background: 'rgba(37,99,235,0.08)', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '6px', borderRadius: '6px' }}><Printer size={15} /></button>
+                                                <button onClick={() => handleDelete(p)} disabled={deletingId === p.id} title={t('common.delete')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: deletingId === p.id ? 'not-allowed' : 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px', opacity: deletingId === p.id ? 0.6 : 1 }}><XCircle size={15} /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -336,25 +341,25 @@ const WholesalePaymentsPage: React.FC = () => {
             {isPicking && (
                 <div onClick={closePayFlow} style={{ position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
                     <div onClick={e => e.stopPropagation()} className="glass-panel" style={{ background: 'var(--color-surface)', borderRadius: '16px', width: '100%', maxWidth: '420px', padding: '24px' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 14px', color: 'var(--color-text-main)' }}>Which order is this payment for?</h3>
-                        <label style={labelStyle}>Order</label>
+                        <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 14px', color: 'var(--color-text-main)' }}>{t('ui.wholesale.payments.whichOrder')}</h3>
+                        <label style={labelStyle}>{t('ui.wholesale.common.order')}</label>
                         <select value={payTargetId} onChange={e => setPayTargetId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                             {payableOrders.map(o => (
                                 <option key={o.id} value={o.id}>
-                                    {o.invoice_number || woShortId(o.id)} · {o.customer_name || '—'} · {fmtUsd((o.total_amount || 0) - (o.amount_paid || 0))} outstanding
+                                    {o.invoice_number || woShortId(o.id)} · {o.customer_name || '—'} · {fill(t('ui.wholesale.payments.outstandingAmt'), { amount: fmtUsd((o.total_amount || 0) - (o.amount_paid || 0)) })}
                                 </option>
                             ))}
                         </select>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
                             <button onClick={closePayFlow} style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                                Cancel
+                                {t('common.cancel')}
                             </button>
                             <button
                                 onClick={() => { setIsPicking(false); setIsPaymentModalOpen(true); }}
                                 disabled={!payTargetId}
                                 style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#4c5fd0', color: 'white', fontSize: '13px', fontWeight: 600, cursor: payTargetId ? 'pointer' : 'not-allowed', opacity: payTargetId ? 1 : 0.6 }}
                             >
-                                Continue
+                                {t('ui.wholesale.common.continue')}
                             </button>
                         </div>
                     </div>
@@ -373,30 +378,30 @@ const WholesalePaymentsPage: React.FC = () => {
             )}
 
             {viewPayment && (
-                <Modal isOpen={!!viewPayment} onClose={() => setViewPayment(null)} title="Wholesale Payment" width="420px">
+                <Modal isOpen={!!viewPayment} onClose={() => setViewPayment(null)} title={t('ui.wholesale.payments.title')} width="420px">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: '8px' }}>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Reference</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.reference')}</span>
                             <span style={{ fontWeight: 600 }}>{referenceOf.get(viewPayment.id) || '—'}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Date</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.date')}</span>
                             <span>{fmtDate(viewPayment.payment_date)}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Customer</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.customer')}</span>
                             <span className="d2-khmer">{viewPayment.wholesale_order?.customer_name || '—'}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Order</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.order')}</span>
                             <span>{viewPayment.wholesale_order?.invoice_number || woShortId(viewPayment.wholesale_order_id)}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Method</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.method')}</span>
                             <span>{viewPayment.payment_method || '—'}</span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>Status</span>
-                            <span>{statusChip(paymentStatus.get(viewPayment.id) || 'Draft')}</span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.status')}</span>
+                            <span>{statusChip(paymentStatus.get(viewPayment.id) || 'Draft', payStatusLabel(paymentStatus.get(viewPayment.id) || 'Draft'))}</span>
                             {viewPayment.notes && (
                                 <>
-                                    <span style={{ color: 'var(--color-text-secondary)' }}>Notes</span>
+                                    <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.wholesale.common.notes')}</span>
                                     <span>{viewPayment.notes}</span>
                                 </>
                             )}
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '12px 0', borderTop: '1px solid var(--color-border)' }}>
-                            <span style={{ fontWeight: 700 }}>Amount</span>
+                            <span style={{ fontWeight: 700 }}>{t('common.amount')}</span>
                             <span style={{ fontWeight: 800, fontSize: '18px', fontVariantNumeric: 'tabular-nums' }}>{isKhrRow(viewPayment) ? formatMoneyLine(viewPayment) : fmtUsd(viewPayment.amount)}</span>
                         </div>
                     </div>

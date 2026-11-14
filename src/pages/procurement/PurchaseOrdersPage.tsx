@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Plus, FileText, CheckCircle2, Clock, FileSignature, AlertCircle, X, Search, Trash2, Edit, DollarSign, Package, ShoppingCart, AlertTriangle, ArrowUp, ArrowDown, ChevronsUpDown, PackageCheck, Eye, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Copy, FilterX, Check } from 'lucide-react';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import { useHeader } from '../../context/HeaderContext';
@@ -17,6 +17,8 @@ import MoneyInput from '../../components/MoneyInput';
 import CashBankOptions from '../../components/CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
 import { accountCurrency, khrToUsd, usdToKhr } from '../../utils/currency';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 // Height of every control in the desktop filter toolbar, so the row lines up.
 const FILTER_H = 34;
@@ -56,6 +58,12 @@ const PurchaseOrdersPage = () => {
     const { showToast } = useToast();
     const { purchaseOrders, suppliers, isLoading, fetchPurchaseOrders, fetchSuppliers, savePurchaseOrder, deletePurchaseOrder, recordSupplierPayment, deleteSupplierPayment, saveSupplier } = useProcurement();
     const { accounts, fetchAccounts } = useAccounting();
+    const { t } = useLanguage();
+    const tp = useCallback((k: string) => t('ui.purchase.' + k), [t]);
+    // Display labels for stored codes (the codes themselves stay as they are).
+    const poStatusLabel = (s: string) => (['Draft', 'Sent', 'Received', 'Cancelled'].includes(s) ? tp('status.' + s) : s);
+    const payStatusLabel = (s: string) => s === 'Paid' ? t('status.paid') : s === 'Partial' ? t('status.partial') : s === 'Unpaid' ? t('status.unpaid') : s;
+    const methodLabel = (m: string) => m === 'Cash' ? tp('method.cash') : m === 'Bank Transfer' ? tp('method.bankTransfer') : m === 'On Credit' ? tp('method.onCredit') : m;
 
     useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
 
@@ -101,9 +109,9 @@ const PurchaseOrdersPage = () => {
         if (po.notes) lines.push(`📝 Notes: ${po.notes}`);
         try {
             await navigator.clipboard.writeText(lines.join('\n'));
-            showToast('PO details copied to clipboard', 'success');
+            showToast(tp('orders.toast.copied'), 'success');
         } catch {
-            showToast('Failed to copy to clipboard', 'error');
+            showToast(tp('orders.toast.copyFailed'), 'error');
         }
     };
 
@@ -111,7 +119,7 @@ const PurchaseOrdersPage = () => {
     // removes the linked Expense transaction (handled inside deleteSupplierPayment).
     const handleDeleteViewPayment = async (p: any) => {
         if (!viewPO) return;
-        if (!window.confirm(`Delete this payment of ${formatCurrency(Number(p.amount) || 0)}? The PO balance will be restored.`)) return;
+        if (!window.confirm(fill(tp('orders.confirmDeletePayment'), { amount: formatCurrency(Number(p.amount) || 0) }))) return;
         try {
             await deleteSupplierPayment(p.id);
             setViewPayments(prev => prev.filter(x => x.id !== p.id));
@@ -153,7 +161,7 @@ const PurchaseOrdersPage = () => {
     const [isSavingProduct, setIsSavingProduct] = useState(false);
     const handleCreateProduct = async () => {
         if (addProductForLine === null) return;
-        if (!newProduct.name.trim()) { showToast('Product name is required', 'error'); return; }
+        if (!newProduct.name.trim()) { showToast(tp('orders.toast.productNameRequired'), 'error'); return; }
         setIsSavingProduct(true);
         try {
             const created = await addProduct({
@@ -180,7 +188,7 @@ const PurchaseOrdersPage = () => {
         } finally { setIsSavingProduct(false); }
     };
     const handleCreateSupplier = async () => {
-        if (!newSupplier.name.trim()) { showToast('Supplier name is required', 'error'); return; }
+        if (!newSupplier.name.trim()) { showToast(tp('orders.toast.supplierNameRequired'), 'error'); return; }
         setIsSavingSupplier(true);
         try {
             const created = await saveSupplier({ ...newSupplier, name: newSupplier.name.trim(), is_active: true });
@@ -259,13 +267,13 @@ const PurchaseOrdersPage = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Purchase Orders</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Manage stock reordering and supplier POs</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{tp('orders.title')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{tp('orders.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, tp]);
 
     useEffect(() => {
         fetchPurchaseOrders();
@@ -346,7 +354,7 @@ const PurchaseOrdersPage = () => {
     };
 
     const handleDeletePO = async (id: string) => {
-        if (window.confirm('Are you sure you want to delete this purchase order?')) {
+        if (window.confirm(tp('orders.confirmDelete'))) {
             try {
                 await deletePurchaseOrder(id);
             } catch {
@@ -358,18 +366,18 @@ const PurchaseOrdersPage = () => {
     // Receive a PO straight from the table: add each item to stock and mark it Received.
     const handleReceivePO = async (po: any) => {
         if (receivingRef.current.has(po.id)) return;
-        if (!window.confirm(`Receive PO-${po.id.substring(0, 8).toUpperCase()} into stock?`)) return;
+        if (!window.confirm(fill(tp('orders.confirmReceive'), { ref: `PO-${po.id.substring(0, 8).toUpperCase()}` }))) return;
         receivingRef.current.add(po.id);
         setReceivingId(po.id);
         try {
             // One transaction: adds only what hasn't arrived yet, marks the PO
             // Received and books the purchase — or, on failure, changes nothing.
             const notices = await receivePurchaseOrder(po.id);
-            showToast(`PO-${po.id.substring(0, 8).toUpperCase()} received into stock`, 'success');
+            showToast(fill(tp('orders.toast.receivedRef'), { ref: `PO-${po.id.substring(0, 8).toUpperCase()}` }), 'success');
             for (const n of notices) showToast(n, 'info');
             fetchPurchaseOrders(true);
         } catch (error: any) {
-            showToast('Error receiving PO: ' + (error?.message || ''), 'error');
+            showToast(tp('orders.toast.receiveError') + (error?.message || ''), 'error');
         } finally {
             receivingRef.current.delete(po.id);
             setReceivingId(null);
@@ -406,7 +414,7 @@ const PurchaseOrdersPage = () => {
         // it marked Received (which books the purchase). Saving Received alone
         // used to book the purchase while stock never changed.
         const receivingNow = status === 'Received' && openedStatus !== 'Received';
-        if (receivingNow && !window.confirm('Saving this order as Received adds its items to stock now. Continue?')) return;
+        if (receivingNow && !window.confirm(tp('orders.confirmSaveReceived'))) return;
         savingPORef.current = true;
         setIsSavingPO(true);
         const base = {
@@ -437,11 +445,11 @@ const PurchaseOrdersPage = () => {
                     // Adds the goods, marks it Received and books the purchase,
                     // in one transaction (nothing changes if it fails).
                     const notices = await receivePurchaseOrder(savedId, { reopenCancelled });
-                    showToast('Purchase Order received into stock', 'success');
+                    showToast(tp('orders.toast.received'), 'success');
                     for (const n of notices) showToast(n, 'info');
                 } catch (error) {
-                    showToast('The order was saved, but receiving it into stock failed: ' + (error instanceof Error ? error.message : String(error))
-                        + (reopenCancelled ? '. Open it and save it as Received again to try again.' : '. Use Receive to try again.'), 'error');
+                    showToast(tp('orders.toast.receiveAfterSaveFailed') + (error instanceof Error ? error.message : String(error))
+                        + (reopenCancelled ? tp('orders.toast.retryReopen') : tp('orders.toast.retryReceive')), 'error');
                     setIsModalOpen(false);
                     return;
                 } finally {
@@ -487,12 +495,12 @@ const PurchaseOrdersPage = () => {
         // the modal opened, so this re-checks the live row.
         const payingPO = purchaseOrders.find(po => po.id === payingPOId);
         if (!payingPO || payingPO.status !== 'Received') {
-            showToast('This purchase order has not been received yet — receive the goods first, then record the payment.', 'error');
+            showToast(tp('orders.toast.notReceived'), 'error');
             return;
         }
         // "Paid from" is required whenever cash/bank accounts exist to pick.
         if (paymentAccounts.length > 0 && !payingAccountId) {
-            showToast('Choose the account this payment is paid from', 'error');
+            showToast(tp('orders.toast.chooseAccount'), 'error');
             return;
         }
         if (!payField.confirmIfSuspicious()) return;
@@ -606,19 +614,19 @@ const PurchaseOrdersPage = () => {
 
     // --- Column resizing ---
     const PO_COLUMNS: Array<{ key: SortKey | 'actions'; label: string; align: 'left' | 'center' | 'right'; width: number; sortable: boolean }> = [
-        { key: 'po', label: 'PO #', align: 'left', width: 130, sortable: true },
-        { key: 'supplier', label: 'Supplier', align: 'left', width: 160, sortable: true },
-        { key: 'order_date', label: 'Date', align: 'left', width: 110, sortable: true },
-        { key: 'expected', label: 'Expected', align: 'left', width: 110, sortable: true },
-        { key: 'invoice', label: 'Invoice #', align: 'left', width: 130, sortable: true },
-        { key: 'due_date', label: 'Due Date', align: 'left', width: 110, sortable: true },
-        { key: 'payment_date', label: 'Payment Date', align: 'left', width: 115, sortable: true },
-        { key: 'items', label: 'Items', align: 'center', width: 80, sortable: true },
-        { key: 'total', label: 'Total', align: 'right', width: 110, sortable: true },
-        { key: 'balance', label: 'Balance', align: 'right', width: 110, sortable: true },
-        { key: 'status', label: 'Status', align: 'center', width: 120, sortable: true },
-        { key: 'payment', label: 'Payment', align: 'center', width: 140, sortable: true },
-        { key: 'actions', label: 'Actions', align: 'center', width: 120, sortable: false },
+        { key: 'po', label: tp('orders.col.po'), align: 'left', width: 130, sortable: true },
+        { key: 'supplier', label: tp('col.supplier'), align: 'left', width: 160, sortable: true },
+        { key: 'order_date', label: tp('col.date'), align: 'left', width: 110, sortable: true },
+        { key: 'expected', label: tp('orders.col.expected'), align: 'left', width: 110, sortable: true },
+        { key: 'invoice', label: tp('orders.col.invoice'), align: 'left', width: 130, sortable: true },
+        { key: 'due_date', label: tp('orders.col.dueDate'), align: 'left', width: 110, sortable: true },
+        { key: 'payment_date', label: tp('orders.col.paymentDate'), align: 'left', width: 115, sortable: true },
+        { key: 'items', label: tp('orders.col.items'), align: 'center', width: 80, sortable: true },
+        { key: 'total', label: tp('col.total'), align: 'right', width: 110, sortable: true },
+        { key: 'balance', label: tp('orders.col.balance'), align: 'right', width: 110, sortable: true },
+        { key: 'status', label: tp('col.status'), align: 'center', width: 120, sortable: true },
+        { key: 'payment', label: tp('orders.col.payment'), align: 'center', width: 140, sortable: true },
+        { key: 'actions', label: t('common.actions'), align: 'center', width: 120, sortable: false },
     ];
 
     const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
@@ -668,10 +676,10 @@ const PurchaseOrdersPage = () => {
             {/* Summary Stats — mobile: four compact cards on one row */}
             {isMobile ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '12px' }}>
-                    <MiniStatCard icon={ShoppingCart} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="POs" value={String(summaryStats.totalPOs)} />
-                    <MiniStatCard icon={Package} gradient="linear-gradient(135deg, #3b82f6, #60a5fa)" label="Value" value={formatCurrency(summaryStats.totalValue)} />
-                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Outstanding" value={formatCurrency(summaryStats.outstanding)} valueColor={summaryStats.outstanding > 0 ? '#ef4444' : '#10b981'} />
-                    <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label="Overdue" value={String(summaryStats.overdueCount)} valueColor={summaryStats.overdueCount > 0 ? '#ef4444' : undefined} />
+                    <MiniStatCard icon={ShoppingCart} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label={tp('orders.stats.pos')} value={String(summaryStats.totalPOs)} />
+                    <MiniStatCard icon={Package} gradient="linear-gradient(135deg, #3b82f6, #60a5fa)" label={tp('orders.stats.value')} value={formatCurrency(summaryStats.totalValue)} />
+                    <MiniStatCard icon={DollarSign} gradient="linear-gradient(135deg, #ef4444, #f87171)" label={tp('orders.stats.outstanding')} value={formatCurrency(summaryStats.outstanding)} valueColor={summaryStats.outstanding > 0 ? '#ef4444' : '#10b981'} />
+                    <MiniStatCard icon={AlertTriangle} gradient="linear-gradient(135deg, #f59e0b, #fbbf24)" label={tp('orders.stats.overdue')} value={String(summaryStats.overdueCount)} valueColor={summaryStats.overdueCount > 0 ? '#ef4444' : undefined} />
                 </div>
             ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '24px' }}>
@@ -680,7 +688,7 @@ const PurchaseOrdersPage = () => {
                         <ShoppingCart size={20} />
                     </div>
                     <div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total POs</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{tp('orders.stats.totalPos')}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700 }}>{summaryStats.totalPOs}</div>
                     </div>
                 </div>
@@ -689,7 +697,7 @@ const PurchaseOrdersPage = () => {
                         <Package size={20} />
                     </div>
                     <div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total Value</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{tp('orders.stats.totalValue')}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700 }}>{formatCurrency(summaryStats.totalValue)}</div>
                     </div>
                 </div>
@@ -698,7 +706,7 @@ const PurchaseOrdersPage = () => {
                         <DollarSign size={20} />
                     </div>
                     <div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Outstanding</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{tp('orders.stats.outstanding')}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700, color: summaryStats.outstanding > 0 ? '#ef4444' : '#10b981' }}>{formatCurrency(summaryStats.outstanding)}</div>
                     </div>
                 </div>
@@ -707,7 +715,7 @@ const PurchaseOrdersPage = () => {
                         <AlertTriangle size={20} />
                     </div>
                     <div>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Overdue</div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{tp('orders.stats.overdue')}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700, color: summaryStats.overdueCount > 0 ? '#ef4444' : 'var(--color-text)' }}>{summaryStats.overdueCount}</div>
                     </div>
                 </div>
@@ -720,7 +728,7 @@ const PurchaseOrdersPage = () => {
                     <MobileSearchBar
                         searchValue={searchQuery}
                         onSearchChange={setSearchQuery}
-                        placeholder="Search PO, supplier, invoice..."
+                        placeholder={tp('orders.searchPlaceholder')}
                         activeCount={activeFilterCount}
                         onOpenFilter={() => setIsFilterDrawerOpen(true)}
                         onAdd={handleOpenModal}
@@ -731,36 +739,36 @@ const PurchaseOrdersPage = () => {
                         onClear={clearFilters}
                         searchValue={searchQuery}
                         onSearchChange={setSearchQuery}
-                        searchPlaceholder="Search PO, supplier, invoice..."
+                        searchPlaceholder={tp('orders.searchPlaceholder')}
                         onRefresh={() => { fetchPurchaseOrders(); fetchSuppliers(); }}
                         isRefreshing={isLoading}
                     >
                         <MobileChipGroup
-                            title="Status"
-                            options={(['All', 'Draft', 'Sent', 'Received', 'Cancelled'] as StatusFilter[]).map(v => ({ value: v, count: statusCounts[v] || 0 }))}
+                            title={tp('col.status')}
+                            options={(['All', 'Draft', 'Sent', 'Received', 'Cancelled'] as StatusFilter[]).map(v => ({ value: v, label: v === 'All' ? t('common.all') : poStatusLabel(v), count: statusCounts[v] || 0 }))}
                             selected={statusFilter}
                             onSelect={(v) => setStatusFilter(v as StatusFilter)}
                         />
                         <MobileMultiChipGroup
-                            title="Payment"
-                            options={PAYMENT_FILTER_OPTIONS.map(v => ({ value: v }))}
+                            title={tp('orders.col.payment')}
+                            options={PAYMENT_FILTER_OPTIONS.map(v => ({ value: v, label: payStatusLabel(v) }))}
                             selected={paymentFilter}
                             onToggle={togglePaymentFilter}
                         />
                         <MobileMultiChipGroup
-                            title="Supplier"
+                            title={tp('col.supplier')}
                             options={suppliers.map(s => ({ value: s.name }))}
                             selected={supplierFilter}
                             onToggle={toggleSupplierFilter}
                         />
                         <div>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>Order Date</div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>{tp('orders.orderDate')}</div>
                             <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
                                 <DateRangePicker value={dateRange} onChange={setDateRange} />
                             </div>
                         </div>
                         <div>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>Payment Date (Due)</div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>{tp('orders.paymentDateDue')}</div>
                             <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '2px' }}>
                                 <DateRangePicker value={dueRange} onChange={setDueRange} />
                             </div>
@@ -793,7 +801,7 @@ const PurchaseOrdersPage = () => {
                                     gap: '5px',
                                 }}
                             >
-                                {tab}
+                                {tab === 'All' ? t('common.all') : poStatusLabel(tab)}
                                 <span style={{
                                     background: statusFilter === tab ? 'rgba(255,255,255,0.25)' : 'var(--color-bg)',
                                     padding: '1px 7px',
@@ -813,7 +821,7 @@ const PurchaseOrdersPage = () => {
                                 <button
                                     key={opt}
                                     onClick={() => togglePaymentFilter(opt)}
-                                    title="Toggle — combine several payment statuses"
+                                    title={tp('orders.paymentToggleTitle')}
                                     style={{
                                         padding: '7px 14px', border: 'none',
                                         background: active ? 'var(--color-primary)' : 'transparent',
@@ -821,7 +829,7 @@ const PurchaseOrdersPage = () => {
                                         fontWeight: 600, fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s ease',
                                     }}
                                 >
-                                    {opt}
+                                    {payStatusLabel(opt)}
                                 </button>
                             );
                         })}
@@ -831,7 +839,7 @@ const PurchaseOrdersPage = () => {
                     <div ref={supplierMenuRef} style={{ position: 'relative' }}>
                         <button
                             onClick={() => setIsSupplierOpen(o => !o)}
-                            title="Filter by one or more suppliers"
+                            title={tp('orders.supplierFilterTitle')}
                             style={{
                                 display: 'flex', alignItems: 'center', gap: '6px',
                                 height: `${FILTER_H}px`, boxSizing: 'border-box',
@@ -843,9 +851,9 @@ const PurchaseOrdersPage = () => {
                             }}
                         >
                             <span className="d2-khmer" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {supplierFilter.length === 0 ? 'All Suppliers'
+                                {supplierFilter.length === 0 ? tp('orders.allSuppliers')
                                     : supplierFilter.length === 1 ? supplierFilter[0]
-                                    : `${supplierFilter.length} suppliers`}
+                                    : fill(tp('orders.nSuppliers'), { n: supplierFilter.length })}
                             </span>
                             <ChevronDown size={14} style={{ flexShrink: 0, transform: isSupplierOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
                         </button>
@@ -867,7 +875,7 @@ const PurchaseOrdersPage = () => {
                                     }}
                                 >
                                     {supplierFilter.length === 0 ? <Check size={14} /> : <span style={{ width: 14 }} />}
-                                    All Suppliers
+                                    {tp('orders.allSuppliers')}
                                 </button>
                                 {suppliers.map(s => {
                                     const checked = supplierFilter.includes(s.name);
@@ -897,11 +905,11 @@ const PurchaseOrdersPage = () => {
 
                     {/* Order-date and payment-due-date ranges */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', height: `${FILTER_H}px`, boxSizing: 'border-box', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0 2px 0 10px' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Order</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{tp('orders.orderRange')}</span>
                         <DateRangePicker value={dateRange} onChange={setDateRange} height={FILTER_H - 6} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', height: `${FILTER_H}px`, boxSizing: 'border-box', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0 2px 0 10px' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Payment</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{tp('orders.col.payment')}</span>
                         <DateRangePicker value={dueRange} onChange={setDueRange} height={FILTER_H - 6} />
                     </div>
 
@@ -909,7 +917,7 @@ const PurchaseOrdersPage = () => {
                     <button
                         onClick={clearFilters}
                         disabled={!hasActiveFilters}
-                        title={hasActiveFilters ? 'Clear all filters' : 'No filters applied'}
+                        title={hasActiveFilters ? tp('orders.clearAll') : tp('orders.noFilters')}
                         style={{
                             display: 'flex', alignItems: 'center', gap: '6px',
                             height: `${FILTER_H}px`, boxSizing: 'border-box',
@@ -922,7 +930,7 @@ const PurchaseOrdersPage = () => {
                             transition: 'all 0.2s ease', whiteSpace: 'nowrap',
                         }}
                     >
-                        <FilterX size={15} /> Clear
+                        <FilterX size={15} /> {tp('common.clear')}
                     </button>
                 </div>
 
@@ -932,7 +940,7 @@ const PurchaseOrdersPage = () => {
                         <input 
                             type="text" 
                             className="input-field"
-                            placeholder="Search PO, supplier, invoice..." 
+                            placeholder={tp('orders.searchPlaceholder')}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             style={{ width: '100%', height: `${FILTER_H}px`, boxSizing: 'border-box', padding: '0 10px 0 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px' }}
@@ -941,7 +949,7 @@ const PurchaseOrdersPage = () => {
                     <button
                         className="secondary-button"
                         onClick={() => { fetchPurchaseOrders(); fetchSuppliers(); }}
-                        title="Refresh"
+                        title={tp('common.refresh')}
                         style={{ padding: '9px 12px', borderRadius: '10px' }}
                     >
                         <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} />
@@ -951,7 +959,7 @@ const PurchaseOrdersPage = () => {
                         onClick={handleOpenModal}
                         style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '10px', fontWeight: 600, boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap' }}
                     >
-                        <Plus size={18} /> New PO
+                        <Plus size={18} /> {tp('orders.newPo')}
                     </button>
                 </div>
             </div>
@@ -961,14 +969,14 @@ const PurchaseOrdersPage = () => {
             {isLoading ? (
                 <div style={{ textAlign: 'center', padding: '60px', color: 'var(--color-text-secondary)' }}>
                     <div className="loader" style={{ margin: '0 auto 16px', width: '32px', height: '32px' }}></div>
-                    Loading orders...
+                    {tp('orders.loading')}
                 </div>
             ) : filteredPOs.length === 0 ? (
                 <div className="glass-panel" style={{ textAlign: 'center', padding: '60px', borderRadius: '16px' }}>
                     <FileText size={48} color="var(--color-text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-                    <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text)', marginBottom: '8px' }}>No Purchase Orders Found</h3>
+                    <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text)', marginBottom: '8px' }}>{tp('orders.empty')}</h3>
                     <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                        {hasActiveFilters ? 'Try adjusting your filters.' : 'Create your first purchase order to get started.'}
+                        {hasActiveFilters ? tp('common.tryFilters') : tp('orders.emptyHint')}
                     </p>
                 </div>
             ) : isMobile ? (
@@ -987,9 +995,9 @@ const PurchaseOrdersPage = () => {
                                 onClick={() => handleViewPO(po)}
                                 style={{ borderBottom: '1px solid var(--color-border)' }}
                                 actions={[
-                                    { icon: Eye, label: 'View', color: '#6366F1', onClick: () => handleViewPO(po) },
-                                    { icon: Copy, label: 'Copy', color: '#6B7280', onClick: () => handleCopyPO(po) },
-                                    { icon: Edit, label: 'Edit', color: '#2563EB', onClick: () => handleEditPO(po) },
+                                    { icon: Eye, label: tp('common.view'), color: '#6366F1', onClick: () => handleViewPO(po) },
+                                    { icon: Copy, label: tp('orders.copy'), color: '#6B7280', onClick: () => handleCopyPO(po) },
+                                    { icon: Edit, label: t('common.edit'), color: '#2563EB', onClick: () => handleEditPO(po) },
                                 ]}
                             >
                             <div
@@ -1009,14 +1017,14 @@ const PurchaseOrdersPage = () => {
                                     </span>
                                     {balance > 0.005 && (
                                         <span style={{ fontSize: '12px', fontWeight: 700, color: '#ef4444', flexShrink: 0 }}>
-                                            Owe {formatCurrency(balance)}
+                                            {fill(tp('orders.owe'), { amount: formatCurrency(balance) })}
                                         </span>
                                     )}
                                 </div>
                                 <div style={{ display: 'flex', gap: '4px', marginTop: '6px', flexWrap: 'wrap' }}>
-                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: statusCfg.bg, color: statusCfg.color }}>{po.status}</span>
-                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: payCfg.bg, color: payCfg.color }}>{po.payment_status || 'Unpaid'}</span>
-                                    {isOverdue && <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>OVERDUE</span>}
+                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: statusCfg.bg, color: statusCfg.color }}>{poStatusLabel(po.status)}</span>
+                                    <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: payCfg.bg, color: payCfg.color }}>{payStatusLabel(po.payment_status || 'Unpaid')}</span>
+                                    {isOverdue && <span style={{ padding: '2px 9px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>{tp('orders.overdueBadge')}</span>}
                                 </div>
                             </div>
                             </SwipeRow>
@@ -1040,7 +1048,7 @@ const PurchaseOrdersPage = () => {
                                         <th
                                             key={col.key}
                                             onClick={col.sortable ? () => handleSort(col.key as SortKey) : undefined}
-                                            title={col.sortable ? 'Click to sort — drag the edge to resize' : undefined}
+                                            title={col.sortable ? tp('orders.sortTitle') : undefined}
                                             style={{
                                                 ...thStyle,
                                                 textAlign: col.align,
@@ -1138,7 +1146,7 @@ const PurchaseOrdersPage = () => {
                                                 fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
                                                 backgroundColor: statusCfg.bg, color: statusCfg.color,
                                             }}>
-                                                {po.status}
+                                                {poStatusLabel(po.status)}
                                             </span>
                                         </td>
                                         <td style={{ padding: '8px 12px', textAlign: 'center' }}>
@@ -1148,7 +1156,7 @@ const PurchaseOrdersPage = () => {
                                                     fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
                                                     backgroundColor: payCfg.bg, color: payCfg.color,
                                                 }}>
-                                                    {po.payment_status || 'Unpaid'}
+                                                    {payStatusLabel(po.payment_status || 'Unpaid')}
                                                 </span>
                                                 {paidPercent > 0 && paidPercent < 100 && (
                                                     <div style={{ marginTop: '6px' }}>
@@ -1165,14 +1173,14 @@ const PurchaseOrdersPage = () => {
                                                 <button
                                                     onClick={() => handleViewPO(po)}
                                                     style={{ background: 'rgba(99,102,241,0.08)', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
-                                                    title="View Details"
+                                                    title={tp('orders.viewDetails')}
                                                 >
                                                     <Eye size={15} />
                                                 </button>
                                                 <button
                                                     onClick={() => handleCopyPO(po)}
                                                     style={{ background: 'rgba(107,114,128,0.08)', border: 'none', cursor: 'pointer', color: '#6b7280', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
-                                                    title="Copy Details"
+                                                    title={tp('orders.copyDetails')}
                                                 >
                                                     <Copy size={15} />
                                                 </button>
@@ -1181,7 +1189,7 @@ const PurchaseOrdersPage = () => {
                                                         onClick={() => handleReceivePO(po)}
                                                         disabled={receivingId === po.id}
                                                         style={{ background: 'rgba(16,185,129,0.12)', border: 'none', cursor: receivingId === po.id ? 'not-allowed' : 'pointer', color: '#059669', padding: '6px', borderRadius: '6px', transition: 'all 0.2s', opacity: receivingId === po.id ? 0.6 : 1 }}
-                                                        title={receivingId === po.id ? 'Receiving…' : 'Receive into stock'}
+                                                        title={receivingId === po.id ? tp('common.receiving') : tp('orders.receiveIntoStock')}
                                                     >
                                                         {receivingId === po.id
                                                             ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} />
@@ -1195,7 +1203,7 @@ const PurchaseOrdersPage = () => {
                                                     <button
                                                         onClick={() => handleOpenPaymentModal(po)}
                                                         style={{ background: 'rgba(16,185,129,0.08)', border: 'none', cursor: 'pointer', color: '#10b981', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
-                                                        title="Record Payment"
+                                                        title={tp('orders.recordPayment')}
                                                     >
                                                         <DollarSign size={15} />
                                                     </button>
@@ -1203,14 +1211,14 @@ const PurchaseOrdersPage = () => {
                                                 <button 
                                                     onClick={() => handleEditPO(po)}
                                                     style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
-                                                    title="Edit"
+                                                    title={t('common.edit')}
                                                 >
                                                     <Edit size={15} />
                                                 </button>
                                                 <button 
                                                     onClick={() => handleDeletePO(po.id)}
                                                     style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px', transition: 'all 0.2s' }}
-                                                    title="Delete"
+                                                    title={t('common.delete')}
                                                 >
                                                     <Trash2 size={15} />
                                                 </button>
@@ -1238,7 +1246,7 @@ const PurchaseOrdersPage = () => {
                                         boxShadow: 'inset 0 2px 0 var(--color-border)',
                                         color: 'var(--color-text)',
                                     };
-                                    if (col.key === 'po') return <td key={col.key} style={base}>Total: {filteredPOs.length}</td>;
+                                    if (col.key === 'po') return <td key={col.key} style={base}>{fill(tp('orders.footerTotal'), { n: filteredPOs.length })}</td>;
                                     if (col.key === 'total') return <td key={col.key} style={base}>{formatCurrency(footerTotals.total)}</td>;
                                     if (col.key === 'balance') {
                                         return (
@@ -1257,11 +1265,11 @@ const PurchaseOrdersPage = () => {
                     {/* Pagination */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap', gap: '10px' }}>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                            Showing {sortedPOs.length === 0 ? 0 : (safePage - 1) * itemsPerPage + 1} to {Math.min(safePage * itemsPerPage, sortedPOs.length)} of {sortedPOs.length} entries
+                            {fill(tp('orders.showing'), { from: sortedPOs.length === 0 ? 0 : (safePage - 1) * itemsPerPage + 1, to: Math.min(safePage * itemsPerPage, sortedPOs.length), total: sortedPOs.length })}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Show:</span>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{tp('orders.show')}</span>
                                 <select value={itemsPerPage} onChange={e => setItemsPerPage(Number(e.target.value))} style={{ padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '12px', cursor: 'pointer', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
                                     {[100, 200, 500].map(n => <option key={n} value={n}>{n}</option>)}
                                 </select>
@@ -1271,7 +1279,7 @@ const PurchaseOrdersPage = () => {
                                     <ChevronLeft size={15} />
                                 </button>
                                 <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', margin: '0 8px' }}>
-                                    Page <span style={{ fontWeight: 700, color: 'var(--color-text)' }}>{safePage}</span> of {totalPages}
+                                    {tp('orders.page')} <span style={{ fontWeight: 700, color: 'var(--color-text)' }}>{safePage}</span> {tp('orders.of')} {totalPages}
                                 </span>
                                 <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} style={{ padding: '5px', opacity: safePage === totalPages ? 0.4 : 1, border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface)', cursor: safePage === totalPages ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', color: 'var(--color-text)' }}>
                                     <ChevronRight size={15} />
@@ -1309,9 +1317,9 @@ const PurchaseOrdersPage = () => {
                                 </div>
                                 <div>
                                     <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>
-                                        {editingPOId ? 'Edit Purchase Order' : 'New Purchase Order'}
+                                        {editingPOId ? tp('orders.form.editTitle') : tp('orders.form.newTitle')}
                                     </h2>
-                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>Fill in order details and add line items</p>
+                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{tp('orders.form.subtitle')}</p>
                                 </div>
                             </div>
                             <button onClick={() => setIsModalOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
@@ -1325,18 +1333,18 @@ const PurchaseOrdersPage = () => {
                             {/* Section: Order Information */}
                             <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                    <ShoppingCart size={15} /> Order Information
+                                    <ShoppingCart size={15} /> {tp('orders.form.orderInfo')}
                                 </h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                            <label style={{ fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Supplier *</label>
+                                            <label style={{ fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.form.supplierReq')}</label>
                                             <button
                                                 type="button"
                                                 onClick={() => setIsAddSupplierOpen(true)}
                                                 style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', color: '#6366f1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
                                             >
-                                                <Plus size={13} /> Add Supplier
+                                                <Plus size={13} /> {tp('orders.supplier.title')}
                                             </button>
                                         </div>
                                         <select
@@ -1345,26 +1353,26 @@ const PurchaseOrdersPage = () => {
                                             value={supplierId}
                                             onChange={(e) => setSupplierId(e.target.value)}
                                         >
-                                            <option value="">Select Supplier</option>
+                                            <option value="">{tp('orders.form.selectSupplier')}</option>
                                             {activeSuppliers.map(s => (
                                                 <option key={s.id} value={s.id}>{s.name}</option>
                                             ))}
                                         </select>
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Status</label>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('col.status')}</label>
                                         <select 
                                             className="input-field" 
                                             style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
                                             value={status}
                                             onChange={(e) => setStatus(e.target.value as any)}
                                             disabled={linesLocked}
-                                            title={linesLocked ? 'Received into stock: the status can no longer change' : undefined}
+                                            title={linesLocked ? tp('orders.form.statusLocked') : undefined}
                                         >
-                                            <option value="Draft">Draft</option>
-                                            <option value="Sent">Sent</option>
-                                            <option value="Received">Received</option>
-                                            <option value="Cancelled">Cancelled</option>
+                                            <option value="Draft">{poStatusLabel('Draft')}</option>
+                                            <option value="Sent">{poStatusLabel('Sent')}</option>
+                                            <option value="Received">{poStatusLabel('Received')}</option>
+                                            <option value="Cancelled">{poStatusLabel('Cancelled')}</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1373,19 +1381,19 @@ const PurchaseOrdersPage = () => {
                             {/* Section: Schedule & Dates */}
                             <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                    <Clock size={15} /> Schedule & Dates
+                                    <Clock size={15} /> {tp('orders.form.schedule')}
                                 </h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Order Date *</label>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.form.orderDateReq')}</label>
                                         <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Expected Delivery</label>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.form.expectedDelivery')}</label>
                                         <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Due Date</label>
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.form.paymentDueDate')}</label>
                                         <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={paymentDueDate} onChange={(e) => setPaymentDueDate(e.target.value)} />
                                     </div>
                                 </div>
@@ -1394,16 +1402,16 @@ const PurchaseOrdersPage = () => {
                             {/* Section: Reference & Notes */}
                             <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                    <FileSignature size={15} /> Reference & Notes
+                                    <FileSignature size={15} /> {tp('orders.form.refNotes')}
                                 </h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: isMobile ? '10px' : '16px' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Invoice Number</label>
-                                        <input type="text" className="input-field" placeholder="e.g. INV-2026-001" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.form.invoiceNumber')}</label>
+                                        <input type="text" className="input-field" placeholder={tp('orders.form.invoicePlaceholder')} style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Notes</label>
-                                        <input type="text" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes..." />
+                                        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.form.notes')}</label>
+                                        <input type="text" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={tp('orders.form.notesPlaceholder')} />
                                     </div>
                                 </div>
                             </div>
@@ -1412,7 +1420,7 @@ const PurchaseOrdersPage = () => {
                             <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                     <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
-                                        <Package size={15} /> Line Items
+                                        <Package size={15} /> {tp('orders.form.lineItems')}
                                         <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{lines.length}</span>
                                     </h4>
                                     <button 
@@ -1421,12 +1429,12 @@ const PurchaseOrdersPage = () => {
                                         disabled={linesLocked}
                                         style={{ padding: '7px 14px', fontSize: '12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600 }}
                                     >
-                                        <Plus size={14} /> Add Line
+                                        <Plus size={14} /> {tp('orders.form.addLine')}
                                     </button>
                                 </div>
                                 {linesLocked && (
                                     <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '0 0 10px' }}>
-                                        Received into stock: products and quantities can't change (unit costs still can). Use Adjust Stock for any difference.
+                                        {tp('orders.form.linesLocked')}
                                     </p>
                                 )}
                                 {/* Mobile: fixed-width columns scroll sideways inside the card */}
@@ -1435,10 +1443,10 @@ const PurchaseOrdersPage = () => {
                                         <thead>
                                             <tr style={{ background: 'rgba(0,0,0,0.025)' }}>
                                                 <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', width: '36px', borderBottom: '1px solid var(--color-border)' }}>#</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>Product</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'right', width: '80px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>Qty</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'right', width: '120px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>Unit Cost</th>
-                                                <th style={{ padding: '10px 12px', textAlign: 'right', width: '120px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>Subtotal</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>{tp('col.product')}</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right', width: '80px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>{tp('col.qty')}</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right', width: '120px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>{tp('col.unitCost')}</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right', width: '120px', fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--color-border)' }}>{tp('col.subtotal')}</th>
                                                 <th style={{ padding: '10px 12px', width: '40px', borderBottom: '1px solid var(--color-border)' }}></th>
                                             </tr>
                                         </thead>
@@ -1457,8 +1465,8 @@ const PurchaseOrdersPage = () => {
                                                                 updateLine(index, 'product_id', e.target.value);
                                                             }}
                                                         >
-                                                            <option value="">Select product...</option>
-                                                            <option value="__new__">＋ Create new product…</option>
+                                                            <option value="">{tp('orders.form.selectProduct')}</option>
+                                                            <option value="__new__">{tp('orders.form.createNewProduct')}</option>
                                                             {products.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
                                                         </select>
                                                     </td>
@@ -1497,14 +1505,14 @@ const PurchaseOrdersPage = () => {
                         {/* Modal Footer */}
                         <div style={{ padding: isMobile ? '12px 14px' : '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.03), rgba(139,92,246,0.03))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: isMobile ? '8px' : '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Total</span>
+                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{tp('col.total')}</span>
                                 <span style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 800, color: 'var(--color-primary)', letterSpacing: '-0.5px' }}>{formatCurrency(totalAmount)}</span>
-                                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', padding: '3px 10px', borderRadius: '12px', fontWeight: 600 }}>{lines.length} item{lines.length !== 1 ? 's' : ''}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', padding: '3px 10px', borderRadius: '12px', fontWeight: 600 }}>{fill(tp(lines.length !== 1 ? 'orders.form.itemsN' : 'orders.form.items1'), { n: lines.length })}</span>
                             </div>
                             <div style={{ display: 'flex', gap: '10px', flex: isMobile ? '1 1 100%' : 'none' }}>
-                                <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', flex: isMobile ? '0 0 auto' : undefined }}>Cancel</button>
+                                <button className="secondary-button" onClick={() => setIsModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', flex: isMobile ? '0 0 auto' : undefined }}>{t('common.cancel')}</button>
                                 <button className="primary-button" onClick={handleSave} disabled={!isFormValid || isSavingPO} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: isMobile ? 1 : undefined }}>
-                                    <CheckCircle2 size={16} /> {isSavingPO ? 'Saving…' : editingPOId ? 'Update Order' : 'Create Order'}
+                                    <CheckCircle2 size={16} /> {isSavingPO ? tp('common.saving') : editingPOId ? tp('orders.form.update') : tp('orders.form.create')}
                                 </button>
                             </div>
                         </div>
@@ -1533,12 +1541,12 @@ const PurchaseOrdersPage = () => {
                                     </div>
                                     <div>
                                         <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>PO-{viewPO.id.substring(0, 8).toUpperCase()}</h2>
-                                        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{viewPO.supplier?.name || 'Unknown supplier'}</p>
+                                        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{viewPO.supplier?.name || tp('common.unknownSupplier')}</p>
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: statusCfg.bg, color: statusCfg.color }}>{viewPO.status}</span>
-                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: payCfg.bg, color: payCfg.color }}>{viewPO.payment_status || 'Unpaid'}</span>
+                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: statusCfg.bg, color: statusCfg.color }}>{poStatusLabel(viewPO.status)}</span>
+                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: payCfg.bg, color: payCfg.color }}>{payStatusLabel(viewPO.payment_status || 'Unpaid')}</span>
                                     <button onClick={() => setViewPO(null)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                         <X size={18} />
                                     </button>
@@ -1549,17 +1557,17 @@ const PurchaseOrdersPage = () => {
                             <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                 {/* Info grid */}
                                 <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px' }}>
-                                    <DetailItem label="Order Date" value={viewPO.order_date ? new Date(viewPO.order_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
-                                    <DetailItem label="Expected Delivery" value={viewPO.expected_delivery_date ? new Date(viewPO.expected_delivery_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
-                                    <DetailItem label="Payment Due" value={viewPO.payment_due_date ? new Date(viewPO.payment_due_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} valueColor={isOverdue ? '#ef4444' : undefined} />
-                                    <DetailItem label="Invoice No" value={viewPO.invoice_number || '—'} />
-                                    {viewPO.notes && <DetailItem label="Notes" value={viewPO.notes} span />}
+                                    <DetailItem label={tp('orders.orderDate')} value={viewPO.order_date ? new Date(viewPO.order_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
+                                    <DetailItem label={tp('orders.form.expectedDelivery')} value={viewPO.expected_delivery_date ? new Date(viewPO.expected_delivery_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} />
+                                    <DetailItem label={tp('orders.view.paymentDue')} value={viewPO.payment_due_date ? new Date(viewPO.payment_due_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'} valueColor={isOverdue ? '#ef4444' : undefined} />
+                                    <DetailItem label={tp('orders.view.invoiceNo')} value={viewPO.invoice_number || '—'} />
+                                    {viewPO.notes && <DetailItem label={tp('orders.form.notes')} value={viewPO.notes} span />}
                                 </div>
 
                                 {/* Line items */}
                                 <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                     <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '14px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                        <Package size={15} /> Line Items
+                                        <Package size={15} /> {tp('orders.form.lineItems')}
                                         <span style={{ background: 'var(--color-primary)', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewPO.items?.length || 0}</span>
                                     </h4>
                                     <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
@@ -1569,10 +1577,10 @@ const PurchaseOrdersPage = () => {
                                             <thead>
                                                 <tr style={{ background: 'rgba(0,0,0,0.025)' }}>
                                                     <th style={viewTh('36px', 'center')}>#</th>
-                                                    <th style={viewTh(undefined, 'left')}>Product</th>
-                                                    <th style={viewTh('80px', 'right')}>Qty</th>
-                                                    <th style={viewTh('110px', 'right')}>Unit Cost</th>
-                                                    <th style={viewTh('110px', 'right')}>Subtotal</th>
+                                                    <th style={viewTh(undefined, 'left')}>{tp('col.product')}</th>
+                                                    <th style={viewTh('80px', 'right')}>{tp('col.qty')}</th>
+                                                    <th style={viewTh('110px', 'right')}>{tp('col.unitCost')}</th>
+                                                    <th style={viewTh('110px', 'right')}>{tp('col.subtotal')}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -1594,24 +1602,24 @@ const PurchaseOrdersPage = () => {
                                 {/* Payments */}
                                 <div style={{ background: 'var(--color-bg)', padding: isMobile ? '12px' : '20px', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                     <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '14px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                        <DollarSign size={15} /> Payment History
+                                        <DollarSign size={15} /> {tp('orders.view.paymentHistory')}
                                         <span style={{ background: '#10b981', color: 'white', padding: '1px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, marginLeft: '4px' }}>{viewPayments.length}</span>
                                     </h4>
                                     {viewPaymentsLoading ? (
-                                        <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Loading payments…</div>
+                                        <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.view.loadingPayments')}</div>
                                     ) : viewPayments.length === 0 ? (
-                                        <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>No payments recorded yet.</div>
+                                        <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{tp('orders.view.noPayments')}</div>
                                     ) : (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             {viewPayments.map((p: any) => (
                                                 <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '10px 14px' }}>
                                                     <div>
                                                         <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}</div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{[p.payment_method, p.notes].filter(Boolean).join(' · ') || '—'}</div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{[p.payment_method && methodLabel(p.payment_method), p.notes].filter(Boolean).join(' · ') || '—'}</div>
                                                     </div>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                         <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }}>{formatCurrency(Number(p.amount) || 0)}</div>
-                                                        <button onClick={() => handleDeleteViewPayment(p)} title="Delete Payment" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}>
+                                                        <button onClick={() => handleDeleteViewPayment(p)} title={tp('orders.view.deletePayment')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}>
                                                             <Trash2 size={14} />
                                                         </button>
                                                     </div>
@@ -1625,15 +1633,15 @@ const PurchaseOrdersPage = () => {
                             {/* Footer */}
                             <div style={{ padding: '18px 28px', borderTop: '2px solid var(--color-border)', background: 'linear-gradient(135deg, rgba(99,102,241,0.03), rgba(139,92,246,0.03))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Total </span><span style={{ fontSize: '18px', fontWeight: 800 }}>{formatCurrency(viewPO.total_amount || 0)}</span></div>
-                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Paid </span><span style={{ fontSize: '18px', fontWeight: 800, color: '#10b981' }}>{formatCurrency(paid)}</span></div>
-                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Balance </span><span style={{ fontSize: '18px', fontWeight: 800, color: balance > 0.005 ? '#ef4444' : '#10b981' }}>{formatCurrency(balance)}</span></div>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{tp('col.total')} </span><span style={{ fontSize: '18px', fontWeight: 800 }}>{formatCurrency(viewPO.total_amount || 0)}</span></div>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{tp('orders.view.paid')} </span><span style={{ fontSize: '18px', fontWeight: 800, color: '#10b981' }}>{formatCurrency(paid)}</span></div>
+                                    <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{tp('orders.col.balance')} </span><span style={{ fontSize: '18px', fontWeight: 800, color: balance > 0.005 ? '#ef4444' : '#10b981' }}>{formatCurrency(balance)}</span></div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '10px' }}>
                                     <button className="secondary-button" onClick={() => handleCopyPO(viewPO)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <Copy size={15} /> Copy Details
+                                        <Copy size={15} /> {tp('orders.copyDetails')}
                                     </button>
-                                    <button className="secondary-button" onClick={() => setViewPO(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Close</button>
+                                    <button className="secondary-button" onClick={() => setViewPO(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>{t('common.close')}</button>
                                 </div>
                             </div>
                         </div>
@@ -1665,8 +1673,8 @@ const PurchaseOrdersPage = () => {
                                     <Package size={18} />
                                 </div>
                                 <div>
-                                    <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>Create Product</h2>
-                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>Stock starts at 0 and arrives when this order is received</p>
+                                    <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>{tp('orders.product.title')}</h2>
+                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{tp('orders.product.subtitle')}</p>
                                 </div>
                             </div>
                             <button onClick={() => setAddProductForLine(null)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1675,11 +1683,11 @@ const PurchaseOrdersPage = () => {
                         </div>
                         <div style={{ padding: isMobile ? '14px' : '20px 24px', overflowY: 'auto', display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: '12px 16px' }}>
                             {([
-                                { key: 'name', label: 'Product Name *', placeholder: 'e.g. Speaker X100', type: 'text', autoFocus: true },
-                                { key: 'model', label: 'Model', placeholder: 'Optional', type: 'text' },
-                                { key: 'category', label: 'Category', placeholder: 'Optional', type: 'text' },
-                                { key: 'purchase_cost', label: 'Purchase Cost ($)', placeholder: '0.00', type: 'number' },
-                                { key: 'price', label: 'Sale Price ($)', placeholder: '0.00', type: 'number' },
+                                { key: 'name', label: tp('orders.product.name'), placeholder: tp('orders.product.namePlaceholder'), type: 'text', autoFocus: true },
+                                { key: 'model', label: tp('orders.product.model'), placeholder: tp('common.optional'), type: 'text' },
+                                { key: 'category', label: tp('orders.product.category'), placeholder: tp('common.optional'), type: 'text' },
+                                { key: 'purchase_cost', label: tp('orders.product.purchaseCost'), placeholder: '0.00', type: 'number' },
+                                { key: 'price', label: tp('orders.product.salePrice'), placeholder: '0.00', type: 'number' },
                             ] as const).map(f => (
                                 <div key={f.key}>
                                     <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{f.label}</label>
@@ -1699,9 +1707,9 @@ const PurchaseOrdersPage = () => {
                             ))}
                         </div>
                         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                            <button className="secondary-button" disabled={isSavingProduct} onClick={() => setAddProductForLine(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
+                            <button className="secondary-button" disabled={isSavingProduct} onClick={() => setAddProductForLine(null)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>{t('common.cancel')}</button>
                             <button className="primary-button" disabled={isSavingProduct || !newProduct.name.trim()} onClick={handleCreateProduct} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <CheckCircle2 size={16} /> {isSavingProduct ? 'Saving…' : 'Create Product'}
+                                <CheckCircle2 size={16} /> {isSavingProduct ? tp('common.saving') : tp('orders.product.title')}
                             </button>
                         </div>
                     </div>
@@ -1732,8 +1740,8 @@ const PurchaseOrdersPage = () => {
                                     <Plus size={18} />
                                 </div>
                                 <div>
-                                    <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>Add Supplier</h2>
-                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>Create a supplier without leaving the order</p>
+                                    <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>{tp('orders.supplier.title')}</h2>
+                                    <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>{tp('orders.supplier.subtitle')}</p>
                                 </div>
                             </div>
                             <button onClick={() => setIsAddSupplierOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1742,12 +1750,12 @@ const PurchaseOrdersPage = () => {
                         </div>
                         <div style={{ padding: isMobile ? '14px' : '20px 24px', overflowY: 'auto', display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: '12px 16px' }}>
                             {([
-                                { key: 'name', label: 'Supplier Name *', placeholder: 'e.g. ABC Trading', autoFocus: true },
-                                { key: 'contact_name', label: 'Contact Person', placeholder: 'Optional' },
-                                { key: 'phone', label: 'Phone', placeholder: 'Optional' },
-                                { key: 'tax_id', label: 'Tax ID', placeholder: 'Optional' },
-                                { key: 'email', label: 'Email', placeholder: 'Optional' },
-                                { key: 'address', label: 'Address', placeholder: 'Optional' },
+                                { key: 'name', label: tp('orders.supplier.name'), placeholder: tp('orders.supplier.namePlaceholder'), autoFocus: true },
+                                { key: 'contact_name', label: tp('orders.supplier.contact'), placeholder: tp('common.optional') },
+                                { key: 'phone', label: tp('orders.supplier.phone'), placeholder: tp('common.optional') },
+                                { key: 'tax_id', label: tp('orders.supplier.taxId'), placeholder: tp('common.optional') },
+                                { key: 'email', label: tp('orders.supplier.email'), placeholder: tp('common.optional') },
+                                { key: 'address', label: tp('orders.supplier.address'), placeholder: tp('common.optional') },
                             ] as const).map(f => (
                                 <div key={f.key}>
                                     <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{f.label}</label>
@@ -1765,9 +1773,9 @@ const PurchaseOrdersPage = () => {
                             ))}
                         </div>
                         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                            <button className="secondary-button" disabled={isSavingSupplier} onClick={() => setIsAddSupplierOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
+                            <button className="secondary-button" disabled={isSavingSupplier} onClick={() => setIsAddSupplierOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>{t('common.cancel')}</button>
                             <button className="primary-button" disabled={isSavingSupplier || !newSupplier.name.trim()} onClick={handleCreateSupplier} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <CheckCircle2 size={16} /> {isSavingSupplier ? 'Saving…' : 'Create Supplier'}
+                                <CheckCircle2 size={16} /> {isSavingSupplier ? tp('common.saving') : tp('orders.supplier.create')}
                             </button>
                         </div>
                     </div>
@@ -1799,8 +1807,8 @@ const PurchaseOrdersPage = () => {
                                     <DollarSign size={18} />
                                 </div>
                                 <div>
-                                    <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>Record Payment</h2>
-                                    <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '1px 0 0 0' }}>Supplier payment recording</p>
+                                    <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>{tp('orders.recordPayment')}</h2>
+                                    <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '1px 0 0 0' }}>{tp('orders.payment.subtitle')}</p>
                                 </div>
                             </div>
                             <button onClick={() => setIsPaymentModalOpen(false)} style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', cursor: 'pointer', color: 'var(--color-text-muted)', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1812,7 +1820,7 @@ const PurchaseOrdersPage = () => {
                             {/* Remaining Balance Display */}
                             {payingPORemaining > 0 && (
                                 <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.12)', borderRadius: '12px', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>Remaining Balance</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{tp('orders.payment.remaining')}</span>
                                     <span style={{ fontSize: '20px', fontWeight: 700, color: '#ef4444' }}>{formatCurrency(payingPORemaining)}</span>
                                 </div>
                             )}
@@ -1821,7 +1829,7 @@ const PurchaseOrdersPage = () => {
                             <div>
                                 <MoneyInput
                                     field={payField}
-                                    label="Amount to Pay"
+                                    label={tp('orders.payment.amountToPay')}
                                     required
                                     allowKhr
                                     onToggleCurrency={payCoupling.onToggleCurrency}
@@ -1831,13 +1839,13 @@ const PurchaseOrdersPage = () => {
                                 {payingPORemaining > 0 && (
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px' }}>
                                         {[
-                                            { label: 'Full', pct: 1, color: '#10b981' },
+                                            { label: tp('orders.payment.full'), pct: 1, color: '#10b981' },
                                             { label: '75%', pct: 0.75, color: '#3b82f6' },
                                             { label: '50%', pct: 0.5, color: '#f59e0b' },
                                             { label: '25%', pct: 0.25, color: '#8b5cf6' },
                                         ].map(btn => (
                                             <button 
-                                                key={btn.label}
+                                                key={btn.pct}
                                                 onClick={() => setPaymentAmount(Math.round(payingPORemaining * btn.pct * 100) / 100)} 
                                                 style={{ 
                                                     padding: '8px 6px', fontSize: '12px', fontWeight: 700, border: '1px solid var(--color-border)', borderRadius: '8px',
@@ -1858,50 +1866,50 @@ const PurchaseOrdersPage = () => {
                             {/* Date & Method */}
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Payment Date *</label>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.payment.dateReq')}</label>
                                     <input type="date" className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)' }} value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Method</label>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.payment.method')}</label>
                                     <select className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)' }} value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-                                        <option value="Cash">Cash</option>
-                                        <option value="Bank Transfer">Bank Transfer</option>
-                                        <option value="On Credit">On Credit</option>
+                                        <option value="Cash">{methodLabel('Cash')}</option>
+                                        <option value="Bank Transfer">{methodLabel('Bank Transfer')}</option>
+                                        <option value="On Credit">{methodLabel('On Credit')}</option>
                                     </select>
                                 </div>
                             </div>
 
                             {/* Paid from (ledger account) */}
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Paid from *</label>
+                                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.payment.paidFromReq')}</label>
                                 <select
                                     className="input-field d2-khmer"
                                     style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', fontSize: '14px', border: '1px solid var(--color-border)' }}
                                     value={payingAccountId}
                                     onChange={(e) => payCoupling.onAccountChange(e.target.value)}
                                 >
-                                    <option value="">Bank or cash account…</option>
+                                    <option value="">{tp('common.bankOrCash')}</option>
                                     <CashBankOptions accounts={paymentAccounts} />
                                 </select>
                                 {paymentAccounts.length === 0 && (
                                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                                        No cash or bank accounts in the Chart of Accounts yet — the payment saves without one.
+                                        {tp('orders.payment.noAccounts')}
                                     </div>
                                 )}
                             </div>
 
                             {/* Notes */}
                             <div>
-                                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Notes</label>
-                                <textarea className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', minHeight: '60px', fontSize: '14px', border: '1px solid var(--color-border)', resize: 'vertical' }} value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="Optional payment notes..." />
+                                <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: 'var(--color-text-secondary)' }}>{tp('orders.form.notes')}</label>
+                                <textarea className="input-field" style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', minHeight: '60px', fontSize: '14px', border: '1px solid var(--color-border)', resize: 'vertical' }} value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder={tp('orders.payment.notesPlaceholder')} />
                             </div>
                         </div>
 
                         {/* Payment Footer */}
                         <div style={{ padding: '18px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: '10px', background: 'rgba(0,0,0,0.01)' }}>
-                            <button className="secondary-button" onClick={() => setIsPaymentModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>Cancel</button>
+                            <button className="secondary-button" onClick={() => setIsPaymentModalOpen(false)} style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600 }}>{t('common.cancel')}</button>
                             <button className="primary-button" onClick={handleSavePayment} disabled={!paymentAmount || paymentAmount <= 0 || payField.rateInvalid} style={{ padding: '10px 24px', borderRadius: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <CheckCircle2 size={16} /> Record Payment
+                                <CheckCircle2 size={16} /> {tp('orders.recordPayment')}
                             </button>
                         </div>
                     </div>

@@ -10,6 +10,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import { supabase } from '../../lib/supabase';
 import { useHeader } from '../../context/HeaderContext';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
 import type { ChartOfAccount } from '../../types';
 import { dayKeyFromDate, addDays, daysBetween } from '../../utils/dateRange';
 import { fetchAll } from '../../utils/fetchAll';
@@ -41,6 +42,7 @@ const startOfMonthYmd = (): string => {
 const CashInOutPage: React.FC = () => {
     const isMobile = useMobile();
     const { setHeaderContent } = useHeader();
+    const { t } = useLanguage();
     const [tab, setTab] = useState<TabKey>('position');
     const [range, setRange] = useState<{ start: string; end: string }>({ start: startOfMonthYmd(), end: todayYmd() });
     const [accountFilter, setAccountFilter] = useState<string>('all');
@@ -52,13 +54,13 @@ const CashInOutPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>Cash In / Out</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>Where the money is, what came in, and where it went</p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--color-text-main)' }}>{t('nav.cashInOut')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>{t('ui.accounting.cash.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => {
         let alive = true;
@@ -361,36 +363,36 @@ const CashInOutPage: React.FC = () => {
                 {/* Filters */}
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
                     <div>
-                        <label style={labelStyle}>From</label>
+                        <label style={labelStyle}>{t('ui.accounting.common.from')}</label>
                         <input type="date" value={range.start} onChange={e => setRange(r => ({ ...r, start: e.target.value }))} style={inputStyle} />
                     </div>
                     <div>
-                        <label style={labelStyle}>To</label>
+                        <label style={labelStyle}>{t('ui.accounting.common.toLabel')}</label>
                         <input type="date" value={range.end} onChange={e => setRange(r => ({ ...r, end: e.target.value }))} style={inputStyle} />
                     </div>
                     <div>
-                        <label style={labelStyle}>Account</label>
+                        <label style={labelStyle}>{t('ui.accounting.common.account')}</label>
                         <select value={accountFilter} onChange={e => setAccountFilter(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                            <option value="all">All cash accounts</option>
+                            <option value="all">{t('ui.accounting.cash.allCashAccounts')}</option>
                             {cashAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
                         </select>
                     </div>
-                    <button onClick={() => setRefreshKey(k => k + 1)} title="Reload" style={{ ...btnStyle, padding: '9px 10px' }}>
+                    <button onClick={() => setRefreshKey(k => k + 1)} title={t('ui.accounting.common.reload')} style={{ ...btnStyle, padding: '9px 10px' }}>
                         <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
                     </button>
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                         <button onClick={printList} disabled={loading || !hasRows} style={{ ...btnStyle, opacity: (loading || !hasRows) ? 0.5 : 1 }}>
-                            <Printer size={14} /> Print list
+                            <Printer size={14} /> {t('ui.accounting.common.printList')}
                         </button>
                         <button onClick={exportCsv} disabled={loading || !hasRows} style={{ ...btnStyle, opacity: (loading || !hasRows) ? 0.5 : 1 }}>
-                            <Download size={14} /> Export CSV
+                            <Download size={14} /> {t('ui.accounting.common.exportCsv')}
                         </button>
                     </div>
                 </div>
 
                 {/* Tabs */}
                 <div style={{ display: 'flex', gap: '4px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '4px', flexWrap: 'wrap', alignSelf: 'flex-start' }}>
-                    {TABS.map(({ key, label, icon: Icon }) => (
+                    {TABS.map(({ key, icon: Icon }) => (
                         <button key={key} onClick={() => setTab(key)} style={{
                             display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '9px', border: 'none',
                             background: tab === key ? 'var(--color-surface)' : 'transparent',
@@ -398,19 +400,19 @@ const CashInOutPage: React.FC = () => {
                             fontWeight: tab === key ? 700 : 500, fontSize: '13px', cursor: 'pointer',
                             boxShadow: tab === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s',
                         }}>
-                            <Icon size={15} /> {label}
+                            <Icon size={15} /> {t('ui.accounting.cash.tab.' + key)}
                         </button>
                     ))}
                 </div>
 
-                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>All figures are in USD.</div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.common.allUsd')}</div>
 
                 {/* Summary cards (scoped to the current From/To + Account filters) */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                    <StatCard label="Cash & Bank (all)" value={positionTotals.closing} color="var(--color-text-main)" />
-                    <StatCard label="Cash In" value={positionTotals.cashIn} color={BLUE} />
-                    <StatCard label="Cash Out" value={positionTotals.cashOut} color={RED} />
-                    <StatCard label="Net Movement" value={positionTotals.net} color={positionTotals.net < 0 ? RED : BLUE} />
+                    <StatCard label={t('ui.accounting.cash.cashBankAll')} value={positionTotals.closing} color="var(--color-text-main)" />
+                    <StatCard label={t('ui.accounting.cash.col.cashIn')} value={positionTotals.cashIn} color={BLUE} />
+                    <StatCard label={t('ui.accounting.cash.col.cashOut')} value={positionTotals.cashOut} color={RED} />
+                    <StatCard label={t('ui.accounting.cash.netMovement')} value={positionTotals.net} color={positionTotals.net < 0 ? RED : BLUE} />
                 </div>
 
                 {/* Cash Position */}
@@ -420,21 +422,21 @@ const CashInOutPage: React.FC = () => {
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '640px' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                        {['Account', 'Opening', 'Cash In', 'Cash Out', 'Net', 'Closing'].map((h, i) => (
-                                            <th key={h} style={{ padding: '10px 20px', textAlign: i === 0 ? 'left' : 'right', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{h}</th>
+                                        {['account', 'opening', 'cashIn', 'cashOut', 'net', 'closing'].map((h, i) => (
+                                            <th key={h} style={{ padding: '10px 20px', textAlign: i === 0 ? 'left' : 'right', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.cash.col.' + h)}</th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {positionRows.length === 0 ? (
-                                        <tr><td colSpan={6} style={{ padding: '24px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No cash accounts found (Asset accounts named cash or bank).</td></tr>
+                                        <tr><td colSpan={6} style={{ padding: '24px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.cash.noCashAccounts')}</td></tr>
                                     ) : positionRows.map(r => (
                                         <tr key={r.account.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                             <td style={{ padding: '12px 20px' }}>
                                                 <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>
                                                     {r.account.account_name}
                                                     {/* Booked in USD at each entry's rate: no riel balance yet. */}
-                                                    {isKhrAccountName(r.account.account_name) && <span style={{ fontWeight: 400, fontSize: '11px', color: 'var(--color-text-secondary)' }}> (USD value)</span>}
+                                                    {isKhrAccountName(r.account.account_name) && <span style={{ fontWeight: 400, fontSize: '11px', color: 'var(--color-text-secondary)' }}> ({t('ui.accounting.cash.usdValue')})</span>}
                                                 </div>
                                                 <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{r.account.account_code}</div>
                                             </td>
@@ -449,7 +451,7 @@ const CashInOutPage: React.FC = () => {
                                 {positionRows.length > 0 && (
                                     <tfoot>
                                         <tr style={{ background: 'var(--color-bg)', fontWeight: 700 }}>
-                                            <td style={{ padding: '12px 20px' }}>Total</td>
+                                            <td style={{ padding: '12px 20px' }}>{t('common.total')}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right' }}>{amountText(positionTotals.opening)}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right' }}>{amountText(positionTotals.cashIn, BLUE)}</td>
                                             <td style={{ padding: '12px 20px', textAlign: 'right' }}>{amountText(positionTotals.cashOut, RED)}</td>
@@ -470,21 +472,21 @@ const CashInOutPage: React.FC = () => {
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '720px' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                        {['Date', 'Entry #', 'Description', 'Account', 'Contra', 'Cash In', 'Cash Out', 'Balance'].map((h, i) => (
-                                            <th key={h} style={{ padding: '10px 16px', textAlign: i >= 5 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{h}</th>
+                                        {['date', 'entryNo', 'description', 'account', 'contra', 'cashIn', 'cashOut', 'balance'].map((h, i) => (
+                                            <th key={h} style={{ padding: '10px 16px', textAlign: i >= 5 ? 'right' : 'left', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.cash.col.' + h)}</th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {cashBookRows.length === 0 ? (
-                                        <tr><td colSpan={8} style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No cash transactions in this range.</td></tr>
+                                        <tr><td colSpan={8} style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.cash.noCashTransactions')}</td></tr>
                                     ) : cashBookRows.map((r, i) => (
                                         <tr key={`${r.entryId}-${r.accountId}-${i}`} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                             <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--color-text-main)' }}>{r.date}</td>
                                             <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.entryNumber || '—'}</td>
                                             <td style={{ padding: '10px 16px', color: 'var(--color-text-main)' }}>{r.description || '—'}</td>
-                                            <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.accountName}</td>
-                                            <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.contra}</td>
+                                            <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.accountName === '(Deleted account)' ? t('ui.accounting.common.deletedAccount') : r.accountName}</td>
+                                            <td style={{ padding: '10px 16px', color: 'var(--color-text-secondary)' }}>{r.contra.split('(Deleted account)').join(t('ui.accounting.common.deletedAccount'))}</td>
                                             <td style={{ padding: '10px 16px', textAlign: 'right' }}>{r.debit ? amountText(r.debit, BLUE) : ''}</td>
                                             <td style={{ padding: '10px 16px', textAlign: 'right' }}>{r.credit ? amountText(r.credit, RED) : ''}</td>
                                             <td style={{ padding: '10px 16px', textAlign: 'right' }}>{amountText(r.balance)}</td>
@@ -499,9 +501,9 @@ const CashInOutPage: React.FC = () => {
                 {/* Trend */}
                 {tab === 'trend' && (
                     <div style={{ ...cardStyle, padding: '20px', height: '380px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>Cash In / Out {trendData.length > 0 && daysBetween(range.start, range.end) + 1 > 62 ? 'by month' : 'by day'}</div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)' }}>{trendData.length > 0 && daysBetween(range.start, range.end) + 1 > 62 ? t('ui.accounting.cash.trendByMonth') : t('ui.accounting.cash.trendByDay')}</div>
                         {!hasRows ? (
-                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>No cash movement in this range.</div>
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{t('ui.accounting.cash.noCashMovement')}</div>
                         ) : (
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -516,8 +518,8 @@ const CashInOutPage: React.FC = () => {
                                         formatter={((value: any, name: any) => [fmt(Math.abs(Number(value))), name]) as any}
                                     />
                                     <Legend wrapperStyle={{ fontSize: '12px' }} />
-                                    <Bar dataKey="cashIn" name="Cash In" fill={GREEN} radius={[3, 3, 0, 0]} maxBarSize={36} />
-                                    <Bar dataKey="cashOut" name="Cash Out" fill={RED} radius={[0, 0, 3, 3]} maxBarSize={36} />
+                                    <Bar dataKey="cashIn" name={t('ui.accounting.cash.col.cashIn')} fill={GREEN} radius={[3, 3, 0, 0]} maxBarSize={36} />
+                                    <Bar dataKey="cashOut" name={t('ui.accounting.cash.col.cashOut')} fill={RED} radius={[0, 0, 3, 3]} maxBarSize={36} />
                                 </BarChart>
                             </ResponsiveContainer>
                         )}
@@ -528,23 +530,23 @@ const CashInOutPage: React.FC = () => {
                 {tab === 'source' && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: '20px', alignItems: 'start' }}>
                         {([
-                            { title: 'Cash In by Source', color: GREEN, rows: bySource.inflows, total: positionTotals.cashIn },
-                            { title: 'Cash Out by Source', color: RED, rows: bySource.outflows, total: positionTotals.cashOut },
+                            { key: 'in', title: t('ui.accounting.cash.cashInBySource'), color: GREEN, rows: bySource.inflows, total: positionTotals.cashIn },
+                            { key: 'out', title: t('ui.accounting.cash.cashOutBySource'), color: RED, rows: bySource.outflows, total: positionTotals.cashOut },
                         ] as const).map(section => (
-                            <div key={section.title} style={{ ...cardStyle, borderLeft: `4px solid ${section.color}`, overflow: 'hidden' }}>
+                            <div key={section.key} style={{ ...cardStyle, borderLeft: `4px solid ${section.color}`, overflow: 'hidden' }}>
                                 <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)', fontSize: '12px', fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color: section.color }}>
                                     {section.title}
                                 </div>
                                 {section.rows.length === 0 ? (
-                                    <div style={{ padding: '18px 20px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>No movement in this range.</div>
+                                    <div style={{ padding: '18px 20px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.cash.noMovement')}</div>
                                 ) : section.rows.map((r, i) => (
                                     <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderBottom: i === section.rows.length - 1 ? 'none' : '1px solid var(--color-border)', fontSize: '14px' }}>
-                                        <span className="d2-khmer" style={{ flex: 1, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{r.name}</span>
+                                        <span className="d2-khmer" style={{ flex: 1, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{r.name === 'Cash-to-cash transfer' ? t('ui.accounting.common.cashToCashTransfer') : r.name === '(Deleted account)' ? t('ui.accounting.common.deletedAccount') : r.name}</span>
                                         {amountText(r.amount)}
                                     </div>
                                 ))}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '12px 20px', borderTop: '2px solid var(--color-border)', background: 'var(--color-bg)', fontSize: '14px', fontWeight: 700 }}>
-                                    <span style={{ color: 'var(--color-text-main)' }}>Total</span>
+                                    <span style={{ color: 'var(--color-text-main)' }}>{t('common.total')}</span>
                                     {amountText(section.total, section.color)}
                                 </div>
                             </div>

@@ -4,6 +4,8 @@ import { useStore } from '../../context/StoreContext';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 
 interface WarehouseFormData {
     name: string;
@@ -16,6 +18,7 @@ const WarehousesPage: React.FC = () => {
     const { warehouses, warehouseStock, products, addWarehouse, updateWarehouse, deleteWarehouse, currentUser } = useStore();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
+    const { t } = useLanguage();
     const isMobile = useMobile();
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -34,13 +37,13 @@ const WarehousesPage: React.FC = () => {
             title: (
                 <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        Warehouses {selectedWarehouseId && <><ChevronRight size={14} color="var(--color-text-muted)" /> <span style={{ color: 'var(--color-text-secondary)' }}>Stock View</span></>}
+                        {t('ui.inventory.wh.title')} {selectedWarehouseId && <><ChevronRight size={14} color="var(--color-text-muted)" /> <span style={{ color: 'var(--color-text-secondary)' }}>{t('ui.inventory.wh.stockView')}</span></>}
                     </h1>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, selectedWarehouseId]);
+    }, [setHeaderContent, selectedWarehouseId, t]);
 
     const filteredWarehouses = useMemo(() => {
         return warehouses.filter(w => 
@@ -77,25 +80,25 @@ const WarehousesPage: React.FC = () => {
 
             if (editingWarehouse) {
                 await updateWarehouse(editingWarehouse.id, data);
-                showToast('Warehouse updated successfully', 'success');
+                showToast(t('ui.inventory.wh.updated'), 'success');
             } else {
                 await addWarehouse(data);
-                showToast('Warehouse created successfully', 'success');
+                showToast(t('ui.inventory.wh.created'), 'success');
             }
             setIsModalOpen(false);
         } catch (error: any) {
-            showToast(error.message || 'Failed to save warehouse', 'error');
+            showToast(error.message || t('ui.inventory.wh.saveFailed'), 'error');
         }
     };
 
     const handleDelete = async (id: string, name: string) => {
-        if (window.confirm(`Are you sure you want to delete ${name}? This may orphan stock records associated with this warehouse.`)) {
+        if (window.confirm(fill(t('ui.inventory.wh.confirmDelete'), { name }))) {
             try {
                 await deleteWarehouse(id);
-                showToast('Warehouse deleted', 'success');
+                showToast(t('ui.inventory.wh.deleted'), 'success');
                 if (selectedWarehouseId === id) setSelectedWarehouseId(null);
             } catch (error: any) {
-                showToast(error.message || 'Failed to delete warehouse', 'error');
+                showToast(error.message || t('ui.inventory.wh.deleteFailed'), 'error');
             }
         }
     };
@@ -111,7 +114,7 @@ const WarehousesPage: React.FC = () => {
                 const p = products.find(prod => prod.id === ws.productId);
                 return {
                     ...ws,
-                    productName: p?.name || 'Unknown Product',
+                    productName: p?.name || t('ui.inventory.unknownProduct'),
                     sku: p?.sku || '-',
                     image: p?.image || ''
                 };
@@ -121,7 +124,7 @@ const WarehousesPage: React.FC = () => {
                 item.sku.toLowerCase().includes(stockSearchTerm.toLowerCase())
             )
             .sort((a, b) => b.quantity - a.quantity);
-    }, [warehouseStock, selectedWarehouseId, products, stockSearchTerm]);
+    }, [warehouseStock, selectedWarehouseId, products, stockSearchTerm, t]);
 
     const totalWarehouseStock = useMemo(() => warehouseProducts.reduce((sum, item) => sum + item.quantity, 0), [warehouseProducts]);
     const totalWarehouseCapacity = selectedWarehouse?.capacity || 0;
@@ -139,7 +142,7 @@ const WarehousesPage: React.FC = () => {
                         className="secondary-button"
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '24px', padding: '6px 12px' }}
                     >
-                        <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} /> Back to Warehouses
+                        <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} /> {t('ui.inventory.wh.back')}
                     </button>
 
                     <div style={{ display: 'flex', gap: '24px', flexDirection: isMobile ? 'column' : 'row' }}>
@@ -167,9 +170,9 @@ const WarehousesPage: React.FC = () => {
                                 </div>
 
                                 <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--color-border)' }}>
-                                    <h3 style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: '12px' }}>Capacity</h3>
+                                    <h3 style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: '12px' }}>{t('ui.inventory.wh.capacity')}</h3>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px', fontWeight: 500 }}>
-                                        <span>{totalWarehouseStock.toLocaleString()} Items</span>
+                                        <span>{fill(t('ui.inventory.wh.nItems'), { n: totalWarehouseStock.toLocaleString() })}</span>
                                         <span style={{ color: 'var(--color-text-secondary)' }}>/ {totalWarehouseCapacity > 0 ? totalWarehouseCapacity.toLocaleString() : '∞'}</span>
                                     </div>
                                     {totalWarehouseCapacity > 0 && (
@@ -190,12 +193,12 @@ const WarehousesPage: React.FC = () => {
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                             <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid var(--color-border)' }}>
                                 <div style={{ padding: '16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                                    <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Warehouse Inventory</h3>
+                                    <h3 style={{ fontSize: '16px', fontWeight: 600 }}>{t('ui.inventory.wh.inventory')}</h3>
                                     <div style={{ position: 'relative', width: isMobile ? '100%' : '240px' }}>
                                         <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                                         <input
                                             type="text"
-                                            placeholder="Search products..."
+                                            placeholder={t('ui.inventory.searchProducts')}
                                             value={stockSearchTerm}
                                             onChange={(e) => setStockSearchTerm(e.target.value)}
                                             style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '13px', outline: 'none' }}
@@ -206,17 +209,17 @@ const WarehousesPage: React.FC = () => {
                                 {warehouseProducts.length === 0 ? (
                                     <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                                         <Package size={48} style={{ opacity: 0.2, marginBottom: '16px', margin: '0 auto' }} />
-                                        <h3 style={{ fontSize: '15px', fontWeight: 500 }}>No stock found</h3>
-                                        <p style={{ fontSize: '13px', marginTop: '8px' }}>This warehouse has no products assigned to it yet.</p>
+                                        <h3 style={{ fontSize: '15px', fontWeight: 500 }}>{t('ui.inventory.wh.noStock')}</h3>
+                                        <p style={{ fontSize: '13px', marginTop: '8px' }}>{t('ui.inventory.wh.noStockHelp')}</p>
                                     </div>
                                 ) : (
                                     <div style={{ overflowX: 'auto' }}>
                                         <table className="spreadsheet-table">
                                             <thead>
                                                 <tr>
-                                                    <th>Product</th>
+                                                    <th>{t('ui.inventory.priceList.product')}</th>
                                                     <th>SKU</th>
-                                                    <th style={{ textAlign: 'center' }}>Quantity</th>
+                                                    <th style={{ textAlign: 'center' }}>{t('ui.inventory.quantity')}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -263,7 +266,7 @@ const WarehousesPage: React.FC = () => {
                             <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                             <input
                                 type="text"
-                                placeholder="Search warehouses..."
+                                placeholder={t('ui.inventory.wh.searchPlaceholder')}
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 style={{ width: '100%', padding: '10px 16px 10px 40px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '14px', outline: 'none' }}
@@ -271,7 +274,7 @@ const WarehousesPage: React.FC = () => {
                         </div>
                         {isAdmin && (
                             <button onClick={() => openModal()} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <Plus size={18} /> New Warehouse
+                                <Plus size={18} /> {t('ui.inventory.wh.new')}
                             </button>
                         )}
                     </div>
@@ -279,11 +282,11 @@ const WarehousesPage: React.FC = () => {
                     {filteredWarehouses.length === 0 ? (
                         <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', borderRadius: '16px', border: '1px dashed var(--color-border)' }}>
                             <Warehouse size={48} style={{ opacity: 0.2, marginBottom: '16px', margin: '0 auto' }} />
-                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)' }}>No warehouses found</h3>
-                            <p style={{ fontSize: '14px', marginTop: '8px' }}>{searchTerm ? 'Try a different search term.' : 'Add your first warehouse to start tracking inventory locations.'}</p>
+                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-text-main)' }}>{t('ui.inventory.wh.none')}</h3>
+                            <p style={{ fontSize: '14px', marginTop: '8px' }}>{searchTerm ? t('ui.inventory.tryDifferentSearch') : t('ui.inventory.wh.addFirst')}</p>
                             {isAdmin && !searchTerm && (
                                 <button onClick={() => openModal()} className="primary-button" style={{ marginTop: '24px' }}>
-                                    Add Warehouse
+                                    {t('ui.inventory.wh.add')}
                                 </button>
                             )}
                         </div>
@@ -341,7 +344,7 @@ const WarehousesPage: React.FC = () => {
                                         <div style={{ padding: '16px 20px', background: 'var(--color-bg)', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
                                             <div>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
-                                                    <span>Stock Utilisation</span>
+                                                    <span>{t('ui.inventory.wh.utilisation')}</span>
                                                     <span style={{ color: 'var(--color-text-secondary)' }}>{whStock.toLocaleString()} {capacity > 0 ? `/ ${capacity.toLocaleString()}` : ''}</span>
                                                 </div>
                                                 {capacity > 0 && (
@@ -357,7 +360,7 @@ const WarehousesPage: React.FC = () => {
                                                 onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.color = 'var(--color-primary)'; }}
                                                 onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-main)'; }}
                                             >
-                                                View Inventory <ChevronRight size={16} />
+                                                {t('ui.inventory.wh.viewInventory')} <ChevronRight size={16} />
                                             </button>
                                         </div>
                                     </div>
@@ -373,13 +376,13 @@ const WarehousesPage: React.FC = () => {
                 <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
                     <div className="modal-content fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%' }}>
                         <div className="modal-header">
-                            <h2 style={{ fontSize: '18px', fontWeight: 600 }}>{editingWarehouse ? 'Edit Warehouse' : 'Add Warehouse'}</h2>
+                            <h2 style={{ fontSize: '18px', fontWeight: 600 }}>{editingWarehouse ? t('ui.inventory.wh.edit') : t('ui.inventory.wh.add')}</h2>
                             <button onClick={() => setIsModalOpen(false)} className="icon-button"><X size={20} /></button>
                         </div>
                         <form onSubmit={handleSubmit}>
                             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>
-                                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Warehouse Name *</label>
+                                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>{t('ui.inventory.wh.name')} *</label>
                                     <div style={{ position: 'relative' }}>
                                         <Warehouse size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                                         <input
@@ -388,27 +391,27 @@ const WarehousesPage: React.FC = () => {
                                             value={formData.name}
                                             onChange={e => setFormData({ ...formData, name: e.target.value })}
                                             style={{ ...inputStyle, paddingLeft: '36px' }}
-                                            placeholder="e.g., Main Fulfillment Center"
+                                            placeholder={t('ui.inventory.wh.namePlaceholder')}
                                         />
                                     </div>
                                 </div>
                                 
                                 <div>
-                                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Address</label>
+                                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>{t('orders.address')}</label>
                                     <div style={{ position: 'relative' }}>
                                         <MapPin size={16} style={{ position: 'absolute', left: '12px', top: '12px', color: 'var(--color-text-muted)' }} />
                                         <textarea
                                             value={formData.address}
                                             onChange={e => setFormData({ ...formData, address: e.target.value })}
                                             style={{ ...inputStyle, paddingLeft: '36px', minHeight: '80px', resize: 'vertical' }}
-                                            placeholder="Full address..."
+                                            placeholder={t('ui.inventory.wh.addressPlaceholder')}
                                         />
                                     </div>
                                 </div>
                                 
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                     <div>
-                                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Contact Details</label>
+                                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>{t('ui.inventory.wh.contact')}</label>
                                         <div style={{ position: 'relative' }}>
                                             <Phone size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                                             <input
@@ -416,13 +419,13 @@ const WarehousesPage: React.FC = () => {
                                                 value={formData.contact}
                                                 onChange={e => setFormData({ ...formData, contact: e.target.value })}
                                                 style={{ ...inputStyle, paddingLeft: '36px' }}
-                                                placeholder="Phone or email"
+                                                placeholder={t('ui.inventory.wh.contactPlaceholder')}
                                             />
                                         </div>
                                     </div>
                                     
                                     <div>
-                                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Max Capacity (Items)</label>
+                                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>{t('ui.inventory.wh.maxCapacity')}</label>
                                         <div style={{ position: 'relative' }}>
                                             <Hash size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                                             <input
@@ -430,16 +433,16 @@ const WarehousesPage: React.FC = () => {
                                                 value={formData.capacity}
                                                 onChange={e => setFormData({ ...formData, capacity: e.target.value })}
                                                 style={{ ...inputStyle, paddingLeft: '36px' }}
-                                                placeholder="e.g., 10000"
+                                                placeholder={t('ui.inventory.wh.capacityPlaceholder')}
                                             />
                                         </div>
                                     </div>
                                 </div>
                             </div>
                             <div className="modal-footer">
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="secondary-button">Cancel</button>
+                                <button type="button" onClick={() => setIsModalOpen(false)} className="secondary-button">{t('common.cancel')}</button>
                                 <button type="submit" className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <CheckCircle size={16} /> Save Warehouse
+                                    <CheckCircle size={16} /> {t('ui.inventory.wh.save')}
                                 </button>
                             </div>
                         </form>

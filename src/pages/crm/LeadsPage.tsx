@@ -4,6 +4,8 @@ import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
 import { Modal } from '../../components';
 import { useCrm } from '../../hooks/useCrm';
+import { useLanguage } from '../../context/LanguageContext';
+import { fill } from '../../i18n/translate';
 import type { Lead } from '../../types';
 
 const LEAD_STATUSES: Lead['status'][] = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Won', 'Lost'];
@@ -29,6 +31,16 @@ const initials = (name: string) => name.split(' ').map(n => n[0]).join('').subst
 const LeadsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { users } = useStore();
+    const { t } = useLanguage();
+    const statusLabel = (s: string) => ({
+        All: t('common.all'),
+        New: t('ui.people.crm.leadStatus.new'),
+        Contacted: t('ui.people.crm.leadStatus.contacted'),
+        Qualified: t('ui.people.crm.leadStatus.qualified'),
+        'Proposal Sent': t('ui.people.crm.leadStatus.proposalSent'),
+        Won: t('ui.people.crm.leadStatus.won'),
+        Lost: t('ui.people.crm.leadStatus.lost'),
+    } as Record<string, string>)[s] ?? s;
     const { leads, isLoading, tableMissing, fetchLeads, saveLead, deleteLead } = useCrm();
 
     const [search, setSearch] = useState('');
@@ -42,13 +54,13 @@ const LeadsPage: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Leads</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Track potential customers through your sales pipeline</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{t('nav.leads')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{t('ui.people.crm.leads.subtitle')}</p>
                 </div>
             )
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent]);
+    }, [setHeaderContent, t]);
 
     useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
@@ -85,7 +97,7 @@ const LeadsPage: React.FC = () => {
     };
 
     const handleDelete = async (l: Lead) => {
-        if (confirm(`Delete lead "${l.name}"? Its interactions and quotations will also be removed.`)) {
+        if (confirm(fill(t('ui.people.crm.leads.confirmDelete'), { name: l.name }))) {
             try { await deleteLead(l.id); } catch { /* hook toasts */ }
         }
     };
@@ -94,10 +106,10 @@ const LeadsPage: React.FC = () => {
         <div style={{ padding: '24px' }}>
             {/* Summary cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                <StatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label="Total Leads" value={String(summary.total)} />
-                <StatCard icon={TrendingUp} gradient="linear-gradient(135deg, #3b82f6, #60a5fa)" label="In Pipeline" value={String(summary.pipeline)} />
-                <StatCard icon={Award} gradient="linear-gradient(135deg, #10b981, #34d399)" label="Won" value={String(summary.won)} valueColor="#10b981" />
-                <StatCard icon={XCircle} gradient="linear-gradient(135deg, #ef4444, #f87171)" label="Lost" value={String(summary.lost)} valueColor={summary.lost > 0 ? '#ef4444' : undefined} />
+                <StatCard icon={Users} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" label={t('ui.people.crm.leads.total')} value={String(summary.total)} />
+                <StatCard icon={TrendingUp} gradient="linear-gradient(135deg, #3b82f6, #60a5fa)" label={t('ui.people.crm.leads.inPipeline')} value={String(summary.pipeline)} />
+                <StatCard icon={Award} gradient="linear-gradient(135deg, #10b981, #34d399)" label={t('ui.people.crm.leadStatus.won')} value={String(summary.won)} valueColor="#10b981" />
+                <StatCard icon={XCircle} gradient="linear-gradient(135deg, #ef4444, #f87171)" label={t('ui.people.crm.leadStatus.lost')} value={String(summary.lost)} valueColor={summary.lost > 0 ? '#ef4444' : undefined} />
             </div>
 
             {/* Toolbar */}
@@ -105,7 +117,7 @@ const LeadsPage: React.FC = () => {
                 <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)', overflow: 'hidden', flexWrap: 'wrap' }}>
                     {(['All', ...LEAD_STATUSES] as const).map(tab => (
                         <button key={tab} onClick={() => setStatusFilter(tab)} style={{ padding: '7px 12px', border: 'none', background: statusFilter === tab ? 'var(--color-primary)' : 'transparent', color: statusFilter === tab ? 'white' : 'var(--color-text-secondary)', fontWeight: 600, fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            {tab}
+                            {statusLabel(tab)}
                             <span style={{ background: statusFilter === tab ? 'rgba(255,255,255,0.25)' : 'var(--color-bg)', padding: '1px 7px', borderRadius: '12px', fontSize: '10px', fontWeight: 700 }}>{statusCounts[tab] || 0}</span>
                         </button>
                     ))}
@@ -113,13 +125,13 @@ const LeadsPage: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ position: 'relative', width: '240px' }}>
                         <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                        <input type="text" placeholder="Search leads..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                        <input type="text" placeholder={t('ui.people.crm.leads.searchPh')} value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
                     </div>
-                    <button className="secondary-button" onClick={() => fetchLeads()} title="Refresh" style={{ padding: '9px 12px' }}>
+                    <button className="secondary-button" onClick={() => fetchLeads()} title={t('ui.people.common.refresh')} style={{ padding: '9px 12px' }}>
                         <RefreshCw size={16} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} />
                     </button>
                     <button className="primary-button" disabled={tableMissing} onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
-                        <Plus size={18} /> New Lead
+                        <Plus size={18} /> {t('ui.people.crm.leads.newLead')}
                     </button>
                 </div>
             </div>
@@ -127,21 +139,21 @@ const LeadsPage: React.FC = () => {
             {tableMissing ? (
                 <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     <Database size={40} style={{ opacity: 0.25, margin: '0 auto 12px', color: '#D97706' }} />
-                    <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>Database setup needed</p>
-                    <p style={{ fontSize: '13px' }}>Run <code>migrations/full_schema.sql</code> in your Supabase SQL editor, then Refresh.</p>
+                    <p style={{ fontWeight: 600, color: 'var(--color-text)' }}>{t('ui.people.crm.dbSetup')}</p>
+                    <p style={{ fontSize: '13px' }}>{t('ui.people.crm.dbRun')} <code>migrations/full_schema.sql</code> {t('ui.people.crm.dbRunAfter')}</p>
                 </div>
             ) : (
                 <div className="glass-panel" style={{ overflowX: 'auto', borderRadius: '16px', padding: '0' }}>
                     <table className="spreadsheet-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none', minWidth: '860px' }}>
                         <thead>
                             <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-                                <th style={thStyle}>Lead</th>
-                                <th style={thStyle}>Contact</th>
-                                <th style={thStyle}>Source</th>
-                                <th style={thStyle}>Assigned To</th>
-                                <th style={{ ...thStyle, textAlign: 'center' }}>Status</th>
-                                <th style={thStyle}>Created</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+                                <th style={thStyle}>{t('ui.people.crm.lead')}</th>
+                                <th style={thStyle}>{t('ui.people.hr.emp.contact')}</th>
+                                <th style={thStyle}>{t('ui.people.crm.leads.source')}</th>
+                                <th style={thStyle}>{t('ui.people.crm.leads.assignedTo')}</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>{t('ui.people.hr.status.label')}</th>
+                                <th style={thStyle}>{t('ui.people.crm.leads.created')}</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>{t('common.actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -149,7 +161,7 @@ const LeadsPage: React.FC = () => {
                                 <tr><td colSpan={7} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', color: 'var(--color-text-secondary)' }}>
                                         <UserPlus size={40} style={{ opacity: 0.25 }} />
-                                        <p style={{ fontSize: '14px' }}>{search || statusFilter !== 'All' ? 'No leads match your filters.' : 'No leads yet. Add your first lead to start your pipeline.'}</p>
+                                        <p style={{ fontSize: '14px' }}>{search || statusFilter !== 'All' ? t('ui.people.crm.leads.noMatch') : t('ui.people.crm.leads.noneYet')}</p>
                                     </div>
                                 </td></tr>
                             ) : filtered.map((l, idx) => {
@@ -175,13 +187,13 @@ const LeadsPage: React.FC = () => {
                                         <td style={{ ...tdStyle, color: 'var(--color-text-secondary)' }}>{l.source || '—'}</td>
                                         <td style={{ ...tdStyle, color: 'var(--color-text-secondary)' }}>{l.assigned_to || '—'}</td>
                                         <td style={{ ...tdStyle, textAlign: 'center' }}>
-                                            <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: sc.bg, color: sc.color }}>{l.status}</span>
+                                            <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', backgroundColor: sc.bg, color: sc.color }}>{statusLabel(l.status)}</span>
                                         </td>
                                         <td style={{ ...tdStyle, color: 'var(--color-text-secondary)', fontSize: '12px' }}>{l.created_at ? new Date(l.created_at).toLocaleDateString('en-GB').replace(/\//g, '-') : '—'}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                                                <button onClick={() => openModal(l)} title="Edit" style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px' }}><Edit size={14} /></button>
-                                                <button onClick={() => handleDelete(l)} title="Delete" style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}><Trash2 size={14} /></button>
+                                                <button onClick={() => openModal(l)} title={t('common.edit')} style={{ background: 'rgba(59,130,246,0.08)', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: '6px', borderRadius: '6px' }}><Edit size={14} /></button>
+                                                <button onClick={() => handleDelete(l)} title={t('common.delete')} style={{ background: 'rgba(239,68,68,0.08)', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', borderRadius: '6px' }}><Trash2 size={14} /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -192,36 +204,36 @@ const LeadsPage: React.FC = () => {
                 </div>
             )}
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editing ? 'Edit Lead' : 'New Lead'}>
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editing ? t('ui.people.crm.leads.editLead') : t('ui.people.crm.leads.newLead')}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '440px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                        <div><label style={labelStyle}>Name *</label><input className="search-input" style={{ width: '100%' }} value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} autoFocus placeholder="Lead name" /></div>
-                        <div><label style={labelStyle}>Company</label><input className="search-input" style={{ width: '100%' }} value={form.company_name || ''} onChange={e => setForm({ ...form, company_name: e.target.value })} /></div>
+                        <div><label style={labelStyle}>{t('ui.people.common.name')} *</label><input className="search-input" style={{ width: '100%' }} value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} autoFocus placeholder={t('ui.people.crm.leads.namePh')} /></div>
+                        <div><label style={labelStyle}>{t('ui.people.crm.company')}</label><input className="search-input" style={{ width: '100%' }} value={form.company_name || ''} onChange={e => setForm({ ...form, company_name: e.target.value })} /></div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                        <div><label style={labelStyle}>Phone</label><input className="search-input" style={{ width: '100%' }} value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
-                        <div><label style={labelStyle}>Email</label><input type="email" className="search-input" style={{ width: '100%' }} value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+                        <div><label style={labelStyle}>{t('ui.people.common.phone')}</label><input className="search-input" style={{ width: '100%' }} value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
+                        <div><label style={labelStyle}>{t('ui.people.crm.type.email')}</label><input type="email" className="search-input" style={{ width: '100%' }} value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                         <div>
-                            <label style={labelStyle}>Status</label>
+                            <label style={labelStyle}>{t('ui.people.hr.status.label')}</label>
                             <select className="search-input" style={{ width: '100%' }} value={form.status || 'New'} onChange={e => setForm({ ...form, status: e.target.value as Lead['status'] })}>
-                                {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                                {LEAD_STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                             </select>
                         </div>
-                        <div><label style={labelStyle}>Source</label><input className="search-input" style={{ width: '100%' }} value={form.source || ''} onChange={e => setForm({ ...form, source: e.target.value })} placeholder="e.g. Facebook" /></div>
+                        <div><label style={labelStyle}>{t('ui.people.crm.leads.source')}</label><input className="search-input" style={{ width: '100%' }} value={form.source || ''} onChange={e => setForm({ ...form, source: e.target.value })} placeholder={t('ui.people.crm.leads.sourcePh')} /></div>
                         <div>
-                            <label style={labelStyle}>Assigned To</label>
+                            <label style={labelStyle}>{t('ui.people.crm.leads.assignedTo')}</label>
                             <select className="search-input" style={{ width: '100%' }} value={form.assigned_to || ''} onChange={e => setForm({ ...form, assigned_to: e.target.value })}>
                                 <option value="">—</option>
                                 {users.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
                             </select>
                         </div>
                     </div>
-                    <div><label style={labelStyle}>Notes</label><textarea className="search-input" style={{ width: '100%', minHeight: '70px', resize: 'vertical' }} value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+                    <div><label style={labelStyle}>{t('ui.people.common.notes')}</label><textarea className="search-input" style={{ width: '100%', minHeight: '70px', resize: 'vertical' }} value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--color-border)', paddingTop: '14px' }}>
-                        <button className="secondary-button" onClick={() => setIsModalOpen(false)}>Cancel</button>
-                        <button className="primary-button" disabled={saving || !form.name?.trim()} onClick={handleSave}>{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Add Lead')}</button>
+                        <button className="secondary-button" onClick={() => setIsModalOpen(false)}>{t('common.cancel')}</button>
+                        <button className="primary-button" disabled={saving || !form.name?.trim()} onClick={handleSave}>{saving ? t('ui.people.common.saving') : (editing ? t('ui.people.common.saveChanges') : t('ui.people.crm.leads.addLead'))}</button>
                     </div>
                 </div>
             </Modal>

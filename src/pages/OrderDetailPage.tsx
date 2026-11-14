@@ -4,6 +4,7 @@ import { useStore } from '../context/StoreContext';
 import { ArrowLeft, Copy, Edit } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { generateOrderCopyText } from '../utils/orderUtils';
+import { useLanguage } from '../context/LanguageContext';
 
 import OrderDetailsContent from '../components/OrderDetailsContent';
 
@@ -12,6 +13,7 @@ const OrderDetailPage: React.FC = () => {
     const navigate = useNavigate();
     const { sales, hasPermission } = useStore();
     const { showToast } = useToast();
+    const { t } = useLanguage();
 
     const order = useMemo(() => sales.find(s => s.id === id), [sales, id]);
 
@@ -20,13 +22,13 @@ const OrderDetailPage: React.FC = () => {
     if (!order) {
         return (
             <div style={{ padding: '40px', textAlign: 'center' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px' }}>Order Not Found</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px' }}>{t('ui.people.orderDetail.notFound')}</h2>
                 <button
                     onClick={() => navigate('/orders')}
                     className="secondary-button"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
                 >
-                    <ArrowLeft size={16} /> Back to Orders
+                    <ArrowLeft size={16} /> {t('ui.people.orderDetail.backToOrders')}
                 </button>
             </div>
         );
@@ -35,7 +37,7 @@ const OrderDetailPage: React.FC = () => {
     const handleCopyInfo = () => {
         const text = generateOrderCopyText(order, sales);
         navigator.clipboard.writeText(text).then(() => {
-            showToast('Order info copied to clipboard', 'success');
+            showToast(t('ui.people.orderDetail.copied'), 'success');
         });
     };
 
@@ -48,7 +50,7 @@ const OrderDetailPage: React.FC = () => {
                         className="secondary-button"
                         style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                     >
-                        <Edit size={16} /> Edit Order
+                        <Edit size={16} /> {t('ui.people.orderDetail.editOrder')}
                     </button>
                 )}
                 <button
@@ -56,7 +58,7 @@ const OrderDetailPage: React.FC = () => {
                     className="secondary-button"
                     style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                    <Copy size={16} /> Copy Info
+                    <Copy size={16} /> {t('ui.people.orderDetail.copyInfo')}
                 </button>
             </div>
 

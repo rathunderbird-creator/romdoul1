@@ -1,3 +1,4 @@
+import { tNow } from '../i18n/translate';
 /**
  * Reads an image file, center-crops it to a 1:1 square aspect ratio, resizes it to a specific dimension
  * (e.g., 500x500 pixels by default) and encodes it as a compressed JPEG Blob.
@@ -6,7 +7,7 @@ export async function processImageForUpload(file: File, options = { width: 500, 
     return new Promise((resolve, reject) => {
         // Only accept images
         if (!file.type.startsWith('image/')) {
-            return reject(new Error('File is not an image'));
+            return reject(new Error(tNow('ui.store.image.notImage')));
         }
 
         const reader = new FileReader();
@@ -57,7 +58,7 @@ export async function processImageForUpload(file: File, options = { width: 500, 
                 }, 'image/jpeg', options.quality); // Target 85% JPEG Quality
             };
 
-            image.onerror = () => reject(new Error('Image load failed'));
+            image.onerror = () => reject(new Error(tNow('ui.store.image.loadFailed')));
 
             if (readerEvent.target?.result) {
                 image.src = readerEvent.target.result as string;

@@ -19,6 +19,8 @@ import Modal from '../components/Modal';
 import IncomeExpense from './IncomeExpense';
 import { amountWarningLine, amountWarningText, checkUsdAmount, shopRate } from '../utils/currency';
 import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../utils/liveColumnResize';
+import { useLanguage } from '../context/LanguageContext';
+import { fill } from '../i18n/translate';
 
 const getStatusBorderColor = (s: string) => {
     switch (s) {
@@ -39,6 +41,20 @@ const PaymentTracking: React.FC = () => {
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const navigate = useNavigate();
+    const { t, language } = useLanguage();
+    // Text under ui.orderFlow; the English text is the fallback for a missing key.
+    const tx = React.useCallback((key: string, en: string, vars?: Record<string, string | number>) => {
+        const k = `ui.orderFlow.${key}`;
+        const v = t(k);
+        return fill(v !== k ? v : en, vars);
+    }, [t]);
+    // A stored payment status shown in Khmer; English exactly as stored.
+    const payLabel = (s: string) => {
+        if (language !== 'km') return s;
+        const k = `dashboard2.pay.${s}`;
+        const v = t(k);
+        return v !== k ? v : s;
+    };
     const isAdmin = currentUser?.roleId === 'admin';
     const canRestock = hasPermission('restock_orders');
 
@@ -49,8 +65,8 @@ const PaymentTracking: React.FC = () => {
         setHeaderContent({
             title: (
                 <div style={{ marginBottom: '8px' }}>
-                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>Payment Tracking</h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>Track payments and settlements</p>
+                    <h1 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px' }}>{tx('payTrack.title', 'Payment Tracking')}</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>{tx('payTrack.subtitle', 'Track payments and settlements')}</p>
                 </div>
             ),
             actions: (
@@ -76,7 +92,7 @@ const PaymentTracking: React.FC = () => {
                         onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.3)'; }}
                     >
                         <Wallet size={16} />
-                        Check Income
+                        {tx('payTrack.checkIncome', 'Check Income')}
                     </button>
                     <button
                         onClick={() => setIsReportOpen(true)}
@@ -99,13 +115,13 @@ const PaymentTracking: React.FC = () => {
                         onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(99, 102, 241, 0.3)'; }}
                     >
                         <FileText size={16} />
-                        Check Payment Tracking Report
+                        {tx('payTrack.checkReport', 'Check Payment Tracking Report')}
                     </button>
                 </div>
             ),
         });
         return () => setHeaderContent(null);
-    }, [setHeaderContent, navigate]);
+    }, [setHeaderContent, navigate, tx]);
 
     const [searchTerm, setSearchTerm] = useState('');
     const [settleDateRange, setSettleDateRange] = useState({ start: '', end: '' });
@@ -299,13 +315,13 @@ const PaymentTracking: React.FC = () => {
             setSelectedIds(new Set());
             setIsBulkEditOpen(false);
             if (notSaved > 0) {
-                showToast(`Updated ${ids.length - notSaved} of ${ids.length} orders; ${notSaved} not saved${lastReason ? ': ' + lastReason : ''}`, 'error');
+                showToast(tx('payTrack.bulkPartial', 'Updated {saved} of {n} orders; {failed} not saved', { saved: ids.length - notSaved, n: ids.length, failed: notSaved }) + (lastReason ? ': ' + lastReason : ''), 'error');
                 return;
             }
-            showToast(`Successfully updated ${ids.length} orders`, 'success');
+            showToast(tx('payTrack.bulkUpdated', 'Successfully updated {n} orders', { n: ids.length }), 'success');
         } catch (error) {
             console.error('Bulk edit error:', error);
-            showToast('Failed to update orders', 'error');
+            showToast(tx('payTrack.bulkFailed', 'Failed to update orders'), 'error');
         }
     };
 
@@ -316,7 +332,7 @@ const PaymentTracking: React.FC = () => {
     const handleCopyOrder = (order: Sale) => {
         const textToCopy = generateOrderCopyText(order, []);
         navigator.clipboard.writeText(textToCopy);
-        showToast('Order info copied!', 'success');
+        showToast(tx('payTrack.copied', 'Order info copied!'), 'success');
     };
 
     const handleOpenEdit = (order: Sale) => {
@@ -332,23 +348,23 @@ const PaymentTracking: React.FC = () => {
     // Column Visibility
     const [showColumnMenu, setShowColumnMenu] = useState(false);
     const allColumns = [
-        { id: 'actions', label: 'Actions' },
-        { id: 'date', label: 'Order Date' },
-        { id: 'settleDate', label: 'Settle Date' },
-        { id: 'customer', label: 'Customer' },
-        { id: 'phone', label: 'Phone' },
-        { id: 'address', label: 'Address' },
-        { id: 'salesman', label: 'Salesman' },
-        { id: 'items', label: 'Products' },
-        { id: 'total', label: 'Total' },
-        { id: 'shippingCo', label: 'Shipping Co' },
-        { id: 'trackingId', label: 'Tracking ID' },
-        { id: 'payBy', label: 'Pay By' },
-        { id: 'received', label: 'Received' },
-        { id: 'remaining', label: 'Remaining' },
-        { id: 'orderStatus', label: 'Order Status' },
-        { id: 'status', label: 'Pay Status' },
-        { id: 'remark', label: 'Remark' },
+        { id: 'actions', label: tx('delivery.col.actions', 'Actions') },
+        { id: 'date', label: tx('delivery.col.date', 'Order Date') },
+        { id: 'settleDate', label: tx('payTrack.col.settleDate', 'Settle Date') },
+        { id: 'customer', label: tx('delivery.col.customer', 'Customer') },
+        { id: 'phone', label: tx('delivery.col.phone', 'Phone') },
+        { id: 'address', label: tx('delivery.col.address', 'Address') },
+        { id: 'salesman', label: tx('payTrack.col.salesman', 'Salesman') },
+        { id: 'items', label: tx('delivery.col.items', 'Products') },
+        { id: 'total', label: tx('delivery.total', 'Total') },
+        { id: 'shippingCo', label: tx('delivery.shippingCo', 'Shipping Co') },
+        { id: 'trackingId', label: tx('delivery.col.tracking', 'Tracking ID') },
+        { id: 'payBy', label: tx('income.col.payBy', 'Pay By') },
+        { id: 'received', label: tx('payTrack.col.received', 'Received') },
+        { id: 'remaining', label: tx('payTrack.col.remaining', 'Remaining') },
+        { id: 'orderStatus', label: tx('deleted.col.status', 'Order Status') },
+        { id: 'status', label: tx('deleted.col.payStatus', 'Pay Status') },
+        { id: 'remark', label: tx('delivery.col.remark', 'Remark') },
     ];
     // Default visible
     const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
@@ -775,7 +791,7 @@ const PaymentTracking: React.FC = () => {
             expectedPaymentStatus: selectedOrder.paymentStatus,
             ...(formData.paymentStatus === 'Paid' && selectedOrder.shipping?.status !== 'Delivered' ? { shipping: { ...(selectedOrder.shipping || {}), company: selectedOrder.shipping?.company || '', trackingNumber: selectedOrder.shipping?.trackingNumber || '', cost: selectedOrder.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {})
         });
-        showToast('Payment details updated', 'success');
+        showToast(tx('payTrack.paymentUpdated', 'Payment details updated'), 'success');
         setIsEditModalOpen(false);
     };
 
@@ -822,7 +838,7 @@ const PaymentTracking: React.FC = () => {
                     <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
                     <input
                         type="text"
-                        placeholder="Search customer, phone..."
+                        placeholder={tx('payTrack.search', 'Search customer, phone...')}
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                         className="search-input"
@@ -831,11 +847,11 @@ const PaymentTracking: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Order Date:</span>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{tx('delivery.orderDateColon', 'Order Date:')}</span>
                     <DateRangePicker value={orderDateRange} onChange={setOrderDateRange} />
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Settle Date:</span>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{tx('payTrack.settleDateColon', 'Settle Date:')}</span>
                     <DateRangePicker value={settleDateRange} onChange={setSettleDateRange} />
                 </div>
 
@@ -855,7 +871,7 @@ const PaymentTracking: React.FC = () => {
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '13px', color: salesmanFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                    {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen') : salesmanFilter}
+                                    {salesmanFilter === 'All' ? (currentUser?.roleId === 'salesman' ? currentUser.name : tx('delivery.salesmen', 'Salesmen')) : salesmanFilter}
                                 </span>
                             </div>
                             <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -884,7 +900,7 @@ const PaymentTracking: React.FC = () => {
                                 }}
                                     onClick={() => { setSalesmanFilter('All'); setIsSalesmanOpen(false); }}
                                 >
-                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : 'Salesmen'}</span>
+                                    <span style={{ fontSize: '13px' }}>{currentUser?.roleId === 'salesman' ? currentUser.name : tx('delivery.salesmen', 'Salesmen')}</span>
                                 </label>
                                 {currentUser?.roleId !== 'salesman' && users.filter(u => u.roleId !== 'admin').map(s => (
                                     <label key={s.id} style={{
@@ -916,7 +932,7 @@ const PaymentTracking: React.FC = () => {
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '13px', color: customerCareFilter === 'All' ? 'var(--color-text-secondary)' : 'var(--color-text-main)' }}>
-                                    {customerCareFilter === 'All' ? 'Customer Care' : customerCareFilter}
+                                    {customerCareFilter === 'All' ? tx('delivery.customerCare', 'Customer Care') : customerCareFilter}
                                 </span>
                             </div>
                             <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -945,7 +961,7 @@ const PaymentTracking: React.FC = () => {
                                 }}
                                     onClick={() => { setCustomerCareFilter('All'); setIsCustomerCareOpen(false); }}
                                 >
-                                    <span style={{ fontSize: '13px' }}>All Customer Care</span>
+                                    <span style={{ fontSize: '13px' }}>{tx('delivery.allCustomerCare', 'All Customer Care')}</span>
                                 </label>
                                 {(customerCare || []).map(cc => (
                                     <label key={cc} style={{
@@ -977,7 +993,7 @@ const PaymentTracking: React.FC = () => {
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '13px', fontWeight: 500, color: shippingCoFilter.length === 0 ? '#000000' : '#000000' }}>
-                                    {shippingCoFilter.length === 0 ? 'Shipping Co' : `Shipping (${shippingCoFilter.length})`}
+                                    {shippingCoFilter.length === 0 ? tx('delivery.shippingCo', 'Shipping Co') : tx('delivery.shippingN', 'Shipping ({n})', { n: shippingCoFilter.length })}
                                 </span>
                             </div>
                             <ChevronDown size={14} color="var(--color-text-secondary)" />
@@ -1012,7 +1028,7 @@ const PaymentTracking: React.FC = () => {
                                         }}
                                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                     />
-                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>Select All</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#000000' }}>{tx('delivery.selectAll', 'Select All')}</span>
                                 </label>
                                 {filterShippingCompanies.map(co => (
                                     <label key={co} style={{
@@ -1045,11 +1061,11 @@ const PaymentTracking: React.FC = () => {
                         className="search-input"
                         style={{ width: '130px' }}
                     >
-                        <option value="All">All Payment Status</option>
-                        <option value="Paid" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>Paid</option>
-                        <option value="Get File" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>Get File</option>
-                        <option value="Unpaid" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>Unpaid</option>
-                        <option value="Cancel" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>Cancel</option>
+                        <option value="All">{tx('payTrack.allPaymentStatus', 'All Payment Status')}</option>
+                        <option value="Paid" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>{payLabel('Paid')}</option>
+                        <option value="Get File" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{payLabel('Get File')}</option>
+                        <option value="Unpaid" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>{payLabel('Unpaid')}</option>
+                        <option value="Cancel" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>{payLabel('Cancel')}</option>
                     </select>
 
                     <button
@@ -1071,9 +1087,9 @@ const PaymentTracking: React.FC = () => {
                             fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px',
                             transition: 'all 0.2s ease'
                         }}
-                        title="Clear Filters"
+                        title={tx('income.clearFilters', 'Clear Filters')}
                     >
-                        <X size={16} /> Clear
+                        <X size={16} /> {tx('income.clear', 'Clear')}
                     </button>
                 </div>
 
@@ -1086,7 +1102,7 @@ const PaymentTracking: React.FC = () => {
                             setTimeout(() => btn.style.animation = '', 1000);
                         }
                     }}
-                    title="Refresh Data"
+                    title={tx('delivery.refreshData', 'Refresh Data')}
                     style={{
                         padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
                         background: 'var(--color-surface)', color: 'var(--color-text-main)', cursor: 'pointer',
@@ -1111,7 +1127,7 @@ const PaymentTracking: React.FC = () => {
                         }}
                     >
                         <Settings size={18} />
-                        Columns
+                        {tx('om2.columnsBtn', 'Columns')}
                     </button>
                     {showColumnMenu && (
                         <div className="glass-panel" style={{
@@ -1119,7 +1135,7 @@ const PaymentTracking: React.FC = () => {
                             padding: '16px', width: '200px', zIndex: 100, maxHeight: '300px', overflowY: 'auto',
                             display: 'flex', flexDirection: 'column', gap: '8px'
                         }}>
-                            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Toggle Columns</h4>
+                            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>{tx('delivery.toggleColumns', 'Toggle Columns')}</h4>
                             {allColumns.map(col => (
                                 <label key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
                                     <input
@@ -1177,7 +1193,7 @@ const PaymentTracking: React.FC = () => {
                                         cursor: 'col-resize', background: 'transparent', zIndex: 25, transform: 'translateX(50%)'
                                     }}
                                     className="resize-handle"
-                                    title="Double click to auto-fit all columns"
+                                    title={tx('deleted.autoFitAll', 'Double click to auto-fit all columns')}
                                 />
                             </th>
                             {allColumns.filter(col => visibleColumns.includes(col.id)).map((col) => {
@@ -1247,10 +1263,10 @@ const PaymentTracking: React.FC = () => {
                                 {visibleColumns.includes('actions') && (
                                     <td style={{ width: `var(--col-payment-actions-width, ${columnWidths.actions || 60}px)`, textAlign: 'center' }}>
                                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                                            <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title="Copy Details" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                            <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title={tx('payTrack.copyDetails', 'Copy Details')} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                 <Copy size={16} color="var(--color-text-secondary)" />
                                             </button>
-                                            <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" title="Edit Order" style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                                            <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(order); }} className="icon-button" title={tx('payTrack.editOrder', 'Edit Order')} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                 <Edit size={16} color="var(--color-text-secondary)" />
                                             </button>
                                         </div>
@@ -1331,7 +1347,7 @@ const PaymentTracking: React.FC = () => {
                                                     }
                                                 } catch (e) {
                                                     console.error('Status change failed:', e);
-                                                    showToast('Failed to update order status', 'error');
+                                                    showToast(tx('payTrack.statusFailed', 'Failed to update order status'), 'error');
                                                 }
                                             })();
                                         }}
@@ -1398,7 +1414,7 @@ const PaymentTracking: React.FC = () => {
                                 );
                                 if (index === 0) return (
                                     <td key={colId} style={{ ...style, fontWeight: 'bold' }}>
-                                        Total ({stats.totalOrders})
+                                        {tx('delivery.totalN', 'Total ({n})', { n: stats.totalOrders })}
                                     </td>
                                 );
                                 return <td key={colId} style={style}></td>;
@@ -1408,20 +1424,20 @@ const PaymentTracking: React.FC = () => {
                     </tfoot>
                 </table>
                 </div>
-            {totalCount === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No payments found.</div>}
+            {totalCount === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{tx('payTrack.empty', 'No payments found.')}</div>}
             </div>
 
             {totalCount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0', position: 'relative' }}>
                     <div style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                        Showing {Math.min((currentPage - 1) * itemsPerPage + 1, totalCount)} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount} entries
+                        {tx('delivery.showing', 'Showing {from} to {to} of {total} entries', { from: Math.min((currentPage - 1) * itemsPerPage + 1, totalCount), to: Math.min(currentPage * itemsPerPage, totalCount), total: totalCount })}
                     </div>
 
 
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                            <span>Rows per page:</span>
+                            <span>{tx('delivery.rowsPerPage', 'Rows per page:')}</span>
                             <select
                                 value={itemsPerPage}
                                 onChange={(e) => setItemsPerPage(Number(e.target.value))}
@@ -1459,7 +1475,7 @@ const PaymentTracking: React.FC = () => {
                                 <ChevronLeft size={16} />
                             </button>
                             <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                                Page <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> of {Math.max(1, Math.ceil(totalCount / itemsPerPage))}
+                                {tx('om2.table.page', 'Page')} <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{currentPage}</span> {tx('om2.table.of', 'of')} {Math.max(1, Math.ceil(totalCount / itemsPerPage))}
                             </span>
                             <button
                                 onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalCount / itemsPerPage), p + 1))}
@@ -1485,13 +1501,13 @@ const PaymentTracking: React.FC = () => {
                     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
                         <div className="glass-panel" style={{ width: '400px', padding: '32px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>Update Payment</h2>
+                                <h2 style={{ fontSize: '18px', fontWeight: 'bold' }}>{tx('payTrack.updatePayment', 'Update Payment')}</h2>
                                 <button onClick={() => setIsEditModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}><X size={24} /></button>
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Amount Received ($)</label>
+                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('payTrack.amountReceived', 'Amount Received ($)')}</label>
                                     <input type="number" className="search-input" style={{ width: '100%', ...(amountReceivedWarning ? { border: '1px solid #F59E0B' } : {}) }} value={formData.amountReceived} onChange={e => setFormData({ ...formData, amountReceived: Number(e.target.value) })} />
                                     {amountReceivedWarning && (
                                         <div data-money-warning role="alert" style={{ marginTop: '6px', fontSize: '12px', color: '#B45309' }}>
@@ -1500,21 +1516,21 @@ const PaymentTracking: React.FC = () => {
                                     )}
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Settle Date</label>
+                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('payTrack.col.settleDate', 'Settle Date')}</label>
                                     <input type="date" className="search-input" style={{ width: '100%' }} value={formData.settleDate} onChange={e => setFormData({ ...formData, settleDate: e.target.value })} />
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Status</label>
+                                    <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('delivery.status', 'Status')}</label>
                                     <select className="search-input" style={{ width: '100%' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel' })} disabled={selectedOrder?.paymentStatus === 'Paid' || selectedOrder?.paymentStatus === 'Cancel'}>
-                                        <option value="Unpaid">Unpaid</option>
-                                        <option value="Paid">Paid</option>
-                                        <option value="Get File">Get File</option>
-                                        <option value="Cancel">Cancel</option>
+                                        <option value="Unpaid">{payLabel('Unpaid')}</option>
+                                        <option value="Paid">{payLabel('Paid')}</option>
+                                        <option value="Get File">{payLabel('Get File')}</option>
+                                        <option value="Cancel">{payLabel('Cancel')}</option>
                                     </select>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
-                                    <button onClick={() => setIsEditModalOpen(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
-                                    <button onClick={handleUpdatePayment} className="primary-button" style={{ padding: '8px 24px' }}>Save</button>
+                                    <button onClick={() => setIsEditModalOpen(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer' }}>{tx('om2.cancel', 'Cancel')}</button>
+                                    <button onClick={handleUpdatePayment} className="primary-button" style={{ padding: '8px 24px' }}>{tx('om2.save', 'Save')}</button>
                                 </div>
                             </div>
                         </div>
@@ -1526,7 +1542,7 @@ const PaymentTracking: React.FC = () => {
             <Modal
                 isOpen={isEditOrderModalOpen}
                 onClose={handleCloseEdit}
-                title="Edit Order"
+                title={tx('payTrack.editOrder', 'Edit Order')}
                 width="1200px"
                 fullScreen
                 bodyPadding="0"
@@ -1544,28 +1560,28 @@ const PaymentTracking: React.FC = () => {
             {
                 selectedIds.size > 0 && (
                     <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-surface)', padding: '16px 24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: '16px', zIndex: 100, border: '1px solid var(--color-border)' }}>
-                        <span style={{ fontWeight: 600 }}>{selectedIds.size} selected</span>
+                        <span style={{ fontWeight: 600 }}>{tx('om2.bulk.selectedN', '{n} selected', { n: selectedIds.size })}</span>
                         <div style={{ height: '24px', width: '1px', background: 'var(--color-border)' }} />
                         <button onClick={() => setIsBulkEditOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: 'var(--color-primary)', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
-                            <Edit size={18} /> Edit
+                            <Edit size={18} /> {tx('income.edit', 'Edit')}
                         </button>
                         {currentUser?.roleId === 'admin' && (
                             <button 
                                 onClick={async () => {
-                                    if (window.confirm(`Are you sure you want to delete ${selectedIds.size} selected orders?`)) {
+                                    if (window.confirm(tx('payTrack.confirmDelete', 'Are you sure you want to delete {n} selected orders?', { n: selectedIds.size }))) {
                                         try {
                                             await deleteOrders(Array.from(selectedIds));
                                             setSelectedIds(new Set());
-                                            showToast(`Deleted ${selectedIds.size} orders`, 'success');
+                                            showToast(tx('payTrack.deleted', 'Deleted {n} orders', { n: selectedIds.size }), 'success');
                                         } catch (error: any) {
                                             console.error('Failed to delete orders:', error);
-                                            showToast('Failed to delete orders: ' + (error.message || 'Unknown error'), 'error');
+                                            showToast(tx('payTrack.deleteFailed', 'Failed to delete orders: ') + (error.message || tx('payTrack.unknownError', 'Unknown error')), 'error');
                                         }
                                     }
                                 }} 
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: 'var(--color-red)', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 500 }}
                             >
-                                <Trash2 size={18} /> Delete
+                                <Trash2 size={18} /> {tx('income.delete', 'Delete')}
                             </button>
                         )}
                     </div>
@@ -1660,7 +1676,7 @@ const PaymentTracking: React.FC = () => {
             <Modal
                 isOpen={isIncomeModalOpen}
                 onClose={() => setIsIncomeModalOpen(false)}
-                title="Income & Expense"
+                title={tx('income.title', 'Income & Expense')}
                 width="1200px"
                 height="90vh"
                 bodyPadding="0"
