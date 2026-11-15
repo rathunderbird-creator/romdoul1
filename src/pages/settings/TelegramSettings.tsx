@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { isValidBotToken, splitChatIds, telegramConfigProblem } from '../../utils/telegram';
 import { Bell, Eye, EyeOff, ChevronDown } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
@@ -63,9 +64,16 @@ const TelegramSettings: React.FC = () => {
             showToast(t('ui.admin.telegram.anotherSave'), 'error');
             return;
         }
+        // A group that can never send is not saved (a token like "t" made
+        // every new order show "Telegram Error: … Failed to fetch").
+        const problem = telegramConfigProblem(localConfig.botToken, localConfig.chatId);
+        if (problem) {
+            showToast(problem, 'error');
+            return;
+        }
         setIsCommitting(true);
         try {
-            await commitTelegramGroup(localConfig);
+            await commitTelegramGroup({ ...localConfig, botToken: localConfig.botToken.trim(), chatId: splitChatIds(localConfig.chatId).join(', ') });
             showToast(t('ui.admin.telegram.committed'), 'success');
         } catch (error) {
             console.error(error);
@@ -191,7 +199,8 @@ const TelegramSettings: React.FC = () => {
                                         }}
                                         placeholder="123456789:ABCDefgh..."
                                         className="search-input"
-                                        style={{ width: '100%', padding: '10px', paddingRight: '40px' }}
+                                        aria-invalid={!!config.botToken && !isValidBotToken(config.botToken)}
+                                        style={{ width: '100%', padding: '10px', paddingRight: '40px', ...(config.botToken && !isValidBotToken(config.botToken) ? { borderColor: '#DC2626' } : {}) }}
                                     />
                                     <button
                                         onClick={() => setVisibleTokens(prev => ({ ...prev, [index]: !prev[index] }))}

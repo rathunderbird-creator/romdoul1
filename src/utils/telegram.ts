@@ -1,4 +1,27 @@
 import { tNow } from '../i18n/translate';
+
+// A real bot token is "<bot id>:<secret>", e.g. 123456789:AAH…(35 chars).
+// Anything else makes Telegram's address invalid, and the browser then
+// reports only "Failed to fetch" (a leftover test group with token "t"
+// did exactly that on every new order).
+const BOT_TOKEN_RE = /^d{5,}:[A-Za-z0-9_-]{30,}$/;
+// A group/chat id (-100…, -45…, 12345) or a public @channel name.
+const CHAT_ID_RE = /^(-?d{5,}|@[A-Za-z0-9_]{5,})$/;
+
+export const splitChatIds = (chatIds: string): string[] =>
+    String(chatIds || '').split(',').map(id => id.trim()).filter(id => id.length > 0);
+
+export const isValidBotToken = (botToken: string): boolean => BOT_TOKEN_RE.test(String(botToken || '').trim());
+
+// Why a group's Bot Token / Chat IDs can't work, or null when they look right.
+export const telegramConfigProblem = (botToken: string, chatIds: string): string | null => {
+    if (!isValidBotToken(botToken)) return tNow('ui.store.telegram.badToken');
+    const ids = splitChatIds(chatIds);
+    if (ids.length === 0) return tNow('ui.store.telegram.noChatIds');
+    const bad = ids.filter(id => !CHAT_ID_RE.test(id));
+    if (bad.length > 0) return tNow('ui.store.telegram.badChatId', { ids: bad.join(', ') });
+    return null;
+};
 /**
  * Sends a notification to a Telegram group when a new order is confirmed.
  */
@@ -11,11 +34,14 @@ export const sendTelegramOrderNotification = async (
 ) => {
     if (!botToken || !chatIds) return;
 
-    const idList = chatIds.split(',').map(id => id.trim()).filter(id => id.length > 0);
+    const idList = splitChatIds(chatIds);
     if (idList.length === 0) return;
+    // A group set up wrong says why, instead of "Failed to fetch".
+    const problem = telegramConfigProblem(botToken, chatIds);
+    if (problem) throw new Error(problem);
 
     try {
-        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        const url = `https://api.telegram.org/bot${botToken.trim()}/sendMessage`;
 
         // Simple HTML escaping
         const escapeHtml = (text: string) => (text || '')
@@ -105,10 +131,12 @@ ${order.items.map((item: any) => `- ${escapeHtml(item.name)} x${item.quantity} (
  * Sends a test message to verify Telegram configuration.
  */
 export const sendTelegramTestMessage = async (botToken: string, chatIds: string) => {
-    const idList = chatIds.split(',').map(id => id.trim()).filter(id => id.length > 0);
+    const idList = splitChatIds(chatIds);
     if (idList.length === 0) throw new Error(tNow('ui.store.telegram.noChatIds'));
+    const problem = telegramConfigProblem(botToken, chatIds);
+    if (problem) throw new Error(problem);
 
-    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const url = `https://api.telegram.org/bot${botToken.trim()}/sendMessage`;
     
     const results = [];
     for (const chatId of idList) {
