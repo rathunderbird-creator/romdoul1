@@ -6,9 +6,10 @@ import { useAccounting } from '../hooks/useAccounting';
 import { dayKeyFromDate } from '../utils/dateRange';
 import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
-import { useMoneyField } from '../hooks/useMoneyField';
-import { counterpartAccount, defaultCashBankAccountId } from '../utils/cashBankAccounts';
-import { accountCurrency, formatUsd, isKhrAccountName, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { useAccountCurrency, useMoneyField, syncFieldToAccount } from '../hooks/useMoneyField';
+import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
+import { accountCurrency, formatUsd, khrToUsd, SNAP_TOLERANCE_USD, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { roundCents } from '../utils/money';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
 // (not 24h) so a daylight-saving change can't land on the wrong date.
@@ -26,15 +27,20 @@ interface SettlePaymentModalProps {
     // updateOrder so settling also books the receipt, instead of leaving the
     // entry for a later manual Record Receipt on Customer Payment. They stay
     // optional: an instance with no cash/bank accounts settles without them.
-    // money: the riel received, when the settlement came in riel (the order's
-    // USD is still what is booked; the riel amount and rate are recorded
-    // with it).
-    onConfirm: (data: { paymentMethod: string; settleDate: string; depositAccountId?: string; depositAccountName?: string; money?: MoneyMeta }) => void;
-    // What this settlement books in USD (total − deposit), and the riel the
-    // shop expected to collect (sales.custom_khr_amount) — both optional;
-    // without amountDue the riel option is not offered.
+    // receivedUsd: the Received Amount in USD (riel converted at the rate
+    // typed, snapped to the amount due when within a few cents). When it
+    // differs from amountDue the caller changes the order's money: total =
+    // deposit + received, the difference going into the discount.
+    // money: the riel received, when the settlement came in riel (the riel
+    // amount and rate are recorded with the USD booked).
+    onConfirm: (data: { paymentMethod: string; settleDate: string; depositAccountId?: string; depositAccountName?: string; money?: MoneyMeta; receivedUsd?: number }) => void;
+    // What is still owed in USD (total − deposit), and the riel the shop
+    // expected to collect (sales.custom_khr_amount) — both optional; without
+    // amountDue there is no Received Amount field.
     amountDue?: number;
     khrExpected?: number;
+    // The order's current total, for the "total becomes …" line.
+    orderTotal?: number;
     initialMethod?: string;
     initialDate?: string;
     // Start from initialMethod rather than Bank (a Salesman's payment being
@@ -56,15 +62,20 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     preferRiel,
     amountDue,
     khrExpected,
+    orderTotal,
     title,
     description
 }) => {
     const tx = useTx();
     const { paymentMethods, khrExchangeRate } = useStore();
-    // The riel actually received (only when the account / toggle says riel).
-    // Settle books the order's amount due whatever riel is typed; the riel
-    // and rate are recorded with it (fixedBookedUsd: the confirm says so).
-    const rielField = useMoneyField({ shopRate: khrExchangeRate, snapToUsd: amountDue ?? null, fixedBookedUsd: amountDue ?? null, init: { currency: 'KHR' } });
+    // The amount actually received, in dollars or riel (USD | KHR toggle,
+    // kept in step with the Deposited into account). A riel figure within a
+    // few cents of the amount due books exactly the amount due (snapToUsd).
+    const receivedField = useMoneyField({ shopRate: khrExchangeRate, snapToUsd: amountDue ?? null });
+    // Typed in this opening: until then the field follows the currency with
+    // the prefill (the due in dollars, the expected riel in riel) instead of
+    // converting the dollar figure.
+    const [receivedEdited, setReceivedEdited] = useState(false);
     const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
@@ -123,17 +134,62 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
         });
     }, [isOpen, paymentAccounts, preferRiel]);
 
-    // Riel prefill on open: what the shop expected to collect, else the
-    // amount due at the shop rate.
+    // What the field starts at in each currency: the amount due in dollars;
+    // in riel what the shop expected to collect, else the due at the rate.
+    const prefillFor = (c: 'USD' | 'KHR', rate: number): string | number => {
+        if (amountDue === undefined) return '';
+        if (c === 'USD') return roundCents(amountDue);
+        // The saved riel only when it still comes to the amount due at this
+        // rate (or a Salesman's riel payment being confirmed, at its own
+        // rate): an older figure, from a changed total or rate, would change
+        // the order's money with nothing typed.
+        const expected = khrExpected && khrExpected > 0 ? Math.round(khrExpected) : 0;
+        if (expected > 0 && (preferRiel || Math.abs(khrToUsd(expected, rate) - amountDue) <= SNAP_TOLERANCE_USD)) return expected;
+        return usdToKhr(amountDue, rate);
+    };
+
+    // Prefill on open, in riel when confirming a payment taken in riel.
     useEffect(() => {
         if (!isOpen) return;
-        const expected = khrExpected && khrExpected > 0 ? Math.round(khrExpected) : (amountDue ? usdToKhr(amountDue, rielField.shopRate) : '');
-        rielField.reset({ amount: expected, currency: 'KHR', ...(preferRiel?.rate ? { rate: preferRiel.rate } : {}) });
+        const c = preferRiel ? 'KHR' : 'USD';
+        const rate = preferRiel?.rate && preferRiel.rate > 0 ? preferRiel.rate : receivedField.shopRate;
+        receivedField.reset({ amount: prefillFor(c, rate), currency: c, ...(preferRiel?.rate ? { rate: preferRiel.rate } : {}) });
+        setReceivedEdited(false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, khrExpected, amountDue]);
 
-    const inRiel = amountDue !== undefined && accountCurrency(paymentAccounts.find(a => a.id === depositAccountId)) === 'KHR';
-    const hasKhrAccounts = paymentAccounts.some(a => isKhrAccountName(a.account_name));
+    // The currency follows the account picked (a riel account takes riel).
+    const coupling = useAccountCurrency(receivedField, paymentAccounts, depositAccountId, setDepositAccountId);
+    useEffect(() => {
+        const a = paymentAccounts.find(x => x.id === depositAccountId);
+        if (a) syncFieldToAccount(receivedField, accountCurrency(a));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [depositAccountId, paymentAccounts]);
+
+    // Untouched, a currency switch shows that currency's prefill rather than
+    // the converted dollar figure (៛82,000 expected, not ៛81,900 from $19.98).
+    useEffect(() => {
+        if (!isOpen || receivedEdited) return;
+        const rate = Number(receivedField.rate) > 0 ? Number(receivedField.rate) : receivedField.shopRate;
+        const want = String(prefillFor(receivedField.currency, rate));
+        if (receivedField.amount !== want) receivedField.setAmount(want);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [receivedField.currency]);
+
+    const showReceived = amountDue !== undefined;
+    const inRiel = showReceived && receivedField.currency === 'KHR';
+    // The order's money moves only when the received amount really differs
+    // from what is due (a riel figure within a few cents snaps to the due).
+    const receivedUsd = roundCents(receivedField.usd);
+    const receivedDiff = showReceived ? roundCents((amountDue as number) - receivedUsd) : 0;
+    const moneyChanges = showReceived && Number.isFinite(receivedField.typed) && Math.abs(receivedDiff) > 0.005;
+    const newTotal = orderTotal !== undefined ? roundCents(orderTotal - receivedDiff) : undefined;
+    // The field as MoneyInput drives it: typing marks it edited.
+    const receivedInput = {
+        ...receivedField,
+        setAmount: (v: string) => { setReceivedEdited(true); receivedField.setAmount(v); },
+        reinterpret: (c: 'USD' | 'KHR') => { setReceivedEdited(true); receivedField.reinterpret(c); },
+    };
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title ?? tx('ui.components.settle.title', 'Settle Payment')}>
@@ -197,7 +253,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                     </label>
                     <select
                         value={depositAccountId}
-                        onChange={(e) => setDepositAccountId(e.target.value)}
+                        onChange={(e) => coupling.onAccountChange(e.target.value)}
                         disabled={!accountsLoaded}
                         data-testid="settle-account"
                         style={{
@@ -217,24 +273,27 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                                 ? tx('ui.components.settle.booksDraft', 'Settling also books the receipt to this account as a Draft journal entry.')
                                 : tx('ui.components.settle.noAccounts', 'No cash or bank accounts in the Chart of Accounts yet — the settlement saves without a ledger entry account.')}
                     </p>
-                    {amountDue !== undefined && hasKhrAccounts && (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const next = counterpartAccount(paymentAccounts, depositAccountId, inRiel ? 'USD' : 'KHR');
-                                if (next) setDepositAccountId(next.id);
-                            }}
-                            style={{ marginTop: '6px', background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
-                        >
-                            {inRiel ? tx('ui.components.common.inDollarsInstead', 'Received in dollars instead') : tx('ui.components.common.inRiel', 'Received in riel (៛)?')}
-                        </button>
-                    )}
                 </div>
-                {inRiel && amountDue !== undefined && (
-                    <div>
-                        <MoneyInput field={rielField} label={tx('ui.components.common.rielReceived', 'Riel received')} required />
-                        <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                            {tx('ui.components.settle.booksOrder', "Books the order's {amt}; the riel amount and rate are recorded with it.", { amt: formatUsd(amountDue) })}
+                {showReceived && (
+                    <div data-settle-received>
+                        <MoneyInput
+                            field={receivedInput}
+                            label={tx('ui.components.settle.receivedAmount', 'Received Amount')}
+                            allowKhr
+                            onToggleCurrency={coupling.onToggleCurrency}
+                            khrUnavailableReason={accountsLoaded ? coupling.khrUnavailableReason : tx('ui.components.common.loadingAccounts', 'Loading accounts…')}
+                            required
+                        />
+                        <p style={{ margin: '6px 0 0', fontSize: '12px', color: moneyChanges ? (receivedDiff > 0 ? '#059669' : '#B45309') : 'var(--color-text-muted)' }} data-settle-received-note>
+                            {!moneyChanges
+                                ? tx('ui.components.settle.dueIs', 'Amount due {due}.', { due: formatUsd(amountDue as number) })
+                                : receivedDiff > 0
+                                    ? (newTotal !== undefined
+                                        ? tx('ui.components.settle.lessThanDueTotal', '{diff} less than the {due} due: the order total becomes {total}, the {diff} saved as a discount.', { diff: formatUsd(receivedDiff), due: formatUsd(amountDue as number), total: formatUsd(newTotal) })
+                                        : tx('ui.components.settle.lessThanDue', '{diff} less than the {due} due: saved as a discount on the order.', { diff: formatUsd(receivedDiff), due: formatUsd(amountDue as number) }))
+                                    : (newTotal !== undefined
+                                        ? tx('ui.components.settle.moreThanDueTotal', '{diff} more than the {due} due: the order total becomes {total}, the {diff} saved as an extra charge.', { diff: formatUsd(-receivedDiff), due: formatUsd(amountDue as number), total: formatUsd(newTotal) })
+                                        : tx('ui.components.settle.moreThanDue', '{diff} more than the {due} due: saved as an extra charge on the order.', { diff: formatUsd(-receivedDiff), due: formatUsd(amountDue as number) }))}
                         </p>
                     </div>
                 )}
@@ -252,13 +311,24 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                     {(() => {
                         // An account is required only when there is one to pick —
                         // and nothing confirms before the accounts have loaded.
-                        const valid = accountsLoaded && !submitted && !(paymentAccounts.length > 0 && !depositAccountId)
-                            && !(inRiel && (!(rielField.typed > 0) || rielField.rateInvalid));
+                        // A Received Amount is required (0 only when nothing is due).
+                        const receivedOk = !showReceived || (Number.isFinite(receivedField.typed) && receivedField.typed >= 0
+                            && (receivedField.typed > 0 || (amountDue as number) <= 0.005) && !receivedField.rateInvalid);
+                        const valid = accountsLoaded && !submitted && !(paymentAccounts.length > 0 && !depositAccountId) && receivedOk;
                         return (
                             <button
                                 onClick={() => {
                                     if (!valid) return;
-                                    if (inRiel && !rielField.confirmIfSuspicious()) return;
+                                    if (showReceived && !receivedField.confirmIfSuspicious()) return;
+                                    // A big difference is asked about once: not again after the
+                                    // field's own wrong-amount warning, nor for riel against an
+                                    // amount due (the field's check asks above 5%).
+                                    if (moneyChanges && !receivedField.warning && !(inRiel && (amountDue as number) > 0)
+                                        && Math.abs(receivedDiff) > Math.max(0.5, (amountDue as number) * 0.1)
+                                        && !window.confirm(tx('ui.components.settle.bigDiffConfirm', 'Received {rec} but {due} is due. Change the order total by {diff} and save it as a {kind}?', {
+                                            rec: formatUsd(receivedUsd), due: formatUsd(amountDue as number), diff: formatUsd(Math.abs(receivedDiff)),
+                                            kind: receivedDiff > 0 ? tx('ui.components.settle.discountWord', 'discount') : tx('ui.components.settle.extraChargeWord', 'extra charge'),
+                                        }))) return;
                                     setSubmitted(true);
                                     // Ensure time is preserved, or just set to noon if we only care about the date
                                     // Default behavior for <input type="date"> is YYYY-MM-DD
@@ -267,7 +337,8 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                                         settleDate: new Date(settleDate).toISOString(),
                                         depositAccountId: depositAccountId || undefined,
                                         depositAccountName: paymentAccounts.find(a => a.id === depositAccountId)?.account_name,
-                                        money: inRiel ? rielField.meta : undefined,
+                                        money: inRiel ? receivedField.meta : undefined,
+                                        receivedUsd: showReceived ? receivedUsd : undefined,
                                     });
                                     onClose();
                                 }}

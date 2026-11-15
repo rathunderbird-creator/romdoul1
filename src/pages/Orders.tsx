@@ -5033,6 +5033,7 @@ const Orders: React.FC = () => {
                     initialMethod={paymentMethodTargetOrder.paymentClaim?.method || paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.paymentClaim?.date || paymentMethodTargetOrder.settleDate || undefined}
                     amountDue={Math.max(0, paymentMethodTargetOrder.total - (paymentMethodTargetOrder.depositAmount || 0))}
+                    orderTotal={paymentMethodTargetOrder.total}
                     khrExpected={paymentMethodTargetOrder.paymentClaim?.status === 'Paid' && paymentMethodTargetOrder.paymentClaim.currency === 'KHR'
                         ? paymentMethodTargetOrder.paymentClaim.original_amount
                         : paymentMethodTargetOrder.customKhrAmount}
@@ -5048,10 +5049,33 @@ const Orders: React.FC = () => {
                             khr: paymentMethodTargetOrder.paymentClaim.currency === 'KHR' && paymentMethodTargetOrder.paymentClaim.original_amount ? ` = ៛${Math.round(paymentMethodTargetOrder.paymentClaim.original_amount).toLocaleString()}` : '',
                         })
                         : undefined}
-                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, money }) => {
+                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, money, receivedUsd }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
                         updates.amountReceived = paymentMethodTargetOrder.total;
+                        // A Received Amount other than the amount due changes the
+                        // order's money (as the riel figure does in Select Shipping
+                        // Company): total = deposit + received, the difference from
+                        // the old total going into the discount (negative = an
+                        // extra charge). The income booked is then exactly what
+                        // was received (set_order_payment books amount received −
+                        // deposit).
+                        const deposit = paymentMethodTargetOrder.depositAmount || 0;
+                        const due = Math.max(0, paymentMethodTargetOrder.total - deposit);
+                        if (receivedUsd !== undefined && Number.isFinite(receivedUsd) && Math.abs(receivedUsd - due) > 0.005) {
+                            const newTotal = Math.round((deposit + receivedUsd) * 100) / 100;
+                            updates.total = newTotal;
+                            updates.discount = Math.round(((Number(paymentMethodTargetOrder.discount) || 0) + (paymentMethodTargetOrder.total - newTotal)) * 100) / 100;
+                            updates.amountReceived = newTotal;
+                        }
+                        // Riel received: the receipt shows the riel actually collected.
+                        // A dollar change drops a riel override saved earlier (it
+                        // was for the old amount; the receipt recomputes it).
+                        if (money?.currency === 'KHR' && money.original_amount && Math.round(money.original_amount) !== Math.round(Number(paymentMethodTargetOrder.customKhrAmount) || 0)) {
+                            updates.customKhrAmount = Math.round(money.original_amount);
+                        } else if (!money && updates.total !== undefined && paymentMethodTargetOrder.customKhrAmount != null) {
+                            updates.customKhrAmount = null;
+                        }
                         updates.depositAccountId = depositAccountId;
                         updates.depositAccountName = depositAccountName;
                         // Settling books the receipt too (a Draft RCP entry on the
@@ -5061,7 +5085,12 @@ const Orders: React.FC = () => {
                         updates.postToLedger = true;
                         // Riel received: the order's USD is booked, the riel
                         // amount and rate ride along on the income row.
-                        updateOrder(paymentMethodTargetOrder.id, updates, money ? { money: { ...money, category: 'លក់រាយ' } } : undefined);
+                        // A changed total was worked out from this screen's deposit
+                        // and total: the save is refused if they have moved since.
+                        const expectMoney = updates.total !== undefined ? { deposit, total: paymentMethodTargetOrder.total } : undefined;
+                        updateOrder(paymentMethodTargetOrder.id, updates, money || expectMoney
+                            ? { ...(money ? { money: { ...money, category: 'លក់រាយ' } } : {}), ...(expectMoney ? { expectMoney } : {}) }
+                            : undefined);
                     }}
                 />
             )}
