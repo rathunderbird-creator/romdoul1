@@ -3809,7 +3809,9 @@
         "saveFailed": "កំហុសមូលដ្ឋានទិន្នន័យពេលរក្សាទុកការកំណត់ Telegram៖ {error}",
         "removeFailed": "កំហុសមូលដ្ឋានទិន្នន័យពេលលុបក្រុម Telegram៖ {error}",
         "someGroupsFailed": "បរាជ័យសម្រាប់ក្រុមខ្លះ៖ {error}",
-        "noChatIds": "មិនមាន Chat ID ទេ"
+        "noChatIds": "មិនមាន Chat ID ទេ",
+        "badToken": "Bot Token មិនត្រឹមត្រូវ។ វាមានទម្រង់ដូច 123456789:AAH… (ចម្លងទាំងមូលពី @BotFather)។",
+        "badChatId": "Chat ID មិនត្រឹមត្រូវ៖ {ids}។ ID ក្រុមមានទម្រង់ដូច -1001234567890 (ច្រើនបំបែកដោយក្បៀស)។"
       },
       "statusRules": {
         "alreadyPostDispatch": "ការបញ្ជាទិញនេះស្ថិតក្នុងស្ថានភាព {current} រួចហើយ។ ការបញ្ជាទិញ {current} មិនអាចប្តូរទៅ {target} បានទេ។",

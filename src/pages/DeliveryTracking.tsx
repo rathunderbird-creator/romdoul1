@@ -10,7 +10,7 @@ import { getShippingCoColor } from '../utils/orderUtils';
 import { statusChangeRefusal, nonAdminDisabledStatusOptions, orderStatusLabel } from '../utils/orderStatusRules';
 import { buildTrackingUrl } from '../utils/tracking';
 import { useClickOutside } from '../hooks/useClickOutside';
-import { sendTelegramTestMessage, sendTelegramOrderNotification } from '../utils/telegram';
+import { sendTelegramTestMessage, sendTelegramOrderNotification, telegramConfigProblem } from '../utils/telegram';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { getOperatorForPhone, formatPhoneDisplay } from '../utils/telecom';
@@ -292,6 +292,12 @@ const DeliveryTracking: React.FC = () => {
     }, [telegramBotToken, telegramChatId, showTelegramSettings]);
 
     const handleSaveTelegramConfig = () => {
+        // Both empty clears it; otherwise it has to be able to send.
+        const problem = tempBotToken.trim() || tempChatId.trim() ? telegramConfigProblem(tempBotToken, tempChatId) : null;
+        if (problem) {
+            showToast(problem, 'error');
+            return;
+        }
         updateStoreProfile({
             telegramBotToken: tempBotToken,
             telegramChatId: tempChatId

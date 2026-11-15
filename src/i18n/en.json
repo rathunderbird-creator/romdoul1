@@ -3809,7 +3809,9 @@
         "saveFailed": "Database error saving telegram config: {error}",
         "removeFailed": "Database error removing telegram group: {error}",
         "someGroupsFailed": "Failed for some groups: {error}",
-        "noChatIds": "No Chat IDs provided"
+        "noChatIds": "No Chat IDs provided",
+        "badToken": "The Bot Token is not valid. It looks like 123456789:AAH… (copy it whole from @BotFather).",
+        "badChatId": "Chat ID not valid: {ids}. A group ID looks like -1001234567890 (several separated by commas)."
       },
       "statusRules": {
         "alreadyPostDispatch": "This order is already {current}. {current} orders cannot be changed to {target}.",
