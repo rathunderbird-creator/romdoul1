@@ -119,7 +119,7 @@ async function run(instance) {
         await supabase.from('journal_entries').delete().eq('id', entry.id);
         throw lErr;
     }
-    out.booked = `${payload.entry_number || entry.id} (Draft, ${date})`;
+    out.booked = `${entry.entry_number || entry.id} (Draft, ${date})`; // the number saved, not the guess
     return out;
 }
 

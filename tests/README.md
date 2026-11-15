@@ -353,3 +353,18 @@ stock. Same PGlite setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite
     node tests/fifo-golive-rehearsal.test.mjs
+
+## journal-entry-numbers.test.mjs
+
+Runs `migrations/fix_journal_entry_numbers.sql` on the FIFO test store
+(tests/fifo-test-db.mjs) and checks the one-time renumbering of entries
+that share a <TYPE>-<yyyymmdd>-<nnn> (the oldest keeps it, the others and
+their descriptions get the next free number, a re-run changes nothing),
+then the insert trigger: a caller's stale count-based number is replaced,
+in the description too; no number comes back after a deletion; NULL and
+non-standard numbers are left alone; the packs' wp_post_entry and an
+insert as anon are numbered; anon cannot touch the counters. Same PGlite
+setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/journal-entry-numbers.test.mjs

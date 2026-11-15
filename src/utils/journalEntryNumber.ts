@@ -11,15 +11,17 @@ export type JournalEntryTypeCode = 'RCP' | 'DEP' | 'SPP' | 'WSP' | 'PAY' | 'MAN'
 // Human-readable display ID for a journal entry, additive to (never a
 // replacement for) reference_id: JE-{globalSeq}-{TYPE}-{YYYYMMDD}-{dailySeq},
 // e.g. JE-37-RCP-20261019-001.
-//   - globalSeq: how many journal entries exist system-wide right now (old
-//     entries without an entry_number counted too) + 1 — not zero-padded.
+//   - globalSeq: one past the highest in use (or past the number of entries,
+//     as old entries without an entry_number count too) — not zero-padded.
 //   - dailySeq: 1-indexed, zero-padded to 3 digits, resets per (type, date)
-//     combination — counted off entry_number rows already matching that
-//     exact type and date.
-// Client-side query-then-format (no DB sequence/trigger): this is a
-// cosmetic/readability feature, not a strict invoice-numbering guarantee, so
-// a rare race between two simultaneous inserts reusing a sequence number is
-// an accepted tradeoff.
+//     combination — one past the highest already used for that exact type
+//     and date.
+// The highest, not a count: a deleted entry (an un-pay, a deleted order)
+// lowered the count, and the next entry then got a number still in use.
+// This is only the caller's guess. Where migrations/fix_journal_entry_numbers.sql
+// has run, a trigger gives every new entry the next free number at insert
+// time (and fixes the ref in its description), which also covers two saves
+// at once; without it, two simultaneous inserts can still share a number.
 //
 // `date` must be the SAME string about to be written to the entry's own
 // `date` column (not created_at). Its first 10 characters are sliced and
@@ -36,16 +38,25 @@ export async function nextJournalEntryNumber(type: JournalEntryTypeCode, date: s
         const ymd = String(date || '').slice(0, 10).replace(/-/g, '');
         if (!/^\d{8}$/.test(ymd)) return null;
 
-        const [globalRes, dailyRes] = await Promise.all([
+        const [countRes, latestRes, dailyRes] = await Promise.all([
             supabase.from('journal_entries').select('id', { count: 'exact', head: true }),
-            supabase.from('journal_entries').select('id', { count: 'exact', head: true })
-                .like('entry_number', `JE-%-${type}-${ymd}-%`),
+            // The newest entries hold the highest global numbers.
+            supabase.from('journal_entries').select('entry_number')
+                .not('entry_number', 'is', null).order('created_at', { ascending: false }).limit(200),
+            supabase.from('journal_entries').select('entry_number')
+                .like('entry_number', `JE-%-${type}-${ymd}-%`).limit(5000),
         ]);
-        if (globalRes.error) throw globalRes.error;
+        if (countRes.error) throw countRes.error;
+        if (latestRes.error) throw latestRes.error;
         if (dailyRes.error) throw dailyRes.error;
 
-        const globalSeq = (globalRes.count || 0) + 1;
-        const dailySeq = String((dailyRes.count || 0) + 1).padStart(3, '0');
+        const maxOf = (rows: { entry_number: string | null }[] | null, re: RegExp) =>
+            (rows || []).reduce((m, r) => {
+                const hit = re.exec(r.entry_number || '');
+                return hit ? Math.max(m, Number(hit[1])) : m;
+            }, 0);
+        const globalSeq = Math.max(countRes.count || 0, maxOf(latestRes.data, /^JE-(\d+)-/)) + 1;
+        const dailySeq = String(maxOf(dailyRes.data, /-(\d+)$/) + 1).padStart(3, '0');
         return `JE-${globalSeq}-${type}-${ymd}-${dailySeq}`;
     } catch (e) {
         console.error('Failed to compute the next journal entry number:', e);
