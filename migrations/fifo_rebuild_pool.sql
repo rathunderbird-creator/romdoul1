@@ -979,7 +979,8 @@ BEGIN
         v_number := wp_internal.wp_next_entry_number('MAN', v_date);
         INSERT INTO journal_entries (date, description, reference_id, status, entry_number)
         VALUES (v_date, 'FIFO revaluation of on-hand and shipped-unsettled stock', v_ref, 'Draft', v_number)
-        RETURNING id INTO v_entry;
+        -- The number actually saved (fix_journal_entry_numbers.sql may give a new one).
+        RETURNING id, entry_number INTO v_entry, v_number;
         INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
             (v_entry, v_inv, CASE WHEN v_reval > 0 THEN v_amount ELSE 0 END, CASE WHEN v_reval > 0 THEN 0 ELSE v_amount END,
              'Inventory restated at FIFO layer cost'),
