@@ -110,7 +110,7 @@ const Forms = () => {
     const close = () => { setOpen(false); setTimeout(() => setOpen(true), 400); };
     switch (form) {
         case 'deposit': return <DepositModal order={open ? order : null} onClose={close} showDepositAccount onConfirm={d => show('deposit', d)} />;
-        case 'settle': return open ? <SettlePaymentModal isOpen onClose={close} amountDue={20} khrExpected={order.customKhrAmount} onConfirm={d => show('settle', d)} /> : null;
+        case 'settle': return open ? <SettlePaymentModal isOpen onClose={close} amountDue={20} khrExpected={order.customKhrAmount} orderTotal={20} onConfirm={d => show('settle', d)} /> : null;
         case 'receipt': return open ? <RecordReceiptModal isOpen onClose={close} order={order} onConfirm={d => show('receipt', d)} /> : null;
         case 'finalize': return open ? <RecordReceiptModal isOpen finalizeMode onClose={close} order={order}
             finalizeRow={{ amount: 20, currency: 'KHR', original_amount: 82000, exchange_rate: 4100 }} depositAccountHint="Cash" onConfirm={d => show('finalize', d)} /> : null;

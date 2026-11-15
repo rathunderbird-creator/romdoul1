@@ -124,7 +124,11 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: st
 // The riel details to record with an order payment (updateOrder's opts):
 // which income category the money went to ('ថ្លៃដឹក' delivery fee,
 // 'កក់ប្រាក់' deposit, 'លក់រាយ' sale); all income rows when absent.
-export type OrderMoneyOpts = { money?: MoneyMeta & { category?: string } };
+// expectMoney: the deposit and total the screen worked a new total out
+// from (Settle's Received Amount); the save is refused if the order's
+// stored values have moved since, so income is never booked against a
+// deposit this screen didn't see.
+export type OrderMoneyOpts = { money?: MoneyMeta & { category?: string }; expectMoney?: { deposit: number; total: number } };
 
 // Tags the income rows set_order_payment returned (new ones and a corrected
 // one) and their journal entries with the riel details, or clears a row
@@ -3147,7 +3151,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const expectedShippingStatus = updates.expectedShippingStatus;
         delete updates.expectedShippingStatus;
         type PaymentRow = { payment_status: string | null; deposit_amount: number | null; amount_received: number | null; settle_date: string | null; payment_method: string | null };
-        const paymentColumns = 'payment_status, deposit_amount, amount_received, settle_date, payment_method';
+        const paymentColumns = 'payment_status, deposit_amount, amount_received, settle_date, payment_method, total';
         const toLocal = (row: PaymentRow): Partial<Sale> => ({
             paymentStatus: row.payment_status as Sale['paymentStatus'],
             depositAmount: Number(row.deposit_amount) || 0,
@@ -3167,6 +3171,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             paymentRow = freshRow as PaymentRow;
             freshPayment = toLocal(freshRow);
             if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };
+
+            // The screen's new total assumed a deposit and total that have
+            // since changed (another tab, another user): refuse, nothing saved.
+            const expectMoney = opts?.expectMoney;
+            if (expectMoney && (Math.abs((Number(freshRow.deposit_amount) || 0) - expectMoney.deposit) > 0.005
+                || Math.abs((Number((freshRow as { total?: number | null }).total) || 0) - expectMoney.total) > 0.005)) {
+                setSales(prev => prev.map(s => s.id === id ? { ...s, ...freshPayment, total: Number((freshRow as { total?: number | null }).total) || 0 } : s));
+                setSalesUpdatedAt(Date.now());
+                alert(tNow('ui.store.order.moneyChangedElsewhere'));
+                return false;
+            }
 
             const shownStatus = expectedPaymentStatus === undefined ? undefined : (expectedPaymentStatus || 'Unpaid');
             const currentStatus = freshRow.payment_status || 'Unpaid';

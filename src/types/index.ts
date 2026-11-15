@@ -215,7 +215,7 @@ export interface StoreContextType {
     deleteProducts: (ids: string[]) => Promise<void>;
     // opts.money: the riel details of the money this save books (the
     // income row and its journal entry are tagged after the save).
-    updateOrder: (id: string, updates: Partial<Sale>, opts?: { money?: MoneyRecord & { category?: string } }) => Promise<boolean>; // false: not everything was saved (the user has been told why)
+    updateOrder: (id: string, updates: Partial<Sale>, opts?: { money?: MoneyRecord & { category?: string }; expectMoney?: { deposit: number; total: number } }) => Promise<boolean>; // false: not everything was saved (the user has been told why)
     updateOrders: (ids: string[], updates: Partial<Sale>) => Promise<void>;
     deleteOrders: (ids: string[]) => Promise<void>;
     restoreOrders: (ids: string[]) => Promise<void>;

@@ -3728,7 +3728,8 @@
         "updateFailed": "Failed to update order: {error}",
         "restoredStillPending": "Orders restored, but these are still Pending (their stock was not taken): {orders}. Set their status from the Orders page.",
         "importFailed": "Failed to import orders: {error}",
-        "importItemsFailed": "Failed to import order items: {error}"
+        "importItemsFailed": "Failed to import order items: {error}",
+        "moneyChangedElsewhere": "This order's deposit or total was changed elsewhere since you opened it. Nothing was saved — the order has been refreshed; please settle it again."
       },
       "product": {
         "setStockMissing": "Stock can't be changed here on this store yet: until FIFO costing is set up (a stock count, true-up and pool rebuild), change stock on the Stock Adjustments page instead (menu Inventory › Adjust Stock: create an adjustment and post it). Nothing was changed.",
@@ -5091,7 +5092,16 @@
         "description": "Please confirm the settle date and payment method.",
         "noAccounts": "No cash or bank accounts in the Chart of Accounts yet — the settlement saves without a ledger entry account.",
         "settleDate": "Settle Date",
-        "title": "Settle Payment"
+        "title": "Settle Payment",
+        "receivedAmount": "Received Amount",
+        "dueIs": "Amount due {due}.",
+        "lessThanDueTotal": "{diff} less than the {due} due: the order total becomes {total}, the {diff} saved as a discount.",
+        "lessThanDue": "{diff} less than the {due} due: saved as a discount on the order.",
+        "moreThanDueTotal": "{diff} more than the {due} due: the order total becomes {total}, the {diff} saved as an extra charge.",
+        "moreThanDue": "{diff} more than the {due} due: saved as an extra charge on the order.",
+        "bigDiffConfirm": "Received {rec} but {due} is due. Change the order total by {diff} and save it as a {kind}?",
+        "discountWord": "discount",
+        "extraChargeWord": "extra charge"
       },
       "shippingPoint": {
         "confirm": "បញ្ជាក់ទីតាំង (Confirm)",
