@@ -86,9 +86,10 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     }, [isOpen, fetchAccounts]);
 
     // Cash/bank ledger accounts for the "Deposited into" select — same filter
-    // as RecordReceiptModal's and DepositModal's field.
+    // as RecordReceiptModal's and DepositModal's field, except Petty Cash: a
+    // customer's payment is never received into the petty-cash float.
     const paymentAccounts = useMemo(
-        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name) && !/petty/i.test(a.account_name)),
         [accounts]
     );
 
