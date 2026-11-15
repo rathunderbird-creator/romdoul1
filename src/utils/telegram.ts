@@ -4,9 +4,9 @@ import { tNow } from '../i18n/translate';
 // Anything else makes Telegram's address invalid, and the browser then
 // reports only "Failed to fetch" (a leftover test group with token "t"
 // did exactly that on every new order).
-const BOT_TOKEN_RE = /^d{5,}:[A-Za-z0-9_-]{30,}$/;
+const BOT_TOKEN_RE = /^\d{5,}:[A-Za-z0-9_-]{30,}$/;
 // A group/chat id (-100…, -45…, 12345) or a public @channel name.
-const CHAT_ID_RE = /^(-?d{5,}|@[A-Za-z0-9_]{5,})$/;
+const CHAT_ID_RE = /^(-?\d{5,}|@[A-Za-z0-9_]{5,})$/;
 
 export const splitChatIds = (chatIds: string): string[] =>
     String(chatIds || '').split(',').map(id => id.trim()).filter(id => id.length > 0);
