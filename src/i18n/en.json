@@ -2492,8 +2492,8 @@
         "revenue": {
           "title": "Revenue",
           "subtitle": "Record money the business earned",
-          "accountLabel": "Revenue Account",
-          "counterLabel": "Received Into",
+          "accountLabel": "Revenue Account (Credit)",
+          "counterLabel": "Received Into (Debit)",
           "submit": "Record Revenue",
           "thisMonth": "Revenue This Month",
           "allTime": "Revenue All Time",

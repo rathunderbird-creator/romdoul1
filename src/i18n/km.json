@@ -2492,8 +2492,8 @@
         "revenue": {
           "title": "ចំណូល",
           "subtitle": "កត់ត្រាប្រាក់ដែលអាជីវកម្មរកបាន",
-          "accountLabel": "គណនីចំណូល",
-          "counterLabel": "ទទួលចូល",
+          "accountLabel": "គណនីចំណូល (ឥណទាន)",
+          "counterLabel": "ទទួលចូល (ឥណពន្ធ)",
           "submit": "កត់ត្រាចំណូល",
           "thisMonth": "ចំណូលខែនេះ",
           "allTime": "ចំណូលសរុបទាំងអស់",
