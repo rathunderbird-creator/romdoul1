@@ -2640,6 +2640,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
 
+        // A selling price typed in riel (Checkout's តម្លៃលក់): the order's riel
+        // amount, for the receipt. create_retail_order doesn't take it, so it
+        // is written next; a store without the column keeps the order without
+        // it (the receipt then works the riel out from the total).
+        if (newSale.customKhrAmount != null) {
+            const { error: khrErr } = await supabase.from('sales').update({ custom_khr_amount: newSale.customKhrAmount }).eq('id', newSale.id);
+            if (khrErr) {
+                console.error('Order created, but its riel amount could not be saved:', khrErr);
+                newSale.customKhrAmount = undefined;
+            }
+        }
+
         const res = (data || {}) as { already_created?: boolean; transactions?: Transaction[] };
         let resTxs = res.transactions || [];
         // Riel received at checkout: tag the income row the function wrote

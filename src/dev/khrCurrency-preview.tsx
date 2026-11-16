@@ -3,7 +3,8 @@
 // (r1: 1001 Petty Cash + 1010 Bank Account ABA (USD); r2: 1000 Cash only; the
 // *khr variants add 1002 Cash on Hand (KHR) + 1011 Bank Account ABA (KHR)),
 // ?form= the form (delivery, deposit, settle, receipt, finalize, wholesale,
-// supplier, settings, money, shipping = Select Shipping Company popup;
+// supplier, settings, money, shipping = Select Shipping Company popup,
+// checkout = the order Checkout form, ?edit=neg|khr reopening a saved one;
 // ?dep= sets that order's existing deposit).
 //
 // The chart is answered locally (never read from the live store), every
@@ -29,7 +30,8 @@ import MoneyInput from '../components/MoneyInput';
 import GeneralSettings from '../pages/settings/GeneralSettings';
 import { useMoneyField } from '../hooks/useMoneyField';
 import { ShippingModalComponent } from '../pages/Orders';
-import type { Sale } from '../types';
+import CheckoutForm from '../components/CheckoutForm';
+import type { CartItem, Sale } from '../types';
 
 const params = new URLSearchParams(location.search);
 const chart = params.get('chart') || 'r2khr';
@@ -85,6 +87,9 @@ const base: Record<string, unknown> = {
     shippingCompanies: ['J&T', 'VET'], customerCare: ['Dev'], products: [],
     updateOrder: (...args: unknown[]) => { show('updateOrder', args); return Promise.resolve(true); },
     updateOrderStatus: (...args: unknown[]) => { show('updateOrderStatus', args); return Promise.resolve(true); },
+    // Checkout (?form=checkout): lists it maps over, and the create it calls.
+    users: [{ id: 'u1', name: 'Dev Seller', roleId: 'salesman' }], sales: [], pages: ['Dev Page'], cities: [], blockedCustomers: [], telegramConfigs: [],
+    addOnlineOrder: (o: Sale, opts?: unknown) => { show('addOnlineOrder', { total: o.total, discount: o.discount, customKhrAmount: o.customKhrAmount, amountReceived: o.amountReceived, paymentStatus: o.paymentStatus, opts }); return Promise.resolve({ ...o, id: 'dev-new' }); },
 };
 const mockStore = new Proxy(base, { get: (t, k: string) => (k in t ? t[k] : () => undefined) });
 
@@ -105,6 +110,27 @@ const FreeMoney = () => {
     );
 };
 
+// Checkout with two $20 items; ?edit=neg reopens an order sold at $45
+// (discount -5), ?edit=khr one sold at ៛150,000 ($36.59, discount 3.41).
+const checkoutItems = [
+    { id: 'p1', name: 'Speaker', price: 20, quantity: 1 },
+    { id: 'p2', name: 'Cable', price: 20, quantity: 1 },
+] as unknown as CartItem[];
+const editBase = {
+    ...order, id: 'dev-edit', items: checkoutItems, paymentStatus: 'Unpaid', salesman: 'Dev Seller',
+    customer: { name: 'Dev Customer', phone: '012345678', city: 'ភ្នំពេញ', page: 'Dev Page' }, shipping: { company: 'J&T', status: 'Pending' },
+};
+const checkoutEdit = params.get('edit') === 'neg'
+    ? { ...editBase, total: 45, discount: -5 }
+    : params.get('edit') === 'khr'
+        ? { ...editBase, total: 36.59, discount: 3.41, customKhrAmount: 150000 }
+        : null;
+const Checkout = () => {
+    const [items, setItems] = useState<CartItem[]>(checkoutItems);
+    return <CheckoutForm cartItems={items} orderToEdit={checkoutEdit as unknown as Sale | null} onUpdateCart={setItems}
+        onCancel={() => show('cancel', {})} onSuccess={() => show('success', {})} />;
+};
+
 const Forms = () => {
     const [open, setOpen] = useState(true);
     const close = () => { setOpen(false); setTimeout(() => setOpen(true), 400); };
@@ -118,6 +144,7 @@ const Forms = () => {
         case 'supplier': return open ? <RecordSupplierPaymentModal isOpen onClose={close} remainingBalance={250} supplierName="Dev Supplier" onConfirm={d => show('supplier', d)} /> : null;
         case 'settings': return <GeneralSettings />;
         case 'money': return <FreeMoney />;
+        case 'checkout': return <Checkout />;
         case 'shipping': return <ShippingModalComponent isOpen={open} onClose={close} order={order} />;
         default: return <DeliveryFeeModal order={open ? order : null} onClose={close} onConfirm={d => show('deliveryFee', d)} />;
     }

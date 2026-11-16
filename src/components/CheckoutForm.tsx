@@ -12,7 +12,8 @@ import { findByName, locLabel, pickerOptions } from '../utils/locationTree';
 
 import { sendTelegramOrderNotification } from '../utils/telegram';
 import { useTx, orderStatusDisplay } from './useTx';
-import { amountWarningLine, amountWarningText, checkKhrAmount, checkUsdAmount, formatKhr, formatRate, formatUsd, khrMeta, resolveMoney, shopRate, usdToKhr } from '../utils/currency';
+import { amountWarningLine, amountWarningText, checkKhrAmount, checkUsdAmount, formatKhr, formatRate, formatUsd, khrMeta, khrToUsd, resolveMoney, shopRate, usdToKhr } from '../utils/currency';
+import { roundCents } from '../utils/money';
 
 interface CheckoutFormProps {
     cartItems: CartItem[];
@@ -60,6 +61,21 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     // to formData.amountReceived, so the deposit / paid logic stays in USD.
     const [rielMode, setRielMode] = useState(false);
     const [rielTyped, setRielTyped] = useState<string>('');
+    // Selling price (តម្លៃលក់): ticked, the order's total is the price typed
+    // here, in dollars or riel, whatever the items add up to; the difference
+    // is saved as the discount (negative = sold above the items' price, an
+    // extra charge). A price in riel is also kept as the order's riel amount
+    // (custom_khr_amount), so the receipt shows the riel typed. Unticked, the
+    // total is the items' price (less any discount), as before.
+    const [salePriceOn, setSalePriceOn] = useState(false);
+    const [salePriceCurrency, setSalePriceCurrency] = useState<'USD' | 'KHR'>('USD');
+    const [salePriceTyped, setSalePriceTyped] = useState('');
+    // Set once the price is typed, ticked or switched in this opening.
+    const salePriceTouched = useRef(false);
+    // An order reopened sold above its items' price (ticked by the form,
+    // not the user): its discount and items' price then. Until the price is
+    // touched, a change of items keeps that extra charge, not the total.
+    const salePriceAuto = useRef<{ discount: number; subtotal: number; typed: string } | null>(null);
 
     const isMobile = useMobile();
 
@@ -374,6 +390,29 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Deposit' | 'Paid' | 'PdFee' | 'Get File' | 'Cancel') || 'Unpaid',
                 date: orderToEdit.date || ''
             });
+            // An order sold above its items' price (a negative discount)
+            // reopens with the selling price ticked. A positive discount
+            // reopens as the discount, as before: the saved order can't tell a
+            // riel price from an ordinary discount settled in riel. In riel
+            // only when the order's riel amount is its total (no deposit,
+            // where it means the riel still owed) to the cent, so saving the
+            // form unchanged keeps the same total. Until a price is typed, it
+            // follows the items: the extra charge stays, the total moves (as
+            // the extra charge did before), see salePriceAuto.
+            const savedTotal = Number(orderToEdit.total) || 0;
+            const savedDiscount = Number(orderToEdit.discount) || 0;
+            const savedRiel = Number(orderToEdit.customKhrAmount) || 0;
+            const rielIsTotal = savedRiel > 0 && !(Number(orderToEdit.depositAmount) > 0)
+                && Math.abs(khrToUsd(savedRiel, rate) - savedTotal) < 0.005;
+            const sold = savedDiscount < 0;
+            setSalePriceOn(sold);
+            setSalePriceCurrency(sold && rielIsTotal ? 'KHR' : 'USD');
+            setSalePriceTyped(sold ? String(rielIsTotal ? Math.round(savedRiel) : savedTotal) : '');
+            salePriceTouched.current = false;
+            salePriceAuto.current = sold
+                ? { discount: savedDiscount, subtotal: roundCents(savedTotal + savedDiscount), typed: String(rielIsTotal ? Math.round(savedRiel) : savedTotal) }
+                : null;
+            if (sold) setFormData(prev => ({ ...prev, enableDiscount: false, discount: '' }));
         } else {
             // Reset to defaults when not editing
             setFormData({
@@ -381,14 +420,47 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 salesman: defaultSalesman, // Ensure default is applied
                 customerCare: defaultCustomerCare // Ensure default is applied
             });
+            setSalePriceOn(false);
+            setSalePriceCurrency('USD');
+            setSalePriceTyped('');
+            salePriceTouched.current = false;
+            salePriceAuto.current = null;
         }
     }, [orderToEdit, currentUser]); // Added currentUser dependency
 
     // (Removed useEffect that was overwriting paymentStatus on load)
 
     const subtotal = React.useMemo(() => cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0), [cartItems]);
-    const discount = React.useMemo(() => formData.enableDiscount ? (formData.discount === '' ? 0 : Number(formData.discount)) : 0, [formData.enableDiscount, formData.discount]);
-    const total = React.useMemo(() => Math.max(0, subtotal - discount), [subtotal, discount]);
+    // A reopened extra charge follows the items until the price is touched:
+    // the saved price for the saved items, else the items' price plus the
+    // same extra charge.
+    useEffect(() => {
+        const auto = salePriceAuto.current;
+        if (!auto || salePriceTouched.current) return;
+        if (Math.abs(subtotal - auto.subtotal) < 0.005) { setSalePriceTyped(auto.typed); return; }
+        const next = roundCents(Math.max(0, subtotal - auto.discount));
+        setSalePriceTyped(String(salePriceCurrency === 'KHR' ? usdToKhr(next, rate, 1) : next));
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of items moves it
+    }, [subtotal]);
+    // The selling price in USD (riel at the shop rate), or null when the box
+    // is unticked or holds no valid amount.
+    const salePriceTypedNum = salePriceTyped.trim() === '' ? NaN : Number(salePriceTyped);
+    const salePriceUsd: number | null = salePriceOn && Number.isFinite(salePriceTypedNum) && salePriceTypedNum >= 0
+        ? (salePriceCurrency === 'KHR' ? khrToUsd(salePriceTypedNum, rate) : roundCents(salePriceTypedNum))
+        : null;
+    // With a selling price, the discount is whatever takes the items' price
+    // to it (negative = an extra charge); without, the discount typed.
+    const discount = salePriceUsd !== null
+        ? roundCents(subtotal - salePriceUsd)
+        : (formData.enableDiscount ? (formData.discount === '' ? 0 : Number(formData.discount)) : 0);
+    const total = salePriceUsd !== null ? salePriceUsd : Math.max(0, subtotal - discount);
+    // The riel of the selling price, when it was typed in riel.
+    const salePriceRiel = salePriceUsd !== null && salePriceCurrency === 'KHR' ? Math.round(salePriceTypedNum) : null;
+    // A price that looks typed in the wrong currency (82000 in dollars, 20 in
+    // riel). Not checked against the items' price: selling above it is fine.
+    const salePriceWarning = salePriceUsd === null ? null
+        : salePriceCurrency === 'KHR' ? checkKhrAmount(salePriceTypedNum, { rate })
+        : checkUsdAmount(salePriceUsd, { rate });
 
     const handleAddItem = () => {
         if (!productSelection.id) return;
@@ -469,10 +541,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         }
 
         try {
-            const discountVal = formData.discount === '' ? 0 : Number(formData.discount);
-            const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-            const discount = formData.enableDiscount ? discountVal : 0;
-            const total = Math.max(0, subtotal - discount);
+            // A ticked selling price needs an amount.
+            if (salePriceOn && salePriceUsd === null) {
+                showToast(tx('ui.components.checkout.req.salePrice', 'Enter the selling price, or untick it'), 'error');
+                return;
+            }
+            // A selling price in the wrong currency asks first, showing both readings.
+            if (salePriceWarning && !window.confirm(amountWarningText(salePriceWarning))) return;
 
             const amountReceivedVal = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
             // A riel-sized number in the dollar field (or the other way
@@ -538,12 +613,33 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
 
             setIsSubmitting(true);
 
+            // The deposit the saved order will carry: this one (when it is
+            // booked now, not a Salesman's claim), else the one it already has.
+            const depositKept = isPartialDeposit && !paymentClaim && !salesmanUnbooked
+                ? amountReceivedVal
+                : (Number(orderToEdit?.depositAmount) || 0);
+            const depositKeptIsThis = isPartialDeposit && !paymentClaim && !salesmanUnbooked;
+            const depositRiel = depositKeptIsThis && money ? money.original_amount : usdToKhr(depositKept, rate, 1);
+            const rielToSave = salePriceRiel === null ? null
+                : depositKept > 0 ? Math.max(0, Math.round(salePriceRiel - depositRiel)) : salePriceRiel;
+
             const cleanCity = formData.city ? formData.city.replace(/ខេត្ត\s*|រាជធានី\s*/g, '').trim() : '';
 
             const orderData = {
                 items: cartItems,
                 total,
                 discount,
+                // A selling price typed in riel is the receipt's riel: the
+                // whole price, or, on an order with a deposit, the riel still
+                // owed (the receipt and the Select Shipping Company popup read
+                // custom_khr_amount as the REMAINING riel then). An edit that
+                // changes the total otherwise drops a riel amount saved earlier
+                // (it was for the old total; the receipt recomputes it).
+                ...(rielToSave !== null
+                    ? { customKhrAmount: rielToSave }
+                    : (orderToEdit && orderToEdit.customKhrAmount != null && Math.abs(total - (Number(orderToEdit.total) || 0)) > 0.005
+                        ? { customKhrAmount: null as unknown as number }
+                        : {})),
                 paymentMethod: formData.paymentMethod,
                 type: 'Online' as const,
                 salesman: formData.salesman,
@@ -1197,13 +1293,13 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         // same auto-status logic as the input below — otherwise a stale
                                         // 'Deposit' survives with the full amount and revenue is
                                         // overstated by the discount.
-                                        const subtotalNow = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                                        const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
+                                        const totalNow = total;
                                         let status = formData.paymentStatus;
                                         if (['Unpaid', 'Paid', 'Deposit'].includes(status)) {
                                             if (status === 'Deposit') status = totalNow > 0 ? 'Paid' : 'Unpaid';
                                         }
-                                        if (rielMode) setRielTyped(String(usdToKhr(totalNow, rate)));
+                                        // In riel: the riel selling price when one was typed.
+                                        if (rielMode) setRielTyped(String(salePriceRiel !== null ? salePriceRiel : usdToKhr(totalNow, rate)));
                                         setFormData({ ...formData, amountReceived: totalNow, paymentStatus: status });
                                     }}>ដាក់ពេញ</span>
                                 </div>
@@ -1216,8 +1312,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     placeholder={rielMode ? tx('ui.components.common.eg', 'e.g. {v}', { v: '82000' }) : undefined}
                                     onChange={e => {
                                         const raw = e.target.value;
-                                        const subtotalNow = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                                        const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
+                                        const totalNow = total;
                                         // In riel: the USD at the shop rate, the total when within 3 cents.
                                         if (rielMode) setRielTyped(raw);
                                         const val = rielMode
@@ -1239,8 +1334,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 {(() => {
                                     if (formData.paymentAfterDelivery) return null;
                                     const usdNow = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
-                                    const subtotalNow = cartItems.reduce((s, i) => s + (i.price * i.quantity), 0);
-                                    const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
+                                    const totalNow = total;
                                     const w = rielMode ? checkKhrAmount(Number(rielTyped) || 0, { rate }) : checkUsdAmount(usdNow, { rate, maxPlausibleUsd: totalNow });
                                     return (
                                         <>
@@ -1264,8 +1358,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 })()}
                                 {(() => {
                                     const num = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
-                                    const subtotalNow = cartItems.reduce((s, i) => s + (i.price * i.quantity), 0);
-                                    const totalNow = Math.max(0, subtotalNow - (formData.enableDiscount ? (Number(formData.discount) || 0) : 0));
+                                    const totalNow = total;
                                     return !formData.paymentAfterDelivery && num > 0 && num < totalNow ? (
                                         <p style={{ fontSize: '11px', color: '#7E22CE', margin: '6px 0 0 0', fontWeight: 600 }}>
                                             {tx('ui.components.checkout.depositLine', 'កក់ប្រាក់ ${amt} — saved as Deposit · balance ${bal}', { amt: num.toFixed(2), bal: (totalNow - num).toFixed(2) })}
@@ -1326,11 +1419,86 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                     </div>
 
                     <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
-                        {/* Discount Section - Same as before */}
-                        <div style={{ marginBottom: '16px' }}>
+                        {/* Selling price: the order's total is the price typed, in $ or ៛ */}
+                        <div style={{ marginBottom: '12px' }}>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer', marginBottom: '8px' }}>
                                 <input
                                     type="checkbox"
+                                    checked={salePriceOn}
+                                    onChange={e => {
+                                        const on = e.target.checked;
+                                        salePriceTouched.current = true;
+                                        setSalePriceOn(on);
+                                        // Starts at the current total, in the currency picked.
+                                        if (on && salePriceTyped.trim() === '') {
+                                            // To the riel, not the 100: that converts back to the same cents.
+                                            setSalePriceTyped(total > 0 ? String(salePriceCurrency === 'KHR' ? usdToKhr(total, rate, 1) : roundCents(total)) : '');
+                                        }
+                                        // The price replaces the discount.
+                                        if (on && formData.enableDiscount) setFormData({ ...formData, enableDiscount: false, discount: '' });
+                                    }}
+                                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                />
+                                តម្លៃលក់
+                            </label>
+                            {salePriceOn && (
+                                <>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ display: 'inline-flex', border: '1px solid var(--color-border)', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 }}>
+                                            {(['KHR', 'USD'] as const).map(c => (
+                                                <button
+                                                    key={c}
+                                                    type="button"
+                                                    aria-pressed={salePriceCurrency === c}
+                                                    onClick={() => {
+                                                        if (c === salePriceCurrency) return;
+                                                        salePriceTouched.current = true;
+                                                        // The same price in the other currency.
+                                                        const usdNow = salePriceUsd;
+                                                        setSalePriceCurrency(c);
+                                                        // To the riel: switching never moves the total.
+                                                        setSalePriceTyped(usdNow === null ? '' : String(c === 'KHR' ? usdToKhr(usdNow, rate, 1) : usdNow));
+                                                    }}
+                                                    style={{ padding: '6px 10px', fontSize: '12px', fontWeight: 600, border: 'none', cursor: 'pointer', background: salePriceCurrency === c ? 'var(--color-primary)' : 'transparent', color: salePriceCurrency === c ? '#fff' : 'var(--color-text-secondary)' }}
+                                                >{c === 'KHR' ? '៛ KHR' : '$ USD'}</button>
+                                            ))}
+                                        </span>
+                                        <input
+                                            type="number"
+                                            className="search-input"
+                                            style={{ flex: 1, padding: '8px 12px' }}
+                                            value={salePriceTyped}
+                                            step={salePriceCurrency === 'KHR' ? '100' : '0.01'}
+                                            min="0"
+                                            placeholder={salePriceCurrency === 'KHR' ? '82000' : '0.00'}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                // Kept as typed: rewriting it ("10.0" -> "10") made
+                                                // 10.05 come out as 105. min="0" only styles the
+                                                // field, so a negative is refused here.
+                                                salePriceTouched.current = true;
+                                                if (val.trim().startsWith('-')) return;
+                                                setSalePriceTyped(val);
+                                            }}
+                                        />
+                                    </div>
+                                    {salePriceUsd !== null && salePriceCurrency === 'KHR' && (
+                                        <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '6px 0 0 0' }}>
+                                            {formatKhr(salePriceTypedNum)} @ {formatRate(rate)} = {formatUsd(salePriceUsd)}
+                                        </p>
+                                    )}
+                                    {salePriceWarning && (
+                                        <p role="alert" style={{ fontSize: '11px', color: '#B45309', margin: '6px 0 0 0', fontWeight: 600 }}>{amountWarningLine(salePriceWarning)}</p>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                        {/* Discount Section - Same as before */}
+                        <div style={{ marginBottom: '16px', opacity: salePriceOn ? 0.5 : 1 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', cursor: salePriceOn ? 'not-allowed' : 'pointer', marginBottom: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    disabled={salePriceOn}
                                     checked={formData.enableDiscount}
                                     onChange={e => setFormData({
                                         ...formData,
@@ -1367,10 +1535,17 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                             <span>សរុប (Subtotal)</span>
                             <span>${subtotal.toFixed(2)}</span>
                         </div>
-                        {formData.enableDiscount && (
+                        {(formData.enableDiscount || (salePriceUsd !== null && discount > 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px', color: '#EF4444' }}>
                                 <span>បញ្ចុះតម្លៃ</span>
                                 <span>-${discount.toFixed(2)}</span>
+                            </div>
+                        )}
+                        {salePriceUsd !== null && discount < 0 && (
+                            // Sold above the items' price: the difference is an extra charge.
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px', color: '#059669' }}>
+                                <span>បន្ថែមតម្លៃ</span>
+                                <span>+${(-discount).toFixed(2)}</span>
                             </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '20px', fontWeight: '800', color: 'var(--color-primary)' }}>
@@ -1379,7 +1554,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '600', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
                             <span>សរុបជាប្រាក់រៀល (KHR)</span>
-                            <span>{formatKhr(total * rate)}</span>
+                            <span>{formatKhr(salePriceRiel !== null ? salePriceRiel : total * rate)}</span>
                         </div>
                     </div>
                 </div>

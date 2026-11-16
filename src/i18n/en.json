@@ -4814,6 +4814,7 @@
           "page": "Page Source is required",
           "phone": "Phone number is required",
           "product": "Add at least one product",
+          "salePrice": "Enter the selling price, or untick it",
           "salesman": "Salesman is required",
           "shippingCompany": "Shipping Company is required"
         },
