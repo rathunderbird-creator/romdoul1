@@ -39,6 +39,14 @@ export const khrToUsd = (riel: number, rate: number): number =>
 export const usdToKhr = (usd: number, rate: number, step = 100): number =>
     Number.isFinite(usd) && rate > 0 ? Math.round((usd * rate) / step) * step : 0;
 
+// The riel a re-opened riel payment's form starts at: the riel received when
+// it still converts to the dollars booked (within `tolerance`), else the
+// dollars booked at the rate it was taken at, to the riel, not the 100: that
+// converts back to the same cents, so saving the form unchanged books the
+// same dollars.
+export const rielToReopen = (riel: number, rate: number, bookedUsd: number, tolerance = 0.005): number =>
+    Math.abs(khrToUsd(riel, rate) - bookedUsd) <= tolerance ? Math.round(riel) : usdToKhr(bookedUsd, rate, 1);
+
 export const formatKhr = (n: number): string => '៛' + Math.round(Number(n) || 0).toLocaleString('en-US');
 export const formatUsd = (n: number): string => {
     const v = Number(n) || 0;

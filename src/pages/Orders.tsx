@@ -31,7 +31,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
 import { mapSaleEntity } from '../utils/mapper';
-import { accountCurrency, formatKhr, formatMoneyLine, isKhrRow, khrMeta, khrToUsd, shopRate, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { accountCurrency, formatKhr, formatMoneyLine, formatUsd, isKhrRow, khrMeta, khrToUsd, rielToReopen, shopRate, SNAP_TOLERANCE_USD, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { roundCents } from '../utils/money';
 import MoneyInput from '../components/MoneyInput';
 import CashBankOptions from '../components/CashBankOptions';
@@ -39,7 +39,7 @@ import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
 import { useAccounting } from '../hooks/useAccounting';
 import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
 import * as XLSX from 'xlsx';
-import type { Sale, CartItem } from '../types';
+import type { Sale, CartItem, PaidMoney } from '../types';
 import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../utils/liveColumnResize';
 import { useLanguage } from '../context/LanguageContext';
 import { tNow, fill } from '../i18n/translate';
@@ -875,6 +875,33 @@ const isOrderLocked = (order: Sale) => LOCKED_ORDER_STATUSES.includes(order.ship
 const lockedOrderMessage = (order: Sale) =>
     tNow('ui.orders.msg.locked', { status: statusText(order.shipping?.status || '') });
 
+// The income category each kind of order payment is booked under.
+const PAID_CATEGORY: Record<PaymentKind, string> = { Paid: 'លក់រាយ', Deposit: 'កក់ប្រាក់', PdFee: 'ថ្លៃដឹក' };
+type PaymentKind = 'Paid' | 'Deposit' | 'PdFee';
+
+// How an order's payment of this kind was received, from its income rows:
+// dollars, or riel at its rate (the riel summed over the rows, e.g. a
+// deposit and its top-up taken at the same rate). undefined when that can't
+// be told: no row, rows that don't add up to the dollars booked (an older
+// row not linked to the order, a duplicate), rows in both currencies or at
+// different rates, or a store without the currency columns. The form then
+// opens as it always did.
+async function paidMoneyOf(orderId: string, kind: PaymentKind, bookedUsd: number): Promise<PaidMoney | undefined> {
+    try {
+        const { data, error } = await supabase.from('transactions')
+            .select('amount, currency, original_amount, exchange_rate')
+            .eq('order_id', orderId).eq('type', 'Income').eq('category', PAID_CATEGORY[kind]);
+        if (error || !data || data.length === 0) return undefined;
+        if (Math.abs(data.reduce((s, r) => s + (Number(r.amount) || 0), 0) - bookedUsd) > 0.005) return undefined;
+        if (data.every(r => r.currency !== 'KHR')) return { currency: 'USD' };
+        const rate = Number(data[0].exchange_rate);
+        if (!data.every(r => isKhrRow(r) && Number(r.exchange_rate) === rate)) return undefined;
+        return { currency: 'KHR', original_amount: data.reduce((s, r) => s + Number(r.original_amount), 0), exchange_rate: rate };
+    } catch {
+        return undefined;
+    }
+}
+
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
@@ -1498,6 +1525,40 @@ const Orders: React.FC = () => {
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
     const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
     const [deliveryFeeTargetOrder, setDeliveryFeeTargetOrder] = useState<Sale | null>(null);
+    // How the payment being re-opened was received (paidMoneyOf), so its
+    // form starts in that currency.
+    const [paidMoney, setPaidMoney] = useState<{ orderId: string; kind: PaymentKind; money: PaidMoney } | null>(null);
+    const paidFor = (order: Sale | null, kind: PaymentKind): PaidMoney | undefined =>
+        order && paidMoney && paidMoney.orderId === order.id && paidMoney.kind === kind ? paidMoney.money : undefined;
+    const settlePaid = paidFor(paymentMethodTargetOrder, 'Paid');
+    const settleRiel = settlePaid?.currency === 'KHR' ? settlePaid : undefined;
+    // Opens the Settle Payment / Deposit / Delivery Fee form. Re-opening a
+    // payment already booked (Paid on a Paid order, Deposit on an order with
+    // a deposit, PdFee on a PdFee order) first reads how it was received.
+    // Only the latest opening counts: a lookup that comes back after another
+    // opening (or after the form was closed) is dropped, so a slow reply can
+    // never open, switch or reset a form.
+    const paymentOpenSeq = useRef(0);
+    const openPaymentForm = async (order: Sale, kind: PaymentKind) => {
+        const seq = ++paymentOpenSeq.current;
+        const status = String(order.paymentStatus || '');
+        const booked = !claimOpen(order) && (kind === 'Deposit' ? (order.depositAmount || 0) > 0
+            : kind === 'Paid' ? ['Paid', 'Settled', 'Paid/Settled'].includes(status) : status === kind);
+        const deposit = order.depositAmount || 0;
+        const bookedUsd = kind === 'Deposit' ? deposit
+            : kind === 'Paid' ? Math.max(0, (Number(order.total) || 0) - deposit) : (order.amountReceived || 0);
+        const money = booked ? await paidMoneyOf(order.id, kind, bookedUsd) : undefined;
+        if (seq !== paymentOpenSeq.current) return;
+        setPaidMoney(money ? { orderId: order.id, kind, money } : null);
+        if (kind === 'Paid') {
+            setPaymentMethodTargetOrder(order);
+            setIsPaymentMethodModalOpen(true);
+        } else if (kind === 'Deposit') {
+            setDepositTargetOrder(order);
+        } else {
+            setDeliveryFeeTargetOrder(order);
+        }
+    };
 
     // Mobile: the filter bar is replaced by a right-side slide-in drawer.
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
@@ -2256,36 +2317,54 @@ const Orders: React.FC = () => {
         fetchOrders();
     }, [fetchOrders]);
 
-    // Riel (KHR) payments of the orders on screen, for the small ៛ line under
-    // the Received amount: the order's income rows tagged KHR (currency /
-    // original_amount / exchange_rate, migrations/add_khr_currency.sql),
-    // summed per order. A store without those columns, or without
-    // transactions.order_id, just shows no riel line.
-    const [khrPaid, setKhrPaid] = useState<Record<string, { riel: number; title: string }>>({});
+    // Income rows of the orders on screen, for the small ៛ line under the
+    // Received amount: per order and income category, the riel of the rows
+    // tagged KHR (currency / original_amount / exchange_rate,
+    // migrations/add_khr_currency.sql) and the dollars of the others. A store
+    // without those columns, or without transactions.order_id, just shows no
+    // riel line.
+    type IncomeSplit = { riel: number; usd: number; lines: string[] };
+    const [orderIncome, setOrderIncome] = useState<Record<string, Record<string, IncomeSplit>>>({});
     useEffect(() => {
         const ids = serverOrders.map(o => o.id);
-        if (ids.length === 0) { setKhrPaid({}); return; }
+        if (ids.length === 0) { setOrderIncome({}); return; }
         let cancelled = false;
         (async () => {
-            const byOrder: Record<string, { riel: number; title: string }> = {};
+            const byOrder: Record<string, Record<string, IncomeSplit>> = {};
             for (let i = 0; i < ids.length; i += 200) {
                 const { data, error } = await supabase.from('transactions')
-                    .select('order_id, amount, currency, original_amount, exchange_rate')
-                    .eq('type', 'Income').eq('currency', 'KHR').in('order_id', ids.slice(i, i + 200));
+                    .select('order_id, category, amount, currency, original_amount, exchange_rate')
+                    .eq('type', 'Income').in('order_id', ids.slice(i, i + 200));
                 if (error) return;
                 for (const r of data || []) {
-                    if (!isKhrRow(r)) continue;
-                    const cur = byOrder[r.order_id] || { riel: 0, title: '' };
-                    byOrder[r.order_id] = {
-                        riel: cur.riel + Number(r.original_amount),
-                        title: (cur.title ? cur.title + '\n' : '') + formatMoneyLine(r),
-                    };
+                    const cats = (byOrder[r.order_id] ||= {});
+                    const s = (cats[r.category] ||= { riel: 0, usd: 0, lines: [] });
+                    if (isKhrRow(r)) s.riel += Number(r.original_amount);
+                    else s.usd += Number(r.amount) || 0;
+                    s.lines.push(formatMoneyLine(r));
                 }
             }
-            if (!cancelled) setKhrPaid(byOrder);
+            if (!cancelled) setOrderIncome(byOrder);
         })();
         return () => { cancelled = true; };
     }, [serverOrders]);
+    // The riel behind the Received figure, when any of it came in riel: the
+    // income of the payments that figure shows (the deposit for a Deposit,
+    // deposit + settlement for Paid, the fee for PdFee; nothing for orders
+    // whose figure is still owed), with any dollar part after it.
+    const rielReceived = (order: Sale): { text: string; title: string } | null => {
+        const cats = orderIncome[order.id];
+        const status = String(order.paymentStatus || '');
+        const kinds: PaymentKind[] = status === 'Deposit' ? ['Deposit']
+            : ['Paid', 'Settled', 'Paid/Settled'].includes(status) ? ['Deposit', 'Paid']
+            : status === 'PdFee' ? ['PdFee'] : [];
+        if (!cats || kinds.length === 0) return null;
+        const parts = kinds.map(k => cats[PAID_CATEGORY[k]]).filter((s): s is IncomeSplit => !!s);
+        const riel = parts.reduce((a, s) => a + s.riel, 0);
+        if (riel <= 0) return null;
+        const usd = roundCents(parts.reduce((a, s) => a + s.usd, 0));
+        return { text: formatKhr(riel) + (usd > 0 ? ` + ${formatUsd(usd)}` : ''), title: parts.flatMap(s => s.lines).join('\n') };
+    };
 
     // Carrier statuses for the rows on screen: pull the cached rows, then on
     // desktop quietly refresh the stale ones (checked > 6h ago; never delivered
@@ -3922,18 +4001,17 @@ const Orders: React.FC = () => {
                                             if (rejectClaimIfUnpaid(order, status)) return;
                                             const updates: any = { paymentStatus: status };
                                             if (status === 'Deposit') {
-                                                setDepositTargetOrder(order);
+                                                void openPaymentForm(order, 'Deposit');
                                                 return;
                                             }
                                             if (status === 'PdFee') {
-                                                setDeliveryFeeTargetOrder(order);
+                                                void openPaymentForm(order, 'PdFee');
                                                 return;
                                             }
                                             if (status === 'Paid' || status === 'Settled') {
                                                 // Same flow as desktop: capture Pay By + settle date
                                                 // in the settle modal instead of silently defaulting.
-                                                setPaymentMethodTargetOrder(order);
-                                                setIsPaymentMethodModalOpen(true);
+                                                void openPaymentForm(order, 'Paid');
                                                 return;
                                             } else if (status === 'Get File') {
                                                 // Same as bulk edit: keep a deposit visible
@@ -4284,7 +4362,7 @@ const Orders: React.FC = () => {
                                                                         <div style={{ fontSize: '11px', lineHeight: 1.2 }}>{formatKhr(Number(order.paymentClaim!.original_amount))}</div>
                                                                     )}
                                                                 </td>
-                                                            ) : <td key={colId} title={khrPaid[order.id]?.title} style={{
+                                                            ) : <td key={colId} title={rielReceived(order)?.title} style={{
                                                                 ...cellStyle,
                                                                 textAlign: 'right',
                                                                 // Blue = money in hand (fully paid, a deposit, or a delivery fee on an
@@ -4293,9 +4371,9 @@ const Orders: React.FC = () => {
                                                             }}>${(order.paymentStatus === 'Deposit'
                                                                 ? (order.depositAmount || order.amountReceived || 0)
                                                                 : (order.amountReceived ?? order.total)).toFixed(2)}
-                                                                {khrPaid[order.id] && (
+                                                                {rielReceived(order) && (
                                                                     // Paid in riel: the riel received, smaller, under the USD.
-                                                                    <div style={{ fontSize: '11px', lineHeight: 1.2, color: 'var(--color-text-secondary)' }}>{formatKhr(khrPaid[order.id].riel)}</div>
+                                                                    <div style={{ fontSize: '11px', lineHeight: 1.2, color: 'var(--color-text-secondary)' }}>{rielReceived(order)!.text}</div>
                                                                 )}</td>;
                                                             case 'payStatus':
                                                                 return (
@@ -4315,14 +4393,13 @@ const Orders: React.FC = () => {
                                                                                 if (rejectClaimIfUnpaid(order, newStatus)) return;
                                                                                 const updates: any = { paymentStatus: newStatus };
                                                                                 if (newStatus === 'Paid') {
-                                                                                    setPaymentMethodTargetOrder(order);
-                                                                                    setIsPaymentMethodModalOpen(true);
+                                                                                    void openPaymentForm(order, 'Paid');
                                                                                     return;
                                                                                 } else if (newStatus === 'Deposit') {
-                                                                                    setDepositTargetOrder(order);
+                                                                                    void openPaymentForm(order, 'Deposit');
                                                                                     return;
                                                                                 } else if (newStatus === 'PdFee') {
-                                                                                    setDeliveryFeeTargetOrder(order);
+                                                                                    void openPaymentForm(order, 'PdFee');
                                                                                     return;
                                                                                 } else if (newStatus === 'Get File') {
                                                                                     // Same as bulk edit: keep a deposit visible
@@ -5067,18 +5144,23 @@ const Orders: React.FC = () => {
             {paymentMethodTargetOrder && (
                 <SettlePaymentModal
                     isOpen={isPaymentMethodModalOpen}
-                    onClose={() => { setIsPaymentMethodModalOpen(false); setPaymentMethodTargetOrder(null); }}
+                    onClose={() => { paymentOpenSeq.current++; setIsPaymentMethodModalOpen(false); setPaymentMethodTargetOrder(null); }}
                     initialMethod={paymentMethodTargetOrder.paymentClaim?.method || paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.paymentClaim?.date || paymentMethodTargetOrder.settleDate || undefined}
                     amountDue={Math.max(0, paymentMethodTargetOrder.total - (paymentMethodTargetOrder.depositAmount || 0))}
                     orderTotal={paymentMethodTargetOrder.total}
                     khrExpected={paymentMethodTargetOrder.paymentClaim?.status === 'Paid' && paymentMethodTargetOrder.paymentClaim.currency === 'KHR'
                         ? paymentMethodTargetOrder.paymentClaim.original_amount
-                        : paymentMethodTargetOrder.customKhrAmount}
+                        : settleRiel
+                            // Re-opening a riel payment: the riel received, at its rate.
+                            ? rielToReopen(settleRiel.original_amount, settleRiel.exchange_rate,
+                                Math.max(0, paymentMethodTargetOrder.total - (paymentMethodTargetOrder.depositAmount || 0)), SNAP_TOLERANCE_USD)
+                            : paymentMethodTargetOrder.customKhrAmount}
                     preferInitialMethod={!!paymentMethodTargetOrder.paymentClaim?.method}
                     preferRiel={paymentMethodTargetOrder.paymentClaim?.status === 'Paid' && paymentMethodTargetOrder.paymentClaim.currency === 'KHR'
                         ? { rate: paymentMethodTargetOrder.paymentClaim.exchange_rate }
-                        : undefined}
+                        : settleRiel ? { rate: settleRiel.exchange_rate } : undefined}
+                    initialAccountId={settlePaid ? paymentMethodTargetOrder.depositAccountId : undefined}
                     description={paymentMethodTargetOrder.paymentClaim
                         ? fill(t('ui.orders.claim.confirmingDesc'), {
                             kind: paymentMethodTargetOrder.paymentClaim.status === 'Paid' ? t('ui.orders.claim.payment') : t('ui.orders.claim.deposit'),
@@ -5158,9 +5240,10 @@ const Orders: React.FC = () => {
             {/* Deposit Modal */}
             <DepositModal
                 order={depositTargetOrder}
-                onClose={() => setDepositTargetOrder(null)}
+                onClose={() => { paymentOpenSeq.current++; setDepositTargetOrder(null); }}
                 showDepositAccount
                 claim={depositTargetOrder?.paymentClaim?.status === 'Deposit' ? depositTargetOrder.paymentClaim : undefined}
+                paid={paidFor(depositTargetOrder, 'Deposit')}
                 onConfirm={({ amount, method, date, depositAccountId, depositAccountName, money }) => {
                     if (!depositTargetOrder) return;
                     updateOrder(depositTargetOrder.id, {
@@ -5189,7 +5272,8 @@ const Orders: React.FC = () => {
             {/* Delivery Fee Modal */}
             <DeliveryFeeModal
                 order={deliveryFeeTargetOrder}
-                onClose={() => setDeliveryFeeTargetOrder(null)}
+                paid={paidFor(deliveryFeeTargetOrder, 'PdFee')}
+                onClose={() => { paymentOpenSeq.current++; setDeliveryFeeTargetOrder(null); }}
                 onConfirm={({ amount, method, date, depositAccountId, depositAccountName, money }) => {
                     if (!deliveryFeeTargetOrder) return;
                     updateOrder(deliveryFeeTargetOrder.id, {

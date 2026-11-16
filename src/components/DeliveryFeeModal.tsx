@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { X, Truck, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
-import type { Sale } from '../types';
+import type { PaidMoney, Sale } from '../types';
 import MoneyInput from './MoneyInput';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
 import CashBankOptions from './CashBankOptions';
 import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
-import { accountCurrency, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { accountCurrency, rielToReopen, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { useTx } from './useTx';
 
 // The most a delivery fee plausibly is, in USD: above it the field warns
@@ -19,6 +19,9 @@ interface DeliveryFeeModalProps {
     onClose: () => void;
     // amount is USD; money carries the riel amount and rate when paid in riel.
     onConfirm: (fee: { amount: number; method: string; date: string; depositAccountId?: string; depositAccountName?: string; money: MoneyMeta }) => void;
+    // The fee already booked, as it was received (its income row):
+    // re-opening the form starts in that currency, on an account in it.
+    paid?: PaidMoney;
 }
 
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -26,7 +29,7 @@ const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset
 // Records a cancelled order's delivery-fee-only payment (paymentStatus
 // 'PdFee') — the order itself isn't fulfilled, but the customer paid for
 // delivery, and that gets booked straight to Revenue (not the order total).
-const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onConfirm }) => {
+const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onConfirm, paid }) => {
     const { paymentMethods, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
     const tx = useTx();
@@ -52,19 +55,26 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
             setMethod(order.paymentStatus === 'PdFee' && order.paymentMethod ? order.paymentMethod : (bank || paymentMethods[0] || 'Bank'));
             setDate(order.paymentStatus === 'PdFee' && order.settleDate ? order.settleDate.slice(0, 10) : today());
             // Bank first, as the Pay By above; never a riel account by default.
-            const accountId = defaultCashBankAccountId(paymentAccounts, {
-                preferredId: order.paymentStatus === 'PdFee' ? order.depositAccountId : undefined,
-            });
+            // A fee already booked reopens in the currency it was received in,
+            // on an account in that currency (the one it went into, when it
+            // still is).
+            const preferredId = order.paymentStatus === 'PdFee' ? order.depositAccountId : undefined;
+            const booked = order.paymentStatus === 'PdFee' ? paid : undefined;
+            const accountId = (booked ? defaultCashBankAccountId(paymentAccounts, { currency: booked.currency, preferredId }) : '')
+                || defaultCashBankAccountId(paymentAccounts, { preferredId });
             setDepositAccountId(accountId);
             // A correction of a fee in a riel account reopens in riel.
             const cur = accountCurrency(paymentAccounts.find(a => a.id === accountId));
             const prev = order.paymentStatus === 'PdFee' && order.amountReceived ? order.amountReceived : '';
             field.reset(cur === 'KHR'
-                ? { amount: prev === '' ? '' : usdToKhr(Number(prev), field.shopRate), currency: 'KHR' }
+                ? (booked?.currency === 'KHR' && prev !== ''
+                    // The riel received, at its own rate.
+                    ? { amount: rielToReopen(booked.original_amount, booked.exchange_rate, Number(prev)), currency: 'KHR', rate: booked.exchange_rate }
+                    : { amount: prev === '' ? '' : usdToKhr(Number(prev), field.shopRate), currency: 'KHR' })
                 : { amount: prev, currency: 'USD' });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [order, paymentAccounts]);
+    }, [order, paymentAccounts, paid]);
 
     const coupling = useAccountCurrency(field, paymentAccounts, depositAccountId, setDepositAccountId);
 

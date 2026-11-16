@@ -126,6 +126,10 @@ export interface Restock {
 export type MoneyCurrency = 'USD' | 'KHR';
 // A payment's riel details (src/utils/currency.ts MoneyMeta).
 export type MoneyRecord = { currency: MoneyCurrency; original_amount: number; exchange_rate: number };
+// How an order's payment already booked was received, read from its income
+// row: dollars, or riel with the riel amount and the rate it was taken at.
+// Re-opening that payment's form starts in the same currency.
+export type PaidMoney = { currency: 'USD' } | { currency: 'KHR'; original_amount: number; exchange_rate: number };
 
 export interface Transaction {
     id: string;
