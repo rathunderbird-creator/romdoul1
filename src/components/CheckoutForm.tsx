@@ -1269,7 +1269,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
                                         ប្រាក់ទទួលបាន ({rielMode ? '៛' : '$'})
                                         <span style={{ display: 'inline-flex', border: '1px solid var(--color-border)', borderRadius: '6px', overflow: 'hidden' }}>
-                                            {(['USD', 'KHR'] as const).map(c => (
+                                            {(['KHR', 'USD'] as const).map(c => (
                                                 <button
                                                     key={c}
                                                     type="button"
