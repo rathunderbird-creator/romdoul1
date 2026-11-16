@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { X, Wallet, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
-import type { PaymentClaim, Sale } from '../types';
+import type { PaidMoney, PaymentClaim, Sale } from '../types';
 import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
 import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
-import { accountCurrency, khrMeta, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { accountCurrency, khrMeta, rielToReopen, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { useTx } from './useTx';
 
 interface DepositModalProps {
@@ -22,12 +22,15 @@ interface DepositModalProps {
     // A Salesman's unconfirmed deposit on this order: the form starts from
     // what they entered (amount, riel, method, date) for the confirmer to check.
     claim?: PaymentClaim;
+    // The deposit already booked, as it was received (its income rows):
+    // re-opening the form starts in that currency, on an account in it.
+    paid?: PaidMoney;
 }
 
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
 // Records the upfront deposit for a retail order (rest is collected via COD).
-const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, showDepositAccount = false, claim }) => {
+const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, showDepositAccount = false, claim, paid }) => {
     const { paymentMethods, khrExchangeRate } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
     // A deposit is less than the order total, so above it is a typo (riel).
@@ -62,7 +65,12 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
             // By above; never a riel account by default (a deposit the Salesman
             // took in riel starts on a riel account, when there is one).
             const claimRiel = fromClaim?.currency === 'KHR' && (fromClaim.original_amount || 0) > 0;
+            // A deposit already booked reopens in the currency it was received
+            // in, on an account in that currency (the one it went into, when
+            // it still is).
+            const booked = !fromClaim && showDepositAccount && order.depositAmount && order.depositAmount > 0 ? paid : undefined;
             const accountId = (claimRiel && showDepositAccount ? defaultCashBankAccountId(paymentAccounts, { currency: 'KHR' }) : '')
+                || (booked ? defaultCashBankAccountId(paymentAccounts, { currency: booked.currency, preferredId: order.depositAccountId }) : '')
                 || defaultCashBankAccountId(paymentAccounts, { preferredId: order.depositAccountId });
             setDepositAccountId(accountId);
             const prev = order.depositAmount && order.depositAmount > 0 ? order.depositAmount : (fromClaim ? fromClaim.amount : '');
@@ -70,11 +78,14 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
             field.reset(inRiel
                 ? (claimRiel
                     ? { amount: fromClaim!.original_amount!, currency: 'KHR', rate: fromClaim!.exchange_rate || field.shopRate }
-                    : { amount: prev === '' ? '' : usdToKhr(Number(prev), field.shopRate), currency: 'KHR' })
+                    : booked?.currency === 'KHR' && prev !== ''
+                        // The riel received, at its own rate.
+                        ? { amount: rielToReopen(booked.original_amount, booked.exchange_rate, Number(prev)), currency: 'KHR', rate: booked.exchange_rate }
+                        : { amount: prev === '' ? '' : usdToKhr(Number(prev), field.shopRate), currency: 'KHR' })
                 : { amount: prev, currency: 'USD' });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [order, paymentAccounts]);
+    }, [order, paymentAccounts, paid]);
 
     const coupling = useAccountCurrency(field, showDepositAccount ? paymentAccounts : [], depositAccountId, setDepositAccountId);
 

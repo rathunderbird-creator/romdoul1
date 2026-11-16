@@ -48,6 +48,9 @@ interface SettlePaymentModalProps {
     preferInitialMethod?: boolean;
     // A riel payment being confirmed: start on a riel account, at this rate.
     preferRiel?: { rate?: number };
+    // Re-opening a payment already booked: the account it went into, used
+    // when it is in the currency the form starts in.
+    initialAccountId?: string;
     title?: string;
     description?: string;
 }
@@ -60,6 +63,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     initialDate,
     preferInitialMethod = false,
     preferRiel,
+    initialAccountId,
     amountDue,
     khrExpected,
     orderTotal,
@@ -129,10 +133,13 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
             if (prev && paymentAccounts.some(a => a.id === prev)) return prev;
             // Bank is the default Deposited into account too, same idea as Pay
             // By; never a riel account by default, except when confirming a
-            // payment taken in riel.
-            return (preferRiel ? defaultCashBankAccountId(paymentAccounts, { currency: 'KHR' }) : '') || defaultCashBankAccountId(paymentAccounts);
+            // payment taken in riel. A payment being re-opened starts on the
+            // account it went into, when that is in the starting currency.
+            const preferredId = initialAccountId || undefined;
+            return (preferRiel ? defaultCashBankAccountId(paymentAccounts, { currency: 'KHR', preferredId }) : '')
+                || defaultCashBankAccountId(paymentAccounts, { currency: 'USD', preferredId });
         });
-    }, [isOpen, paymentAccounts, preferRiel]);
+    }, [isOpen, paymentAccounts, preferRiel, initialAccountId]);
 
     // What the field starts at in each currency: the amount due in dollars;
     // in riel what the shop expected to collect, else the due at the rate.
