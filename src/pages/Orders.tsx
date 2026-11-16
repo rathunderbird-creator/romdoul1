@@ -31,7 +31,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { supabase } from '../lib/supabase';
 import { fetchAll } from '../utils/fetchAll';
 import { mapSaleEntity } from '../utils/mapper';
-import { accountCurrency, khrMeta, khrToUsd, shopRate, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { accountCurrency, formatKhr, formatMoneyLine, isKhrRow, khrMeta, khrToUsd, shopRate, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { roundCents } from '../utils/money';
 import MoneyInput from '../components/MoneyInput';
 import CashBankOptions from '../components/CashBankOptions';
@@ -2256,6 +2256,37 @@ const Orders: React.FC = () => {
         fetchOrders();
     }, [fetchOrders]);
 
+    // Riel (KHR) payments of the orders on screen, for the small ៛ line under
+    // the Received amount: the order's income rows tagged KHR (currency /
+    // original_amount / exchange_rate, migrations/add_khr_currency.sql),
+    // summed per order. A store without those columns, or without
+    // transactions.order_id, just shows no riel line.
+    const [khrPaid, setKhrPaid] = useState<Record<string, { riel: number; title: string }>>({});
+    useEffect(() => {
+        const ids = serverOrders.map(o => o.id);
+        if (ids.length === 0) { setKhrPaid({}); return; }
+        let cancelled = false;
+        (async () => {
+            const byOrder: Record<string, { riel: number; title: string }> = {};
+            for (let i = 0; i < ids.length; i += 200) {
+                const { data, error } = await supabase.from('transactions')
+                    .select('order_id, amount, currency, original_amount, exchange_rate')
+                    .eq('type', 'Income').eq('currency', 'KHR').in('order_id', ids.slice(i, i + 200));
+                if (error) return;
+                for (const r of data || []) {
+                    if (!isKhrRow(r)) continue;
+                    const cur = byOrder[r.order_id] || { riel: 0, title: '' };
+                    byOrder[r.order_id] = {
+                        riel: cur.riel + Number(r.original_amount),
+                        title: (cur.title ? cur.title + '\n' : '') + formatMoneyLine(r),
+                    };
+                }
+            }
+            if (!cancelled) setKhrPaid(byOrder);
+        })();
+        return () => { cancelled = true; };
+    }, [serverOrders]);
+
     // Carrier statuses for the rows on screen: pull the cached rows, then on
     // desktop quietly refresh the stale ones (checked > 6h ago; never delivered
     // parcels; at most 40) so statuses stay current without anyone clicking.
@@ -4249,8 +4280,11 @@ const Orders: React.FC = () => {
                                                                 // Entered by a Salesman, not confirmed: gray, not counted.
                                                                 <td key={colId} style={{ ...cellStyle, textAlign: 'right', color: '#9CA3AF', fontStyle: 'italic' }} title={claimTooltip(order.paymentClaim!)}>
                                                                     ${order.paymentClaim!.amount.toFixed(2)}
+                                                                    {order.paymentClaim!.currency === 'KHR' && Number(order.paymentClaim!.original_amount) > 0 && (
+                                                                        <div style={{ fontSize: '11px', lineHeight: 1.2 }}>{formatKhr(Number(order.paymentClaim!.original_amount))}</div>
+                                                                    )}
                                                                 </td>
-                                                            ) : <td key={colId} style={{
+                                                            ) : <td key={colId} title={khrPaid[order.id]?.title} style={{
                                                                 ...cellStyle,
                                                                 textAlign: 'right',
                                                                 // Blue = money in hand (fully paid, a deposit, or a delivery fee on an
@@ -4258,7 +4292,11 @@ const Orders: React.FC = () => {
                                                                 color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee') ? '#2563EB' : '#DC2626'
                                                             }}>${(order.paymentStatus === 'Deposit'
                                                                 ? (order.depositAmount || order.amountReceived || 0)
-                                                                : (order.amountReceived ?? order.total)).toFixed(2)}</td>;
+                                                                : (order.amountReceived ?? order.total)).toFixed(2)}
+                                                                {khrPaid[order.id] && (
+                                                                    // Paid in riel: the riel received, smaller, under the USD.
+                                                                    <div style={{ fontSize: '11px', lineHeight: 1.2, color: 'var(--color-text-secondary)' }}>{formatKhr(khrPaid[order.id].riel)}</div>
+                                                                )}</td>;
                                                             case 'payStatus':
                                                                 return (
                                                                     <td key={colId} style={{
