@@ -68,7 +68,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     // (custom_khr_amount), so the receipt shows the riel typed. Unticked, the
     // total is the items' price (less any discount), as before.
     const [salePriceOn, setSalePriceOn] = useState(false);
-    const [salePriceCurrency, setSalePriceCurrency] = useState<'USD' | 'KHR'>('USD');
+    const [salePriceCurrency, setSalePriceCurrency] = useState<'USD' | 'KHR'>('KHR');
     const [salePriceTyped, setSalePriceTyped] = useState('');
     // Set once the price is typed, ticked or switched in this opening.
     const salePriceTouched = useRef(false);
@@ -406,7 +406,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 && Math.abs(khrToUsd(savedRiel, rate) - savedTotal) < 0.005;
             const sold = savedDiscount < 0;
             setSalePriceOn(sold);
-            setSalePriceCurrency(sold && rielIsTotal ? 'KHR' : 'USD');
+            // Riel by default; a price saved in dollars reopens in dollars.
+            setSalePriceCurrency(!sold || rielIsTotal ? 'KHR' : 'USD');
             setSalePriceTyped(sold ? String(rielIsTotal ? Math.round(savedRiel) : savedTotal) : '');
             salePriceTouched.current = false;
             salePriceAuto.current = sold
@@ -421,7 +422,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 customerCare: defaultCustomerCare // Ensure default is applied
             });
             setSalePriceOn(false);
-            setSalePriceCurrency('USD');
+            setSalePriceCurrency('KHR');
             setSalePriceTyped('');
             salePriceTouched.current = false;
             salePriceAuto.current = null;
