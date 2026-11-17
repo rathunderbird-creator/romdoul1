@@ -3366,6 +3366,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (updates.customer?.name) pUpdates.customer_name = updates.customer.name;
             if (updates.customer?.phone) pUpdates.customer_phone = updates.customer.phone;
             if (updates.shipping?.company) pUpdates.shipping_company = updates.shipping.company;
+            // The riel details of the money this save books or corrects, with
+            // the income category they belong to: the database writes them to
+            // the corrected row and its ledger entry (a Draft rewritten, a
+            // Posted one's TX-<tx>-ADJ in riel at the row's rate) on a store
+            // that has the columns; the tagging below still covers the rest.
+            if (opts?.money) {
+                pUpdates.money = {
+                    currency: opts.money.currency,
+                    original_amount: opts.money.original_amount,
+                    exchange_rate: opts.money.exchange_rate,
+                    ...(opts.money.category ? { category: opts.money.category } : {}),
+                };
+            }
             // The deposit this save decided from (the fresh read above): the
             // database refuses when the stored deposit has moved since, so a
             // second stale screen can't quietly lower the deposit under the

@@ -190,9 +190,11 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
                             setSubmitted(true);
                             const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
                             // A top-up books only the difference over the deposit
-                            // already taken, so its riel is the difference too.
+                            // already taken, so its riel is the difference too. A LOWERED
+                            // deposit corrects the deposit row itself, so it carries the
+                            // whole riel figure as typed.
                             const prevUsd = order.depositAmount && order.depositAmount > 0 ? order.depositAmount : 0;
-                            const money = field.meta.currency === 'KHR' && prevUsd > 0
+                            const money = field.meta.currency === 'KHR' && prevUsd > 0 && amt > prevUsd
                                 ? khrMeta(Math.max(0, field.meta.original_amount - usdToKhr(prevUsd, field.meta.exchange_rate, 1)), field.meta.exchange_rate)
                                 : field.meta;
                             onConfirm({
