@@ -3,7 +3,7 @@
 // the cash/bank side posts a balanced journal entry, which the Journal
 // Entries page, Income Statement and Cash In / Out then all see.
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Trash2, RefreshCw, AlertTriangle, Check, CircleDollarSign, TrendingDown, Search, Eye, Printer, Download, Pencil } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, AlertTriangle, Check, CircleDollarSign, TrendingDown, Search, Eye, Printer, Download, Pencil, Undo2 } from 'lucide-react';
 import { Modal } from '../../components';
 import DateRangePicker from '../../components/DateRangePicker';
 import FilterDropdown from '../../components/FilterDropdown';
@@ -18,8 +18,9 @@ import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber } from '../../utils/journalEntryNumber';
+import { isSystemEntry, reversalReference, systemEntryKind, type SystemEntryKind } from '../../utils/systemEntries';
 import { useColumnWidths } from '../pageIncomePrediction/useColumnWidths';
-import type { ChartOfAccount } from '../../types';
+import type { ChartOfAccount, JournalEntry } from '../../types';
 import MoneyInput from '../../components/MoneyInput';
 import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
 import { CURRENCY_KEYS, formatMoneyLine, isKhrAccountName, isKhrRow, isMissingCurrencyColumnError } from '../../utils/currency';
@@ -78,9 +79,15 @@ interface EntryRow {
     exchange_rate?: number | null;
     status: string;
     ref: string;
-    // Created by a payment flow (reference_id 'TX-…': retail receipts/deposits,
-    // supplier and wholesale payments, imports) — managed from its own page.
+    // The raw reference_id (ref above prefers the entry_number) — the base
+    // of a reversal's reference.
+    refId: string;
+    // Booked by the system (utils/systemEntries.ts: payment flows 'TX-…',
+    // COGS, wholesale invoices, purchases, stock adjustments, FIFO
+    // revaluation…) — view, print or reverse here, never edit or delete.
     isSystem: boolean;
+    // Which system flow booked it; null for an entry recorded by hand.
+    kind: SystemEntryKind | null;
     source: EntrySource;
     lineCount: number;
 }
@@ -114,9 +121,10 @@ const StatusChip: React.FC<{ status: string }> = ({ status }) => {
     );
 };
 
-// Marks entries written by the payment flows (retail receipts/deposits,
-// supplier and wholesale payments) — viewable here, managed on their own page.
-const SystemChip: React.FC = () => {
+// Marks entries the system booked (payment flows, COGS, wholesale invoices,
+// purchases, stock adjustments…), by kind — viewable, printable and
+// reversible here, never edited or deleted.
+const SystemChip: React.FC<{ kind: SystemEntryKind }> = ({ kind }) => {
     const { t } = useLanguage();
     return (
     <span
@@ -127,7 +135,7 @@ const SystemChip: React.FC = () => {
             // as ManualChip's amber, for the same look in both themes.
             color: '#1D4ED8', background: 'rgba(37, 99, 235, 0.12)',
             cursor: 'help', textTransform: 'uppercase', letterSpacing: '0.4px',
-        }}>{t('ui.accounting.re.chip.auto')}</span>
+        }}>{t('ui.accounting.re.chip.kind.' + kind)}</span>
     );
 };
 
@@ -191,7 +199,8 @@ const sourceOf = (ref: string, refId: string, description: string): EntrySource 
 // what the user expects on the other too), persisted via useColumnWidths.
 // Date fits the full YYYY-MM-DD, Reference a full JE-…-XXX-YYYYMMDD-NNN
 // number, Amount 7-digit figures, Status its chip + MANUAL + Post button,
-// Actions all four icons — nothing clips at the defaults.
+// Actions its four icons (Reverse replaces Edit once Posted) — nothing
+// clips at the defaults.
 const COL_DEFAULTS: Record<string, number> = {
     date: 124, ref: 208, description: 260, account: 180, counter: 180, amount: 160, status: 220, actions: 128,
 };
@@ -614,6 +623,10 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             const counterLines = moneySide.length > 0 ? moneySide : others;
             const counterIds = Array.from(new Set(counterLines.map(l => l.accountId)))
                 .sort((a, b) => (accountById.get(a)?.account_code || '').localeCompare(accountById.get(b)?.account_code || ''));
+            // ref falls back to the reference_id when the row has no
+            // entry_number; the helper only reads a real JE-… number from it.
+            const origin = { reference_id: entryLines[0].refId, entry_number: entryLines[0].ref };
+            const isSystem = isSystemEntry(origin);
             out.push({
                 entryId,
                 date: entryLines[0].date,
@@ -628,7 +641,9 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                 exchange_rate: entryLines[0].exchange_rate,
                 status: entryLines[0].status,
                 ref: entryLines[0].ref,
-                isSystem: entryLines[0].refId.startsWith('TX-'),
+                refId: entryLines[0].refId,
+                isSystem,
+                kind: isSystem ? systemEntryKind(origin) : null,
                 source: sourceOf(entryLines[0].ref, entryLines[0].refId, entryLines[0].description),
                 lineCount: entryLines.length,
             });
@@ -936,10 +951,72 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
         }
     };
 
+    // Reverse a Posted entry: a new Draft dated today with every line's debit
+    // and credit swapped, referenced '<original reference>-REV' (then
+    // '-REV-2', …), described "Reversal of <entry number>". Nothing is
+    // posted here — the owner reviews and posts it like any other Draft (it
+    // lands on the Journal Entries page: a reversal nets this page's amount
+    // below zero, so this list doesn't show it). This is the only way a
+    // system-booked entry changes from here: editing a COGS entry in place
+    // breaks the FIFO check, deleting a WSO-INV strands its A/R settlement.
+    const handleReverse = async (row: EntryRow) => {
+        if (!canReverse(row) || busyIds.has(row.entryId)) return;
+        const kind = row.kind ? t('ui.accounting.re.chip.kind.' + row.kind) : t('ui.accounting.re.kind.' + mode);
+        if (!confirm(fill(t('ui.accounting.re.confirm.reverseOne'), { kind, amount: fmt(row.amount), date: row.date }))) return;
+        markBusy(row.entryId, true);
+        let header: Partial<JournalEntry>;
+        let swapped: { account_id: string; debit: number; credit: number; description?: string }[];
+        try {
+            const ls = entryLinesOf(row.entryId);
+            if (ls.length === 0) throw new Error(t('ui.accounting.re.toast.reverseNoLines'));
+            const base = row.refId || row.ref || row.entryId;
+            // Every reference already derived from this one, so a second
+            // reversal (after the first was deleted and re-done, say) gets
+            // '-REV-2' instead of a duplicate.
+            const { data: existing, error: refErr } = await supabase
+                .from('journal_entries').select('reference_id').like('reference_id', `${base}-REV%`);
+            if (refErr) throw refErr;
+            const reference = reversalReference(base, (existing || []).map(r => String(r.reference_id)));
+            const today = todayYmd();
+            // A hand-made correction, so it's numbered MAN like Journal
+            // Entries' own — and the -REV reference plus a hand code is what
+            // marks it editable/deletable while still Draft.
+            const entryNumber = await nextJournalEntryNumber('MAN', today);
+            header = {
+                date: today,
+                description: `Reversal of ${row.ref || base}`,
+                reference_id: reference,
+                status: 'Draft',
+                ...(entryNumber ? { entry_number: entryNumber } : {}),
+                // A riel entry reverses in riel: same amount and rate.
+                ...(row.currency ? { currency: row.currency as JournalEntry['currency'], original_amount: row.original_amount ?? null, exchange_rate: row.exchange_rate ?? null } : {}),
+            };
+            swapped = ls.map(l => ({
+                account_id: l.accountId, debit: l.credit, credit: l.debit,
+                ...(l.lineDescription ? { description: l.lineDescription } : {}),
+            }));
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast(t('ui.accounting.re.toast.reverseFailed') + ': ' + msg, 'error');
+            markBusy(row.entryId, false);
+            return;
+        }
+        try {
+            await saveJournalEntry(header, swapped);
+            showToast(fill(t('ui.accounting.re.toast.reversed'), { ref: header.entry_number || header.reference_id || '' }), 'success');
+            setViewEntry(null);
+            refetch();
+        } catch {
+            // saveJournalEntry already toasts the failure.
+        } finally {
+            markBusy(row.entryId, false);
+        }
+    };
+
     // ── Bulk checkbox selection: Unpost (admin-only, Posted rows) / Delete
     // (Draft rows for anyone, Posted rows admin-only — same split as the
-    // single-row action above). Payment-flow entries stay out of both —
-    // managed from their own page, same as the single-row actions above. ──
+    // single-row action above). System-booked entries stay out of both —
+    // reversed, never edited or deleted, same as the single-row actions above. ──
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isBulkUnposting, setIsBulkUnposting] = useState(false);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
@@ -1046,10 +1123,14 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     // Edit stays Draft-only — Posted books aren't editable in place (record a
     // correcting entry instead). Delete is wider — Draft for anyone, Posted
     // for an admin only (deleting finalized books, same gate as Unpost).
-    // Payment-flow entries are never mutable here either way — managed from
-    // their own page.
+    // System-booked entries (utils/systemEntries.ts) are never mutable here
+    // either way — Reverse drafts the offsetting entry instead.
     const canEdit = (r: EntryRow) => !r.isSystem && r.status === 'Draft';
     const canDelete = (r: EntryRow) => !r.isSystem && (r.status === 'Draft' || isAdmin);
+    // Posted books (system-booked or by hand) are corrected by an offsetting
+    // entry, never in place — Reverse drafts that entry. A Draft is simply
+    // edited or deleted (hand) or left to its own flow (system).
+    const canReverse = (r: EntryRow) => r.status === 'Posted';
 
     const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
     const labelStyle: React.CSSProperties = { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' };
@@ -1386,13 +1467,14 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{r.date}</span>
                                         {r.ref && <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ref}</span>}
                                         <StatusChip status={r.status} />
-                                        {r.isSystem ? <SystemChip /> : <ManualChip />}
+                                        {r.isSystem && r.kind ? <SystemChip kind={r.kind} /> : <ManualChip />}
                                     </span>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
                                         <span style={{ fontWeight: 700, color: cfg.color, fontVariantNumeric: 'tabular-nums' }} title={isKhrRow(r) ? formatMoneyLine(r) : undefined}>{fmt(r.amount)}{isKhrRow(r) && <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{formatMoneyLine(r)}</span>}</span>
                                         {canEdit(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} />}
                                         <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} />
                                         <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} />
+                                        {canReverse(r) && <Undo2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleReverse(r)} aria-label={t('ui.accounting.re.aria.reverse')} />}
                                         {canDelete(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} />}
                                     </span>
                                 </div>
@@ -1479,7 +1561,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                         <td style={{ ...widthStyle('status'), padding: '14px 20px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                                                 <StatusChip status={r.status} />
-                                                {r.isSystem ? <SystemChip /> : <ManualChip />}
+                                                {r.isSystem && r.kind ? <SystemChip kind={r.kind} /> : <ManualChip />}
                                                 {r.status === 'Draft' && statusSupported && !r.isSystem && (
                                                     <button onClick={() => postEntry(r)} disabled={busyIds.has(r.entryId)} style={{ padding: '3px 10px', borderRadius: '7px', border: 'none', background: cfg.color, color: 'white', fontSize: '11px', fontWeight: 700, cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer', opacity: busyIds.has(r.entryId) ? 0.6 : 1 }}>{busyIds.has(r.entryId) ? '…' : t('ui.accounting.re.post')}</button>
                                                 )}
@@ -1490,6 +1572,7 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                                 {canEdit(r) && <Pencil size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => startEdit(r)} aria-label={t('ui.accounting.re.aria.edit')} />}
                                                 <Eye size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => setViewEntry(r)} aria-label={t('ui.accounting.re.aria.view')} />
                                                 <Printer size={15} color="var(--color-text-muted)" style={{ cursor: 'pointer' }} onClick={() => printEntry(r)} aria-label={t('ui.accounting.re.aria.print')} />
+                                                {canReverse(r) && <Undo2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleReverse(r)} aria-label={t('ui.accounting.re.aria.reverse')} />}
                                                 {canDelete(r) && <Trash2 size={15} color="var(--color-text-muted)" style={{ cursor: busyIds.has(r.entryId) ? 'wait' : 'pointer' }} onClick={() => handleDelete(r)} aria-label={t('ui.accounting.re.aria.delete')} />}
                                             </span>
                                         </td>
@@ -1656,6 +1739,15 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
                                 </table>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                                {canReverse(viewEntry) && (
+                                    <button
+                                        onClick={() => handleReverse(viewEntry)}
+                                        disabled={busyIds.has(viewEntry.entryId)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '13px', fontWeight: 600, cursor: busyIds.has(viewEntry.entryId) ? 'wait' : 'pointer' }}
+                                    >
+                                        <Undo2 size={15} /> {t('ui.accounting.re.reverse')}
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => printEntry(viewEntry)}
                                     style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '8px', border: 'none', background: cfg.color, color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
