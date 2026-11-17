@@ -32,6 +32,16 @@
 -- final and stays, with a notice telling the user to record a reversing
 -- entry manually. The income row itself is always removed.
 --
+-- Journal entries on a correction (LED-6): when a paid order's received
+-- amount, settle date or riel details are corrected, or a deposit is
+-- lowered, the income row's TX-<tx> entry follows it
+-- (wp_internal.op_sync_tx_entry): a Draft is rewritten in place (same
+-- entry number, COGS lines untouched); a POSTED one stays and the
+-- difference is booked as ONE Draft TX-<tx>-ADJ (rewritten on later
+-- corrections), with a notice. The app's riel details ride in
+-- p_updates.money and are written to the row and its entries when the
+-- store has the columns of add_khr_currency.sql.
+--
 -- Ordering with the shipping status: updateOrder runs the shipping change
 -- (set_order_shipping_status, which owns stock) FIRST and the payment save
 -- second. A refused shipping change therefore saves nothing at all, and a
@@ -406,9 +416,186 @@ BEGIN
 END;
 $$;
 
+-- Whether a table carries the riel columns of add_khr_currency.sql
+-- (currency / original_amount / exchange_rate). A store that has not run
+-- that file answers false, and the writes below are skipped.
+CREATE OR REPLACE FUNCTION wp_internal.op_has_currency_cols(p_table TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT EXISTS (SELECT 1 FROM pg_attribute
+                    WHERE attrelid = to_regclass('public.' || p_table) AND attname = 'exchange_rate' AND NOT attisdropped);
+$$;
+
+-- Writes a row's riel details (p_money: {"currency", "original_amount",
+-- "exchange_rate"}, as the app's MoneyMeta) when the table has the columns:
+-- KHR with its riel amount and rate, anything else back to NULL (= USD).
+-- A KHR without a riel amount or a positive rate (which the check
+-- constraint refuses) is left alone. Nothing with p_money NULL.
+CREATE OR REPLACE FUNCTION wp_internal.op_set_currency(p_table TEXT, p_id UUID, p_money JSONB)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_orig NUMERIC := NULLIF(p_money->>'original_amount', '')::NUMERIC;
+    v_rate NUMERIC := NULLIF(p_money->>'exchange_rate', '')::NUMERIC;
+BEGIN
+    IF p_money IS NULL OR p_id IS NULL OR NOT wp_internal.op_has_currency_cols(p_table) THEN RETURN; END IF;
+    IF p_money->>'currency' = 'KHR' THEN
+        IF v_orig IS NULL OR COALESCE(v_rate, 0) <= 0 THEN RETURN; END IF;
+        EXECUTE format('UPDATE public.%I SET currency = $1, original_amount = $2, exchange_rate = $3 WHERE id = $4', p_table)
+          USING 'KHR', v_orig, v_rate, p_id;
+    ELSE
+        EXECUTE format('UPDATE public.%I SET currency = NULL, original_amount = NULL, exchange_rate = NULL WHERE id = $1', p_table)
+          USING p_id;
+    END IF;
+END;
+$$;
+
+-- Brings an income row's ledger entry (reference TX-<tx>: a Draft RCP or
+-- DEP from op_post_receipt_entry) to the row's corrected amount and date —
+-- LED-6: a paid order's corrected received amount or settle date used to
+-- reach the income row and never its entry.
+--   * A Draft entry is rewritten in place, same entry_number: its date,
+--     its cash/bank debit and its revenue credit become p_amount; the COGS
+--     lines (Dr 5000 / Cr 1300) stay as they are. With p_money, its riel
+--     details follow. A Draft TX-<tx>-ADJ left from an earlier correction
+--     is redundant then and is deleted.
+--   * A POSTED entry is final and stays. The difference between what the
+--     Posted entries of this row (TX-<tx> and any Posted TX-<tx>-ADJ) hold
+--     in revenue and p_amount is booked as ONE Draft TX-<tx>-ADJ dated
+--     p_adj_date — Dr cash/bank, Cr revenue for an increase, the reverse
+--     for a decrease — reusing (rewriting) an existing Draft ADJ so repeated
+--     corrections never stack. A riel row's ADJ carries the delta in riel at
+--     the row's rate. A date-only change of a Posted entry books nothing and
+--     the notice says the date was left.
+-- p_date: the Draft entry's new date (NULL: keep it). p_money: the row's
+-- riel details as sent by the app (NULL: the row's own currency columns).
+-- Nothing when the row has no TX-<tx> entry (never posted to the ledger).
+-- Returns the notice for the user, or NULL.
+CREATE OR REPLACE FUNCTION wp_internal.op_sync_tx_entry(
+    p_tx UUID, p_amount NUMERIC, p_date DATE, p_adj_date DATE, p_money JSONB DEFAULT NULL)
+RETURNS TEXT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_main RECORD;
+    v_cash UUID;
+    v_rev UUID;
+    v_tx JSONB;
+    v_rate NUMERIC;
+    v_posted NUMERIC;
+    v_target NUMERIC;
+    v_delta NUMERIC;
+    v_adj UUID;
+    v_adj_number TEXT;
+    v_adj_date DATE := COALESCE(p_adj_date, p_date, CURRENT_DATE);
+    v_type TEXT;
+    v_name TEXT;
+    v_number TEXT;
+    r RECORD;
+BEGIN
+    SELECT id, COALESCE(status, 'Posted') AS status, entry_number, description, date INTO v_main
+      FROM journal_entries WHERE reference_id = 'TX-' || p_tx
+     ORDER BY created_at, id LIMIT 1 FOR UPDATE;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    -- The entry's cash side is its one Asset debit (the COGS debit is an
+    -- Expense, the Inventory credit an Asset credit); its revenue side the
+    -- one Revenue credit.
+    SELECT l.account_id INTO v_cash FROM journal_entry_lines l JOIN chart_of_accounts a ON a.id = l.account_id
+     WHERE l.journal_entry_id = v_main.id AND COALESCE(l.debit, 0) > 0 AND a.account_type = 'Asset'
+     ORDER BY l.debit DESC, l.created_at LIMIT 1;
+    SELECT l.account_id INTO v_rev FROM journal_entry_lines l JOIN chart_of_accounts a ON a.id = l.account_id
+     WHERE l.journal_entry_id = v_main.id AND COALESCE(l.credit, 0) > 0 AND a.account_type = 'Revenue'
+     ORDER BY l.credit DESC, l.created_at LIMIT 1;
+    IF v_cash IS NULL OR v_rev IS NULL THEN
+        RETURN format('This payment''s ledger entry (%s) has no plain cash and revenue lines, so it was left as it was — correct it in Journal Entries.',
+                      COALESCE(v_main.entry_number, 'TX-' || p_tx));
+    END IF;
+    SELECT to_jsonb(t) INTO v_tx FROM transactions t WHERE t.id = p_tx;
+    v_rate := CASE WHEN p_money IS NOT NULL
+                   THEN CASE WHEN p_money->>'currency' = 'KHR' THEN NULLIF(p_money->>'exchange_rate', '')::NUMERIC END
+                   WHEN v_tx->>'currency' = 'KHR' THEN NULLIF(v_tx->>'exchange_rate', '')::NUMERIC END;
+    -- Revenue the POSTED entries of this row already hold.
+    SELECT COALESCE(sum(COALESCE(l.credit, 0) - COALESCE(l.debit, 0)), 0) INTO v_posted
+      FROM journal_entries e JOIN journal_entry_lines l ON l.journal_entry_id = e.id
+     WHERE e.reference_id IN ('TX-' || p_tx, 'TX-' || p_tx || '-ADJ')
+       AND COALESCE(e.status, 'Posted') <> 'Draft' AND l.account_id = v_rev;
+    v_target := round(COALESCE(p_amount, 0), 2);
+
+    IF v_main.status = 'Draft' THEN
+        UPDATE journal_entries SET date = COALESCE(p_date, date) WHERE id = v_main.id;
+        UPDATE journal_entry_lines SET debit = round(v_target - v_posted, 2)
+         WHERE journal_entry_id = v_main.id AND account_id = v_cash AND COALESCE(debit, 0) > 0;
+        UPDATE journal_entry_lines SET credit = round(v_target - v_posted, 2)
+         WHERE journal_entry_id = v_main.id AND account_id = v_rev AND COALESCE(credit, 0) > 0;
+        PERFORM wp_internal.op_set_currency('journal_entries', v_main.id, p_money);
+        FOR r IN SELECT id FROM journal_entries
+                  WHERE reference_id = 'TX-' || p_tx || '-ADJ' AND status = 'Draft' FOR UPDATE
+        LOOP
+            DELETE FROM journal_entry_lines WHERE journal_entry_id = r.id;
+            DELETE FROM journal_entries WHERE id = r.id;
+        END LOOP;
+        RETURN NULL;
+    END IF;
+
+    v_delta := round(v_target - v_posted, 2);
+    -- One Draft ADJ at most: the first is rewritten, any other deleted.
+    FOR r IN SELECT id, entry_number FROM journal_entries
+              WHERE reference_id = 'TX-' || p_tx || '-ADJ' AND status = 'Draft' ORDER BY created_at, id FOR UPDATE
+    LOOP
+        DELETE FROM journal_entry_lines WHERE journal_entry_id = r.id;
+        IF v_adj IS NULL AND v_delta <> 0 THEN
+            v_adj := r.id;
+            v_adj_number := r.entry_number;
+        ELSE
+            DELETE FROM journal_entries WHERE id = r.id;
+        END IF;
+    END LOOP;
+    IF v_delta = 0 THEN
+        IF p_date IS NOT NULL AND p_date <> v_main.date THEN
+            RETURN format('This payment''s ledger entry (%s) is POSTED, so its date was left as %s — correct it in Journal Entries.',
+                          COALESCE(v_main.entry_number, 'TX-' || p_tx), to_char(v_main.date, 'YYYY-MM-DD'));
+        END IF;
+        RETURN NULL;
+    END IF;
+    v_type := COALESCE(substring(v_main.entry_number FROM '^JE-\d+-([A-Z]+)-'), 'RCP');
+    v_name := COALESCE(NULLIF(substring(v_main.description FROM ' — (.*)$'), ''), NULLIF(v_tx->>'description', ''), 'Customer');
+    IF v_adj IS NULL THEN
+        v_number := wp_internal.wp_next_entry_number(v_type, v_adj_date);
+        INSERT INTO journal_entries (date, description, reference_id, status, entry_number)
+        VALUES (v_adj_date, 'Retail - ' || regexp_replace(v_number, '^JE-\d+-', '') || ' — ' || v_name
+                || CASE WHEN v_type = 'DEP' THEN ' · deposit correction' ELSE ' · receipt correction' END,
+                'TX-' || p_tx || '-ADJ', 'Draft', v_number)
+        RETURNING id INTO v_adj;
+        v_adj_number := v_number;
+    ELSE
+        UPDATE journal_entries SET date = v_adj_date WHERE id = v_adj;
+    END IF;
+    IF v_delta > 0 THEN
+        INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
+            (v_adj, v_cash, v_delta, 0, CASE WHEN v_type = 'DEP' THEN 'Deposit' ELSE 'Receipt' END || ' correction — ' || v_name),
+            (v_adj, v_rev, 0, v_delta, 'Sales correction — ' || v_name);
+    ELSE
+        INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
+            (v_adj, v_rev, -v_delta, 0, 'Sales correction — ' || v_name),
+            (v_adj, v_cash, 0, -v_delta, CASE WHEN v_type = 'DEP' THEN 'Deposit' ELSE 'Receipt' END || ' correction — ' || v_name);
+    END IF;
+    PERFORM wp_internal.op_set_currency('journal_entries', v_adj,
+        CASE WHEN COALESCE(v_rate, 0) > 0
+             THEN jsonb_build_object('currency', 'KHR', 'original_amount', round(abs(v_delta) * v_rate), 'exchange_rate', v_rate)
+             ELSE '{"currency": "USD"}'::jsonb END);
+    RETURN format('This payment''s ledger entry (%s) is POSTED and stays as it is, so the correction ($%s %s) was booked as a Draft adjusting entry (%s).',
+                  COALESCE(v_main.entry_number, 'TX-' || p_tx), to_char(abs(v_delta), 'FM999999999990.00'),
+                  CASE WHEN v_delta > 0 THEN 'more' ELSE 'less' END, v_adj_number);
+END;
+$$;
+
 -- Takes an income row's ledger entry off the books: a Draft one is deleted
 -- (the COGS it carried comes off its order's cogs_booked); a Posted one is
--- final and stays, and the notice says so.
+-- final and stays, and the notice says so. A correction's TX-<tx>-ADJ
+-- (op_sync_tx_entry) goes the same way.
 CREATE OR REPLACE FUNCTION wp_internal.op_remove_tx_entry(p_tx UUID)
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -421,7 +608,7 @@ DECLARE
 BEGIN
     SELECT order_id INTO v_order FROM transactions WHERE id = p_tx;
     FOR r IN SELECT id, COALESCE(status, 'Posted') AS status FROM journal_entries
-              WHERE reference_id = 'TX-' || p_tx FOR UPDATE
+              WHERE reference_id IN ('TX-' || p_tx, 'TX-' || p_tx || '-ADJ') FOR UPDATE
     LOOP
         IF r.status <> 'Draft' THEN
             v_notice := 'This payment has a POSTED ledger entry — record a reversing entry manually.';
@@ -787,9 +974,17 @@ DECLARE
     v_delta NUMERIC;
     v_dep_date_raw TEXT;
     v_dep_ts TIMESTAMPTZ;
-    v_match RECORD;
+    v_match JSONB;
     v_has_linked BOOLEAN;
     v_settle_day_changed BOOLEAN;
+    v_amount_changed BOOLEAN;
+    v_method_changed BOOLEAN;
+    v_riel_changed BOOLEAN;
+    -- The riel details of the money this save books or corrects (p_updates
+    -- .money: currency, original_amount, exchange_rate, and the income
+    -- category they belong to), applied to the row of that category only.
+    v_money JSONB := CASE WHEN jsonb_typeof(u->'money') = 'object' THEN u->'money' END;
+    v_cut NUMERIC;
     v_entering_paid BOOLEAN;
     v_leaving_paid BOOLEAN;
 BEGIN
@@ -954,6 +1149,43 @@ BEGIN
                     (v_txs->-1)->>'description', ((v_txs->-1)->>'id')::UUID, v_delta, v_account_id, v_pay_by, NULL, 'Draft');
                 IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
             END IF;
+        ELSIF COALESCE(v_dep_given, 0) > 0 THEN
+            -- A deposit LOWERED below what its income rows hold is a
+            -- correction of the newest of them: the row's amount comes down
+            -- by the difference and its ledger entry follows (LED-6: a Draft
+            -- DEP rewritten in place, a POSTED one offset by a Draft
+            -- TX-<tx>-ADJ dated today). A cut deeper than that row is not
+            -- guessed at across rows: the books are left and the notice says
+            -- where to correct them.
+            SELECT round(COALESCE(sum(amount), 0) - v_dep_given, 2) INTO v_cut FROM transactions
+             WHERE type = 'Income' AND category = 'កក់ប្រាក់'
+               AND (order_id = p_order_id
+                    OR (order_id IS NULL AND description LIKE '%#DEP-' || left(p_order_id, 8)));
+            IF v_cut > 0 THEN
+                SELECT to_jsonb(t) INTO v_match FROM transactions t
+                 WHERE t.type = 'Income' AND t.category = 'កក់ប្រាក់'
+                   AND (t.order_id = p_order_id
+                        OR (t.order_id IS NULL AND t.description LIKE '%#DEP-' || left(p_order_id, 8)))
+                 ORDER BY t.created_at DESC, t.id DESC LIMIT 1;
+                IF round((v_match->>'amount')::NUMERIC - v_cut, 2) <= 0 THEN
+                    v_notices := v_notices || format('The deposit was lowered by $%s, more than its latest income row holds ($%s), so Income & Expense and the ledger were left as they were — correct them there.',
+                                                     to_char(v_cut, 'FM999999999990.00'), to_char((v_match->>'amount')::NUMERIC, 'FM999999999990.00'));
+                ELSE
+                    UPDATE transactions SET amount = round(amount - v_cut, 2)
+                     WHERE id = (v_match->>'id')::UUID;
+                    -- The riel details sent for the deposit (the whole
+                    -- deposit as now typed, not a top-up difference).
+                    IF v_money IS NOT NULL AND v_money->>'category' = 'កក់ប្រាក់' THEN
+                        PERFORM wp_internal.op_set_currency('transactions', (v_match->>'id')::UUID, v_money);
+                    ELSE
+                        v_money := NULL;
+                    END IF;
+                    SELECT to_jsonb(t) INTO v_res FROM transactions t WHERE t.id = (v_match->>'id')::UUID;
+                    v_txs := v_txs || jsonb_build_array(v_res);
+                    v_notice := wp_internal.op_sync_tx_entry((v_res->>'id')::UUID, (v_res->>'amount')::NUMERIC, NULL, v_today, v_money);
+                    IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
+                END IF;
+            END IF;
         END IF;
     ELSIF v_target IN ('Paid', 'Settled', 'Paid/Settled') AND NOT v_leaving_paid THEN
         -- A paid order's settle date, received amount or Pay By was
@@ -964,14 +1196,18 @@ BEGIN
         v_settle_day_changed := v_settle IS NOT NULL
             AND wp_internal.op_local_day_of(v_settle, v_tz)
                 IS DISTINCT FROM wp_internal.op_local_day(s.settle_date, v_tz);
+        v_method_changed := u ? 'payment_method' AND NULLIF(u->>'payment_method', '') IS DISTINCT FROM NULLIF(s.payment_method, '');
+        -- The riel details sent for the sale's own row (not a deposit's).
+        IF v_money IS NOT NULL AND COALESCE(v_money->>'category', 'លក់រាយ') <> 'លក់រាយ' THEN v_money := NULL; END IF;
         IF v_settle_day_changed
            OR (u ? 'amount_received' AND COALESCE(v_amount_received, 0) > 0 AND v_amount_received IS DISTINCT FROM COALESCE(s.amount_received, 0))
-           OR (u ? 'payment_method' AND NULLIF(u->>'payment_method', '') IS DISTINCT FROM NULLIF(s.payment_method, '')) THEN
+           OR v_method_changed
+           OR v_money IS NOT NULL THEN
             v_deposit_paid := COALESCE(s.deposit_amount, 0);
             v_gross := CASE WHEN u ? 'amount_received' THEN COALESCE(v_amount_received, 0)
                             ELSE COALESCE(NULLIF(s.amount_received, 0), s.total, 0) END;
             v_to_record := GREATEST(0, round(v_gross - v_deposit_paid, 2));
-            SELECT t.id, t.amount INTO v_match FROM transactions t
+            SELECT to_jsonb(t) INTO v_match FROM transactions t
              WHERE t.type = 'Income' AND t.category IN ('លក់រាយ', 'លក់ឥវ៉ាន់')
                AND (t.order_id = p_order_id
                     OR (t.order_id IS NULL AND t.description = NULLIF(s.customer_snapshot->>'name', '')
@@ -979,16 +1215,36 @@ BEGIN
                                          NULLIF(GREATEST(0, COALESCE(s.amount_received, 0) - v_deposit_paid), 0),
                                          NULLIF(GREATEST(0, COALESCE(s.total, 0) - v_deposit_paid), 0))))
              ORDER BY (t.order_id = p_order_id) DESC, t.created_at DESC LIMIT 1;
-            IF v_match.id IS NOT NULL THEN
-                UPDATE transactions SET
-                    amount = CASE WHEN v_to_record > 0 THEN v_to_record ELSE amount END,
-                    description = v_name,
-                    date = CASE WHEN v_settle IS NOT NULL THEN wp_internal.op_norm_ts(v_settle) ELSE date END,
-                    pay_by = CASE WHEN u ? 'payment_method' AND NULLIF(u->>'payment_method', '') IS DISTINCT FROM NULLIF(s.payment_method, '')
-                                  THEN u->>'payment_method' ELSE pay_by END
-                 WHERE id = v_match.id
-                 RETURNING to_jsonb(transactions.*) INTO v_res;
-                v_txs := v_txs || jsonb_build_array(v_res);
+            IF v_match IS NOT NULL THEN
+                -- What this save really changes on the row, so a re-save
+                -- that only re-sends the same riel details writes nothing.
+                v_amount_changed := v_to_record > 0 AND round(v_to_record, 2) <> round((v_match->>'amount')::NUMERIC, 2);
+                v_riel_changed := v_money IS NOT NULL AND wp_internal.op_has_currency_cols('transactions') AND (
+                    COALESCE(v_money->>'currency', 'USD') IS DISTINCT FROM COALESCE(v_match->>'currency', 'USD')
+                    OR (v_money->>'currency' = 'KHR'
+                        AND (NULLIF(v_money->>'original_amount', '')::NUMERIC IS DISTINCT FROM (v_match->>'original_amount')::NUMERIC
+                             OR NULLIF(v_money->>'exchange_rate', '')::NUMERIC IS DISTINCT FROM (v_match->>'exchange_rate')::NUMERIC)));
+                IF v_settle_day_changed OR v_amount_changed OR v_method_changed OR v_riel_changed THEN
+                    UPDATE transactions SET
+                        amount = CASE WHEN v_to_record > 0 THEN v_to_record ELSE amount END,
+                        description = v_name,
+                        date = CASE WHEN v_settle IS NOT NULL THEN wp_internal.op_norm_ts(v_settle) ELSE date END,
+                        pay_by = CASE WHEN v_method_changed THEN u->>'payment_method' ELSE pay_by END
+                     WHERE id = (v_match->>'id')::UUID;
+                    IF v_riel_changed THEN
+                        PERFORM wp_internal.op_set_currency('transactions', (v_match->>'id')::UUID, v_money);
+                    END IF;
+                    SELECT to_jsonb(t) INTO v_res FROM transactions t WHERE t.id = (v_match->>'id')::UUID;
+                    v_txs := v_txs || jsonb_build_array(v_res);
+                    -- LED-6: the row's ledger entry follows its amount and
+                    -- date (a Draft is rewritten, a POSTED one gets a Draft
+                    -- TX-<tx>-ADJ for the difference).
+                    IF v_settle_day_changed OR v_amount_changed OR v_riel_changed THEN
+                        v_notice := wp_internal.op_sync_tx_entry((v_res->>'id')::UUID, (v_res->>'amount')::NUMERIC,
+                            (v_res->>'date')::TIMESTAMPTZ::DATE, (v_res->>'date')::TIMESTAMPTZ::DATE, v_money);
+                        IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
+                    END IF;
+                END IF;
             ELSIF v_settle_day_changed AND v_settle IS NOT NULL AND v_to_record > 0 THEN
                 -- Heal a row that was never logged — only on a real
                 -- settle-day change, and never for a deposit-covered order.
@@ -1289,6 +1545,9 @@ GRANT EXECUTE ON FUNCTION wp_internal.op_reverse_booked_cogs(TEXT, DATE) TO anon
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_cogs_only(TEXT, DATE, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_fee_entry(UUID, DATE, TEXT, NUMERIC, UUID, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_has_currency_cols(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_set_currency(TEXT, UUID, JSONB) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_sync_tx_entry(UUID, NUMERIC, DATE, DATE, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_remove_tx_entry(UUID) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_remove_paid_income(TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_payment_of(sales) TO anon, authenticated;

@@ -85,6 +85,29 @@ loads the file. Same PGlite setup as auth-guards:
     npm i --no-save @electric-sql/pglite
     node tests/khr-currency.test.mjs
 
+## order-receipt-correction.test.mjs
+
+LED-6 in `migrations/add_order_payment_functions.sql`: a correction to a
+paid retail order's receipt (received amount, settle date, riel details) or
+a lowered deposit reaches the row's `TX-<tx>` ledger entry
+(`wp_internal.op_sync_tx_entry`), on the real stack (`tests/fifo-test-db.mjs`)
+and the live column types. Replays the Romdoul1 case (a 17.00 receipt
+corrected to 19.44 = 79,700 riel): the Draft entry is rewritten in place
+with the same entry number and its COGS lines untouched; a settle-date
+change moves the entry; the same save again, or a Pay By change, leaves the
+ledger byte-for-byte the same; a POSTED entry stays and the difference goes
+to ONE Draft `TX-<tx>-ADJ` that later corrections rewrite, that a
+net-zero correction deletes and that leaves with the row when the order
+leaves Paid; a riel-only change rewrites the riel columns and a riel ADJ
+carries the delta in riel; a lowered deposit corrects the newest DEP row
+(Draft rewritten, Posted → ADJ) while a top-up still books a new row and a
+cut deeper than the newest row leaves the books with a notice; a store
+without the riel columns takes the same corrections. The FIFO check stays
+at variance 0 throughout. Same PGlite setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/order-receipt-correction.test.mjs
+
 ## order-status-rules.test.mjs
 
 Unit test of `src/utils/orderStatusRules.ts` — the shared refusal rules the

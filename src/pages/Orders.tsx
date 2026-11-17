@@ -527,9 +527,11 @@ const ShippingModalComponent: React.FC<{
                                         // row's Pay By ("one bank shown as two", PR #229).
                                         if (depositAccountId) updates.depositAccountId = depositAccountId;
                                         // A top-up books only the difference over the deposit
-                                        // already taken, so its riel is the difference too.
+                                        // already taken, so its riel is the difference too. A
+                                        // LOWERED deposit corrects the deposit row itself, so it
+                                        // carries the whole riel figure as typed.
                                         const prevUsd = order.depositAmount && order.depositAmount > 0 ? order.depositAmount : 0;
-                                        money = depositField.meta.currency === 'KHR' && prevUsd > 0
+                                        money = depositField.meta.currency === 'KHR' && prevUsd > 0 && depositNum > prevUsd
                                             ? khrMeta(Math.max(0, depositField.meta.original_amount - usdToKhr(prevUsd, depositField.meta.exchange_rate, 1)), depositField.meta.exchange_rate)
                                             : depositField.meta;
                                     }
