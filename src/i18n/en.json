@@ -2524,13 +2524,29 @@
           "emptyAll": "No expense entries yet — record the first one above."
         },
         "chip": {
-          "autoHint": "Created automatically by a payment flow (Retail Payment, Procurement or Wholesale) — view and print it here, manage it from its own page.",
+          "autoHint": "Booked by the system (payment flow, cost of goods, wholesale invoice, purchase, stock adjustment…) — view, print or reverse it here; it cannot be edited or deleted.",
           "auto": "auto",
           "manualHint": "Recorded directly — not generated automatically by a payment flow.",
-          "manual": "manual"
+          "manual": "manual",
+          "kind": {
+            "receipt": "receipt",
+            "payment": "payment",
+            "cogs": "COGS",
+            "invoice": "invoice",
+            "purchase": "purchase",
+            "stockAdj": "stock adj.",
+            "revaluation": "revaluation",
+            "trueup": "true-up",
+            "opening": "opening",
+            "reversal": "reversal",
+            "system": "auto"
+          }
         },
         "toast": {
-          "systemEntry": "This entry was created by a payment flow — manage it from its own page.",
+          "systemEntry": "This entry was booked by the system — it cannot be edited or deleted here. Use Reverse to offset it.",
+          "reversed": "Reversal {ref} drafted — review and post it in Journal Entries.",
+          "reverseFailed": "Failed to reverse entry",
+          "reverseNoLines": "This entry has no ledger lines to reverse",
           "postedNoChange": "Posted entries cannot be changed — record a correcting entry instead.",
           "savedNoStatus": "Saved without the status — run migrations/add_entry_status.sql to enable drafts",
           "restoreFailed": "{msg} — and restoring the previous lines also failed; re-enter this {kind} ({ref}).",
@@ -2561,7 +2577,8 @@
           "multiPartOne": "{n} has more than 2 ledger lines — the whole journal entry is removed, not just the {kind} part",
           "multiPartMany": "{n} have more than 2 ledger lines — the whole journal entry is removed, not just the {kind} part",
           "deleteManyOne": "Delete {n} {kind} entry ({amount})? This cannot be undone.",
-          "deleteMany": "Delete {n} {kind} entries ({amount})? This cannot be undone."
+          "deleteMany": "Delete {n} {kind} entries ({amount})? This cannot be undone.",
+          "reverseOne": "Reverse this {kind} entry of {amount} ({date})?\nA Draft dated today with the debits and credits swapped is created for you to review and post in Journal Entries. Nothing is posted now."
         },
         "filteredCap": "(Filtered)",
         "filtered": "(filtered)",
@@ -2614,7 +2631,8 @@
           "edit": "Edit entry",
           "view": "View entry",
           "print": "Print entry",
-          "delete": "Delete entry"
+          "delete": "Delete entry",
+          "reverse": "Reverse entry"
         },
         "totalEntriesOne": "Total — {n} entry",
         "totalEntries": "Total — {n} entries",
@@ -2623,6 +2641,7 @@
         "unpostHint": "Return the selected posted entries to Draft so they can be corrected",
         "unposting": "Unposting…",
         "unpost": "Unpost",
+        "reverse": "Reverse",
         "deleting": "Deleting…",
         "entryBalanced": "Entry Balanced",
         "entryNotBalanced": "Entry Not Balanced",
