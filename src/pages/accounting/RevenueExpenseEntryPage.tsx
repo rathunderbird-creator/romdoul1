@@ -18,7 +18,7 @@ import { useAccounting } from '../../hooks/useAccounting';
 import { usePersistedDateRange } from '../../hooks/usePersistedDateRange';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber } from '../../utils/journalEntryNumber';
-import { isSystemEntry, reversalReference, systemEntryKind, type SystemEntryKind } from '../../utils/systemEntries';
+import { isSystemEntry, reversalReference, reversalReferencePattern, systemEntryKind, type SystemEntryKind } from '../../utils/systemEntries';
 import { useColumnWidths } from '../pageIncomePrediction/useColumnWidths';
 import type { ChartOfAccount, JournalEntry } from '../../types';
 import MoneyInput from '../../components/MoneyInput';
@@ -952,8 +952,8 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
     };
 
     // Reverse a Posted entry: a new Draft dated today with every line's debit
-    // and credit swapped, referenced '<original reference>-REV' (then
-    // '-REV-2', …), described "Reversal of <entry number>". Nothing is
+    // and credit swapped, referenced 'MANREV-<original reference>' (then
+    // 'MANREV-2-…'), described "Reversal of <entry number>". Nothing is
     // posted here — the owner reviews and posts it like any other Draft (it
     // lands on the Journal Entries page: a reversal nets this page's amount
     // below zero, so this list doesn't show it). This is the only way a
@@ -970,17 +970,17 @@ const RevenueExpenseEntryPage: React.FC<{ mode: 'revenue' | 'expense' }> = ({ mo
             const ls = entryLinesOf(row.entryId);
             if (ls.length === 0) throw new Error(t('ui.accounting.re.toast.reverseNoLines'));
             const base = row.refId || row.ref || row.entryId;
-            // Every reference already derived from this one, so a second
-            // reversal (after the first was deleted and re-done, say) gets
-            // '-REV-2' instead of a duplicate.
+            // Every reversal already made of this one, so a second (after the
+            // first was deleted and re-done, say) gets 'MANREV-2-…' instead of
+            // a duplicate.
             const { data: existing, error: refErr } = await supabase
-                .from('journal_entries').select('reference_id').like('reference_id', `${base}-REV%`);
+                .from('journal_entries').select('reference_id').like('reference_id', reversalReferencePattern(base));
             if (refErr) throw refErr;
             const reference = reversalReference(base, (existing || []).map(r => String(r.reference_id)));
             const today = todayYmd();
             // A hand-made correction, so it's numbered MAN like Journal
-            // Entries' own — and the -REV reference plus a hand code is what
-            // marks it editable/deletable while still Draft.
+            // Entries' own; the MANREV- reference is what keeps it a manual
+            // entry (editable/deletable while still Draft).
             const entryNumber = await nextJournalEntryNumber('MAN', today);
             header = {
                 date: today,
