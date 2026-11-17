@@ -30,8 +30,11 @@ const HAND_CODES: ReadonlySet<string> = new Set(['MAN', 'REV', 'EXP']);
 const PAYMENT_CODES: ReadonlySet<string> = new Set(['SPP', 'WSP', 'PAY', 'EXP']);
 
 const SYSTEM_REF = /^(TX|ORD|WSO|PO|ADJ|FIFO|TRUEUP|OPENING)-/;
-// '<original reference>-REV' or '-REV-<n>' — the shape Reverse writes.
-const REVERSAL_REF = /-REV(-\d+)?$/;
+// 'MANREV-<original reference>' or 'MANREV-<n>-<original>' — the shape Reverse
+// writes. A prefix, not a '-REV' suffix: the DB packs create and look for
+// 'ORD-<id>-COGS-REV' / 'WSO-<id>-COGS-REV' themselves (whether an order's
+// COGS counts as reversed), so a hand reversal must never wear that name.
+const REVERSAL_REF = /^MANREV-/;
 
 // 'JE-12-RCP-20261113-3' → 'RCP'; anything else (no number yet, or a bare
 // reference shown in its place) → null.
@@ -42,15 +45,16 @@ export const entryTypeCode = (entryNumber: string | null | undefined): string | 
 
 const isHandCode = (code: string | null): boolean => code !== null && HAND_CODES.has(code);
 
-// A reversal a person drafted with Reverse: it keeps the original's reference
-// plus '-REV', but carries a hand type code — the database's own reversals
-// ('ORD-<id>-COGS-REV') are numbered RCP, never MAN/REV/EXP.
-const isHandReversal = (ref: string, code: string | null): boolean => REVERSAL_REF.test(ref) && isHandCode(code);
+// A reversal a person drafted with Reverse (reversalReference below). The
+// packs' own reversals and adjustments ('ORD-<id>-COGS-REV',
+// 'WSO-<id>-COGS-ADJ-<n>') keep their system prefix and stay system.
+export const isHandReversal = (ref: string | null | undefined): boolean => REVERSAL_REF.test(ref || '');
 
 export function isSystemEntry(entry: EntryLike): boolean {
     const ref = entry.reference_id || '';
+    if (isHandReversal(ref)) return false;
+    if (SYSTEM_REF.test(ref)) return true;
     const code = entryTypeCode(entry.entry_number);
-    if (SYSTEM_REF.test(ref)) return !isHandReversal(ref, code);
     return code !== null && !isHandCode(code);
 }
 
@@ -60,7 +64,7 @@ export function isSystemEntry(entry: EntryLike): boolean {
 export function systemEntryKind(entry: EntryLike): SystemEntryKind {
     const ref = entry.reference_id || '';
     const code = entryTypeCode(entry.entry_number);
-    if (isHandReversal(ref, code)) return 'reversal';
+    if (isHandReversal(ref)) return 'reversal';
     if (ref.startsWith('TX-')) return code !== null && PAYMENT_CODES.has(code) ? 'payment' : 'receipt';
     if (ref.startsWith('ORD-')) return 'cogs';
     if (ref.startsWith('WSO-')) return ref.includes('-INV') ? 'invoice' : 'cogs';
@@ -78,15 +82,19 @@ export function systemEntryKind(entry: EntryLike): SystemEntryKind {
     }
 }
 
-// The reference for a reversal of `original`: '<original>-REV', or
-// '<original>-REV-2', '-REV-3', … when `existing` (references already in the
-// ledger, e.g. from a LIKE '<original>-REV%' query) holds the earlier ones.
+// The reference for a reversal of `original`: 'MANREV-<original>', or
+// 'MANREV-2-<original>', 'MANREV-3-…' when `existing` (the references already
+// in the ledger that match reversalReferencePattern) holds the earlier ones.
 export function reversalReference(original: string, existing: Iterable<string>): string {
     const taken = new Set(existing);
-    const base = `${original}-REV`;
-    if (!taken.has(base)) return base;
+    const first = `MANREV-${original}`;
+    if (!taken.has(first)) return first;
     for (let n = 2; ; n++) {
-        const candidate = `${base}-${n}`;
+        const candidate = `MANREV-${n}-${original}`;
         if (!taken.has(candidate)) return candidate;
     }
 }
+
+// SQL LIKE pattern matching every reversal reference of `original` (the
+// first and the numbered ones), for the query that feeds reversalReference.
+export const reversalReferencePattern = (original: string): string => `MANREV-%${original}`;
