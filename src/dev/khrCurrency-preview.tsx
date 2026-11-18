@@ -31,6 +31,7 @@ import GeneralSettings from '../pages/settings/GeneralSettings';
 import { useMoneyField } from '../hooks/useMoneyField';
 import { ShippingModalComponent } from '../pages/Orders';
 import CheckoutForm from '../components/CheckoutForm';
+import CodRemittancesPage from '../pages/accounting/CodRemittancesPage';
 import type { CartItem, Sale } from '../types';
 
 const params = new URLSearchParams(location.search);
@@ -42,7 +43,7 @@ const acct = (id: string, code: string, name: string, type = 'Asset') =>
 const R1 = [acct('00000000-0000-0000-0000-000000001001', '1001', 'Petty Cash'), acct('00000000-0000-0000-0000-000000001010', '1010', 'Bank Account ABA (USD)')];
 const R2 = [acct('00000000-0000-0000-0000-000000001000', '1000', 'Cash')];
 const KHR = [acct('00000000-0000-0000-0000-000000001002', '1002', 'Cash on Hand (KHR)'), acct('00000000-0000-0000-0000-000000001011', '1011', 'Bank Account ABA (KHR)')];
-const OTHER = [acct('00000000-0000-0000-0000-000000001200', '1200', 'Accounts Receivable'), acct('00000000-0000-0000-0000-000000004000', '4000', 'Sales Revenue', 'Revenue')];
+const OTHER = [acct('00000000-0000-0000-0000-000000001200', '1200', 'Accounts Receivable'), acct('00000000-0000-0000-0000-000000001210', '1210', 'COD receivable (courier)'), acct('00000000-0000-0000-0000-000000004000', '4000', 'Sales Revenue', 'Revenue')];
 const chartRows = [...(chart.startsWith('r1') ? R1 : R2), ...(chart.endsWith('khr') ? KHR : []), ...OTHER]
     .sort((a, b) => a.account_code.localeCompare(b.account_code));
 
@@ -145,6 +146,7 @@ const Forms = () => {
         case 'settings': return <GeneralSettings />;
         case 'money': return <FreeMoney />;
         case 'checkout': return <Checkout />;
+        case 'cod': return <CodRemittancesPage />;
         case 'shipping': return <ShippingModalComponent isOpen={open} onClose={close} order={order} />;
         default: return <DeliveryFeeModal order={open ? order : null} onClose={close} onConfirm={d => show('deliveryFee', d)} />;
     }

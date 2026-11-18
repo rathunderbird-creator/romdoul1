@@ -82,7 +82,11 @@ const MoneyInput: React.FC<MoneyInputProps> = ({
             aria-pressed={field.currency === c}
             data-currency={c}
             style={{
-                padding: '4px 10px', fontSize: '12px', fontWeight: 600, border: 'none', cursor: off ? 'not-allowed' : 'pointer',
+                // Fixed line height: the toggle is 26px tall (4 + 16 + 4 and
+                // the 1px border each side) whatever the font, so a form can
+                // give its plain labels the same height and keep a row's
+                // inputs level (accounting entry forms do).
+                padding: '4px 10px', fontSize: '12px', lineHeight: '16px', fontWeight: 600, border: 'none', cursor: off ? 'not-allowed' : 'pointer',
                 background: field.currency === c ? 'var(--color-primary)' : 'transparent',
                 color: field.currency === c ? '#fff' : 'var(--color-text-secondary)',
                 opacity: off && field.currency !== c ? 0.45 : 1,
