@@ -332,7 +332,12 @@ const CodRemittancesPage: React.FC = () => {
 
     const loading = rows === null;
     const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
-    const labelStyle: React.CSSProperties = { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' };
+    // Every label row is as tall as the Amount field's (its USD | KHR toggle
+    // is 26px, components/MoneyInput), and the grid aligns at the top: the
+    // inputs of one row then line up whatever the Amount field shows under
+    // itself (the riel rate row, a warning), instead of the neighbours
+    // sinking to its bottom edge.
+    const labelStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', minHeight: '26px', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' };
     const inputStyle: React.CSSProperties = {
         width: '100%', padding: '9px 12px', borderRadius: '8px',
         border: editing ? '1.5px solid #5469d4' : '1px solid var(--color-border)',
@@ -381,7 +386,7 @@ const CodRemittancesPage: React.FC = () => {
                         <span>{tc('noAccount')}</span>
                     </div>
                 ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px', alignItems: 'end' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px', alignItems: 'start' }}>
                         <div>
                             <label style={labelStyle}>{t('ui.accounting.common.date')}</label>
                             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
