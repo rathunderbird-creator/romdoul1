@@ -16,6 +16,7 @@ import { dayKeyFromDate, addDays, daysBetween } from '../../utils/dateRange';
 import { fetchAll } from '../../utils/fetchAll';
 import { fetchJournalLinesByEntry } from '../../utils/journalLines';
 import { isKhrAccountName } from '../../utils/currency';
+import { isCashBankAccount } from '../../utils/cashBankAccounts';
 
 const fmt = (n: number): string => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const BLUE = '#3B82F6', RED = '#EF4444', GREEN = '#10B981';
@@ -101,9 +102,11 @@ const CashInOutPage: React.FC = () => {
 
     // Cash accounts = Asset accounts named cash or bank — same rule
     // FinancialStatements' Cash Flow tab, and the Deposit/PdFee payment
-    // modals, already use to pick a cash/bank destination account.
+    // modals, already use to pick a cash/bank destination account. 1210 COD
+    // receivable (courier) is not cash: a COD receipt shows here only when
+    // the courier's remittance reaches the bank.
     const cashAccounts = useMemo(
-        () => accounts.filter(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name))
+        () => accounts.filter(isCashBankAccount)
             .sort((a, b) => a.account_code.localeCompare(b.account_code)),
         [accounts]
     );

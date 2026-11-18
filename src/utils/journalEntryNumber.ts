@@ -5,8 +5,10 @@ import { supabase } from '../lib/supabase';
 // receiving a purchase order into inventory (goods received note; older
 // entries of this kind carry the legacy code PUR). DLV is a cancelled
 // order's delivery-fee-only payment (paymentStatus 'PdFee'). ADJ is a Stock
-// Adjustment. OPA is a Purchase Setup AP opening balance load.
-export type JournalEntryTypeCode = 'RCP' | 'DEP' | 'SPP' | 'WSP' | 'PAY' | 'MAN' | 'REV' | 'EXP' | 'PUR' | 'GRN' | 'DLV' | 'ADJ' | 'OPA';
+// Adjustment. OPA is a Purchase Setup AP opening balance load. COD is a
+// courier's remittance of cash-on-delivery money (Accounting › COD
+// remittances: Dr bank / Cr 1210 COD receivable).
+export type JournalEntryTypeCode = 'RCP' | 'DEP' | 'SPP' | 'WSP' | 'PAY' | 'MAN' | 'REV' | 'EXP' | 'PUR' | 'GRN' | 'DLV' | 'ADJ' | 'OPA' | 'COD';
 
 // Human-readable display ID for a journal entry, additive to (never a
 // replacement for) reference_id: JE-{globalSeq}-{TYPE}-{YYYYMMDD}-{dailySeq},

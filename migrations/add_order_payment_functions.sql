@@ -42,6 +42,15 @@
 -- p_updates.money and are written to the row and its entries when the
 -- store has the columns of add_khr_currency.sql.
 --
+-- Cash on delivery (add_cod_receivable.sql): a receipt the courier collected
+-- (p_updates.cod_collected = true, the Settle form's "អ្នកដឹកប្រមូល (COD)"
+-- box) debits 1210 COD receivable (courier) instead of the cash/bank account
+-- — the money is not in the bank until the courier remits it (Accounting ›
+-- COD remittances books Dr bank / Cr 1210 then). The flag is kept on
+-- sales.cod_collected; flipping it on a paid order moves a Draft entry's
+-- debit between 1210 and cash/bank (a POSTED one stays, with a notice).
+-- Deposits and delivery fees are never COD.
+--
 -- Ordering with the shipping status: updateOrder runs the shipping change
 -- (set_order_shipping_status, which owns stock) FIRST and the payment save
 -- second. A refused shipping change therefore saves nothing at all, and a
@@ -91,6 +100,10 @@ END $$;
 
 -- "Deposit into" on sales — the account the settled amount landed in.
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS deposit_account_id TEXT;
+-- "The courier collected this order's money" (add_cod_receivable.sql owns
+-- this column and the 1210 account; added here too so set_order_payment
+-- never fails on a store that ran this pack first).
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS cod_collected BOOLEAN NOT NULL DEFAULT false;
 
 -- Deposits must survive delete+restore. full_schema.sql has these, but an
 -- instance created before them may not (the standalone ALTER file never
@@ -334,15 +347,34 @@ $$;
 -- Numbered and described the way the app does ('Retail - RCP-… — Name').
 -- Silently skipped (with a notice) when the chart of accounts can't resolve
 -- both sides — the same no-op the app had.
+-- p_cod (an RCP only): the courier collected the money, so the debit goes to
+-- 1210 COD receivable (courier) instead of cash/bank (add_cod_receivable.sql);
+-- a store without that account books cash/bank as before, with a notice.
+
+-- The active COD receivable account: 1210, else an Asset whose name says so.
+CREATE OR REPLACE FUNCTION wp_internal.op_cod_account()
+RETURNS UUID
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT wp_internal.wp_account('1210', 'Asset', 'cod receivable');
+$$;
+
+-- The signature grew a parameter with a default; the old one must go or a
+-- nine-argument call would match both and be refused as ambiguous.
+DROP FUNCTION IF EXISTS wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION wp_internal.op_post_receipt_entry(
     p_type TEXT, p_date DATE, p_name TEXT, p_tx UUID, p_amount NUMERIC,
-    p_account_id UUID, p_pay_by TEXT, p_cogs_order TEXT, p_status TEXT DEFAULT 'Draft')
+    p_account_id UUID, p_pay_by TEXT, p_cogs_order TEXT, p_status TEXT DEFAULT 'Draft',
+    p_cod BOOLEAN DEFAULT false)
 RETURNS TEXT
 LANGUAGE plpgsql
 AS $$
 DECLARE
     v_revenue UUID := wp_internal.wp_account('4000', 'Revenue', 'sales revenue', true);
     v_cash UUID := COALESCE(p_account_id, wp_internal.wp_cash_bank_account(p_pay_by, true));
+    v_cod BOOLEAN := COALESCE(p_cod, false) AND p_type = 'RCP';
+    v_notice TEXT;
     v_cogs UUID;
     v_inventory UUID;
     v_cost NUMERIC := 0;
@@ -350,6 +382,15 @@ DECLARE
     v_number TEXT;
     v_entry UUID;
 BEGIN
+    IF v_cod THEN
+        -- The courier holds the money: debit the receivable, not the bank.
+        -- The picked cash/bank account is where it will land on remittance.
+        IF wp_internal.op_cod_account() IS NOT NULL THEN
+            v_cash := wp_internal.op_cod_account();
+        ELSE
+            v_notice := 'This payment was marked as collected by the courier, but there is no 1210 COD receivable (courier) account yet — run migrations/add_cod_receivable.sql. The receipt was booked to the cash/bank account instead.';
+        END IF;
+    END IF;
     IF v_revenue IS NULL OR v_cash IS NULL THEN
         RETURN 'Payment logged, but no Sales Revenue or cash/bank account could be resolved in the Chart of Accounts — no ledger entry was posted.';
     END IF;
@@ -368,7 +409,10 @@ BEGIN
             'TX-' || p_tx, COALESCE(p_status, 'Draft'), v_number)
     RETURNING id INTO v_entry;
     INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
-        (v_entry, v_cash, p_amount, 0, CASE WHEN p_type = 'DEP' THEN 'Deposit' ELSE 'Receipt' END || ' — ' || p_name),
+        (v_entry, v_cash, p_amount, 0,
+         CASE WHEN p_type = 'DEP' THEN 'Deposit'
+              WHEN v_cod AND v_notice IS NULL THEN 'COD held by courier'
+              ELSE 'Receipt' END || ' — ' || p_name),
         (v_entry, v_revenue, 0, p_amount, 'Sales — ' || p_name);
     IF v_cost > 0 THEN
         INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
@@ -376,6 +420,58 @@ BEGIN
             (v_entry, v_inventory, 0, v_cost, 'Inventory at cost');
         PERFORM wp_internal.op_mark_cogs_booked(p_cogs_order, v_lines);
     END IF;
+    RETURN v_notice;
+END;
+$$;
+
+-- Moves a paid order's receipt debit between 1210 COD receivable and the
+-- cash/bank account when the "collected by the courier" flag is flipped on
+-- an order that is already Paid. The row's TX-<tx> entry and its Draft
+-- TX-<tx>-ADJ are re-pointed while Draft; a POSTED TX-<tx> entry stays and
+-- the notice says so. Nothing when the order has no receipt entry.
+CREATE OR REPLACE FUNCTION wp_internal.op_repoint_receipt_debit(p_order_id TEXT, p_cod BOOLEAN, p_account_id UUID, p_pay_by TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_tx UUID;
+    v_main RECORD;
+    v_target UUID;
+    v_inventory UUID := wp_internal.wp_account('1300', 'Asset', 'inventor|stock');
+BEGIN
+    SELECT id INTO v_tx FROM transactions
+     WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id
+     ORDER BY created_at DESC, id DESC LIMIT 1;
+    IF v_tx IS NULL THEN RETURN NULL; END IF;
+    SELECT id, COALESCE(status, 'Posted') AS status, entry_number INTO v_main
+      FROM journal_entries WHERE reference_id = 'TX-' || v_tx ORDER BY created_at, id LIMIT 1 FOR UPDATE;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    IF p_cod THEN
+        v_target := wp_internal.op_cod_account();
+        IF v_target IS NULL THEN
+            RETURN 'There is no 1210 COD receivable (courier) account yet — run migrations/add_cod_receivable.sql. The receipt stays on the cash/bank account.';
+        END IF;
+    ELSE
+        v_target := COALESCE(p_account_id, wp_internal.wp_cash_bank_account(p_pay_by, true));
+        IF v_target IS NULL THEN RETURN NULL; END IF;
+    END IF;
+    IF v_main.status <> 'Draft' THEN
+        RETURN format('This payment''s ledger entry (%s) is POSTED, so its %s side was left as it is — book the move in Journal Entries (%s).',
+                      COALESCE(v_main.entry_number, 'TX-' || v_tx),
+                      CASE WHEN p_cod THEN 'cash/bank' ELSE 'COD receivable' END,
+                      CASE WHEN p_cod THEN 'Dr 1210 COD receivable / Cr cash/bank' ELSE 'Dr cash/bank / Cr 1210 COD receivable' END);
+    END IF;
+    -- The money side of the Draft entry and of its Draft correction: the
+    -- Asset lines that are not Inventory (COGS credits 1300).
+    UPDATE journal_entry_lines l SET account_id = v_target
+      FROM journal_entries e, chart_of_accounts a
+     WHERE l.journal_entry_id = e.id AND a.id = l.account_id
+       AND e.reference_id IN ('TX-' || v_tx, 'TX-' || v_tx || '-ADJ') AND COALESCE(e.status, 'Posted') = 'Draft'
+       AND a.account_type = 'Asset' AND (v_inventory IS NULL OR a.id <> v_inventory) AND a.account_code IS DISTINCT FROM '1300';
+    UPDATE journal_entry_lines l SET description = regexp_replace(l.description,
+               '^(COD held by courier|Receipt)( — )', CASE WHEN p_cod THEN 'COD held by courier' ELSE 'Receipt' END || '\2')
+      FROM journal_entries e
+     WHERE l.journal_entry_id = e.id AND e.id = v_main.id AND l.account_id = v_target AND l.description ~ '^(COD held by courier|Receipt) — ';
     RETURN NULL;
 END;
 $$;
@@ -779,7 +875,7 @@ BEGIN
     INSERT INTO sales (id, total, discount, date, payment_method, type, salesman, customer_care,
                        amount_received, payment_status, deposit_amount, deposit_date, deposit_method,
                        customer_snapshot, order_status, page_source, shipping_company, tracking_number,
-                       shipping_status, remark)
+                       shipping_status, remark, cod_collected)
     VALUES (v_id,
             COALESCE(NULLIF(p_order->>'total', '')::NUMERIC, 0),
             COALESCE(NULLIF(p_order->>'discount', '')::NUMERIC, 0),
@@ -799,7 +895,8 @@ BEGIN
             p_order->>'shipping_company',
             p_order->>'tracking_number',
             p_order->>'shipping_status',
-            p_order->>'remark');
+            p_order->>'remark',
+            COALESCE(NULLIF(p_order->>'cod_collected', '')::BOOLEAN, false));
     EXCEPTION WHEN unique_violation THEN
         RAISE EXCEPTION 'An order with this id already exists. Nothing was saved — try again.';
     END;
@@ -843,7 +940,7 @@ AS $$
         'payment_status', s.payment_status, 'amount_received', s.amount_received,
         'settle_date', s.settle_date, 'payment_method', s.payment_method,
         'deposit_amount', s.deposit_amount, 'deposit_date', s.deposit_date,
-        'deposit_method', s.deposit_method);
+        'deposit_method', s.deposit_method, 'cod_collected', COALESCE(s.cod_collected, false));
 $$;
 
 -- A cancelled order's delivery-fee entry, Posted straight away (port of
@@ -895,7 +992,10 @@ $$;
 -- p_updates (a key present = write it): payment_status, amount_received,
 -- settle_date, payment_method, deposit_amount, deposit_date, deposit_method,
 -- deposit_account_id, deposit_account_name, post_to_ledger, reference, notes,
--- customer_name, customer_phone, shipping_company, tx_id (retry id for the
+-- customer_name, customer_phone, shipping_company, cod_collected (the
+-- courier collected this order's money: a receipt booked by this save
+-- debits 1210 COD receivable instead of cash/bank, and on a paid order a
+-- Draft receipt's debit is moved accordingly), tx_id (retry id for the
 -- income row this save may create — if that row already exists, it is not
 -- booked again).
 -- p_updates may also carry expected_deposit_amount: the deposit the screen
@@ -984,6 +1084,10 @@ DECLARE
     -- .money: currency, original_amount, exchange_rate, and the income
     -- category they belong to), applied to the row of that category only.
     v_money JSONB := CASE WHEN jsonb_typeof(u->'money') = 'object' THEN u->'money' END;
+    -- "The courier collected this order's money": sent by the Settle form
+    -- (NULL when this save says nothing about it — the stored flag then
+    -- stands, false for an order never marked).
+    v_cod BOOLEAN := CASE WHEN u ? 'cod_collected' THEN COALESCE(NULLIF(u->>'cod_collected', '')::BOOLEAN, false) END;
     v_cut NUMERIC;
     v_entering_paid BOOLEAN;
     v_leaving_paid BOOLEAN;
@@ -1045,6 +1149,9 @@ BEGIN
 
     v_entering_paid := v_target IN ('Paid', 'Settled', 'Paid/Settled') AND v_cur NOT IN ('Paid', 'Settled', 'Paid/Settled');
     v_leaving_paid := v_target_given AND v_target NOT IN ('Paid', 'Settled', 'Paid/Settled') AND v_cur IN ('Paid', 'Settled', 'Paid/Settled');
+    -- Only a settlement is ever COD: a deposit, a delivery fee or a cancel
+    -- saying so is ignored (and the stored flag left alone).
+    IF v_target NOT IN ('Paid', 'Settled', 'Paid/Settled') THEN v_cod := NULL; END IF;
 
     v_name := COALESCE(NULLIF(u->>'customer_name', ''), NULLIF(s.customer_snapshot->>'name', ''), 'Customer');
     v_phone := COALESCE(NULLIF(u->>'customer_phone', ''), NULLIF(s.customer_snapshot->>'phone', ''));
@@ -1089,8 +1196,11 @@ BEGIN
                 v_tx_id, v_date, 'លក់រាយ', v_to_record, v_name, v_added_by, v_shipping_co, v_pay_by,
                 NULLIF(u->>'reference', ''), NULLIF(u->>'notes', ''), p_order_id, v_phone));
             IF v_post THEN
+                -- A courier-collected receipt debits 1210 COD receivable
+                -- (the flag sent, else the one stored on the order).
                 v_notice := wp_internal.op_post_receipt_entry('RCP', v_date::DATE, v_name,
-                    ((v_txs->-1)->>'id')::UUID, v_to_record, v_account_id, v_pay_by, p_order_id, 'Draft');
+                    ((v_txs->-1)->>'id')::UUID, v_to_record, v_account_id, v_pay_by, p_order_id, 'Draft',
+                    COALESCE(v_cod, s.cod_collected, false));
                 IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
             END IF;
         ELSIF v_post THEN
@@ -1254,6 +1364,14 @@ BEGIN
                     NULL, NULL, p_order_id, v_phone));
             END IF;
         END IF;
+        -- "Collected by the courier" flipped on a paid order: the receipt's
+        -- debit moves between 1210 COD receivable and cash/bank (a Draft is
+        -- re-pointed, a POSTED entry stays with a notice).
+        IF v_cod IS NOT NULL AND v_cod IS DISTINCT FROM COALESCE(s.cod_collected, false) THEN
+            v_notice := wp_internal.op_repoint_receipt_debit(p_order_id, v_cod, v_account_id,
+                COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name));
+            IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
+        END IF;
     END IF;
 
     -- The payment columns, from what this save (after the defaults above) asks.
@@ -1266,6 +1384,7 @@ BEGIN
         deposit_date = CASE WHEN u ? 'deposit_date' THEN NULLIF(u->>'deposit_date', '')::DATE ELSE deposit_date END,
         deposit_method = CASE WHEN u ? 'deposit_method' THEN NULLIF(u->>'deposit_method', '') ELSE deposit_method END,
         deposit_account_id = CASE WHEN u ? 'deposit_account_id' THEN NULLIF(u->>'deposit_account_id', '') ELSE deposit_account_id END,
+        cod_collected = COALESCE(v_cod, cod_collected, false),
         last_edited_at = CASE WHEN v_fields ? 'last_edited_by' THEN COALESCE(NULLIF(v_fields->>'now', '')::timestamptz, now()) ELSE last_edited_at END,
         last_edited_by = CASE WHEN v_fields ? 'last_edited_by' THEN v_fields->>'last_edited_by' ELSE last_edited_by END
      WHERE id = p_order_id
@@ -1542,7 +1661,9 @@ GRANT EXECUTE ON FUNCTION wp_internal.op_mark_cogs_booked(TEXT, JSONB) TO anon, 
 GRANT EXECUTE ON FUNCTION wp_internal.op_unbook_cogs(TEXT, NUMERIC) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_drop_draft_cogs_entries(TEXT, TEXT[]) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_reverse_booked_cogs(TEXT, DATE) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_cod_account() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT, BOOLEAN) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_repoint_receipt_debit(TEXT, BOOLEAN, UUID, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_cogs_only(TEXT, DATE, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_fee_entry(UUID, DATE, TEXT, NUMERIC, UUID, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_has_currency_cols(TEXT) TO anon, authenticated;

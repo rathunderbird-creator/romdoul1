@@ -39,14 +39,53 @@ export type CashBankCandidate = {
     account_type: string;
 };
 
-const isCashBank = (a: CashBankCandidate) => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name);
+// 1210 "COD receivable (courier)" (migrations/add_cod_receivable.sql): the
+// money a delivery company has collected from customers and not yet
+// remitted. A current asset, never cash — it must stay out of every "cash
+// and bank" filter (Cash In / Out, the cash-flow statements, the account
+// pickers of the payment forms).
+export const COD_RECEIVABLE_CODE = '1210';
+export const isCodReceivableAccount = (a: { account_code?: string | null; account_name: string }): boolean =>
+    a.account_code === COD_RECEIVABLE_CODE || /receivable/i.test(a.account_name) && /\bcod\b|courier/i.test(a.account_name);
+
+// A cash or bank asset account. The receivable is excluded by name as well
+// as by code, so a renamed "COD cash receivable" could never slip back in.
+export const isCashBankAccount = (a: CashBankCandidate): boolean =>
+    a.account_type === 'Asset' && /cash|bank/i.test(a.account_name) && !/receivable/i.test(a.account_name);
+const isCashBank = isCashBankAccount;
 const byCode = <T extends CashBankCandidate>(a: T, b: T) => (a.account_code || '').localeCompare(b.account_code || '');
+
+// "The courier collected this order's money" — the default of the Settle
+// form's "អ្នកដឹកប្រមូល (COD)" box. On for an order a shipping company has
+// out or has delivered (Shipped / Delivered) or one waiting for its payment
+// proof (Get File): that money reaches the shop as the courier's remittance,
+// not as a transfer from the customer. Off for a direct ABA transfer staff
+// confirm on a Confirmed / Pending order. An order already marked keeps its
+// flag. The user can flip it either way.
+export function defaultCodCollected(order: {
+    codCollected?: boolean | null;
+    paymentStatus?: string | null;
+    shipping?: { company?: string | null; status?: string | null } | null;
+}): boolean {
+    if (order.codCollected === true || order.codCollected === false) return order.codCollected;
+    if (!order.shipping?.company) return false;
+    if (order.paymentStatus === 'Get File') return true;
+    return order.shipping.status === 'Shipped' || order.shipping.status === 'Delivered';
+}
 
 export function pickCashBankAccount<T extends CashBankCandidate>(
     pool: T[],
     payBy?: string | null,
-    opts?: { preferBank?: boolean; currency?: Currency }
+    opts?: { preferBank?: boolean; currency?: Currency; cod?: boolean }
 ): T | undefined {
+    // A courier-collected receipt lands on the COD receivable, whatever the
+    // Method says (the SQL twin, wp_internal.op_post_receipt_entry, makes
+    // the same short-circuit; the pick below is only the account the money
+    // will reach on remittance).
+    if (opts?.cod) {
+        const cod = pool.find(a => a.account_type === 'Asset' && isCodReceivableAccount(a));
+        if (cod) return cod;
+    }
     const all = pool.filter(isCashBank).sort(byCode);
     if (all.length === 0) return undefined;
     const hint = (payBy || '').trim().toLowerCase();

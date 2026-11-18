@@ -37,7 +37,7 @@ import MoneyInput from '../components/MoneyInput';
 import CashBankOptions from '../components/CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
 import { useAccounting } from '../hooks/useAccounting';
-import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, defaultCodCollected } from '../utils/cashBankAccounts';
 import * as XLSX from 'xlsx';
 import type { Sale, CartItem, PaidMoney } from '../types';
 import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../utils/liveColumnResize';
@@ -5163,6 +5163,10 @@ const Orders: React.FC = () => {
                         ? { rate: paymentMethodTargetOrder.paymentClaim.exchange_rate }
                         : settleRiel ? { rate: settleRiel.exchange_rate } : undefined}
                     initialAccountId={settlePaid ? paymentMethodTargetOrder.depositAccountId : undefined}
+                    // "អ្នកដឹកប្រមូល (COD)": on for an order a courier has out / has
+                    // delivered or one waiting for its payment proof, off for a
+                    // direct transfer; a paid order re-opened keeps its flag.
+                    codDefault={defaultCodCollected(paymentMethodTargetOrder)}
                     description={paymentMethodTargetOrder.paymentClaim
                         ? fill(t('ui.orders.claim.confirmingDesc'), {
                             kind: paymentMethodTargetOrder.paymentClaim.status === 'Paid' ? t('ui.orders.claim.payment') : t('ui.orders.claim.deposit'),
@@ -5171,10 +5175,14 @@ const Orders: React.FC = () => {
                             khr: paymentMethodTargetOrder.paymentClaim.currency === 'KHR' && paymentMethodTargetOrder.paymentClaim.original_amount ? ` = ៛${Math.round(paymentMethodTargetOrder.paymentClaim.original_amount).toLocaleString()}` : '',
                         })
                         : undefined}
-                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, money, receivedUsd }) => {
+                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, money, receivedUsd, codCollected }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
                         updates.amountReceived = paymentMethodTargetOrder.total;
+                        // The courier collected it: the receipt debits 1210 COD
+                        // receivable instead of the account picked (which is
+                        // where the courier's remittance will land).
+                        if (codCollected !== undefined) updates.codCollected = codCollected;
                         // A Received Amount other than the amount due changes the
                         // order's money (as the riel figure does in Select Shipping
                         // Company): total = deposit + received, the difference from

@@ -138,7 +138,7 @@ const CODE_AREA: Record<string, Area> = {
     RCP: 'Retail', DEP: 'Retail', DLV: 'Retail',
     WSP: 'Wholesale',
     PUR: 'Purchases', GRN: 'Purchases', OPA: 'Purchases', ADJ: 'Purchases',
-    SPP: 'Payments', PAY: 'Payments',
+    SPP: 'Payments', PAY: 'Payments', COD: 'Payments',
     REV: 'Rev & Exp', EXP: 'Rev & Exp',
     MAN: 'General',
 };

@@ -32,7 +32,12 @@ interface RecordReceiptModalProps {
         receiptNotes?: string;
         // The riel received (not in finalizeMode: that amount is fixed).
         money?: MoneyMeta;
+        // The "អ្នកដឹកប្រមូល (COD)" box (undefined when not shown): the courier
+        // collected the money, so the receipt debits 1210 COD receivable.
+        codCollected?: boolean;
     }) => void;
+    // Shows the COD box, starting at this value (see SettlePaymentModal).
+    codDefault?: boolean;
     // Single order this receipt is being recorded against — fixes the
     // customer and drives the amount-received default/remaining-balance math.
     order: Pick<Sale, 'total' | 'amountReceived' | 'depositAmount' | 'customer'>;
@@ -65,7 +70,8 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     finalizeMode = false,
     finalizeRow,
     title,
-    description
+    description,
+    codDefault,
 }) => {
     const tx = useTx();
     const { paymentMethods, khrExchangeRate } = useStore();
@@ -76,6 +82,8 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     const [chosenAccountId, setChosenAccountId] = useState<string>('');
     const [receiptReference, setReceiptReference] = useState<string>('');
     const [receiptNotes, setReceiptNotes] = useState<string>('');
+    const showCod = codDefault !== undefined;
+    const [codCollected, setCodCollected] = useState<boolean>(false);
     const [accountsLoaded, setAccountsLoaded] = useState(false);
     const initializedRef = useRef(false);
 
@@ -111,9 +119,10 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
         field.reset({ amount: finalizeMode ? order.total : due, currency: 'USD' });
         setReceiptReference('');
         setReceiptNotes('');
+        setCodCollected(codDefault === true);
         // field.reset follows the shop rate only; the rest are this open's inputs.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, initialMethod, initialDate, paymentMethods, finalizeMode, order.total, order.depositAmount, order.amountReceived]);
+    }, [isOpen, initialMethod, initialDate, paymentMethods, finalizeMode, order.total, order.depositAmount, order.amountReceived, codDefault]);
 
     // Default "Deposited into" until the user picks one: the preferred id, then
     // a name match on the hint (a cash method picks the cash account), then Bank.
@@ -290,6 +299,19 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                         {tx('ui.components.receiptRecord.remainingBalance', 'Remaining balance:')} ${remainingBalance.toFixed(2)}
                     </div>
                 )}
+                {showCod && (
+                    <div data-receipt-cod>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={codCollected} onChange={e => setCodCollected(e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                            {tx('ui.components.settle.codCollected', 'អ្នកដឹកប្រមូល (COD)')}
+                        </label>
+                        <p style={{ margin: '6px 0 0 24px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                            {codCollected
+                                ? tx('ui.components.settle.codOnHint', "The courier collected this money and still holds it. It is booked to COD receivable until the courier's remittance is recorded on Accounting › COD remittances.")
+                                : tx('ui.components.settle.codOffHint', "The customer paid the shop directly (ABA transfer, cash): the money is in the account above now.")}
+                        </p>
+                    </div>
+                )}
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('ui.components.common.notes', 'Notes')}</label>
                     <textarea
@@ -329,6 +351,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                                 receiptReference: receiptReference.trim() || undefined,
                                 receiptNotes: receiptNotes.trim() || undefined,
                                 money: finalizeMode ? undefined : field.meta,
+                                codCollected: showCod ? codCollected : undefined,
                             });
                             onClose();
                         }}

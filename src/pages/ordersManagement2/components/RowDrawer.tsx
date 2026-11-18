@@ -12,6 +12,7 @@ import { orderBalance, previewPayChange, isMissingTracking, orderStatusOf, paySt
 import type { OrderEdit, PillTone } from '../types';
 import { getOperatorForPhone } from '../../../utils/telecom';
 import { getShippingLogo } from '../../../utils/shipping';
+import { defaultCodCollected } from '../../../utils/cashBankAccounts';
 
 type PayStatus = NonNullable<Order['paymentStatus']>;
 const PAYMENT_STATUS_OPTIONS: PayStatus[] = ['Unpaid', 'Deposit', 'Paid', 'Cancel', 'Get File'];
@@ -293,8 +294,13 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
             // as classic Orders' DepositModal.
             const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
             const entering = (s: PayStatus) => paymentStatus === s && baseline.paymentStatus !== s;
+            // codCollected: the same default the Settle form's "អ្នកដឹកប្រមូល
+            // (COD)" box starts at — on for an order a courier has out / has
+            // delivered or one waiting for its payment proof (the receipt then
+            // debits 1210 COD receivable); this drawer has no box to flip it,
+            // the Orders page's Settle form does.
             const paidExtras = entering('Paid')
-                ? { amountReceived: order.total, settleDate: settleDateInput || nowIso, postToLedger: true }
+                ? { amountReceived: order.total, settleDate: settleDateInput || nowIso, postToLedger: true, codCollected: defaultCodCollected(order) }
                 : {};
             const depositExtras = entering('Deposit') && amountReceived > 0
                 ? {
