@@ -23,6 +23,38 @@ rmSync(bundlePath);
 let pass = 0, fail = 0;
 const check = (l, c, extra) => { c ? pass++ : fail++; console.log(c ? 'PASS' : 'FAIL', l, c || extra === undefined ? '' : JSON.stringify(extra)); };
 
+// ── defaultCodCollected (the COD box's starting value) ──
+// Every order read from the database carries codCollected true/false
+// (mapper.ts: s.cod_collected === true), never undefined, and the column
+// defaults to false: a stored false on an order whose money is not yet
+// booked is no decision, so the shipping state decides.
+const cod = m.defaultCodCollected;
+const ship = (status, company = 'J&T') => ({ company, status });
+check('cod: unpaid Delivered courier order, stored false → on', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Delivered') }) === true);
+check('cod: unpaid Shipped courier order, stored false → on', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Shipped') }) === true);
+check('cod: Get File, stored false → on', cod({ codCollected: false, paymentStatus: 'Get File', shipping: ship('Confirmed') }) === true);
+check('cod: Get File without a courier → off', cod({ codCollected: false, paymentStatus: 'Get File', shipping: ship('Confirmed', '') }) === false);
+check('cod: unpaid Confirmed (not out yet) → off', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Confirmed') }) === false);
+check('cod: unpaid Pending → off', cod({ codCollected: false, paymentStatus: 'Pending', shipping: ship('Pending') }) === false);
+check('cod: Delivered but no courier → off', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Delivered', null) }) === false);
+check('cod: no shipping at all → off', cod({ codCollected: false, paymentStatus: 'Unpaid' }) === false);
+check('cod: Paid with stored false → stays off (decided with the receipt)', cod({ codCollected: false, paymentStatus: 'Paid', shipping: ship('Delivered') }) === false);
+check('cod: Paid with stored true → on', cod({ codCollected: true, paymentStatus: 'Paid', shipping: ship('Confirmed') }) === true);
+check('cod: unpaid with stored true → on (someone ticked it)', cod({ codCollected: true, paymentStatus: 'Unpaid', shipping: ship('Confirmed') }) === true);
+check('cod: flag undefined, Delivered courier → on', cod({ paymentStatus: 'Unpaid', shipping: ship('Delivered') }) === true);
+check('cod: flag null, Paid, Delivered courier → on (nothing decided)', cod({ codCollected: null, paymentStatus: 'Paid', shipping: ship('Delivered') }) === true);
+check('cod: Deposit (partial) Shipped courier → on', cod({ codCollected: false, paymentStatus: 'Deposit', shipping: ship('Shipped') }) === true);
+check('cod: Settled with stored false → stays off (same paid set as set_order_payment)', cod({ codCollected: false, paymentStatus: 'Settled', shipping: ship('Delivered') }) === false);
+check('cod: Paid/Settled with stored false → stays off', cod({ codCollected: false, paymentStatus: 'Paid/Settled', shipping: ship('Delivered') }) === false);
+check('cod: Settled with stored true → on', cod({ codCollected: true, paymentStatus: 'Settled', shipping: ship('Confirmed') }) === true);
+check('cod: PdFee Delivered courier, stored false → on (fee only, money not booked)', cod({ codCollected: false, paymentStatus: 'PdFee', shipping: ship('Delivered') }) === true);
+check('cod: unpaid Returned courier order → off', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Returned') }) === false);
+check('cod: unpaid Drafted with a courier → off', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Drafted') }) === false);
+check('cod: Get File beats a Returned shipping status', cod({ codCollected: false, paymentStatus: 'Get File', shipping: ship('Returned') }) === true);
+check('cod: no paymentStatus, Shipped courier → on', cod({ codCollected: false, shipping: ship('Shipped') }) === true);
+check('cod: Paid, stored false, no shipping → off', cod({ codCollected: false, paymentStatus: 'Paid' }) === false);
+check('cod: stored true, no courier → on (someone ticked it)', cod({ codCollected: true, paymentStatus: 'Unpaid', shipping: ship('Delivered', '') }) === true);
+
 // ── conversions ──
 check('khrToUsd 82000 @ 4100 = 20', m.khrToUsd(82000, 4100) === 20);
 check('khrToUsd 4269000 @ 4100 = 1041.22 (rounded to cents)', m.khrToUsd(4269000, 4100) === 1041.22);
