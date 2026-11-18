@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
-import { pickCashBankAccount } from '../utils/cashBankAccounts';
+import { isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
 import { isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
 import { tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 import { insertJournalLines } from '../utils/journalEntryLines';
@@ -563,7 +563,9 @@ export async function postOrFinalizeTransactionReceipt({
             const a = accById.get(l.account_id);
             if (!a) return false;
             if (a.account_type === 'Revenue') return false;
-            if (a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)) return false;
+            // The money side: cash/bank, or 1210 COD receivable when the
+            // courier collected it (never a COGS line to preserve).
+            if (isCashBankAccount(a) || (a.account_type === 'Asset' && isCodReceivableAccount(a))) return false;
             return true;
         });
         const cogs = oldCogsSide.length === 0 && type === 'RCP' && orderId ? await retailCogsLines(orderId, pool) : null;
@@ -2613,7 +2615,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 tracking_number: newSale.shipping?.trackingNumber,
                 shipping_status: newSale.shipping?.status,
                 remark: newSale.remark,
-                settle_date: newSale.settleDate || null
+                settle_date: newSale.settleDate || null,
+                // The courier collects this order's money (Checkout's "COD"
+                // box); older packs ignore the key.
+                ...(newSale.codCollected !== undefined ? { cod_collected: newSale.codCollected === true } : {}),
             },
             p_items: newSale.items.map(item => ({ id: item.id, name: item.name, price: item.price, quantity: item.quantity })),
             p_fields: { added_by: currentUser?.name || 'System', tx_id: txId, dep_tx_id: depTxId },
@@ -3308,7 +3313,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             || updates.settleDate !== undefined || updates.paymentMethod !== undefined
             || updates.depositAmount !== undefined || updates.depositDate !== undefined
             || updates.depositMethod !== undefined || updates.depositAccountId !== undefined
-            || updates.depositAccountName !== undefined || updates.postToLedger !== undefined;
+            || updates.depositAccountName !== undefined || updates.postToLedger !== undefined
+            || updates.codCollected !== undefined;
         if (hasPaymentFields() && !(await paymentFunctionsReady())) {
             alert(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE());
             return false;
@@ -3366,6 +3372,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (updates.customer?.name) pUpdates.customer_name = updates.customer.name;
             if (updates.customer?.phone) pUpdates.customer_phone = updates.customer.phone;
             if (updates.shipping?.company) pUpdates.shipping_company = updates.shipping.company;
+            // "The courier collected this order's money": a receipt booked by
+            // this save debits 1210 COD receivable instead of the cash/bank
+            // account (migrations/add_cod_receivable.sql); the account picked
+            // below is still sent — it is where the remittance will land.
+            if (updates.codCollected !== undefined) pUpdates.cod_collected = updates.codCollected === true;
             // The riel details of the money this save books or corrects, with
             // the income category they belong to: the database writes them to
             // the corrected row and its ledger entry (a Draft rewritten, a
@@ -3431,7 +3442,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             paymentTxKeys.release(paySignature);
             const payRes = (payData || {}) as {
                 skipped?: boolean; already_applied?: boolean;
-                payment?: { payment_status?: string | null; amount_received?: number; settle_date?: string | null; payment_method?: string | null; deposit_amount?: number; deposit_date?: string | null; deposit_method?: string | null };
+                payment?: { payment_status?: string | null; amount_received?: number; settle_date?: string | null; payment_method?: string | null; deposit_amount?: number; deposit_date?: string | null; deposit_method?: string | null; cod_collected?: boolean | null };
                 transactions_added?: Transaction[]; transactions_removed?: string[]; notices?: string[];
             };
             if (payRes.payment) {
@@ -3443,6 +3454,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     depositAmount: Number(payRes.payment.deposit_amount) || 0,
                     depositDate: payRes.payment.deposit_date || undefined,
                     depositMethod: payRes.payment.deposit_method || undefined,
+                    // Older packs don't return it: the flag the save sent then
+                    // stands (undefined leaves the cached order's as it was).
+                    ...(typeof payRes.payment.cod_collected === 'boolean' ? { codCollected: payRes.payment.cod_collected } : {}),
                 };
                 if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };
             }

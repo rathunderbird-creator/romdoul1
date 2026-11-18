@@ -18,6 +18,7 @@ import ReportModal from '../components/ReportModal';
 import Modal from '../components/Modal';
 import IncomeExpense from './IncomeExpense';
 import { amountWarningLine, amountWarningText, checkUsdAmount, shopRate } from '../utils/currency';
+import { defaultCodCollected } from '../utils/cashBankAccounts';
 import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../utils/liveColumnResize';
 import { useLanguage } from '../context/LanguageContext';
 import { fill } from '../i18n/translate';
@@ -1603,9 +1604,13 @@ const PaymentTracking: React.FC = () => {
                     order={paymentMethodTargetOrder}
                     initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.settleDate || undefined}
-                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, amountReceived, receiptReference, receiptNotes, money }) => {
+                    codDefault={defaultCodCollected(paymentMethodTargetOrder)}
+                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, amountReceived, receiptReference, receiptNotes, money, codCollected }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
+                        // The courier collected it: the receipt debits 1210 COD
+                        // receivable, not the account picked.
+                        if (codCollected !== undefined) updates.codCollected = codCollected;
                         // updateOrder's Paid branch treats amountReceived as the order's
                         // cumulative total-to-date (it subtracts any prior deposit back out
                         // to find the new income to log) — the same convention Orders.tsx's

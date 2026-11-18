@@ -108,6 +108,27 @@ at variance 0 throughout. Same PGlite setup as auth-guards:
     npm i --no-save @electric-sql/pglite
     node tests/order-receipt-correction.test.mjs
 
+## cod-receivable.test.mjs
+
+Cash on delivery: `migrations/add_cod_receivable.sql` (1210 COD receivable
+(courier), `sales.cod_collected`) and the COD branch of
+`migrations/add_order_payment_functions.sql`, on the real stack
+(`tests/fifo-test-db.mjs`). The standalone file runs twice; a receipt the
+courier collected (`p_updates.cod_collected`) debits 1210 instead of the
+bank with its COGS unchanged while a plain receipt still debits the bank; a
+LED-6 amount correction keeps the 1210 debit; flipping the flag on a paid
+order re-points a Draft entry's debit (and line description) and leaves a
+POSTED one with a notice while the column follows; deposits ignore the flag
+and a COD remainder debits 1210; a remittance entry in the shape Accounting ›
+COD Remittances writes (Dr 1011 / Cr 1210, `COD-REMIT-…`) brings the 1210
+balance down; leaving Paid removes a COD Draft; a store without the account
+books the bank with a notice; `create_retail_order` stores the flag and a
+later settle reads it. The FIFO check stays at variance 0 throughout. Same
+PGlite setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/cod-receivable.test.mjs
+
 ## order-status-rules.test.mjs
 
 Unit test of `src/utils/orderStatusRules.ts` — the shared refusal rules the

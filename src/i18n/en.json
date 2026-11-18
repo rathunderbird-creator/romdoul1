@@ -73,6 +73,7 @@
     "inventorySettings": "Inventory Settings",
     "accountsPayable": "Accounts Payable",
     "accountsReceivable": "Accounts Receivable",
+    "codRemittances": "COD Remittances",
     "payments": "Payments",
     "hrPayroll": "HR & Payroll",
     "employees": "Employees",
@@ -2483,6 +2484,44 @@
         "empty": "No payments recorded yet.",
         "categoryPlaceholder": "e.g. Supplier, Utilities, Rent",
         "descriptionPlaceholder": "Add details about this payment..."
+      },
+      "cod": {
+        "title": "COD Remittances",
+        "subtitle": "Money the couriers collected on delivery, and the lumps they pay into the bank",
+        "card": {
+          "held": "Held by couriers (1210)",
+          "heldPosted": "of which posted: {amount}",
+          "remittedMonth": "Remitted this month",
+          "count": "Remittances"
+        },
+        "newEntry": "New remittance",
+        "editEntry": "Edit remittance",
+        "courier": "Courier",
+        "courierOther": "Other…",
+        "courierOtherPh": "Courier name",
+        "bankRef": "Bank REF#",
+        "bankRefPh": "Optional — the bank statement reference",
+        "receivedInto": "Received into (Debit)",
+        "creditedTo": "Credited to",
+        "submit": "Record remittance",
+        "draftNote": "Saved as a Draft — review and post it on Journal Entries.",
+        "entries": "Remittances",
+        "empty": "No remittances yet — record the first one above.",
+        "postHint": "Post Drafts on Journal Entries",
+        "postedLocked": "posted",
+        "noAccount": "There is no 1210 COD receivable (courier) account yet — run migrations/add_cod_receivable.sql on this store first.",
+        "confirm": {
+          "delete": "Delete the {amount} remittance from {courier} on {date}?"
+        },
+        "toast": {
+          "saved": "Remittance drafted — review and post it on Journal Entries.",
+          "updated": "Remittance updated",
+          "deleted": "Remittance deleted",
+          "saveFailed": "Failed to save the remittance",
+          "deleteFailed": "Failed to delete the remittance",
+          "postedNoChange": "Posted entries cannot be changed — record a correcting entry on Journal Entries.",
+          "restoreFailed": "and restoring the previous lines also failed; re-enter remittance {ref}"
+        }
       },
       "re": {
         "kind": {
@@ -5123,7 +5162,12 @@
         "moreThanDue": "{diff} more than the {due} due: saved as an extra charge on the order.",
         "bigDiffConfirm": "Received {rec} but {due} is due. Change the order total by {diff} and save it as a {kind}?",
         "discountWord": "discount",
-        "extraChargeWord": "extra charge"
+        "extraChargeWord": "extra charge",
+        "codCollected": "អ្នកដឹកប្រមូល (COD)",
+        "codOnHint": "The courier collected this money and still holds it. It is booked to COD receivable until the courier's remittance is recorded on Accounting › COD Remittances.",
+        "codOffHint": "The customer paid the shop directly (ABA transfer, cash): the money is in the account above now.",
+        "booksDraftCod": "Settling books the receipt to 1210 COD receivable (courier) as a Draft journal entry; this account is where the courier's remittance will land.",
+        "codCheckoutHint": "Tick when the courier collected this money: the receipt is booked to COD receivable until the courier remits it."
       },
       "shippingPoint": {
         "confirm": "បញ្ជាក់ទីតាំង (Confirm)",

@@ -25,6 +25,7 @@ import { supabase } from '../../lib/supabase';
 import { dayKeyFromDate, addDays } from '../../utils/dateRange';
 import type { ChartOfAccount } from '../../types';
 import { fetchPostedLedgerLines } from '../../utils/fetchPostedLedgerLines';
+import { isCashBankAccount } from '../../utils/cashBankAccounts';
 
 const fmt = (n: number) => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const todayYmd = () => dayKeyFromDate(new Date());
@@ -169,7 +170,7 @@ const FinancialDashboardPage: React.FC = () => {
     const totalEquity = totalEquityLedger + retainedEarnings;
 
     const cashAccountIds = useMemo(
-        () => new Set(accounts.filter(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)).map(a => a.id)),
+        () => new Set(accounts.filter(isCashBankAccount).map(a => a.id)),
         [accounts]
     );
     const cashPosition = useMemo(() => {

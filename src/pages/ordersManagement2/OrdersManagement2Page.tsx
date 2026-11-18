@@ -90,6 +90,7 @@ const OrdersManagement2Page: React.FC = () => {
         if (edit.depositDate !== undefined) updates.depositDate = edit.depositDate;
         if (edit.depositMethod !== undefined) updates.depositMethod = edit.depositMethod;
         if (edit.postToLedger !== undefined) updates.postToLedger = edit.postToLedger;
+        if (edit.codCollected !== undefined) updates.codCollected = edit.codCollected;
         if (edit.salesman !== undefined) updates.salesman = edit.salesman;
         if (edit.customerCare !== undefined) updates.customerCare = edit.customerCare;
         if (edit.remark !== undefined) updates.remark = edit.remark;

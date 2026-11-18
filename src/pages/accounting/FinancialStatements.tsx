@@ -16,6 +16,7 @@ import { fill } from '../../i18n/translate';
 import type { ChartOfAccount } from '../../types';
 import { dayKeyFromDate } from '../../utils/dateRange';
 import { fetchPostedLedgerLines } from '../../utils/fetchPostedLedgerLines';
+import { isCashBankAccount } from '../../utils/cashBankAccounts';
 
 type AccountType = ChartOfAccount['account_type'];
 interface LedgerLine { accountId: string; entryId: string; debit: number; credit: number; date: string }
@@ -237,9 +238,10 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
     }, [signedBalances, accounts, startDate, endDate, compare, showEmpty]);
 
     // ── Cash Flow (startDate → endDate): cash accounts = Asset accounts whose name
-    // mentions cash/bank; each entry's cash delta is attributed to its other lines. ──
+    // mentions cash/bank (never 1210 COD receivable — money the courier still
+    // holds); each entry's cash delta is attributed to its other lines. ──
     const cashFlow = useMemo(() => {
-        const cashIds = new Set(accounts.filter(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)).map(a => a.id));
+        const cashIds = new Set(accounts.filter(isCashBankAccount).map(a => a.id));
         const nameOf = new Map(accounts.map(a => [a.id, `${a.account_code} · ${a.account_name}`]));
         let opening = 0;
         const byEntry = new Map<string, LedgerLine[]>();
@@ -281,7 +283,7 @@ const FinancialStatements: React.FC<FinancialStatementsProps> = ({ startDate, en
     // MUST equal the cash accounts' actual change. The banner checks that
     // identity: a mismatch means a classification bug, not bad data. ──
     const cashFlowStatement = useMemo(() => {
-        const cashIds = new Set(accounts.filter(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)).map(a => a.id));
+        const cashIds = new Set(accounts.filter(isCashBankAccount).map(a => a.id));
         const known = new Set(accounts.map(a => a.id));
         // Period net debit per non-cash account (raw sides, not normal-signed).
         const netDebit = new Map<string, number>();

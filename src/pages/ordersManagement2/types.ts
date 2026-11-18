@@ -30,6 +30,9 @@ export interface OrderEdit {
     // Paid / Deposit saves book their Draft ledger entry, same as classic
     // Orders' settle and deposit modals.
     postToLedger?: boolean;
+    // The courier collected the money (a Paid save): the receipt debits
+    // 1210 COD receivable instead of cash/bank.
+    codCollected?: boolean;
     // undefined = leave alone; null = clear; a string = set to this date.
     settleDate?: string | null;
     // Undefined = "leave the shipping/order status alone"; any real status

@@ -23,9 +23,10 @@ export type SystemEntryKind =
 export type EntryLike = Pick<JournalEntry, 'reference_id' | 'entry_number'>;
 
 // Type codes a person picks when recording an entry by hand: Journal Entries
-// (MAN) and the Revenue / Expense page (REV / EXP). Every other code names an
-// automatic flow (RCP, DEP, DLV, SPP, WSP, PAY, PUR, GRN, ADJ, OPA, …).
-const HAND_CODES: ReadonlySet<string> = new Set(['MAN', 'REV', 'EXP']);
+// (MAN), the Revenue / Expense page (REV / EXP) and COD remittances (COD).
+// Every other code names an automatic flow (RCP, DEP, DLV, SPP, WSP, PAY,
+// PUR, GRN, ADJ, OPA, …).
+const HAND_CODES: ReadonlySet<string> = new Set(['MAN', 'REV', 'EXP', 'COD']);
 // Money-in flows vs money-out flows among the 'TX-' day-book entries.
 const PAYMENT_CODES: ReadonlySet<string> = new Set(['SPP', 'WSP', 'PAY', 'EXP']);
 

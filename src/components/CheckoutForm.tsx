@@ -14,6 +14,7 @@ import { sendTelegramOrderNotification } from '../utils/telegram';
 import { useTx, orderStatusDisplay } from './useTx';
 import { amountWarningLine, amountWarningText, checkKhrAmount, checkUsdAmount, formatKhr, formatRate, formatUsd, khrMeta, khrToUsd, resolveMoney, shopRate, usdToKhr } from '../utils/currency';
 import { roundCents } from '../utils/money';
+import { defaultCodCollected } from '../utils/cashBankAccounts';
 
 interface CheckoutFormProps {
     cartItems: CartItem[];
@@ -127,6 +128,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         shippingStatus: NonNullable<Sale['shipping']>['status'];
         paymentStatus: 'Unpaid' | 'Deposit' | 'Paid' | 'PdFee' | 'Get File' | 'Cancel';
         date: string;
+        // "អ្នកដឹកប្រមូល (COD)" on a Paid save: the courier collected the
+        // money (the receipt debits 1210 COD receivable). Off for a new order
+        // paid up front; an order being edited starts from its own flag, else
+        // from its shipping state (utils/cashBankAccounts defaultCodCollected).
+        codCollected: boolean;
     } = {
         customerName: orderToEdit?.customer?.name || '',
         customerPhone: orderToEdit?.customer?.phone || '',
@@ -149,7 +155,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         enableDiscount: (orderToEdit?.discount || 0) > 0,
         shippingStatus: orderToEdit?.shipping?.status || 'Drafted',
         paymentStatus: orderToEdit?.paymentStatus || 'Unpaid',
-        date: orderToEdit?.date || new Date().toISOString()
+        date: orderToEdit?.date || new Date().toISOString(),
+        codCollected: orderToEdit ? defaultCodCollected(orderToEdit) : false,
     };
 
     const [formData, setFormData] = useState(initialFormState);
@@ -388,7 +395,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 enableDiscount: (orderToEdit.discount || 0) > 0,
                 shippingStatus: orderToEdit.shipping?.status || 'Drafted',
                 paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Deposit' | 'Paid' | 'PdFee' | 'Get File' | 'Cancel') || 'Unpaid',
-                date: orderToEdit.date || ''
+                date: orderToEdit.date || '',
+                codCollected: defaultCodCollected(orderToEdit),
             });
             // An order sold above its items' price (a negative discount)
             // reopens with the selling price ticked. A positive discount
@@ -649,6 +657,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 amountReceived: formData.paymentAfterDelivery ? 0 : amountReceivedVal,
                 settleDate: formData.settleDate,
                 paymentStatus: effectivePaymentStatus,
+                // Only a settlement is ever COD (deposits never are).
+                ...(effectivePaymentStatus === 'Paid' && !formData.paymentAfterDelivery ? { codCollected: formData.codCollected } : {}),
                 ...(isPartialDeposit ? {
                     depositAmount: amountReceivedVal,
                     // Editing an existing deposit keeps its original date/method.
@@ -685,6 +695,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 delete od.depositAmount;
                 delete od.depositDate;
                 delete od.depositMethod;
+                delete od.codCollected;
                 if (orderToEdit) delete od.paymentMethod;
                 if (paymentClaim) od.paymentClaim = paymentClaim;
             }
@@ -1356,6 +1367,17 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             )}
                                         </>
                                     );
+                                })()}
+                                {(() => {
+                                    // A Paid save books a receipt: say who holds the money.
+                                    const num = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
+                                    const paidNow = !formData.paymentAfterDelivery && total > 0 && num >= total && !['Get File', 'Cancel'].includes(formData.paymentStatus);
+                                    return paidNow ? (
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer', margin: '8px 0 0 0' }} title={tx('ui.components.settle.codCheckoutHint', 'Tick when the courier collected this money: the receipt is booked to COD receivable until the courier remits it.')}>
+                                            <input type="checkbox" checked={formData.codCollected} onChange={e => setFormData({ ...formData, codCollected: e.target.checked })} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
+                                            {tx('ui.components.settle.codCollected', 'អ្នកដឹកប្រមូល (COD)')}
+                                        </label>
+                                    ) : null;
                                 })()}
                                 {(() => {
                                     const num = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);

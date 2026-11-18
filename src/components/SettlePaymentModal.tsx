@@ -33,7 +33,15 @@ interface SettlePaymentModalProps {
     // deposit + received, the difference going into the discount.
     // money: the riel received, when the settlement came in riel (the riel
     // amount and rate are recorded with the USD booked).
-    onConfirm: (data: { paymentMethod: string; settleDate: string; depositAccountId?: string; depositAccountName?: string; money?: MoneyMeta; receivedUsd?: number }) => void;
+    // codCollected: the "អ្នកដឹកប្រមូល (COD)" box — the courier collected the
+    // money, so the receipt debits 1210 COD receivable (courier) until the
+    // courier remits it; undefined when the box is not shown (no codDefault).
+    onConfirm: (data: { paymentMethod: string; settleDate: string; depositAccountId?: string; depositAccountName?: string; money?: MoneyMeta; receivedUsd?: number; codCollected?: boolean }) => void;
+    // Shows the COD box, starting at this value (utils/cashBankAccounts
+    // defaultCodCollected: on for an order a courier has out or has
+    // delivered, or one waiting for its payment proof; off for a direct
+    // transfer). Omitted: no box, the save says nothing about COD.
+    codDefault?: boolean;
     // What is still owed in USD (total − deposit), and the riel the shop
     // expected to collect (sales.custom_khr_amount) — both optional; without
     // amountDue there is no Received Amount field.
@@ -68,10 +76,13 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     khrExpected,
     orderTotal,
     title,
-    description
+    description,
+    codDefault
 }) => {
     const tx = useTx();
     const { paymentMethods, khrExchangeRate } = useStore();
+    const showCod = codDefault !== undefined;
+    const [codCollected, setCodCollected] = useState<boolean>(false);
     // The amount actually received, in dollars or riel (USD | KHR toggle,
     // kept in step with the Deposited into account). A riel figure within a
     // few cents of the amount due books exactly the amount due (snapToUsd).
@@ -117,13 +128,14 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
             setSelectedMethod(fromInitial || bankMethod || initialMethod || paymentMethods[0] || 'Cash');
             setSettleDate(initialDate ? (/^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : dayKeyFromDate(new Date(initialDate))) : localYMD());
             setDepositAccountId('');
+            setCodCollected(codDefault === true);
         }
         // paymentAccounts stays OUT of these deps: the accounts arrive after the
         // modal opens, and re-running this then would clobber whatever date or
         // method the user already changed. The account default has its own
         // effect below for exactly that reason.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, initialMethod, initialDate, paymentMethods, preferInitialMethod]);
+    }, [isOpen, initialMethod, initialDate, paymentMethods, preferInitialMethod, codDefault]);
 
     // Seed the account default once the accounts arrive — but never overwrite
     // a pick the user already made.
@@ -277,10 +289,30 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                         {!accountsLoaded
                             ? tx('ui.components.common.loadingCoa', 'Loading the Chart of Accounts…')
                             : paymentAccounts.length > 0
-                                ? tx('ui.components.settle.booksDraft', 'Settling also books the receipt to this account as a Draft journal entry.')
+                                ? (showCod && codCollected
+                                    ? tx('ui.components.settle.booksDraftCod', "Settling books the receipt to 1210 COD receivable (courier) as a Draft journal entry; this account is where the courier's remittance will land.")
+                                    : tx('ui.components.settle.booksDraft', 'Settling also books the receipt to this account as a Draft journal entry.'))
                                 : tx('ui.components.settle.noAccounts', 'No cash or bank accounts in the Chart of Accounts yet — the settlement saves without a ledger entry account.')}
                     </p>
                 </div>
+                {showCod && (
+                    <div data-settle-cod>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer' }}>
+                            <input
+                                type="checkbox"
+                                checked={codCollected}
+                                onChange={e => setCodCollected(e.target.checked)}
+                                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                            />
+                            {tx('ui.components.settle.codCollected', 'អ្នកដឹកប្រមូល (COD)')}
+                        </label>
+                        <p style={{ margin: '6px 0 0 24px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                            {codCollected
+                                ? tx('ui.components.settle.codOnHint', "The courier collected this money and still holds it. It is booked to COD receivable until the courier's remittance is recorded on Accounting › COD remittances.")
+                                : tx('ui.components.settle.codOffHint', 'The customer paid the shop directly (ABA transfer, cash): the money is in the account above now.')}
+                        </p>
+                    </div>
+                )}
                 {showReceived && (
                     <div data-settle-received>
                         <MoneyInput
@@ -346,6 +378,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                                         depositAccountName: paymentAccounts.find(a => a.id === depositAccountId)?.account_name,
                                         money: inRiel ? receivedField.meta : undefined,
                                         receivedUsd: showReceived ? receivedUsd : undefined,
+                                        codCollected: showCod ? codCollected : undefined,
                                     });
                                     onClose();
                                 }}

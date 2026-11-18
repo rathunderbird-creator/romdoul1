@@ -67,6 +67,7 @@ export const useNavItems = (): NavItem[] => {
                 { label: t('nav.expense'), path: '/accounting/expense', icon: TrendingDown },
                 { label: t('nav.accountsPayable'), path: '/accounting/payable', icon: Wallet },
                 { label: t('nav.accountsReceivable'), path: '/accounting/receivable', icon: HandCoins },
+                { label: t('nav.codRemittances'), path: '/accounting/cod-remittances', icon: Truck },
                 { label: t('nav.payments'), path: '/accounting/payments', icon: CreditCard }
             ]
         });
