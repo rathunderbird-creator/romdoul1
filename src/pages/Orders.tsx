@@ -2747,8 +2747,11 @@ const Orders: React.FC = () => {
                         if (payBy) individualUpdates.paymentMethod = payBy as any;
                         // Bulk settles book their receipts too; with no account
                         // picker here, the Pay By steers which cash/bank account
-                        // the Draft RCP entry lands on.
+                        // the Draft RCP entry lands on — unless the courier
+                        // collected the money (the Settle box's default), when
+                        // the receipt debits 1210 COD receivable instead.
                         individualUpdates.postToLedger = true;
+                        individualUpdates.codCollected = defaultCodCollected(order);
                     } else if (value === 'Get File') {
                         // File collected, money not settled yet — no settle date. Keep a
                         // deposit visible in Received when one was taken.

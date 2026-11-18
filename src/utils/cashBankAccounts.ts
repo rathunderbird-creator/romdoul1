@@ -60,14 +60,23 @@ const byCode = <T extends CashBankCandidate>(a: T, b: T) => (a.account_code || '
 // out or has delivered (Shipped / Delivered) or one waiting for its payment
 // proof (Get File): that money reaches the shop as the courier's remittance,
 // not as a transfer from the customer. Off for a direct ABA transfer staff
-// confirm on a Confirmed / Pending order. An order already marked keeps its
-// flag. The user can flip it either way.
+// confirm on a Confirmed / Pending order. A stored true always counts
+// (someone ticked it). A stored false counts only on a settled order
+// (Paid / Settled / Paid/Settled — the paid set set_order_payment and
+// StoreContext use), where it was decided with the receipt; on any other
+// order it is just the column's default (sales.cod_collected is NOT NULL
+// DEFAULT false, and mapper.ts reads every row as true/false), so the
+// shipping state decides. The user can flip it either way. Every path that
+// marks an order Paid sends this default (the Settle / Record Receipt
+// forms as the box's start, bulk Paid and the OM2 drawer as the value).
+const SETTLED_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
 export function defaultCodCollected(order: {
     codCollected?: boolean | null;
     paymentStatus?: string | null;
     shipping?: { company?: string | null; status?: string | null } | null;
 }): boolean {
-    if (order.codCollected === true || order.codCollected === false) return order.codCollected;
+    if (order.codCollected === true) return true;
+    if (order.codCollected === false && SETTLED_STATUSES.includes(order.paymentStatus || '')) return false;
     if (!order.shipping?.company) return false;
     if (order.paymentStatus === 'Get File') return true;
     return order.shipping.status === 'Shipped' || order.shipping.status === 'Delivered';

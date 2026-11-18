@@ -292,6 +292,9 @@ const PaymentTracking: React.FC = () => {
                         individualUpdates.amountReceived = order.total;
                         individualUpdates.settleDate = now;
                         if (payByInput) individualUpdates.paymentMethod = payByInput as any;
+                        // Courier-collected money (the Settle box's default)
+                        // debits 1210 COD receivable, not the bank.
+                        individualUpdates.codCollected = defaultCodCollected(order);
                     } else if (value === 'Get File') {
                         // File collected, money not settled yet — no settle date. Keep a
                         // deposit visible in Received when one was taken.
@@ -790,6 +793,9 @@ const PaymentTracking: React.FC = () => {
             settleDate: formData.settleDate,
             paymentStatus: formData.paymentStatus,
             expectedPaymentStatus: selectedOrder.paymentStatus,
+            // A Paid save here has no COD box: the Settle box's default
+            // decides whether the receipt debits 1210 COD receivable.
+            ...(formData.paymentStatus === 'Paid' ? { codCollected: defaultCodCollected(selectedOrder) } : {}),
             ...(formData.paymentStatus === 'Paid' && selectedOrder.shipping?.status !== 'Delivered' ? { shipping: { ...(selectedOrder.shipping || {}), company: selectedOrder.shipping?.company || '', trackingNumber: selectedOrder.shipping?.trackingNumber || '', cost: selectedOrder.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {})
         });
         showToast(tx('payTrack.paymentUpdated', 'Payment details updated'), 'success');

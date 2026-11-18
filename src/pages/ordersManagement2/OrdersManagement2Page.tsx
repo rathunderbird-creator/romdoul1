@@ -13,6 +13,7 @@ import { useUrlFilters, UndoToast, useOM2Lang, type UndoToastHandle } from './ui
 import { useOrdersM2Data } from './useOrdersM2Data';
 import { exportOrdersXlsx } from './exportOrders';
 import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal } from '../../utils/orderStatusRules';
+import { defaultCodCollected } from '../../utils/cashBankAccounts';
 import { useLocalStorageState } from '../dashboard2/ui';
 import OM2View from './OrdersManagement2View';
 import type { OM2Actions, OrderEdit } from './types';
@@ -310,6 +311,9 @@ const OrdersManagement2Page: React.FC = () => {
                         // classic Orders' bulk edit passes) — without it the
                         // orders were marked Paid with no ledger entry (OM2-2).
                         individualUpdates.postToLedger = true;
+                        // Courier-collected money (the Settle box's default)
+                        // debits 1210 COD receivable, not the bank.
+                        individualUpdates.codCollected = defaultCodCollected(order);
                     } else if (value === 'Get File') {
                         individualUpdates.amountReceived = order.depositAmount || 0;
                         individualUpdates.settleDate = null;

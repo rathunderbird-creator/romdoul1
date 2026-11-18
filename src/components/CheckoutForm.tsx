@@ -130,8 +130,9 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         date: string;
         // "អ្នកដឹកប្រមូល (COD)" on a Paid save: the courier collected the
         // money (the receipt debits 1210 COD receivable). Off for a new order
-        // paid up front; an order being edited starts from its own flag, else
-        // from its shipping state (utils/cashBankAccounts defaultCodCollected).
+        // paid up front; a settled order being edited keeps its own flag,
+        // any other starts from its shipping state (utils/cashBankAccounts
+        // defaultCodCollected).
         codCollected: boolean;
     } = {
         customerName: orderToEdit?.customer?.name || '',
