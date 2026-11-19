@@ -131,6 +131,9 @@ export function useAccountCurrency(
     accounts: CouplingAccount[],
     accountId: string,
     setAccountId: (id: string) => void,
+    // Retail payment forms: Sales Setup's default deposit accounts, so the
+    // currency toggle lands on the default of the new currency.
+    defaults?: { usd?: string | null; khr?: string | null },
 ): {
     onAccountChange: (id: string) => void;
     onToggleCurrency: (c: Currency) => void;
@@ -145,7 +148,7 @@ export function useAccountCurrency(
         if (a) syncFieldToAccount(field, accountCurrencyOf(a));
     };
     const onToggleCurrency = (c: Currency) => {
-        const next = counterpartAccount(accounts, accountId, c);
+        const next = counterpartAccount(accounts, accountId, c, defaults);
         if (next) setAccountId(next.id);
     };
     const needKhr = lang?.t('money.needKhrAccount');

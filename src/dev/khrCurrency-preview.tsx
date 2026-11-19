@@ -115,6 +115,7 @@ const base: Record<string, unknown> = {
     shippingCompanies: ['J&T', 'VET'], products: [],
     // Sales Setup (?form=setup): J&T ticked for Get File books COD.
     codGetFileCompanies: ['J&T'], setCodGetFileCompany: logWrite('setCodGetFileCompany'),
+    salesSettings: {}, updateSalesSetting: logWrite('updateSalesSetting'),
     salesmen: ['Dev Salesman'], addSalesman: logWrite('addSalesman'), removeSalesman: logWrite('removeSalesman'),
     customerCare: ['Dev Admin', 'Dev Care'], addCustomerCare: logWrite('addCustomerCare'), removeCustomerCare: logWrite('removeCustomerCare'),
     shippingRates: { 'J&T': 1.25 }, updateShippingRate: logWrite('updateShippingRate'), trackingUrlTemplates: {}, updateTrackingUrlTemplate: logWrite('updateTrackingUrlTemplate'),

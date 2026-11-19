@@ -330,6 +330,8 @@ check('config: codPaymentMethods refused for salesman (create_orders)', noPerm(a
 check('config: paymentMethods removal alone ok for salesman (checkout gear)', await cfg({ paymentMethods: { op: 'removeItems', values: ['Gone Pay'] } }, S.sal) === '');
 check('config: paymentMethods removal bundled with a COD untick refused for salesman (why the app sends it only for a ticked Method)',
     noPerm(await cfg({ paymentMethods: { op: 'removeItems', values: ['Gone Pay'] }, codPaymentMethods: { op: 'removeItems', values: ['Gone Pay'] } }, S.sal)));
+check('config: salesSettings ok for manage_orders (Sales Setup › Defaults)', await cfg({ salesSettings: { op: 'merge', value: { defaultDepositAccountId: 'x' } } }, S.ord) === '');
+check('config: salesSettings refused for salesman', noPerm(await cfg({ salesSettings: { op: 'unsetKeys', keys: ['defaultDepositAccountId'] } }, S.sal)));
 check('config: salesmen and customerCare ok for manage_orders (Sales Setup lists)',
     await cfg({ salesmen: { op: 'append', items: ['Dara'] } }, S.ord) === '' && await cfg({ customerCare: { op: 'append', items: ['Nita'] } }, S.ord) === '');
 

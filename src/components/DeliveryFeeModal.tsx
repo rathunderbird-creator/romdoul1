@@ -6,7 +6,7 @@ import type { PaidMoney, Sale } from '../types';
 import MoneyInput from './MoneyInput';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
 import CashBankOptions from './CashBankOptions';
-import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, depositDefaultFor, followMethodAccount } from '../utils/cashBankAccounts';
 import { accountCurrency, rielToReopen, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { useTx } from './useTx';
 
@@ -30,7 +30,10 @@ const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset
 // 'PdFee') — the order itself isn't fulfilled, but the customer paid for
 // delivery, and that gets booked straight to Revenue (not the order total).
 const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onConfirm, paid }) => {
-    const { paymentMethods, khrExchangeRate } = useStore();
+    const { paymentMethods, khrExchangeRate, salesSettings } = useStore();
+    // Sales Setup's default deposit accounts (USD / riel).
+    const defUsd = depositDefaultFor(salesSettings, 'USD');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR');
     const { accounts, fetchAccounts } = useAccounting();
     const tx = useTx();
     const field = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: DELIVERY_FEE_MAX_PLAUSIBLE_USD });
@@ -60,8 +63,9 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
             // still is).
             const preferredId = order.paymentStatus === 'PdFee' ? order.depositAccountId : undefined;
             const booked = order.paymentStatus === 'PdFee' ? paid : undefined;
-            const accountId = (booked ? defaultCashBankAccountId(paymentAccounts, { currency: booked.currency, preferredId }) : '')
-                || defaultCashBankAccountId(paymentAccounts, { preferredId });
+            const startMethod = order.paymentStatus === 'PdFee' && order.paymentMethod ? order.paymentMethod : (bank || paymentMethods[0] || 'Bank');
+            const accountId = (booked ? defaultCashBankAccountId(paymentAccounts, { currency: booked.currency, preferredId, defaultId: booked.currency === 'KHR' ? defKhr : defUsd, method: startMethod }) : '')
+                || defaultCashBankAccountId(paymentAccounts, { preferredId, defaultId: defUsd, method: startMethod });
             setDepositAccountId(accountId);
             // A correction of a fee in a riel account reopens in riel.
             const cur = accountCurrency(paymentAccounts.find(a => a.id === accountId));
@@ -76,7 +80,7 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [order, paymentAccounts, paid]);
 
-    const coupling = useAccountCurrency(field, paymentAccounts, depositAccountId, setDepositAccountId);
+    const coupling = useAccountCurrency(field, paymentAccounts, depositAccountId, setDepositAccountId, { usd: defUsd, khr: defKhr });
 
     if (!order) return null;
 
@@ -119,7 +123,12 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
                             <label style={labelStyle}>{tx('orders.payBy', 'Pay By')}</label>
-                            <select value={method} onChange={e => setMethod(e.target.value)} style={inputStyle}>
+                            <select value={method} onChange={e => {
+                                const m = e.target.value;
+                                const next = followMethodAccount(paymentAccounts, depositAccountId, method, m, { currency: field.currency, defaultId: field.currency === 'KHR' ? defKhr : defUsd });
+                                setMethod(m);
+                                if (next) setDepositAccountId(next);
+                            }} style={inputStyle}>
                                 {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                         </div>

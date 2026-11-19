@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
-import { codReceiptDebitId, codTicksFor, defaultCodPaymentMethods, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
+import { codReceiptDebitId, codTicksFor, depositDefaultFor, defaultCodPaymentMethods, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
 import { isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
 import { tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 import { insertJournalLines } from '../utils/journalEntryLines';
@@ -34,6 +34,7 @@ import type {
     WarehouseStock,
     PurchaseSettings,
     WholesaleSettings,
+    SalesSettings,
     CustomDistrict,
     CustomCommune,
     StockCountReason
@@ -81,6 +82,7 @@ interface ConfigState {
     blockedCustomers?: BlockedCustomer[];
     purchaseSettings?: PurchaseSettings;
     wholesaleSettings?: WholesaleSettings;
+    salesSettings?: SalesSettings;
 }
 // Add Stock retries reuse the restock id of a failed identical add (see addStock).
 const addStockKeys = createRetryKeys();
@@ -108,6 +110,10 @@ const generateUUID = () => {
 // Sales Revenue account, plus the cash/bank account for a given (optional)
 // `depositAccountId`. When no id is given, falls back to an active Asset-type
 // account whose name matches /cash|bank/i.
+// Sales Setup's default deposit accounts, mirrored from the provider's config
+// so the module-level posting helpers below (which have no hooks) use them.
+let retailDepositDefaults: SalesSettings = {};
+
 async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: string | null, currency?: Currency): Promise<{
     revenueAcc: { id: string; account_code: string; account_name: string; account_type: string } | undefined;
     cashAccId: string | undefined;
@@ -123,7 +129,9 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: st
     // lands in the bank account by default (see pickCashBankAccount).
     // A riel payment (currency 'KHR') picks among the riel accounts; any
     // other never lands on one.
-    const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy, { preferBank: true, currency })?.id;
+    // With no account picked, Sales Setup's default for this currency wins
+    // over the bank guess (a Cash method still goes to Cash on Hand).
+    const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy, { preferBank: true, currency, defaultId: depositDefaultFor(retailDepositDefaults, currency) })?.id;
     return { revenueAcc, cashAccId, pool };
 }
 
@@ -4630,6 +4638,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         await updateConfigOps({ wholesaleSettings: { op: 'set', value: settings } });
     };
 
+    // Sales Setup › Defaults. One field per save: merge sets it, unsetKeys
+    // clears it, so two people editing different fields never collide.
+    const salesSettings: SalesSettings = useMemo(() => config.salesSettings || {}, [config.salesSettings]);
+    useEffect(() => { retailDepositDefaults = salesSettings; }, [salesSettings]);
+    const updateSalesSetting = async (key: keyof SalesSettings, value: string) => {
+        await updateConfigOps({ salesSettings: value ? { op: 'merge', value: { [key]: value } } : { op: 'unsetKeys', keys: [key] } });
+    };
+
     // Roles live in one array keyed by id: add/update/delete are item-level
     // operations, so editing role A here never reverts role B saved elsewhere.
     const addRole = async (roleData: Omit<Role, 'id'>) => {
@@ -4818,6 +4834,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updatePurchaseSettings,
             wholesaleSettings,
             updateWholesaleSettings,
+            salesSettings,
+            updateSalesSetting,
             warehouses,
             warehouseStock,
             addWarehouse,

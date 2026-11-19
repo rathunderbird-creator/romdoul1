@@ -7,7 +7,7 @@ import { dayKeyFromDate } from '../utils/dateRange';
 import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField, syncFieldToAccount } from '../hooks/useMoneyField';
-import { defaultCashBankAccountId, isCodPaymentMethod } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, depositDefaultFor, followMethodAccount, isCodPaymentMethod } from '../utils/cashBankAccounts';
 import { accountCurrency, formatUsd, khrToUsd, SNAP_TOLERANCE_USD, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { roundCents } from '../utils/money';
 
@@ -80,7 +80,10 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     codDefault
 }) => {
     const tx = useTx();
-    const { paymentMethods, khrExchangeRate, codPaymentMethods } = useStore();
+    const { paymentMethods, khrExchangeRate, codPaymentMethods, salesSettings } = useStore();
+    // Sales Setup's default deposit accounts (USD / riel).
+    const defUsd = depositDefaultFor(salesSettings, 'USD');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR');
     const showCod = codDefault !== undefined;
     const [codCollected, setCodCollected] = useState<boolean>(false);
     // Until the user clicks the COD box, it follows the Method: a Pay By
@@ -158,10 +161,13 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
             // payment taken in riel. A payment being re-opened starts on the
             // account it went into, when that is in the starting currency.
             const preferredId = initialAccountId || undefined;
-            return (preferRiel ? defaultCashBankAccountId(paymentAccounts, { currency: 'KHR', preferredId }) : '')
-                || defaultCashBankAccountId(paymentAccounts, { currency: 'USD', preferredId });
+            return (preferRiel ? defaultCashBankAccountId(paymentAccounts, { currency: 'KHR', preferredId, defaultId: defKhr, method: selectedMethod }) : '')
+                || defaultCashBankAccountId(paymentAccounts, { currency: 'USD', preferredId, defaultId: defUsd, method: selectedMethod });
         });
-    }, [isOpen, paymentAccounts, preferRiel, initialAccountId]);
+        // selectedMethod is read, not a trigger: the seed only fills an empty
+        // pick, and a later method change moves the account in its onChange.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, paymentAccounts, preferRiel, initialAccountId, defUsd, defKhr]);
 
     // What the field starts at in each currency: the amount due in dollars;
     // in riel what the shop expected to collect, else the due at the rate.
@@ -188,7 +194,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     }, [isOpen, khrExpected, amountDue]);
 
     // The currency follows the account picked (a riel account takes riel).
-    const coupling = useAccountCurrency(receivedField, paymentAccounts, depositAccountId, setDepositAccountId);
+    const coupling = useAccountCurrency(receivedField, paymentAccounts, depositAccountId, setDepositAccountId, { usd: defUsd, khr: defKhr });
     useEffect(() => {
         const a = paymentAccounts.find(x => x.id === depositAccountId);
         if (a) syncFieldToAccount(receivedField, accountCurrency(a));
@@ -264,7 +270,13 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('orders.payBy', 'Pay By')} <span style={{ color: 'red' }}>*</span></label>
                     <select
                         value={selectedMethod}
-                        onChange={(e) => setSelectedMethod(e.target.value)}
+                        onChange={(e) => {
+                            const m = e.target.value;
+                            const c = receivedField.currency;
+                            const next = followMethodAccount(paymentAccounts, depositAccountId, selectedMethod, m, { currency: c, defaultId: c === 'KHR' ? defKhr : defUsd });
+                            setSelectedMethod(m);
+                            if (next) setDepositAccountId(next);
+                        }}
                         style={{
                             width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
                             background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',

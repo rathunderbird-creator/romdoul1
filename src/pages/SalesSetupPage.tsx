@@ -1,7 +1,8 @@
 // Sales Setup — defaults for new sell-side documents (modeled on the reference
 // design): a left-nav settings page in the same family as Purchase Setup and
-// Wholesale Setup. The Defaults section is still DESIGN ONLY (local state,
-// matching the mockup; nothing reads those values yet). Page Name, Shipping
+// Wholesale Setup. In the Defaults section only the default deposit accounts
+// are real (app_config salesSettings); the other fields are still DESIGN ONLY
+// (local state, matching the mockup; nothing reads those values yet). Page Name, Shipping
 // Company (with each courier's cost per parcel, tracking link and "Get File
 // books the COD receipt"), Pay By, Salesmen, Customer Care and Provinces are
 // real, store-backed settings. The remaining sections are placeholders until their own data
@@ -19,7 +20,10 @@ import { fill } from '../i18n/translate';
 // The Provinces section: address tree (gazetteer + custom/hidden districts
 // and communes) with the Shipping Points in each commune.
 import ProvincesSection from './salesSetup/ProvincesSection';
-import { getFileBooksCod, isCodPaymentMethod } from '../utils/cashBankAccounts';
+import { getFileBooksCod, isCashBankAccount, isCodPaymentMethod } from '../utils/cashBankAccounts';
+import { isKhrAccountName } from '../utils/currency';
+import { useAccounting } from '../hooks/useAccounting';
+import type { SalesSettings } from '../types';
 import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
 
 type SectionKey =
@@ -259,7 +263,59 @@ const inputStyle: React.CSSProperties = {
     width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--color-border)',
     background: 'var(--color-bg)', color: 'var(--color-text-main)', fontSize: '13px', outline: 'none', boxSizing: 'border-box',
 };
-const disabledInputStyle: React.CSSProperties = { ...inputStyle, color: 'var(--color-text-muted)', cursor: 'not-allowed' };
+
+// Defaults › Default deposit account: the cash/bank account retail receipts,
+// deposits and delivery fees go to when nobody picks one — one for USD, one
+// for riel (app_config salesSettings). Pre-selected in the Settle, Deposit,
+// Delivery Fee and Record Receipt forms, and used by bulk Paid, the Orders
+// Management drawer and Customer Payment › Post Now. A Cash method still goes
+// to Cash on Hand of that currency, and a COD receipt stays on 1210. Each
+// select saves on change, as its own field.
+const DepositAccountDefaults: React.FC<{ fieldId: (name: string) => string }> = ({ fieldId }) => {
+    const { t } = useLanguage();
+    const { showToast } = useToast();
+    const { salesSettings, updateSalesSetting } = useStore();
+    const { accounts, fetchAccounts } = useAccounting();
+    React.useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+    const cashBank = React.useMemo(() => accounts
+        // Never Petty Cash: a customer's payment is not received into the
+        // petty-cash float (the Settle form leaves it out too).
+        .filter(a => a.is_active !== false && isCashBankAccount(a) && !/petty/i.test(a.account_name))
+        .sort((a, b) => (a.account_code || '').localeCompare(b.account_code || '')), [accounts]);
+    const rows: { key: keyof SalesSettings; khr: boolean; label: string }[] = [
+        { key: 'defaultDepositAccountId', khr: false, label: t('ui.admin.salesSetup.depositAccountUsd') },
+        { key: 'defaultDepositAccountIdKhr', khr: true, label: t('ui.admin.salesSetup.depositAccountKhr') },
+    ];
+    const save = (key: keyof SalesSettings, value: string) => {
+        updateSalesSetting(key, value).catch((err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'),
+            { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error'));
+    };
+    return (
+        <div>
+            <div style={labelStyle}>{t('ui.admin.salesSetup.depositAccount')}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                {rows.map(r => {
+                    const list = cashBank.filter(a => isKhrAccountName(a.account_name) === r.khr);
+                    const current = salesSettings[r.key] || '';
+                    // A saved account that was removed or deactivated reads as
+                    // Automatic (the posting helpers ignore it the same way).
+                    const value = list.some(a => a.id === current) ? current : '';
+                    return (
+                        <div key={r.key}>
+                            <label htmlFor={fieldId(r.key)} style={{ ...labelStyle, fontWeight: 500 }}>{r.label}</label>
+                            <select id={fieldId(r.key)} value={value} className="setup-field" style={{ ...inputStyle, cursor: 'pointer' }}
+                                onChange={e => save(r.key, e.target.value)}>
+                                <option value="">{t('ui.admin.salesSetup.depositAccountAuto')}</option>
+                                {list.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                            </select>
+                        </div>
+                    );
+                })}
+            </div>
+            <div style={helpStyle}>{t('ui.admin.salesSetup.depositAccountHelp')}</div>
+        </div>
+    );
+};
 
 const SalesSetupPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
@@ -389,16 +445,7 @@ const SalesSetupPage: React.FC = () => {
                         </div>
                     </div>
 
-                    <div>
-                        <label htmlFor={fieldId('deposit-account')} style={labelStyle}>{t('ui.admin.salesSetup.depositAccount')}</label>
-                        <select id={fieldId('deposit-account')} disabled value="" className="setup-field" style={disabledInputStyle}
-                            title={t('ui.admin.salesSetup.depositAccountTitle')}>
-                            <option value="">{t('ui.admin.salesSetup.bankOrCash')}</option>
-                        </select>
-                        <div style={helpStyle}>
-                            {t('ui.admin.salesSetup.depositAccountHelp')}
-                        </div>
-                    </div>
+                    <DepositAccountDefaults fieldId={fieldId} />
 
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
                         <input type="checkbox" checked={holdsStock} onChange={e => setHoldsStock(e.target.checked)} className="setup-field"

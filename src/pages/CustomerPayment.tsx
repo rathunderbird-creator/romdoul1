@@ -20,7 +20,7 @@ import { fetchAll } from '../utils/fetchAll';
 import { addDays, dayKeyFromDate, parseDay } from '../utils/dateRange';
 import { getShippingCoColor } from '../utils/orderUtils';
 import { getPaymentIcon, getPaymentColor } from '../utils/payment';
-import { pickCashBankAccount, sortCashBankForPicker } from '../utils/cashBankAccounts';
+import { depositDefaultFor, pickCashBankAccount, sortCashBankForPicker } from '../utils/cashBankAccounts';
 import { formatMoneyLine, isKhrAccountName, isKhrRow } from '../utils/currency';
 import { DateRangePicker, StatsCard, RecordReceiptModal, OrderDetailsModal } from '../components';
 import { fetchLedgerStartDate, isBeforeLedgerStart, formatLedgerStart } from '../utils/ledgerStart';
@@ -172,7 +172,7 @@ const CustomerPaymentPage: React.FC = () => {
     const { t } = useLanguage();
     const { txt } = useCpText();
     const { showToast } = useToast();
-    const { currentUser } = useStore();
+    const { currentUser, salesSettings } = useStore();
     // Unposting rewinds finalized books, so it stays an admin-only action
     // (same gate as Income & Expense's bulk delete).
     const isAdmin = currentUser?.roleId === 'admin';
@@ -1063,10 +1063,11 @@ const CustomerPaymentPage: React.FC = () => {
             // account (its USD pick when the store has none yet); a USD one
             // never does.
             if (isKhrRow(r)) {
-                return (pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'KHR' })
-                    || pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'USD' }))?.id;
+                return (pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'KHR', defaultId: depositDefaultFor(salesSettings, 'KHR') })
+                    || pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'USD', defaultId: depositDefaultFor(salesSettings, 'USD') }))?.id;
             }
-            return pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'USD' })?.id;
+            // Sales Setup's default deposit account beats the bank guess.
+            return pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'USD', defaultId: depositDefaultFor(salesSettings, 'USD') })?.id;
         };
         let ok = 0;
         let moved = 0;

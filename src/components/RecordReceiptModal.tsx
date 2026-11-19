@@ -8,7 +8,7 @@ import { dayKeyFromDate } from '../utils/dateRange';
 import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
-import { defaultCashBankAccountId, isCodPaymentMethod } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, depositDefaultFor, isCodPaymentMethod } from '../utils/cashBankAccounts';
 import { accountCurrency, formatMoneyLine, isKhrRow, type MoneyMeta, type MoneyRow } from '../utils/currency';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
@@ -74,7 +74,10 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     codDefault,
 }) => {
     const tx = useTx();
-    const { paymentMethods, khrExchangeRate, codPaymentMethods } = useStore();
+    const { paymentMethods, khrExchangeRate, codPaymentMethods, salesSettings } = useStore();
+    // Sales Setup's default deposit accounts (USD / riel).
+    const defUsd = depositDefaultFor(salesSettings, 'USD');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR');
     const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
@@ -143,10 +146,14 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
         hint: depositAccountHint,
         cashHint: true,
         currency: rowIsKhr ? 'KHR' : 'USD',
-    }) || (rowIsKhr ? defaultCashBankAccountId(paymentAccounts, { hint: depositAccountHint, cashHint: true }) : ''),
-    [paymentAccounts, initialDepositAccountId, depositAccountHint, rowIsKhr]);
+        defaultId: rowIsKhr ? defKhr : defUsd,
+        // With a default set, the account follows the Pay By (Cash → Cash
+        // on Hand) until the user picks one.
+        method: selectedMethod,
+    }) || (rowIsKhr ? defaultCashBankAccountId(paymentAccounts, { hint: depositAccountHint, cashHint: true, defaultId: defUsd, method: selectedMethod }) : ''),
+    [paymentAccounts, initialDepositAccountId, depositAccountHint, rowIsKhr, defUsd, defKhr, selectedMethod]);
     const depositAccountId = chosenAccountId || defaultAccountId;
-    const coupling = useAccountCurrency(field, paymentAccounts, depositAccountId, setChosenAccountId);
+    const coupling = useAccountCurrency(field, paymentAccounts, depositAccountId, setChosenAccountId, { usd: defUsd, khr: defKhr });
     const amountReceived = finalizeMode ? order.total : field.usd;
     // Posting a row: the amount is fixed, so the account must match the
     // row's currency (a riel row into a riel account, a USD row into a USD

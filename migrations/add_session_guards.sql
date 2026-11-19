@@ -986,6 +986,8 @@ BEGIN
         WHEN 'codGetFileCompanies'  THEN ARRAY['manage_settings', 'manage_orders']
         -- Sales Setup › Pay By "COD payment methods".
         WHEN 'codPaymentMethods'    THEN ARRAY['manage_settings', 'manage_orders']
+        -- Sales Setup › Defaults (default deposit accounts).
+        WHEN 'salesSettings'        THEN ARRAY['manage_settings', 'manage_orders']
         ELSE ARRAY['manage_settings']
     END;
     IF NOT EXISTS (
