@@ -1140,7 +1140,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
 
 
                         {/* Saved Pins Panel */}
-                        <div style={{ background: 'var(--color-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', padding: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', maxHeight: isPinnedListExpanded ? '400px' : 'auto' }}>
+                        <div style={{ background: 'var(--color-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', padding: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', maxHeight: isPinnedListExpanded ? '70vh' : 'auto' }}>
                             <div
                                 onClick={() => setIsPinnedListExpanded(!isPinnedListExpanded)}
                                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isPinnedListExpanded ? '16px' : '0', cursor: 'pointer' }}
