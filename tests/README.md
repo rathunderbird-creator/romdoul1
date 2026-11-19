@@ -123,7 +123,12 @@ and a COD remainder debits 1210; a remittance entry in the shape Accounting ›
 COD Remittances writes (Dr 1011 / Cr 1210, `COD-REMIT-…`) brings the 1210
 balance down; leaving Paid removes a COD Draft; a store without the account
 books the bank with a notice; `create_retail_order` stores the flag and a
-later settle reads it. The FIFO check stays at variance 0 throughout. Same
+later settle reads it. `migrations/add_cod_get_file.sql` runs twice and
+backfills an order already at Get File; entering Get File (payment pack,
+direct update, create) sets the flag, Get File -> Paid books 1210 without
+the flag sent and the bank when the box is unticked, and taking Get File
+back to Unpaid / Cancel clears it. The FIFO check stays at variance 0
+throughout. Same
 PGlite setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite

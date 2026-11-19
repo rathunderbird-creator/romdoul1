@@ -20,6 +20,11 @@
 //     add_cod_receivable.sql;
 //   * create_retail_order stores the flag, and a later settle without the
 //     flag reads the stored one;
+//   * add_cod_get_file.sql: entering Get File (payment pack, a direct
+//     update, a create) sets the flag; the existing Get File rows are
+//     backfilled; Get File -> Paid books Dr 1210 without the flag sent,
+//     and the bank when the box is unticked; taking Get File back to
+//     Unpaid / Cancel clears it; other saves leave it alone;
 //   * the FIFO check stays at variance 0 throughout.
 // See tests/README.md for how to run it.
 import { makeDb, harness, mig, strip } from './fifo-test-db.mjs';
@@ -223,6 +228,73 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
     ])).r;
     check('K2 created without the key: cod_collected false', k2.order_id === 'K2' && (await codFlag('K2')) === false);
     await checkBalanced('K1');
+}
+
+// ---------------------------------------------------------------------------
+// 7. add_cod_get_file.sql: Get File marks the order courier-collected.
+// ---------------------------------------------------------------------------
+{
+    // An order already at Get File before the file runs, flag still false.
+    await order('G0', 17);
+    await q(`UPDATE sales SET payment_status = 'Get File' WHERE id = 'G0'`);
+    check('G0 at Get File before the file: flag false', (await codFlag('G0')) === false);
+    await db.exec(strip(mig('add_cod_get_file.sql')));
+    await db.exec(strip(mig('add_cod_get_file.sql')));
+    check('the file runs twice: one trigger on sales',
+        num((await one(`SELECT count(*) AS n FROM pg_trigger WHERE tgname = 'sales_cod_on_get_file' AND NOT tgisinternal`)).n) === 1);
+    check('G0 backfilled: flag true', (await codFlag('G0')) === true);
+
+    // Unpaid -> Get File through the payment pack, no flag sent.
+    await order('G1', 17);
+    const r1 = await pay('G1', 'Unpaid', { payment_status: 'Get File' });
+    check('G1 Unpaid -> Get File: flag true, returned to the app', (await codFlag('G1')) === true
+        && r1.payment && r1.payment.cod_collected === true, r1);
+    // Get File -> Paid without the flag: the stored true books Dr 1210.
+    await pay('G1', 'Get File', { payment_status: 'Paid', amount_received: 17, settle_date: DAY, post_to_ledger: true });
+    const e1 = await entry('TX-' + (await tx('G1')).id);
+    check('G1 Get File -> Paid without the flag: Dr 1210 17, no bank debit', near(e1.cod_dr, 17) && near(e1.bank_dr, 0), e1);
+    check('G1 Paid: flag stays true', (await codFlag('G1')) === true);
+    await checkBalanced('G1');
+
+    // Get File -> Paid with the box unticked: the save's false wins.
+    await order('G2', 17);
+    await pay('G2', 'Unpaid', { payment_status: 'Get File' });
+    await pay('G2', 'Get File', { payment_status: 'Paid', amount_received: 17, settle_date: DAY, post_to_ledger: true, cod_collected: false });
+    const e2 = await entry('TX-' + (await tx('G2')).id);
+    check('G2 Get File -> Paid with cod false: Dr bank 17, flag false', near(e2.bank_dr, 17) && near(e2.cod_dr, 0) && (await codFlag('G2')) === false, e2);
+    await checkBalanced('G2');
+
+    // Get File taken back to Unpaid: the flag clears.
+    await order('G3', 17);
+    await pay('G3', 'Unpaid', { payment_status: 'Get File' });
+    await pay('G3', 'Get File', { payment_status: 'Unpaid' });
+    check('G3 Get File -> Unpaid: flag false again', (await codFlag('G3')) === false);
+    // ...and to Cancel.
+    await order('G4', 17);
+    await pay('G4', 'Unpaid', { payment_status: 'Get File' });
+    await pay('G4', 'Get File', { payment_status: 'Cancel' });
+    check('G4 Get File -> Cancel: flag false again', (await codFlag('G4')) === false);
+
+    // A direct write (bulk edit / import style) into Get File, and a create at Get File.
+    await order('G5', 17);
+    await q(`UPDATE sales SET payment_status = 'Get File' WHERE id = 'G5'`);
+    check('G5 direct update to Get File: flag true', (await codFlag('G5')) === true);
+    const made = (await one(`SELECT public.create_retail_order($1::jsonb, $2::jsonb, '{}'::jsonb) AS r`, [
+        JSON.stringify({ id: 'G6', total: 17, payment_status: 'Get File', shipping_company: 'J&T', shipping_status: 'Delivered', customer_snapshot: { name: 'Cust G6' } }),
+        JSON.stringify([{ id: 'C', name: 'Cable', price: 17, quantity: 1 }]),
+    ])).r;
+    check('G6 created at Get File without the key: flag true', made.order_id === 'G6' && (await codFlag('G6')) === true, made);
+
+    // Saves that do not change the status leave the flag alone.
+    await q(`UPDATE sales SET remark = 'note' WHERE id = 'G5'`);
+    check('G5 other edit: flag still true', (await codFlag('G5')) === true);
+    await q(`UPDATE sales SET payment_status = 'Paid' WHERE id = 'G2'`);
+    check('G2 Paid -> Paid re-save: the decided false stays', (await codFlag('G2')) === false);
+    // An order that never sees Get File keeps the column default.
+    await order('G7', 17);
+    await pay('G7', 'Unpaid', { payment_status: 'Deposit', deposit_amount: 5, deposit_date: DAY, post_to_ledger: true });
+    check('G7 Unpaid -> Deposit: flag false', (await codFlag('G7')) === false);
+    await checkBalanced('G7');
 }
 
 done();
