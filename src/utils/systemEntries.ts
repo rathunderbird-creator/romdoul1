@@ -18,7 +18,7 @@ import type { JournalEntry } from '../types';
 
 export type SystemEntryKind =
     | 'receipt' | 'payment' | 'cogs' | 'invoice' | 'purchase' | 'stockAdj'
-    | 'revaluation' | 'trueup' | 'opening' | 'reversal' | 'system';
+    | 'revaluation' | 'trueup' | 'opening' | 'reversal' | 'fx' | 'system';
 
 export type EntryLike = Pick<JournalEntry, 'reference_id' | 'entry_number'>;
 
@@ -30,7 +30,10 @@ const HAND_CODES: ReadonlySet<string> = new Set(['MAN', 'REV', 'EXP', 'COD']);
 // Money-in flows vs money-out flows among the 'TX-' day-book entries.
 const PAYMENT_CODES: ReadonlySet<string> = new Set(['SPP', 'WSP', 'PAY', 'EXP']);
 
-const SYSTEM_REF = /^(TX|ORD|WSO|PO|ADJ|FIFO|TRUEUP|OPENING)-/;
+// FX-REVAL-… / FX-CONV-…: riel revaluations and exchanges (Accounting ›
+// Riel Revaluation, utils/fxRevaluation.ts) — built from the riel balances,
+// so they are reversed, not edited.
+const SYSTEM_REF = /^(TX|ORD|WSO|PO|ADJ|FIFO|TRUEUP|OPENING|FX)-/;
 // 'MANREV-<original reference>' or 'MANREV-<n>-<original>' — the shape Reverse
 // writes. A prefix, not a '-REV' suffix: the DB packs create and look for
 // 'ORD-<id>-COGS-REV' / 'WSO-<id>-COGS-REV' themselves (whether an order's
@@ -72,6 +75,7 @@ export function systemEntryKind(entry: EntryLike): SystemEntryKind {
     if (ref.startsWith('PO-')) return 'purchase';
     if (ref.startsWith('ADJ-')) return 'stockAdj';
     if (ref.startsWith('FIFO-')) return 'revaluation';
+    if (ref.startsWith('FX-')) return 'fx';
     if (ref.startsWith('TRUEUP-')) return 'trueup';
     if (ref.startsWith('OPENING-')) return 'opening';
     switch (code) {

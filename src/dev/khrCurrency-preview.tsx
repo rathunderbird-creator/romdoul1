@@ -32,6 +32,7 @@ import { useMoneyField } from '../hooks/useMoneyField';
 import { ShippingModalComponent } from '../pages/Orders';
 import CheckoutForm from '../components/CheckoutForm';
 import CodRemittancesPage from '../pages/accounting/CodRemittancesPage';
+import FxRevaluationPage from '../pages/accounting/FxRevaluationPage';
 import SalesSetupPage from '../pages/SalesSetupPage';
 import type { CartItem, Sale } from '../types';
 
@@ -45,8 +46,30 @@ const R1 = [acct('00000000-0000-0000-0000-000000001001', '1001', 'Petty Cash'), 
 const R2 = [acct('00000000-0000-0000-0000-000000001000', '1000', 'Cash')];
 const KHR = [acct('00000000-0000-0000-0000-000000001002', '1002', 'Cash on Hand (KHR)'), acct('00000000-0000-0000-0000-000000001011', '1011', 'Bank Account ABA (KHR)')];
 const OTHER = [acct('00000000-0000-0000-0000-000000001200', '1200', 'Accounts Receivable'), acct('00000000-0000-0000-0000-000000001210', '1210', 'COD receivable (courier)'), acct('00000000-0000-0000-0000-000000004000', '4000', 'Sales Revenue', 'Revenue')];
-const chartRows = [...(chart.startsWith('r1') ? R1 : R2), ...(chart.endsWith('khr') ? KHR : []), ...OTHER]
+// ?fx=1: the chart already has the two exchange gain/loss accounts (else the
+// Riel Revaluation page offers to add them).
+const FX = params.get('fx') ? [
+    { ...acct('00000000-0000-0000-0000-000000004910', '4910', 'Foreign Exchange Gain', 'Revenue'), sub_type: 'Other Revenue' },
+    { ...acct('00000000-0000-0000-0000-000000006910', '6910', 'Foreign Exchange Loss', 'Expense'), sub_type: 'Other Expense' },
+] : [];
+const chartRows = [...(chart.startsWith('r1') ? R1 : R2), ...(chart.endsWith('khr') ? KHR : []), ...OTHER, ...FX]
     .sort((a, b) => a.account_code.localeCompare(b.account_code));
+
+// ?form=fx: the riel accounts' journal lines (each with its entry, as the
+// page selects them). ABA riel: ៛82,000 @ 4,100 = $20 and ៛41,000 @ 4,000 =
+// $10.25 in, ៛20,500 @ 4,100 = $5 out, plus a Draft receipt; riel cash: an
+// untagged $3 manual journal. At 4,100 ABA riel (៛102,500, $25.25) is worth
+// $25.00: a $0.25 loss.
+const fxEntry = (id: string, date: string, cur: string | null, riel: number | null, rate: number | null, status = 'Posted', ref = `TX-${id}`) =>
+    ({ id, date, status, reference_id: ref, currency: cur, original_amount: riel, exchange_rate: rate });
+const ABA_R = '00000000-0000-0000-0000-000000001011', CASH_R = '00000000-0000-0000-0000-000000001002';
+const fxLines = [
+    { id: 'l1', journal_entry_id: 'e1', account_id: ABA_R, debit: 20, credit: 0, entry: fxEntry('e1', '2026-11-01', 'KHR', 82000, 4100) },
+    { id: 'l2', journal_entry_id: 'e2', account_id: ABA_R, debit: 10.25, credit: 0, entry: fxEntry('e2', '2026-11-02', 'KHR', 41000, 4000) },
+    { id: 'l3', journal_entry_id: 'e3', account_id: ABA_R, debit: 0, credit: 5, entry: fxEntry('e3', '2026-11-03', 'KHR', 20500, 4100) },
+    { id: 'l4', journal_entry_id: 'e4', account_id: ABA_R, debit: 1, credit: 0, entry: fxEntry('e4', '2026-11-04', 'KHR', 4100, 4100, 'Draft') },
+    { id: 'l5', journal_entry_id: 'e5', account_id: CASH_R, debit: 3, credit: 0, entry: fxEntry('e5', '2026-11-05', null, null, null, 'Posted', 'MAN-1') },
+];
 
 // The chart of accounts is answered here, so the preview never depends on
 // (or reads) the live store's chart.
@@ -59,6 +82,9 @@ window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     if (method !== 'GET') return innerFetch(input, init);
     if (url.includes('/rest/v1/chart_of_accounts')) {
         return Promise.resolve(new Response(JSON.stringify(chartRows), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    if (form === 'fx' && url.includes('/rest/v1/journal_entry_lines')) {
+        return Promise.resolve(new Response(JSON.stringify(fxLines), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (supabaseUrl && url.startsWith(supabaseUrl)) {
         // Anything else is answered empty: the forms here need nothing more.
@@ -155,6 +181,7 @@ const Forms = () => {
         case 'money': return <FreeMoney />;
         case 'checkout': return <Checkout />;
         case 'cod': return <CodRemittancesPage />;
+        case 'fx': return <FxRevaluationPage />;
         case 'setup': return <SalesSetupPage />;
         case 'shipping': return <ShippingModalComponent isOpen={open} onClose={close} order={order} />;
         default: return <DeliveryFeeModal order={open ? order : null} onClose={close} onConfirm={d => show('deliveryFee', d)} />;

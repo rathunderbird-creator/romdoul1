@@ -68,6 +68,24 @@ esbuild:
 
     node tests/currency-utils.test.mjs
 
+## fx-revaluation.test.mjs
+
+Unit test of `src/utils/fxRevaluation.ts` (riel payments, phase 3: FX gain
+and loss — Accounting › Riel Revaluation). The riel balance of each riel
+account read from the journal: a line of a KHR-tagged entry carries the
+entry's riel (split by USD share over several riel lines on one side; a
+riel→riel transfer moves it out of one and into the other), a revaluation
+carries none, an untagged line counts at the fallback rate and is reported,
+Drafts and later dates are left out when asked. Then the revaluation (each
+account to riel / rate, the net to Foreign Exchange Gain or Loss, nothing a
+second time at the same rate), the book value of riel at the account's
+average rate, and the exchange entry (selling riel realises the gain or
+loss against that book value, buying riel none). Every entry built
+balances; FX-REVAL- / FX-CONV- references are system entries of kind `fx`.
+Transpiled on the fly with the repo's esbuild:
+
+    node tests/fx-revaluation.test.mjs
+
 ## khr-currency.test.mjs
 
 Runs `migrations/add_khr_currency.sql` on the real stack

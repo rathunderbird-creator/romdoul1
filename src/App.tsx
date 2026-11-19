@@ -79,6 +79,7 @@ const CashInOutPage = lazy(() => import('./pages/accounting/CashInOutPage'));
 const RevenueExpenseEntryPage = lazy(() => import('./pages/accounting/RevenueExpenseEntryPage'));
 const JournalEntriesPage = lazy(() => import('./pages/accounting/JournalEntriesPage'));
 const CodRemittancesPage = lazy(() => import('./pages/accounting/CodRemittancesPage'));
+const FxRevaluationPage = lazy(() => import('./pages/accounting/FxRevaluationPage'));
 const GeneralLedgerPage = lazy(() => import('./pages/accounting/GeneralLedgerPage'));
 const PurchaseSetupPage = lazy(() => import('./pages/procurement/PurchaseSetupPage'));
 const WholesaleSetupPage = lazy(() => import('./pages/accounting/WholesaleSetupPage'));
@@ -261,7 +262,8 @@ const ProtectedApp = () => {
           <Route path="/accounting/revenue" element={<ProtectedRoute requiredPermission="manage_accounting"><RevenueExpenseEntryPage mode="revenue" /></ProtectedRoute>} />
           <Route path="/accounting/expense" element={<ProtectedRoute requiredPermission="manage_accounting"><RevenueExpenseEntryPage mode="expense" /></ProtectedRoute>} />
           <Route path="/accounting/cod-remittances" element={<ProtectedRoute requiredPermission="manage_accounting"><CodRemittancesPage /></ProtectedRoute>} />
-          <Route path="/accounting/payable" element={<ProtectedRoute requiredPermission="manage_accounting"><AccountsPayablePage /></ProtectedRoute>} />
+          <Route path="/accounting/fx-revaluation" element={<ProtectedRoute requiredPermission="manage_accounting"><FxRevaluationPage /></ProtectedRoute>} />
+          <Route path="/accounting/payable"element={<ProtectedRoute requiredPermission="manage_accounting"><AccountsPayablePage /></ProtectedRoute>} />
           <Route path="/accounting/receivable" element={<ProtectedRoute requiredPermission="manage_accounting"><AccountsReceivablePage /></ProtectedRoute>} />
           <Route path="/accounting/payments" element={<ProtectedRoute requiredPermission="manage_accounting"><PaymentsPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
