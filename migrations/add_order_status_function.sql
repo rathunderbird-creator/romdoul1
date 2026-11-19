@@ -77,6 +77,10 @@ BEGIN
 END $$;
 
 CREATE SCHEMA IF NOT EXISTS wp_internal;
+
+-- A Get File booked as COD (add_order_payment_functions.sql); edit_order_items
+-- treats such an order as paid.
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS get_file_booked BOOLEAN NOT NULL DEFAULT false;
 GRANT USAGE ON SCHEMA wp_internal TO anon, authenticated;
 
 -- Books a Draft entry moving p_amount between Cost of Goods Sold (5000) and
@@ -581,7 +585,12 @@ BEGIN
         RAISE EXCEPTION 'The order needs at least one item.';
     END IF;
 
-    SELECT COALESCE(NULLIF(shipping_status, ''), 'Pending'), COALESCE(payment_status, '') IN ('Paid', 'Settled', 'Paid/Settled')
+    -- Paid, or a Get File booked as COD (add_order_payment_functions.sql's
+    -- sales.get_file_booked; the column is added here too so this pack runs
+    -- on its own).
+    SELECT COALESCE(NULLIF(shipping_status, ''), 'Pending'),
+           COALESCE(payment_status, '') IN ('Paid', 'Settled', 'Paid/Settled')
+           OR (payment_status = 'Get File' AND COALESCE(get_file_booked, false))
       INTO v_status, v_paid FROM sales WHERE id = p_order_id FOR NO KEY UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'This order no longer exists.';

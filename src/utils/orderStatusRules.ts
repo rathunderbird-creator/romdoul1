@@ -13,7 +13,19 @@ import { tNow } from '../i18n/translate';
 export interface OrderStatusView {
     shippingStatus?: string | null;
     paymentStatus?: string | null;
+    // A Get File whose receipt was booked as COD (Sales Setup's ticked
+    // couriers): its receipt is on the books, so it locks like Paid.
+    getFileBooked?: boolean | null;
 }
+
+/**
+ * Whether a non-admin is locked out of this order's payment: Paid / PdFee /
+ * Cancel, or a Get File booked as COD — un-paying any of them deletes booked
+ * income and journal entries (ORD-9). The badges' readOnly uses this too.
+ */
+export const paymentLockedForNonAdmin = (order: OrderStatusView): boolean =>
+    ['Paid', 'PdFee', 'Cancel'].includes(order.paymentStatus || 'Unpaid')
+    || (order.paymentStatus === 'Get File' && !!order.getFileBooked);
 
 export interface StatusActor {
     isAdmin: boolean;
@@ -145,7 +157,7 @@ export const paymentChangeRefusal = (
     // "Paid" on an already-Paid row rewrites its received amount, settle date
     // and pay-by and books another receipt, exactly the rewrite the single-row
     // badge's readOnly prevents (ORD-9 review).
-    if (['Paid', 'PdFee', 'Cancel'].includes(payment)) {
+    if (paymentLockedForNonAdmin(order)) {
         return tNow('ui.store.statusRules.paymentLocked', { status: orderStatusText(payment) });
     }
     if (payment === target) return null; // no-op rows are quietly fine
@@ -171,7 +183,7 @@ export const settleDateChangeRefusal = (
 ): string | null => {
     if (actor.isAdmin) return null;
     const payment = order.paymentStatus || 'Unpaid';
-    if (['Paid', 'PdFee', 'Cancel'].includes(payment)) {
+    if (paymentLockedForNonAdmin(order)) {
         return tNow('ui.store.statusRules.settleDateAdminOnly', { status: orderStatusText(payment) });
     }
     return null;

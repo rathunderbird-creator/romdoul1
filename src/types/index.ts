@@ -77,7 +77,8 @@ export interface Sale {
     depositDate?: string;
     depositMethod?: string;
     depositAccountId?: string; // chart-of-accounts cash/bank account the settlement is deposited into (persisted: sales.deposit_account_id)
-    codCollected?: boolean; // the courier collected this order's money: its receipt debits 1210 COD receivable, not cash/bank (persisted: sales.cod_collected, migrations/add_cod_receivable.sql; set true by set_order_payment when Get File books the receipt for a courier ticked in Sales Setup; the mapper reads every row as true/false, and a false is only a decision on a settled order — utils/cashBankAccounts defaultCodCollected)
+    codCollected?: boolean;
+    getFileBooked?: boolean; // a Get File whose receipt was booked as COD at Get File (a courier ticked in Sales Setup): treated as paid (persisted: sales.get_file_booked, add_order_payment_functions.sql) // the courier collected this order's money: its receipt debits 1210 COD receivable, not cash/bank (persisted: sales.cod_collected, migrations/add_cod_receivable.sql; set true by set_order_payment when Get File books the receipt for a courier ticked in Sales Setup; the mapper reads every row as true/false, and a false is only a decision on a settled order — utils/cashBankAccounts defaultCodCollected)
     paymentClaim?: PaymentClaim | null;
     customKhrAmount?: number; // manual override for the receipt's TOTAL/REMAINING KH(៛); undefined = computed live from the exchange rate (persisted: sales.custom_khr_amount)
     depositAccountName?: string; // transient, UI-only: resolved account name passed through updateOrder() for the income transaction's "Pay by" — never persisted to the sales table itself

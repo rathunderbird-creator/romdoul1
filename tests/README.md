@@ -129,7 +129,10 @@ the full total, the remainder after a deposit, settle date stamped); Paid
 afterwards books nothing and keeps the date; taking it back removes the
 receipt and clears the flag; an unticked courier, or a Get File from before
 the tick, books at Paid as before; restocking a booked Get File gives its
-income back. The FIFO check stays at variance 0
+income back; the booked marker is `sales.get_file_booked` (a typed settle date
+on an unbooked Get File never fakes it, a Paid order with no settle date
+moved to Get File and back to Paid books once) and the Get File entry is
+dated the local day. The FIFO check stays at variance 0
 throughout. Same
 PGlite setup as auth-guards:
 

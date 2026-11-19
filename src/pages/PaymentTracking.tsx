@@ -8,7 +8,7 @@ import type { Sale } from '../types';
 import { PaymentStatusBadge, DateRangePicker, StatusBadge, RecordReceiptModal, POSInterface, BulkEditModal, DepositModal, DeliveryFeeModal } from '../components';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
-import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal } from '../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, paymentLockedForNonAdmin, settleDateChangeRefusal } from '../utils/orderStatusRules';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { getShippingCoColor, generateOrderCopyText } from '../utils/orderUtils';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -238,7 +238,7 @@ const PaymentTracking: React.FC = () => {
                 const allowedIds = ids.filter(id => {
                     const order = serverOrders.find(s => s.id === id);
                     const refusal = settleDateChangeRefusal(
-                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus },
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked },
                         { isAdmin, canRestock }
                     );
                     if (refusal) { lastReason = refusal; notSaved++; return false; }
@@ -280,7 +280,7 @@ const PaymentTracking: React.FC = () => {
 
                     // ORD-9: a non-admin can't bulk-unpay or bulk-cancel Paid orders.
                     const refusal = paymentChangeRefusal(
-                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus },
+                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus, getFileBooked: order.getFileBooked },
                         value,
                         { isAdmin, canRestock }
                     );
@@ -1382,7 +1382,7 @@ const PaymentTracking: React.FC = () => {
                                         // Admins bypass the lock so they can correct mistakes (e.g.
                                         // un-mark a wrong Paid); the store cleans up the logged
                                         // income when leaving Paid.
-                                        readOnly={!isAdmin && (order.paymentStatus === 'Paid' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'PdFee')}
+                                        readOnly={!isAdmin && paymentLockedForNonAdmin(order)}
                                     />
                                 </td>}
                                 {visibleColumns.includes('remark') && <td style={{ width: `var(--col-payment-remark-width, ${columnWidths.remark}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.remark || ''}>{order.remark || '-'}</td>}

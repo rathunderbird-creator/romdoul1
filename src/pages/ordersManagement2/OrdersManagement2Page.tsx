@@ -67,7 +67,7 @@ const OrdersManagement2Page: React.FC = () => {
         if (enforceRules) {
             const order = data.orders.find(o => o.id === edit.orderId) || data.rangeOrders.find(o => o.id === edit.orderId);
             const actor = { isAdmin: currentUser?.roleId === 'admin', canRestock: hasPermission('restock_orders') };
-            const view = { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus };
+            const view = { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked };
             const refusal =
                 (edit.orderStatus !== undefined && edit.orderStatus !== order?.shipping?.status
                     ? statusChangeRefusal(view, edit.orderStatus, actor) : null)
@@ -263,7 +263,7 @@ const OrdersManagement2Page: React.FC = () => {
                     const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
                     if (order?.shipping?.status === value) continue;
                     const refusal = statusChangeRefusal(
-                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus },
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked },
                         value,
                         actor
                     );
@@ -281,7 +281,7 @@ const OrdersManagement2Page: React.FC = () => {
                 const allowedIds = orderIds.filter(id => {
                     const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
                     const refusal = settleDateChangeRefusal(
-                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus },
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked },
                         actor
                     );
                     if (refusal) { lastReason = refusal; notSaved++; return false; }
@@ -297,7 +297,7 @@ const OrdersManagement2Page: React.FC = () => {
                     if (!order) return Promise.resolve(true);
                     // ORD-9: a non-admin can't bulk-unpay or bulk-cancel Paid orders.
                     const refusal = paymentChangeRefusal(
-                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus },
+                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus, getFileBooked: order.getFileBooked },
                         value,
                         actor
                     );

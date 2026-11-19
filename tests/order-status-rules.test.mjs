@@ -67,5 +67,15 @@ check('staff allowed settle date on Unpaid', d({ shippingStatus: 'Shipped', paym
 check('staff allowed settle date on Deposit', d({ shippingStatus: 'Shipped', paymentStatus: 'Deposit' }, staff) === null);
 check('admin allowed settle date on Paid', d({ shippingStatus: 'Delivered', paymentStatus: 'Paid' }, admin) === null);
 
+// A Get File booked as COD (Sales Setup ticked courier) locks like Paid.
+const gfb = { shippingStatus: 'Delivered', paymentStatus: 'Get File', getFileBooked: true };
+const gfu = { shippingStatus: 'Delivered', paymentStatus: 'Get File', getFileBooked: false };
+check('staff refused un-paying a booked Get File', p(gfb, 'Unpaid', staff) !== null);
+check('staff refused a same-status re-save on a booked Get File', p(gfb, 'Get File', staff) !== null);
+check('staff refused settle date on a booked Get File', d(gfb, staff) !== null);
+check('admin allowed un-paying a booked Get File', p(gfb, 'Unpaid', admin) === null);
+check('staff allowed to change an unbooked Get File', p(gfu, 'Unpaid', staff) === null && d(gfu, staff) === null);
+check('paymentLockedForNonAdmin: Paid / booked Get File yes, unbooked Get File / Unpaid no', m.paymentLockedForNonAdmin({ paymentStatus: 'Paid' }) && m.paymentLockedForNonAdmin(gfb) && !m.paymentLockedForNonAdmin(gfu) && !m.paymentLockedForNonAdmin({ paymentStatus: 'Unpaid' }));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

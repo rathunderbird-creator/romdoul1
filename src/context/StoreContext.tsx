@@ -2582,6 +2582,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             date: order.date || new Date().toISOString()
         };
         pendingOrderIds.set(signature, { id: newSale.id, at: nowMs });
+        const bookGetFileAfter = newSale.paymentStatus === 'Get File' && getFileBooksCod(config.codGetFileCompanies, newSale.shipping?.company);
         // Safety net (the order form already does this): a Salesman's order is
         // created with nothing booked; a deposit/payment rides as a claim.
         if (currentUser?.roleId === 'salesman' && !newSale.paymentClaim
@@ -2619,7 +2620,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 salesman: newSale.salesman,
                 customer_care: newSale.customerCare,
                 amount_received: newSale.amountReceived,
-                payment_status: newSale.paymentStatus,
+                // Born Get File for a courier ticked in Sales Setup: created
+                // Unpaid, then moved to Get File below through updateOrder,
+                // which books the COD receipt (and moves shipping) exactly as
+                // the badge does.
+                payment_status: bookGetFileAfter ? 'Unpaid' : newSale.paymentStatus,
                 deposit_amount: newSale.depositAmount || 0,
                 deposit_date: newSale.depositDate || null,
                 deposit_method: newSale.depositMethod || null,
@@ -2685,7 +2690,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const ids = resTxs.map(t => t.id);
             setTransactions(prev => [...resTxs, ...prev.filter(t => !ids.includes(t.id))]);
         }
-        setSales(prev => [newSale, ...prev.filter(sale => sale.id !== newSale.id)]);
+        if (bookGetFileAfter && !res.already_created) {
+            // Cached as created (Unpaid) first, so updateOrder finds it.
+            const created: Sale = { ...newSale, paymentStatus: 'Unpaid', amountReceived: 0, settleDate: undefined };
+            setSales(prev => [created, ...prev.filter(sale => sale.id !== newSale.id)]);
+            const ok = await updateOrder(newSale.id, {
+                paymentStatus: 'Get File', amountReceived: newSale.depositAmount || 0, settleDate: null as unknown as string,
+                expectedPaymentStatus: 'Unpaid',
+            } as Partial<Sale>);
+            if (!ok) newSale.paymentStatus = 'Unpaid';
+        } else {
+            setSales(prev => [newSale, ...prev.filter(sale => sale.id !== newSale.id)]);
+        }
 
         // Update salesOrder config (scoped write — see prependToSalesOrder)
         if (!res.already_created) {
@@ -2846,7 +2862,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 paymentStatus: cancelledIds.has(sale.id) ? 'Cancel' : sale.paymentStatus,
                 // The database clears the COD flag with the receipt (a stale
                 // true here would tick a later Settle form's COD box).
-                ...(paidOrderIds.includes(sale.id) ? { amountReceived: 0, settleDate: undefined, codCollected: false } : {}),
+                ...(paidOrderIds.includes(sale.id) ? { amountReceived: 0, settleDate: undefined, codCollected: false, getFileBooked: false } : {}),
                 lastEditedAt: currentUser ? now : sale.lastEditedAt,
                 lastEditedBy: currentUser ? currentUser.name : sale.lastEditedBy,
                 shipping: { ...(sale.shipping || { company: '', trackingNumber: '', cost: 0 }), status: 'ReStock' as any }
@@ -3461,7 +3477,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             paymentTxKeys.release(paySignature);
             const payRes = (payData || {}) as {
                 skipped?: boolean; already_applied?: boolean;
-                payment?: { payment_status?: string | null; amount_received?: number; settle_date?: string | null; payment_method?: string | null; deposit_amount?: number; deposit_date?: string | null; deposit_method?: string | null; cod_collected?: boolean | null };
+                payment?: { payment_status?: string | null; amount_received?: number; settle_date?: string | null; payment_method?: string | null; deposit_amount?: number; deposit_date?: string | null; deposit_method?: string | null; cod_collected?: boolean | null; get_file_booked?: boolean | null };
                 transactions_added?: Transaction[]; transactions_removed?: string[]; notices?: string[];
             };
             if (payRes.payment) {
@@ -3476,6 +3492,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     // Older packs don't return it: the flag the save sent then
                     // stands (undefined leaves the cached order's as it was).
                     ...(typeof payRes.payment.cod_collected === 'boolean' ? { codCollected: payRes.payment.cod_collected } : {}),
+                    ...(typeof payRes.payment.get_file_booked === 'boolean' ? { getFileBooked: payRes.payment.get_file_booked } : {}),
                 };
                 if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };
             }
