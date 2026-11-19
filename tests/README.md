@@ -132,7 +132,13 @@ the tick, books at Paid as before; restocking a booked Get File gives its
 income back; the booked marker is `sales.get_file_booked` (a typed settle date
 on an unbooked Get File never fakes it, a Paid order with no settle date
 moved to Get File and back to Paid books once) and the Get File entry is
-dated the local day. The FIFO check stays at variance 0
+dated the local day. COD payment methods (`app_config.codPaymentMethods`,
+`wp_internal.op_cod_method`; the key never saved = a Method named COD): a
+settlement paid by a ticked Method with no flag in the save debits 1210 and
+stores the flag, the save's own false wins, another Method books the bank,
+a deposit by a COD Method stays on the bank, a settled order re-saved is
+untouched, and `create_retail_order` stores the default for a Paid checkout
+without the key. The FIFO check stays at variance 0
 throughout. Same
 PGlite setup as auth-guards:
 

@@ -38,7 +38,7 @@ const getStatusBorderColor = (s: string) => {
 };
 
 const PaymentTracking: React.FC = () => {
-    const { updateOrder, updateOrders, updateOrderStatus, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders, hasPermission, khrExchangeRate } = useStore();
+    const { updateOrder, updateOrders, updateOrderStatus, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders, hasPermission, khrExchangeRate, codPaymentMethods } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const navigate = useNavigate();
@@ -294,7 +294,7 @@ const PaymentTracking: React.FC = () => {
                         if (payByInput) individualUpdates.paymentMethod = payByInput as any;
                         // Courier-collected money (the Settle box's default)
                         // debits 1210 COD receivable, not the bank.
-                        individualUpdates.codCollected = defaultCodCollected(order);
+                        individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods);
                     } else if (value === 'Get File') {
                         // File collected, money not settled yet — no settle date. Keep a
                         // deposit visible in Received when one was taken.
@@ -795,7 +795,7 @@ const PaymentTracking: React.FC = () => {
             expectedPaymentStatus: selectedOrder.paymentStatus,
             // A Paid save here has no COD box: the Settle box's default
             // decides whether the receipt debits 1210 COD receivable.
-            ...(formData.paymentStatus === 'Paid' ? { codCollected: defaultCodCollected(selectedOrder) } : {}),
+            ...(formData.paymentStatus === 'Paid' ? { codCollected: defaultCodCollected(selectedOrder, codPaymentMethods) } : {}),
             ...(formData.paymentStatus === 'Paid' && selectedOrder.shipping?.status !== 'Delivered' ? { shipping: { ...(selectedOrder.shipping || {}), company: selectedOrder.shipping?.company || '', trackingNumber: selectedOrder.shipping?.trackingNumber || '', cost: selectedOrder.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {})
         });
         showToast(tx('payTrack.paymentUpdated', 'Payment details updated'), 'success');
@@ -1610,7 +1610,7 @@ const PaymentTracking: React.FC = () => {
                     order={paymentMethodTargetOrder}
                     initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.settleDate || undefined}
-                    codDefault={defaultCodCollected(paymentMethodTargetOrder)}
+                    codDefault={defaultCodCollected(paymentMethodTargetOrder, codPaymentMethods)}
                     onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, amountReceived, receiptReference, receiptNotes, money, codCollected }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };

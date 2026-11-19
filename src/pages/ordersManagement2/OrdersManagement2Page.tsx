@@ -28,7 +28,7 @@ const COLUMN_LABELS: Record<string, string> = {
 };
 
 const OrdersManagement2Page: React.FC = () => {
-    const { updateOrderStatus, updateOrder, updateOrders, currentUser, salesmen, shippingCompanies, pages, customerCare, paymentMethods, hasPermission } = useStore();
+    const { updateOrderStatus, updateOrder, updateOrders, currentUser, salesmen, shippingCompanies, pages, customerCare, paymentMethods, codPaymentMethods, hasPermission } = useStore();
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
     const { tx } = useOM2Lang();
@@ -313,7 +313,7 @@ const OrdersManagement2Page: React.FC = () => {
                         individualUpdates.postToLedger = true;
                         // Courier-collected money (the Settle box's default)
                         // debits 1210 COD receivable, not the bank.
-                        individualUpdates.codCollected = defaultCodCollected(order);
+                        individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods);
                     } else if (value === 'Get File') {
                         individualUpdates.amountReceived = order.depositAmount || 0;
                         individualUpdates.settleDate = null;

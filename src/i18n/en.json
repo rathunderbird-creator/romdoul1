@@ -4184,6 +4184,12 @@
           "on": "Books at Get File",
           "off": "Books at Paid"
         },
+        "codMethods": {
+          "title": "COD payment methods",
+          "help": "Tick the Pay By methods that mean the courier collects the money. An order paid by one of them opens Settle Payment, Record Receipt and a Checkout Paid save with អ្នកដឹកប្រមូល (COD) ticked, so its receipt is booked to 1210 COD receivable (courier) until the courier's payout is recorded on Accounting › COD Remittances. The box can still be changed on each order. With nothing saved here, a Method named COD counts.",
+          "on": "Courier collects",
+          "off": "Paid to the shop"
+        },
         "subtitle": "Defaults for new documents, what each customer pays, and where you started",
         "sections": {
           "defaults": "Defaults",

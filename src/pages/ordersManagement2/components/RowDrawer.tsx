@@ -13,6 +13,7 @@ import type { OrderEdit, PillTone } from '../types';
 import { getOperatorForPhone } from '../../../utils/telecom';
 import { getShippingLogo } from '../../../utils/shipping';
 import { defaultCodCollected } from '../../../utils/cashBankAccounts';
+import { useStore } from '../../../context/StoreContext';
 
 type PayStatus = NonNullable<Order['paymentStatus']>;
 const PAYMENT_STATUS_OPTIONS: PayStatus[] = ['Unpaid', 'Deposit', 'Paid', 'Cancel', 'Get File'];
@@ -148,6 +149,9 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
     const [paymentStatus, setPaymentStatus] = useState<PayStatus>('Unpaid');
     const [amountReceivedInput, setAmountReceivedInput] = useState('0');
     const [paymentMethod, setPaymentMethod] = useState('');
+    // Sales Setup › Pay By's COD payment methods: a Method ticked there makes
+    // a Paid save courier-collected (utils/cashBankAccounts defaultCodCollected).
+    const { codPaymentMethods } = useStore();
     const [settleDateInput, setSettleDateInput] = useState('');
     const [orderStatus, setOrderStatus] = useState<ShipStatus>('Pending');
     const [trackingNumber, setTrackingNumber] = useState('');
@@ -300,7 +304,7 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
             // debits 1210 COD receivable); this drawer has no box to flip it,
             // the Orders page's Settle form does.
             const paidExtras = entering('Paid')
-                ? { amountReceived: order.total, settleDate: settleDateInput || nowIso, postToLedger: true, codCollected: defaultCodCollected(order) }
+                ? { amountReceived: order.total, settleDate: settleDateInput || nowIso, postToLedger: true, codCollected: defaultCodCollected({ ...order, paymentMethod: (paymentMethod || order.paymentMethod) as Order['paymentMethod'] }, codPaymentMethods) }
                 : {};
             const depositExtras = entering('Deposit') && amountReceived > 0
                 ? {
