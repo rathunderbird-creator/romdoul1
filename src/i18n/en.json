@@ -74,6 +74,7 @@
     "accountsPayable": "Accounts Payable",
     "accountsReceivable": "Accounts Receivable",
     "codRemittances": "COD Remittances",
+    "fxRevaluation": "Riel Revaluation",
     "payments": "Payments",
     "hrPayroll": "HR & Payroll",
     "employees": "Employees",
@@ -2545,6 +2546,82 @@
           "restoreFailed": "and restoring the previous lines also failed; re-enter remittance {ref}"
         }
       },
+      "fx": {
+        "title": "Riel Revaluation",
+        "subtitle": "Exchange gain and loss on the riel (KHR) accounts — the books stay in USD",
+        "noRielAccounts": "This store has no riel cash or bank account yet (1002 Cash on Hand (KHR), 1011 Bank Account ABA (KHR)) — run migrations/add_khr_currency.sql first.",
+        "noCurrencyColumns": "This store has not run migrations/add_khr_currency.sql: no entry carries its riel amount, so every riel line is counted at the rate below.",
+        "noFxAccounts": "The chart has no exchange gain/loss accounts yet. Add \"{gain}\" (Revenue · Other Revenue, 4910) and \"{loss}\" (Expense · Other Expense, 6910)?",
+        "addFxAccounts": "Add the two accounts",
+        "draftNote": "Saved as a Draft — review and post it on Journal Entries.",
+        "reval": {
+          "title": "Revalue riel balances",
+          "hint": "Brings each riel account to what its riel is worth at the rate you pick. Posted entries only.",
+          "asOf": "As of",
+          "rate": "Rate (៛ per $1)",
+          "rateInvalid": "Enter a rate above 0",
+          "shopRate": "Shop rate: ៛{rate}",
+          "useShopRate": "use it",
+          "account": "Account",
+          "rielBalance": "Riel balance",
+          "bookUsd": "On the books",
+          "avgRate": "Book rate",
+          "atRate": "At ៛{rate}",
+          "difference": "Difference",
+          "netGain": "Exchange gain",
+          "netLoss": "Exchange loss",
+          "netNone": "Nothing to revalue",
+          "draftsLeftOut": "{n} Draft line(s) on the riel accounts up to this date are not counted — post them on Journal Entries first for a complete balance.",
+          "untagged": "{n} entry(ies) on the riel accounts carry no riel amount (a manual journal, an old row): counted at ៛{rate} per $1. Tag them, or move them to a dollar account, for an exact riel balance.",
+          "pending": "Revaluation {number} is still a Draft — post or delete it before drafting another.",
+          "submit": "Draft revaluation entry"
+        },
+        "ex": {
+          "title": "Exchange riel and dollars",
+          "hint": "Record riel sold for dollars (or bought) at the bank, with the figures on the bank slip.",
+          "direction": "Exchange",
+          "sellRiel": "Sell riel → receive dollars",
+          "buyRiel": "Buy riel → pay dollars",
+          "bankRef": "Bank REF#",
+          "bankRefPh": "Optional",
+          "rielFrom": "Riel taken from",
+          "rielInto": "Riel received into",
+          "rielAmount": "Riel amount (៛)",
+          "usdInto": "Dollars received into",
+          "usdFrom": "Dollars paid from",
+          "usdAmount": "Dollar amount ($)",
+          "holds": "Holds {riel} · {usd} on the books",
+          "rateGot": "Rate: ៛{rate} per $1",
+          "bookValue": "book value of this riel {usd}",
+          "gain": "Realised exchange gain {usd}",
+          "loss": "Realised exchange loss {usd}",
+          "even": "At the book rate: no gain or loss",
+          "submit": "Draft exchange entry"
+        },
+        "list": {
+          "title": "Revaluations and exchanges",
+          "empty": "None yet.",
+          "kind": "Kind",
+          "description": "Description",
+          "gainLoss": "Gain / loss",
+          "reval": "Revaluation",
+          "conv": "Exchange"
+        },
+        "confirm": {
+          "oddRate": "A rate of ៛{rate} per $1 is outside the usual ៛{min}–៛{max}. Use it anyway?",
+          "revalGain": "Draft a revaluation as of {date} at ៛{rate} per $1 — an exchange gain of {amount}?",
+          "revalLoss": "Draft a revaluation as of {date} at ៛{rate} per $1 — an exchange loss of {amount}?",
+          "oversell": "Selling {riel}, but the account holds {balance}. Record it anyway?",
+          "delete": "Delete Draft {number} of {date}?"
+        },
+        "toast": {
+          "revalSaved": "Revaluation drafted — review and post it on Journal Entries.",
+          "exchangeSaved": "Exchange drafted — review and post it on Journal Entries.",
+          "saveFailed": "Failed to save the entry",
+          "deleted": "Draft deleted",
+          "deleteFailed": "Failed to delete the Draft"
+        }
+      },
       "re": {
         "kind": {
           "revenue": "revenue",
@@ -2600,6 +2677,7 @@
             "trueup": "true-up",
             "opening": "opening",
             "reversal": "reversal",
+            "fx": "FX",
             "system": "auto"
           }
         },
