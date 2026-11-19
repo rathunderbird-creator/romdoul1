@@ -631,7 +631,9 @@ export async function postOrFinalizeTransactionReceipt({
         let cod = false;
         if (type === 'RCP' && orderId) {
             const { data: sale, error: codErr } = await supabase.from('sales').select('cod_collected').eq('id', orderId).maybeSingle();
-            if (codErr) console.warn('Could not read the order\'s COD flag; posting to the picked account:', codErr.message);
+            // Fail closed: a Posted entry cannot be re-posted, so guessing
+            // "not COD" on a failed read could leave the receipt on the bank.
+            if (codErr) throw codErr;
             cod = (sale as { cod_collected?: boolean | null } | null)?.cod_collected === true;
         }
         const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId, payBy, currency, cod });
