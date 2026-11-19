@@ -17,6 +17,7 @@ import { fill } from '../i18n/translate';
 // The Provinces section: address tree (gazetteer + custom/hidden districts
 // and communes) with the Shipping Points in each commune.
 import ProvincesSection from './salesSetup/ProvincesSection';
+import { getFileBooksCod } from '../utils/cashBankAccounts';
 
 type SectionKey =
     | 'defaults' | 'paymentTerms' | 'priceLevels' | 'customerGroups' | 'provinces'
@@ -92,6 +93,47 @@ const SetupListSection: React.FC<{
                         </button>
                     </div>
                 ))}
+            </div>
+        </div>
+    );
+};
+
+// Which couriers' "Get File" books the order's receipt at once to 1210 COD
+// receivable (courier) — app_config.codGetFileCompanies, read by the
+// database's set_order_payment (migrations/add_order_payment_functions.sql).
+// Each tick saves on its own (append / removeItems), like the lists above.
+const CodGetFileSection: React.FC = () => {
+    const { shippingCompanies, codGetFileCompanies, setCodGetFileCompany } = useStore();
+    const { showToast } = useToast();
+    const { t } = useLanguage();
+    const [busy, setBusy] = useState<string | null>(null);
+    const toggle = (company: string, on: boolean) => {
+        if (busy) return;
+        setBusy(company);
+        setCodGetFileCompany(company, on)
+            .catch((err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error'))
+            .finally(() => setBusy(null));
+    };
+    return (
+        <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{t('ui.admin.salesSetup.codGetFile.title')}</div>
+            <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{t('ui.admin.salesSetup.codGetFile.help')}</p>
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
+                {shippingCompanies.length === 0 ? (
+                    <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.salesSetup.noneYet')}</div>
+                ) : shippingCompanies.map(company => {
+                    const on = getFileBooksCod(codGetFileCompanies, company);
+                    return (
+                        <label key={company} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-main)', cursor: busy ? 'wait' : 'pointer' }}>
+                            <input type="checkbox" checked={on} disabled={!!busy} onChange={e => toggle(company, e.target.checked)}
+                                style={{ width: '16px', height: '16px', cursor: busy ? 'wait' : 'pointer' }} />
+                            <span style={{ flex: 1 }}>{company}</span>
+                            <span style={{ fontSize: '12px', color: on ? '#4c5fd0' : 'var(--color-text-secondary)', fontWeight: on ? 600 : 400 }}>
+                                {on ? t('ui.admin.salesSetup.codGetFile.on') : t('ui.admin.salesSetup.codGetFile.off')}
+                            </span>
+                        </label>
+                    );
+                })}
             </div>
         </div>
     );
@@ -299,9 +341,15 @@ const SalesSetupPage: React.FC = () => {
                 <SetupListSection title={t('ui.admin.salesSetup.sections.pageNames')} placeholder={t('ui.admin.salesSetup.addPageName')} items={pages}
                     onAdd={addPage} onRemove={removePage} />
             )}
+            {/* Shipping Company: the list, and under it which couriers' Get File
+                books the COD receipt (a grid column, so each card's own flex
+                sizing does not apply and they stack). */}
             {section === 'shippingCompanies' && (
-                <SetupListSection title={t('ui.admin.salesSetup.sections.shippingCompanies')} placeholder={t('ui.admin.salesSetup.addShippingCompany')} items={shippingCompanies}
-                    onAdd={addShippingCompany} onRemove={removeShippingCompany} />
+                <div style={{ flex: '1 1 560px', maxWidth: '680px', display: 'grid', gap: '20px' }}>
+                    <SetupListSection title={t('ui.admin.salesSetup.sections.shippingCompanies')} placeholder={t('ui.admin.salesSetup.addShippingCompany')} items={shippingCompanies}
+                        onAdd={addShippingCompany} onRemove={removeShippingCompany} />
+                    <CodGetFileSection />
+                </div>
             )}
 
             {/* ── Provinces: the shared address tree + Shipping Points per commune. ── */}

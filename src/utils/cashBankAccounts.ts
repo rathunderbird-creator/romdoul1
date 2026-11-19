@@ -86,6 +86,14 @@ export function defaultCodCollected(order: {
     return order.shipping.status === 'Shipped' || order.shipping.status === 'Delivered';
 }
 
+// Whether a courier is ticked in Sales Setup › Shipping Company as "Get File
+// books the COD receipt" — the same match set_order_payment's
+// wp_internal.op_get_file_books_cod makes (case- and space-insensitive).
+export function getFileBooksCod(list: readonly string[] | null | undefined, company: string | null | undefined): boolean {
+    const c = (company || '').trim().toLowerCase();
+    return c !== '' && (list || []).some(x => (x || '').trim().toLowerCase() === c);
+}
+
 export function pickCashBankAccount<T extends CashBankCandidate>(
     pool: T[],
     payBy?: string | null,

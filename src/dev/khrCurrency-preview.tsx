@@ -3,7 +3,7 @@
 // (r1: 1001 Petty Cash + 1010 Bank Account ABA (USD); r2: 1000 Cash only; the
 // *khr variants add 1002 Cash on Hand (KHR) + 1011 Bank Account ABA (KHR)),
 // ?form= the form (delivery, deposit, settle, receipt, finalize, wholesale,
-// supplier, settings, money, shipping = Select Shipping Company popup,
+// supplier, settings, money, setup = Sales Setup, shipping = Select Shipping Company popup,
 // checkout = the order Checkout form, ?edit=neg|khr reopening a saved one;
 // ?dep= sets that order's existing deposit).
 //
@@ -32,6 +32,7 @@ import { useMoneyField } from '../hooks/useMoneyField';
 import { ShippingModalComponent } from '../pages/Orders';
 import CheckoutForm from '../components/CheckoutForm';
 import CodRemittancesPage from '../pages/accounting/CodRemittancesPage';
+import SalesSetupPage from '../pages/SalesSetupPage';
 import type { CartItem, Sale } from '../types';
 
 const params = new URLSearchParams(location.search);
@@ -86,6 +87,9 @@ const base: Record<string, unknown> = {
     hasPermission: () => true,
     updateStoreProfile: logWrite('updateStoreProfile'),
     shippingCompanies: ['J&T', 'VET'], customerCare: ['Dev'], products: [],
+    // Sales Setup (?form=setup): J&T ticked for Get File books COD.
+    codGetFileCompanies: ['J&T'], setCodGetFileCompany: logWrite('setCodGetFileCompany'),
+    addPage: logWrite('addPage'), removePage: logWrite('removePage'), addShippingCompany: logWrite('addShippingCompany'), removeShippingCompany: logWrite('removeShippingCompany'),
     updateOrder: (...args: unknown[]) => { show('updateOrder', args); return Promise.resolve(true); },
     updateOrderStatus: (...args: unknown[]) => { show('updateOrderStatus', args); return Promise.resolve(true); },
     // Checkout (?form=checkout): lists it maps over, and the create it calls.
@@ -147,6 +151,7 @@ const Forms = () => {
         case 'money': return <FreeMoney />;
         case 'checkout': return <Checkout />;
         case 'cod': return <CodRemittancesPage />;
+        case 'setup': return <SalesSetupPage />;
         case 'shipping': return <ShippingModalComponent isOpen={open} onClose={close} order={order} />;
         default: return <DeliveryFeeModal order={open ? order : null} onClose={close} onConfirm={d => show('deliveryFee', d)} />;
     }
