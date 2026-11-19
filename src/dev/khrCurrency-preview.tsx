@@ -89,6 +89,8 @@ const base: Record<string, unknown> = {
     shippingCompanies: ['J&T', 'VET'], customerCare: ['Dev'], products: [],
     // Sales Setup (?form=setup): J&T ticked for Get File books COD.
     codGetFileCompanies: ['J&T'], setCodGetFileCompany: logWrite('setCodGetFileCompany'),
+    shippingRates: { 'J&T': 1.25 }, updateShippingRate: logWrite('updateShippingRate'), trackingUrlTemplates: {}, updateTrackingUrlTemplate: logWrite('updateTrackingUrlTemplate'),
+    addPaymentMethod: logWrite('addPaymentMethod'), removePaymentMethod: logWrite('removePaymentMethod'),
     addPage: logWrite('addPage'), removePage: logWrite('removePage'), addShippingCompany: logWrite('addShippingCompany'), removeShippingCompany: logWrite('removeShippingCompany'),
     updateOrder: (...args: unknown[]) => { show('updateOrder', args); return Promise.resolve(true); },
     updateOrderStatus: (...args: unknown[]) => { show('updateOrderStatus', args); return Promise.resolve(true); },
