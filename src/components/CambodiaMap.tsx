@@ -85,6 +85,12 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
         onPopupCloseRef.current = onPopupClose;
     }, [onPopupClose]);
 
+    // Set around a programmatic popup close (the focus-sync effect below,
+    // closing whichever marker just lost focus) so that close doesn't fire
+    // onPopupClose — that callback means "the user dismissed their
+    // selection," not "the Saved Pins list hover moved to a different pin."
+    const suppressCloseCallbackRef = useRef(false);
+
     // Helper to get geometry bounds for zooming
     const getGeometryBounds = useCallback((geometry: maplibregl.MapGeoJSONFeature['geometry']): maplibregl.LngLatBounds | null => {
         const bounds = new maplibregl.LngLatBounds();
@@ -414,15 +420,21 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
         }
     }, [customLocations]);
 
-    // Render Custom Location Markers
-    const customMarkersRef = useRef<maplibregl.Marker[]>([]);
+    // Render Custom Location Markers. Deliberately NOT keyed on
+    // focusedPinLatLng — the Saved Pins list's hover preview changes it
+    // rapidly as the pointer moves, and rebuilding every marker (500+ saved
+    // pins on this instance) on each change would make that hover feel
+    // laggy. Keyed by lat,lng so the effect below can open/close just one
+    // already-built marker's popup instead of rebuilding all of them.
+    const customMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+    const markerKey = (lat: number, lng: number) => `${lat},${lng}`;
     useEffect(() => {
         const map = mapRef.current;
         if (!map || isLoading) return;
 
         // Clean up previous custom markers
         customMarkersRef.current.forEach(marker => marker.remove());
-        customMarkersRef.current = [];
+        customMarkersRef.current = new Map();
 
         customLocations.forEach(loc => {
             // Pass the filter if there's no selected province, if it matches the province code, 
@@ -465,6 +477,7 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                 .setHTML(popupContent);
 
             popup.on('close', () => {
+                if (suppressCloseCallbackRef.current) return;
                 if (onPopupCloseRef.current) {
                     onPopupCloseRef.current();
                 }
@@ -507,16 +520,31 @@ export const CambodiaMap: React.FC<CambodiaMapProps> = ({
                 .setPopup(popup)
                 .addTo(map);
 
-            if (focusedPinLatLng && focusedPinLatLng[0] === loc.lat && focusedPinLatLng[1] === loc.lng) {
-                const p = marker.getPopup();
-                if (p && !p.isOpen()) {
-                    marker.togglePopup();
-                }
-            }
-
-            customMarkersRef.current.push(marker);
+            customMarkersRef.current.set(markerKey(loc.lat, loc.lng), marker);
         });
-    }, [customLocations, shippingRules, isLoading, selectedProvinceCode, focusedPinLatLng]);
+    }, [customLocations, isLoading, selectedProvinceCode]);
+
+    // Open whichever marker's popup matches focusedPinLatLng — set either by
+    // clicking a pin or by hovering it in the Saved Pins list — and close
+    // any other marker's popup. Cheap: it only toggles already-built
+    // markers, so it's safe to run on every hover-driven change above. Also
+    // re-runs when the markers themselves are rebuilt, so a focus that was
+    // already set before customLocations finished loading still gets
+    // applied once the matching marker actually exists.
+    useEffect(() => {
+        const targetKey = focusedPinLatLng ? markerKey(focusedPinLatLng[0], focusedPinLatLng[1]) : null;
+        customMarkersRef.current.forEach((marker, key) => {
+            const popup = marker.getPopup();
+            if (!popup) return;
+            if (key === targetKey) {
+                if (!popup.isOpen()) marker.togglePopup();
+            } else if (popup.isOpen()) {
+                suppressCloseCallbackRef.current = true;
+                marker.togglePopup();
+                suppressCloseCallbackRef.current = false;
+            }
+        });
+    }, [focusedPinLatLng, customLocations, isLoading, selectedProvinceCode]);
 
     // Render Shipping Rule Markers
     useEffect(() => {

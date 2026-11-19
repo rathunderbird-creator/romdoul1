@@ -100,6 +100,11 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
     const [isEditing, setIsEditing] = useState(false);
     const [editMarkerLatLng, setEditMarkerLatLng] = useState<[number, number] | null>(null);
     const [focusedPinLatLng, setFocusedPinLatLng] = useState<[number, number] | null>(null);
+    // Hovering a Saved Pins row previews that pin on the map (pans to it,
+    // opens its popup) without disturbing a real click-based selection —
+    // kept separate from focusedPinLatLng so leaving the row reverts to
+    // whatever was actually selected rather than clearing it.
+    const [hoveredPinLatLng, setHoveredPinLatLng] = useState<[number, number] | null>(null);
     const [customLocations, setCustomLocations] = useState<CustomLocation[]>([]);
     const [isSavingLocation, setIsSavingLocation] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -1225,8 +1230,8 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                                                                             transition: 'background 0.2s',
                                                                             opacity: loc.is_shutdown ? 0.6 : 1
                                                                         }}
-                                                                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg)'}
-                                                                        onMouseLeave={(e) => e.currentTarget.style.background = 'var(--color-surface)'}
+                                                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-bg)'; setHoveredPinLatLng([loc.lat, loc.lng]); }}
+                                                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-surface)'; setHoveredPinLatLng(null); }}
                                                                     >
                                                                         <div
                                                                             onClick={() => {
@@ -1698,7 +1703,7 @@ export const ShippingPointContent: React.FC<ShippingPointContentProps> = ({
                             setSearchPinnedTerm('');
                         }}
                         customLocations={customLocations}
-                        focusedPinLatLng={focusedPinLatLng}
+                        focusedPinLatLng={hoveredPinLatLng || focusedPinLatLng}
                         mapSource={mapSource}
                     />
                 </div>
