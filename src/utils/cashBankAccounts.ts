@@ -57,9 +57,10 @@ const byCode = <T extends CashBankCandidate>(a: T, b: T) => (a.account_code || '
 
 // "The courier collected this order's money" — the default of the Settle
 // form's "អ្នកដឹកប្រមូល (COD)" box. On for an order a shipping company has
-// out or has delivered (Shipped / Delivered) or one waiting for its payment
-// proof (Get File): that money reaches the shop as the courier's remittance,
-// not as a transfer from the customer. Off for a direct ABA transfer staff
+// out or has delivered (Shipped / Delivered), and always for one at Get File
+// (the courier has the money and sent its file, courier named or not): that
+// money reaches the shop as the courier's remittance, not as a transfer
+// from the customer. Off for a direct ABA transfer staff
 // confirm on a Confirmed / Pending order. A stored true always counts
 // (someone ticked it). A stored false counts only on a settled order
 // (Paid / Settled / Paid/Settled — the paid set set_order_payment and
@@ -77,8 +78,11 @@ export function defaultCodCollected(order: {
 }): boolean {
     if (order.codCollected === true) return true;
     if (order.codCollected === false && SETTLED_STATUSES.includes(order.paymentStatus || '')) return false;
-    if (!order.shipping?.company) return false;
+    // Get File: the courier collected the money and sent its settlement file
+    // (add_cod_get_file.sql stores true on entering it), so it counts even
+    // when the courier's name was never filled in.
     if (order.paymentStatus === 'Get File') return true;
+    if (!order.shipping?.company) return false;
     return order.shipping.status === 'Shipped' || order.shipping.status === 'Delivered';
 }
 
