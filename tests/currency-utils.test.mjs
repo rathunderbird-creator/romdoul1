@@ -69,6 +69,19 @@ check('codTicksFor: returns the stored spelling to untick', JSON.stringify(ct(['
 check('codTicksFor: unticked courier → nothing to send', ct(['J&T'], 'VET').length === 0 && ct(undefined, 'VET').length === 0);
 check('codTicksFor: blank courier → nothing', ct(['', 'J&T'], ' ').length === 0);
 
+// ── codReceiptDebitId (Post Now keeps a COD receipt on 1210) ──
+const POOL = [
+    { id: 'aba', account_code: '1011', account_name: 'ABA Bank', account_type: 'Asset' },
+    { id: 'cod', account_code: '1210', account_name: 'COD receivable (courier)', account_type: 'Asset' },
+];
+const cr = m.codReceiptDebitId;
+check('codReceiptDebitId: Draft debiting 1210 keeps 1210', cr(POOL, { oldDebitAccountIds: ['cod', 'cogs'] }) === 'cod');
+check('codReceiptDebitId: Draft debiting the bank stays as picked', cr(POOL, { oldDebitAccountIds: ['aba', 'cogs'] }) === undefined);
+check('codReceiptDebitId: a Draft wins over the order flag', cr(POOL, { oldDebitAccountIds: ['aba'], saleCod: true }) === undefined);
+check('codReceiptDebitId: fresh entry, COD order → 1210', cr(POOL, { saleCod: true }) === 'cod');
+check('codReceiptDebitId: fresh entry, not COD → picked account', cr(POOL, { saleCod: false }) === undefined && cr(POOL, {}) === undefined);
+check('codReceiptDebitId: store without 1210 → picked account', cr(POOL.filter(a => a.id !== 'cod'), { saleCod: true }) === undefined);
+
 // ── conversions ──
 check('khrToUsd 82000 @ 4100 = 20', m.khrToUsd(82000, 4100) === 20);
 check('khrToUsd 4269000 @ 4100 = 1041.22 (rounded to cents)', m.khrToUsd(4269000, 4100) === 1041.22);

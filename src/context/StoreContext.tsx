@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
-import { codTicksFor, defaultCodPaymentMethods, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
+import { codReceiptDebitId, codTicksFor, defaultCodPaymentMethods, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
 import { isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
 import { tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 import { insertJournalLines } from '../utils/journalEntryLines';
@@ -398,7 +398,8 @@ export async function postRetailSaleToLedger({
     notes,
     orderId,
     payBy,
-    currency
+    currency,
+    cod
 }: {
     txId: string;
     amount: number;
@@ -419,10 +420,15 @@ export async function postRetailSaleToLedger({
     payBy?: string | null;
     // The payment's currency: a riel payment picks a riel account.
     currency?: Currency;
+    // The order's money is with the courier (sales.cod_collected): an RCP
+    // debits 1210 COD receivable instead of the cash/bank account.
+    cod?: boolean;
 }): Promise<boolean> {
     return enqueueLedgerPost(async () => {
     try {
-        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency);
+        const resolved = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency);
+        const { revenueAcc, pool } = resolved;
+        const cashAccId = (type === 'RCP' && cod ? codReceiptDebitId(pool, { saleCod: true }) : undefined) || resolved.cashAccId;
         if (revenueAcc && cashAccId) {
             // Read before anything is written. Deposits aren't a completed
             // sale yet — COGS books once, on the Paid-transition (RCP) entry.
@@ -549,8 +555,9 @@ export async function postOrFinalizeTransactionReceipt({
         // Resolve the accounts (and COGS) BEFORE touching any existing lines —
         // if this fails, the entry's current (valid) lines must be left
         // untouched rather than deleted with nothing to replace them.
-        const { revenueAcc, cashAccId, pool } = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency);
-        if (!revenueAcc || !cashAccId) {
+        const resolved = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency);
+        const { revenueAcc, pool } = resolved;
+        if (!revenueAcc || !resolved.cashAccId) {
             throw new Error(tNow('ui.store.ledger.noAccounts'));
         }
         // select('*') so each line's description rides along where that column
@@ -558,6 +565,10 @@ export async function postOrFinalizeTransactionReceipt({
         const { data: oldLines, error: oldErr } = await supabase.from('journal_entry_lines')
             .select('*').eq('journal_entry_id', existing.id);
         if (oldErr) throw oldErr;
+        // A COD receipt keeps its 1210 debit (see codReceiptDebitId); any
+        // other keeps the account the user picked.
+        const oldDebitAccountIds = (oldLines || []).filter(l => Number(l.debit) > 0).map(l => String(l.account_id));
+        const cashAccId = (type === 'RCP' ? codReceiptDebitId(pool, { oldDebitAccountIds }) : undefined) || resolved.cashAccId;
         // Every old line that isn't the cash debit or the revenue credit being
         // replaced: the COGS pair the auto-posted draft carries. COGS is
         // frozen once booked, so a draft that has its pair keeps it exactly
@@ -615,7 +626,15 @@ export async function postOrFinalizeTransactionReceipt({
         if (updErr) throw updErr;
         if (statusDropped) console.warn('Finalized the receipt, but this instance needs migrations/add_entry_status.sql to mark it Posted');
     } else {
-        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId, payBy, currency });
+        // No Draft yet (e.g. a checkout-born or Payment Tracking Paid): the
+        // order's stored COD flag decides whether the receipt debits 1210.
+        let cod = false;
+        if (type === 'RCP' && orderId) {
+            const { data: sale, error: codErr } = await supabase.from('sales').select('cod_collected').eq('id', orderId).maybeSingle();
+            if (codErr) console.warn('Could not read the order\'s COD flag; posting to the picked account:', codErr.message);
+            cod = (sale as { cod_collected?: boolean | null } | null)?.cod_collected === true;
+        }
+        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId, payBy, currency, cod });
         if (!ok) {
             throw new Error(tNow('ui.store.ledger.postFailed'));
         }
