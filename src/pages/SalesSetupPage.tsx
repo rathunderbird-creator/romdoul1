@@ -1,13 +1,15 @@
 // Sales Setup — defaults for new sell-side documents (modeled on the reference
 // design): a left-nav settings page in the same family as Purchase Setup and
-// Wholesale Setup. DESIGN ONLY for now — every field is local component state;
-// nothing here reads or writes the store, Supabase, or app config yet. The
-// Defaults section matches the provided mockup field-for-field; the remaining
-// sections are placeholders until their own data model exists.
+// Wholesale Setup. The Defaults section is still DESIGN ONLY (local state,
+// matching the mockup; nothing reads those values yet). Page Name, Shipping
+// Company (with each courier's cost per parcel, tracking link and "Get File
+// books the COD receipt"), Pay By and Provinces are real, store-backed
+// settings. The remaining sections are placeholders until their own data
+// model exists.
 import React, { useId, useState } from 'react';
 import {
     SlidersHorizontal, Tag, Tags, Users, MapPin, Percent, Truck, Ban, Landmark,
-    Megaphone, Building2, Plus, Trash2
+    Megaphone, Building2, Plus, Trash2, Wallet
 } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
@@ -18,11 +20,12 @@ import { fill } from '../i18n/translate';
 // and communes) with the Shipping Points in each commune.
 import ProvincesSection from './salesSetup/ProvincesSection';
 import { getFileBooksCod } from '../utils/cashBankAccounts';
+import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
 
 type SectionKey =
     | 'defaults' | 'paymentTerms' | 'priceLevels' | 'customerGroups' | 'provinces'
     | 'discounts' | 'deliveryTypes' | 'rejectionReasons' | 'openingBalances'
-    | 'pageNames' | 'shippingCompanies';
+    | 'pageNames' | 'shippingCompanies' | 'payBy';
 
 const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
     { key: 'defaults', label: 'Defaults', icon: SlidersHorizontal },
@@ -34,12 +37,13 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
     { key: 'deliveryTypes', label: 'Delivery Types', icon: Truck },
     { key: 'pageNames', label: 'Page Name', icon: Megaphone },
     { key: 'shippingCompanies', label: 'Shipping Company', icon: Building2 },
+    { key: 'payBy', label: 'Pay By', icon: Wallet },
     { key: 'rejectionReasons', label: 'Rejection Reasons', icon: Ban },
     { key: 'openingBalances', label: 'Opening Balances', icon: Landmark },
 ];
 
 // Sections not in this set fall through to the "reserved" placeholder below.
-const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'provinces']);
+const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'provinces']);
 
 // Add/remove UI for a flat string list backed by the store's config blob
 // (same data CheckoutForm's gear-icon ConfigModal edits — this just gives it
@@ -47,7 +51,9 @@ const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'pr
 const SetupListSection: React.FC<{
     title: string; placeholder: string; items: string[];
     onAdd: (name: string) => Promise<unknown>; onRemove: (name: string) => Promise<unknown>;
-}> = ({ title, placeholder, items, onAdd, onRemove }) => {
+    // Optional: a line of help under the title, and per-row fields under each item.
+    help?: string; renderRowExtra?: (item: string) => React.ReactNode;
+}> = ({ title, placeholder, items, onAdd, onRemove, help, renderRowExtra }) => {
     const { showToast } = useToast();
     const { t } = useLanguage();
     const [draft, setDraft] = useState('');
@@ -70,6 +76,7 @@ const SetupListSection: React.FC<{
     return (
         <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{title}</div>
+            {help && <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{help}</p>}
             <div style={{ display: 'flex', gap: '8px' }}>
                 <input
                     type="text" value={draft} placeholder={placeholder} className="search-input"
@@ -86,13 +93,70 @@ const SetupListSection: React.FC<{
                 {items.length === 0 ? (
                     <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.salesSetup.noneYet')}</div>
                 ) : items.map(item => (
-                    <div key={item} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 12px', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-main)' }}>
-                        <span>{item}</span>
-                        <button onClick={() => handleRemove(item)} title={fill(t('ui.admin.salesSetup.removeItem'), { name: item })} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                            <Trash2 size={15} />
-                        </button>
+                    <div key={item} style={{ padding: '9px 12px', borderBottom: '1px solid var(--color-border)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', color: 'var(--color-text-main)' }}>
+                            <span style={{ fontWeight: renderRowExtra ? 600 : 400 }}>{item}</span>
+                            <button onClick={() => handleRemove(item)} title={fill(t('ui.admin.salesSetup.removeItem'), { name: item })} aria-label={fill(t('ui.admin.salesSetup.removeItem'), { name: item })} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                <Trash2 size={15} />
+                            </button>
+                        </div>
+                        {renderRowExtra && renderRowExtra(item)}
                     </div>
                 ))}
+            </div>
+        </div>
+    );
+};
+
+// A courier's cost per parcel (app_config shippingRates — the Shipping
+// report's rates) and tracking link (trackingUrlTemplates, {tracking} = the
+// waybill number; J&T has a built-in one). Each saves on blur / Enter, and
+// only when it changed, as a write scoped to its own key.
+const ShippingCompanyFields: React.FC<{ company: string }> = ({ company }) => {
+    const { shippingRates, updateShippingRate, trackingUrlTemplates, updateTrackingUrlTemplate } = useStore();
+    const { showToast } = useToast();
+    const { t } = useLanguage();
+    const idBase = useId();
+    const savedRate = shippingRates?.[company];
+    const savedLink = trackingUrlTemplates?.[company] || '';
+    const carrier = detectCarrier(company);
+    const builtIn = carrier ? DEFAULT_TRACKING_TEMPLATES[carrier] : '';
+    const [rate, setRate] = useState<string | null>(null);
+    const [link, setLink] = useState<string | null>(null);
+    const fail = (err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error');
+    const commitRate = () => {
+        if (rate === null) return;
+        const typed = rate.trim();
+        setRate(null);
+        const val = typed === '' ? 0 : Number(typed);
+        if (!Number.isFinite(val) || val < 0) { showToast(t('ui.admin.salesSetup.courier.badRate'), 'error'); return; }
+        if (Math.round(val * 100) === Math.round((savedRate || 0) * 100)) return;
+        updateShippingRate(company, Math.round(val * 100) / 100).catch(fail);
+    };
+    const commitLink = () => {
+        if (link === null) return;
+        const typed = link.trim();
+        setLink(null);
+        if (typed === savedLink.trim()) return;
+        updateTrackingUrlTemplate(company, typed).catch(fail);
+    };
+    const enterBlurs = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') e.currentTarget.blur(); };
+    return (
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(110px, 140px) 1fr', gap: '10px', marginTop: '8px' }}>
+            <div>
+                <label htmlFor={idBase + '-rate'} style={{ ...labelStyle, fontSize: '11.5px', marginBottom: '4px' }}>{t('ui.admin.salesSetup.courier.costPerParcel')}</label>
+                <input id={idBase + '-rate'} type="number" min="0" step="0.01" inputMode="decimal" className="setup-field"
+                    value={rate !== null ? rate : (savedRate ? String(savedRate) : '')} placeholder="0.00"
+                    onChange={e => setRate(e.target.value)} onBlur={commitRate} onKeyDown={enterBlurs}
+                    style={{ ...inputStyle, padding: '7px 10px' }} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+                <label htmlFor={idBase + '-link'} style={{ ...labelStyle, fontSize: '11.5px', marginBottom: '4px' }}>{t('ui.admin.salesSetup.courier.trackingLink')}</label>
+                <input id={idBase + '-link'} type="url" className="setup-field"
+                    value={link !== null ? link : savedLink}
+                    placeholder={builtIn ? fill(t('ui.admin.salesSetup.courier.builtIn'), { url: builtIn }) : 'https://carrier.example/track?no={tracking}'}
+                    onChange={e => setLink(e.target.value)} onBlur={commitLink} onKeyDown={enterBlurs}
+                    style={{ ...inputStyle, padding: '7px 10px', fontSize: '12px' }} />
             </div>
         </div>
     );
@@ -166,7 +230,7 @@ const disabledInputStyle: React.CSSProperties = { ...inputStyle, color: 'var(--c
 const SalesSetupPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
-    const { pages, shippingCompanies, addPage, removePage, addShippingCompany, removeShippingCompany } = useStore();
+    const { pages, shippingCompanies, addPage, removePage, addShippingCompany, removeShippingCompany, paymentMethods, addPaymentMethod, removePaymentMethod } = useStore();
     const [section, setSection] = useState<SectionKey>('defaults');
     const [saving, setSaving] = useState(false);
 
@@ -347,9 +411,17 @@ const SalesSetupPage: React.FC = () => {
             {section === 'shippingCompanies' && (
                 <div style={{ flex: '1 1 560px', maxWidth: '680px', display: 'grid', gap: '20px' }}>
                     <SetupListSection title={t('ui.admin.salesSetup.sections.shippingCompanies')} placeholder={t('ui.admin.salesSetup.addShippingCompany')} items={shippingCompanies}
-                        onAdd={addShippingCompany} onRemove={removeShippingCompany} />
+                        onAdd={addShippingCompany} onRemove={removeShippingCompany}
+                        help={t('ui.admin.salesSetup.courier.help')}
+                        renderRowExtra={company => <ShippingCompanyFields company={company} />} />
                     <CodGetFileSection />
                 </div>
+            )}
+
+            {/* ── Pay By: the payment methods Checkout and the settle forms offer. ── */}
+            {section === 'payBy' && (
+                <SetupListSection title={t('ui.admin.salesSetup.sections.payBy')} placeholder={t('ui.admin.salesSetup.addPayBy')} items={paymentMethods}
+                    onAdd={addPaymentMethod} onRemove={removePaymentMethod} help={t('ui.admin.salesSetup.payByHelp')} />
             )}
 
             {/* ── Provinces: the shared address tree + Shipping Points per commune. ── */}

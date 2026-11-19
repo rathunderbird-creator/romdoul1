@@ -4164,6 +4164,15 @@
         "unknownError": "unknown error",
         "noneYet": "None added yet.",
         "removeItem": "Remove {name}",
+        "addPayBy": "Add a payment method…",
+        "payByHelp": "How customers pay (Cash, QR, Bank…). Offered in Checkout, the settle and receipt forms, and the Pay By filters. Removing one leaves orders that already use it unchanged.",
+        "courier": {
+          "help": "Each courier's cost per parcel (used by the Shipping report) and tracking link — put {tracking} where the tracking number goes. J&T has a built-in link. Changes save when you leave the field.",
+          "costPerParcel": "Cost per parcel ($)",
+          "trackingLink": "Tracking link",
+          "builtIn": "Built-in: {url}",
+          "badRate": "Enter a cost of 0 or more"
+        },
         "codGetFile": {
           "title": "Get File books the COD receipt",
           "help": "Tick a courier to book its orders' receipt the moment Pay Status becomes Get File (the courier has collected the money and sent its file): Dr 1210 COD receivable (courier) / Cr Sales Revenue, plus cost of goods sold, dated that day. A later Paid books nothing more — the courier's payout is recorded on Accounting › COD Remittances when it reaches the bank. Unticked couriers book the receipt when the order is marked Paid, as before.",
@@ -4181,6 +4190,7 @@
           "deliveryTypes": "Delivery Types",
           "pageNames": "Page Name",
           "shippingCompanies": "Shipping Company",
+          "payBy": "Pay By",
           "rejectionReasons": "Rejection Reasons",
           "openingBalances": "Opening Balances"
         },
