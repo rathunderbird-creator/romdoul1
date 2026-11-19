@@ -57,6 +57,14 @@ check('cod: no paymentStatus, Shipped courier → on', cod({ codCollected: false
 check('cod: Paid, stored false, no shipping → off', cod({ codCollected: false, paymentStatus: 'Paid' }) === false);
 check('cod: stored true, no courier → on (someone ticked it)', cod({ codCollected: true, paymentStatus: 'Unpaid', shipping: ship('Delivered', '') }) === true);
 
+// ── getFileBooksCod (Sales Setup: couriers whose Get File books the COD receipt) ──
+const gf = m.getFileBooksCod;
+check('getFileBooksCod: ticked courier → true', gf(['J&T'], 'J&T') === true);
+check('getFileBooksCod: case and spaces ignored', gf([' j&t '], 'J&T ') === true);
+check('getFileBooksCod: another courier → false', gf(['J&T'], 'VET') === false);
+check('getFileBooksCod: no list / empty list → false', gf(undefined, 'J&T') === false && gf([], 'J&T') === false);
+check('getFileBooksCod: no courier on the order → false', gf(['J&T'], '') === false && gf(['J&T'], null) === false && gf([''], '') === false);
+
 // ── conversions ──
 check('khrToUsd 82000 @ 4100 = 20', m.khrToUsd(82000, 4100) === 20);
 check('khrToUsd 4269000 @ 4100 = 1041.22 (rounded to cents)', m.khrToUsd(4269000, 4100) === 1041.22);

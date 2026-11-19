@@ -20,11 +20,12 @@
 //     add_cod_receivable.sql;
 //   * create_retail_order stores the flag, and a later settle without the
 //     flag reads the stored one;
-//   * add_cod_get_file.sql: entering Get File (payment pack, a direct
-//     update, a create) sets the flag; the existing Get File rows are
-//     backfilled; Get File -> Paid books Dr 1210 without the flag sent,
-//     and the bank when the box is unticked; taking Get File back to
-//     Unpaid / Cancel clears it; other saves leave it alone;
+//   * Get File for a courier ticked in Sales Setup (codGetFileCompanies)
+//     books the receipt at once: Dr 1210 for the full total (the remainder
+//     after a deposit), settle date stamped; Paid afterwards books nothing
+//     and keeps the date; taking it back removes the receipt and clears the
+//     flag; an unticked courier, or a Get File from before the tick, books
+//     at Paid as before; restocking a booked Get File gives its income back;
 //   * the FIFO check stays at variance 0 throughout.
 // See tests/README.md for how to run it.
 import { makeDb, harness, mig, strip } from './fifo-test-db.mjs';
@@ -231,70 +232,106 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
 }
 
 // ---------------------------------------------------------------------------
-// 7. add_cod_get_file.sql: Get File marks the order courier-collected.
+// 7. Get File books the COD receipt for a courier ticked in Sales Setup
+//    (app_config.data.codGetFileCompanies).
 // ---------------------------------------------------------------------------
 {
-    // An order already at Get File before the file runs, flag still false.
-    await order('G0', 17);
-    await q(`UPDATE sales SET payment_status = 'Get File' WHERE id = 'G0'`);
-    check('G0 at Get File before the file: flag false', (await codFlag('G0')) === false);
-    await db.exec(strip(mig('add_cod_get_file.sql')));
-    await db.exec(strip(mig('add_cod_get_file.sql')));
-    check('the file runs twice: one trigger on sales',
-        num((await one(`SELECT count(*) AS n FROM pg_trigger WHERE tgname = 'sales_cod_on_get_file' AND NOT tgisinternal`)).n) === 1);
-    check('G0 backfilled: flag true', (await codFlag('G0')) === true);
+    const tick = async list => q(`UPDATE app_config SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{codGetFileCompanies}', $1::jsonb) WHERE id = 1`, [JSON.stringify(list)]);
+    const nIncome = async id => num((await one(`SELECT count(*) AS n FROM transactions WHERE order_id = $1 AND category = 'លក់រាយ'`, [id])).n);
+    const row = async id => one(`SELECT payment_status, cod_collected, settle_date, amount_received FROM sales WHERE id = $1`, [id]);
+    // What the app sends for Get File: the deposit as Received, no settle date.
+    const getFile = (id, from, dep = 0) => pay(id, from, { payment_status: 'Get File', amount_received: dep, settle_date: null });
+    const LATER = '2026-11-20';
 
-    // Unpaid -> Get File through the payment pack, no flag sent.
+    // Nothing ticked: Get File books nothing (as before).
+    await tick([]);
     await order('G1', 17);
-    const r1 = await pay('G1', 'Unpaid', { payment_status: 'Get File' });
-    check('G1 Unpaid -> Get File: flag true, returned to the app', (await codFlag('G1')) === true
-        && r1.payment && r1.payment.cod_collected === true, r1);
-    // Get File -> Paid without the flag: the stored true books Dr 1210.
-    await pay('G1', 'Get File', { payment_status: 'Paid', amount_received: 17, settle_date: DAY, post_to_ledger: true });
+    await getFile('G1', 'Unpaid');
+    let g = await row('G1');
+    check('G1 unticked courier: Get File books nothing, no settle date', (await nIncome('G1')) === 0 && g.settle_date === null && g.cod_collected === false, g);
+
+    // J&T ticked (case and spaces ignored).
+    await tick([' j&t ']);
+    await order('G2', 17);
+    const r2 = await getFile('G2', 'Unpaid');
+    g = await row('G2');
+    const e2 = await entry('TX-' + (await tx('G2')).id);
+    check('G2 ticked courier: Get File books one receipt of the full total', (await nIncome('G2')) === 1 && near((await tx('G2')).amount, 17), r2);
+    check('G2: Dr 1210 17 / Cr 4000 17, no bank debit, COGS booked', near(e2.cod_dr, 17) && near(e2.bank_dr, 0) && near(e2.rev_cr, 17) && num(e2.cogs) > 0, e2);
+    check('G2: settle date stamped, Received = total, flag true, status Get File',
+        g.settle_date !== null && near(g.amount_received, 17) && g.cod_collected === true && g.payment_status === 'Get File', g);
+    check('G2: the app gets the flag and settle date back', r2.payment && r2.payment.cod_collected === true && !!r2.payment.settle_date, r2.payment);
+    await checkBalanced('G2 Get File');
+
+    // Get File -> Paid: nothing more booked, the receipt keeps its date.
+    const before = { date: e2.date, settle: g.settle_date };
+    await pay('G2', 'Get File', { payment_status: 'Paid', amount_received: 17, settle_date: LATER, post_to_ledger: true, cod_collected: true }, LATER);
+    const e2b = await entry('TX-' + (await tx('G2')).id);
+    g = await row('G2');
+    check('G2 Get File -> Paid: still one receipt, same entry date and settle date',
+        (await nIncome('G2')) === 1 && e2b.date === before.date && String(g.settle_date) === String(before.settle) && g.payment_status === 'Paid', [e2b, g]);
+    check('G2 Paid: still Dr 1210 17', near(e2b.cod_dr, 17) && near(e2b.bank_dr, 0), e2b);
+    await checkBalanced('G2 Paid');
+
+    // A booked Get File taken back to Unpaid: receipt removed, flag cleared.
+    await order('G3', 17);
+    await getFile('G3', 'Unpaid');
+    check('G3 booked at Get File', (await nIncome('G3')) === 1);
+    await pay('G3', 'Get File', { payment_status: 'Unpaid', amount_received: 0, settle_date: null });
+    g = await row('G3');
+    check('G3 Get File -> Unpaid: receipt removed, flag false, no settle date',
+        (await nIncome('G3')) === 0 && g.cod_collected === false && g.settle_date === null && near(g.amount_received, 0), g);
+    check('G3: no RCP entry left for the order',
+        num((await one(`SELECT count(*) AS n FROM journal_entries WHERE reference_id IN (SELECT 'TX-' || id FROM transactions WHERE order_id = 'G3')`)).n) === 0);
+    await checkBalanced('G3');
+
+    // A deposit order: the deposit stays, Get File books the remainder.
+    await order('G4', 17);
+    await pay('G4', 'Unpaid', { payment_status: 'Deposit', deposit_amount: 5, deposit_date: DAY, post_to_ledger: true });
+    await getFile('G4', 'Deposit', 5);
+    const e4 = await entry('TX-' + (await tx('G4')).id);
+    check('G4 deposit 5 then Get File: Dr 1210 12 (the remainder)', near(e4.cod_dr, 12) && near(e4.bank_dr, 0), e4);
+    await checkBalanced('G4');
+
+    // A courier not ticked keeps the old behaviour.
+    await q(`INSERT INTO sales (id, total, shipping_status, payment_status, shipping_company, customer_snapshot)
+             VALUES ('G5', 17, 'Delivered', 'Unpaid', 'VET', '{"name":"Cust G5"}')`);
+    await q(`INSERT INTO sale_items (id, sale_id, product_id, name, price, quantity) VALUES ($1, 'G5', 'C', 'Cable', 17, 1)`, [SI('G5-a')]);
+    await getFile('G5', 'Unpaid');
+    check('G5 VET (not ticked): Get File books nothing', (await nIncome('G5')) === 0 && (await row('G5')).settle_date === null);
+
+    // G1 was at Get File before J&T was ticked: its Paid books once, as usual.
+    await pay('G1', 'Get File', { payment_status: 'Paid', amount_received: 17, settle_date: LATER, post_to_ledger: true, cod_collected: true }, LATER);
     const e1 = await entry('TX-' + (await tx('G1')).id);
-    check('G1 Get File -> Paid without the flag: Dr 1210 17, no bank debit', near(e1.cod_dr, 17) && near(e1.bank_dr, 0), e1);
-    check('G1 Paid: flag stays true', (await codFlag('G1')) === true);
+    check('G1 (Get File before the tick) -> Paid: one receipt, Dr 1210 17, dated the Paid day',
+        (await nIncome('G1')) === 1 && near(e1.cod_dr, 17) && e1.date === LATER, e1);
     await checkBalanced('G1');
 
-    // Get File -> Paid with the box unticked: the save's false wins.
-    await order('G2', 17);
-    await pay('G2', 'Unpaid', { payment_status: 'Get File' });
-    await pay('G2', 'Get File', { payment_status: 'Paid', amount_received: 17, settle_date: DAY, post_to_ledger: true, cod_collected: false });
-    const e2 = await entry('TX-' + (await tx('G2')).id);
-    check('G2 Get File -> Paid with cod false: Dr bank 17, flag false', near(e2.bank_dr, 17) && near(e2.cod_dr, 0) && (await codFlag('G2')) === false, e2);
-    await checkBalanced('G2');
+    // A Paid order moved to Get File for a ticked courier keeps its receipt.
+    await order('G6', 17);
+    await pay('G6', 'Unpaid', { payment_status: 'Paid', amount_received: 17, settle_date: DAY, post_to_ledger: true });
+    await getFile('G6', 'Paid');
+    g = await row('G6');
+    check('G6 Paid -> Get File (ticked): receipt kept, Received and settle date kept',
+        (await nIncome('G6')) === 1 && near(g.amount_received, 17) && g.settle_date !== null && g.payment_status === 'Get File', g);
+    await checkBalanced('G6');
 
-    // Get File taken back to Unpaid: the flag clears.
-    await order('G3', 17);
-    await pay('G3', 'Unpaid', { payment_status: 'Get File' });
-    await pay('G3', 'Get File', { payment_status: 'Unpaid' });
-    check('G3 Get File -> Unpaid: flag false again', (await codFlag('G3')) === false);
-    // ...and to Cancel.
-    await order('G4', 17);
-    await pay('G4', 'Unpaid', { payment_status: 'Get File' });
-    await pay('G4', 'Get File', { payment_status: 'Cancel' });
-    check('G4 Get File -> Cancel: flag false again', (await codFlag('G4')) === false);
-
-    // A direct write (bulk edit / import style) into Get File, and a create at Get File.
-    await order('G5', 17);
-    await q(`UPDATE sales SET payment_status = 'Get File' WHERE id = 'G5'`);
-    check('G5 direct update to Get File: flag true', (await codFlag('G5')) === true);
-    const made = (await one(`SELECT public.create_retail_order($1::jsonb, $2::jsonb, '{}'::jsonb) AS r`, [
-        JSON.stringify({ id: 'G6', total: 17, payment_status: 'Get File', shipping_company: 'J&T', shipping_status: 'Delivered', customer_snapshot: { name: 'Cust G6' } }),
-        JSON.stringify([{ id: 'C', name: 'Cable', price: 17, quantity: 1 }]),
-    ])).r;
-    check('G6 created at Get File without the key: flag true', made.order_id === 'G6' && (await codFlag('G6')) === true, made);
-
-    // Saves that do not change the status leave the flag alone.
-    await q(`UPDATE sales SET remark = 'note' WHERE id = 'G5'`);
-    check('G5 other edit: flag still true', (await codFlag('G5')) === true);
-    await q(`UPDATE sales SET payment_status = 'Paid' WHERE id = 'G2'`);
-    check('G2 Paid -> Paid re-save: the decided false stays', (await codFlag('G2')) === false);
-    // An order that never sees Get File keeps the column default.
+    // Unticking later: a booked Get File stays booked; its Paid books nothing.
     await order('G7', 17);
-    await pay('G7', 'Unpaid', { payment_status: 'Deposit', deposit_amount: 5, deposit_date: DAY, post_to_ledger: true });
-    check('G7 Unpaid -> Deposit: flag false', (await codFlag('G7')) === false);
-    await checkBalanced('G7');
+    await getFile('G7', 'Unpaid');
+    await tick([]);
+    await pay('G7', 'Get File', { payment_status: 'Paid', amount_received: 17, settle_date: LATER, post_to_ledger: true, cod_collected: true }, LATER);
+    check('G7 booked, courier unticked, then Paid: still one receipt', (await nIncome('G7')) === 1);
+    await tick(['J&T']);
+
+    // Restocking a booked Get File gives the income back and clears the flag.
+    await order('G8', 17);
+    await getFile('G8', 'Unpaid');
+    const rs = (await one(`SELECT public.apply_restock_payment_side($1::text[], jsonb_build_object('today', $2::text)) AS r`, [['G8'], DAY])).r;
+    g = await row('G8');
+    check('G8 booked Get File restocked: in paid_reset, income removed, Cancel, flag false',
+        (rs.paid_reset || []).includes('G8') && (await nIncome('G8')) === 0 && g.payment_status === 'Cancel' && g.cod_collected === false, [rs, g]);
+    await tick([]);
 }
 
 done();

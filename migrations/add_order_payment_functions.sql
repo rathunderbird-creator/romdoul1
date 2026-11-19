@@ -51,6 +51,16 @@
 -- debit between 1210 and cash/bank (a POSTED one stays, with a notice).
 -- Deposits and delivery fees are never COD.
 --
+-- Get File booked as COD (Sales Setup › Shipping Company): for a courier
+-- listed in app_config.data.codGetFileCompanies, Get File means the courier
+-- collected the money and sent its settlement file, so entering Get File is
+-- a settlement — the receipt (Dr 1210 / Cr 4000, plus COGS) is booked then,
+-- for the full total, and the settle date is stamped (it marks the Get File
+-- as booked: wp_internal.op_is_settled). A later Paid books nothing more and
+-- keeps that date; taking the Get File back to Unpaid / Cancel removes the
+-- receipt like leaving Paid and clears the COD flag. A Get File saved before
+-- its courier was ticked has no settle date, so its Paid books as usual.
+--
 -- Ordering with the shipping status: updateOrder runs the shipping change
 -- (set_order_shipping_status, which owns stock) FIRST and the payment save
 -- second. A refused shipping change therefore saves nothing at all, and a
@@ -352,6 +362,39 @@ $$;
 -- a store without that account books cash/bank as before, with a notice.
 
 -- The active COD receivable account: 1210, else an Asset whose name says so.
+-- Get File booked as COD (Sales Setup › Shipping Company, "Get File books
+-- the COD receipt"): for a courier ticked there, Get File means the courier
+-- collected the customer's money and sent its settlement file, so entering
+-- Get File books the receipt at once — Dr 1210 COD receivable (courier) /
+-- Cr 4000 (plus COGS), dated that day — instead of waiting for Paid. The
+-- ticked couriers live in app_config.data.codGetFileCompanies (names,
+-- matched case- and space-insensitively).
+CREATE OR REPLACE FUNCTION wp_internal.op_get_file_books_cod(p_company TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT COALESCE(btrim(p_company), '') <> '' AND EXISTS (
+        SELECT 1
+          FROM app_config c,
+               jsonb_array_elements_text(CASE WHEN jsonb_typeof(c.data->'codGetFileCompanies') = 'array'
+                                              THEN c.data->'codGetFileCompanies' ELSE '[]'::jsonb END) x
+         WHERE c.id::TEXT = '1' AND lower(btrim(x)) = lower(btrim(p_company)));
+$$;
+
+-- Whether an order at this payment status has its receipt on the books:
+-- Paid / Settled / Paid/Settled, or a Get File that was booked as COD (it
+-- carries the settle date that booking stamped; a Get File the app saved
+-- otherwise never has one — the app clears it).
+CREATE OR REPLACE FUNCTION wp_internal.op_is_settled(p_status TEXT, p_settle_date TIMESTAMPTZ)
+RETURNS BOOLEAN
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT COALESCE(p_status, '') IN ('Paid', 'Settled', 'Paid/Settled')
+        OR (p_status = 'Get File' AND p_settle_date IS NOT NULL);
+$$;
+
 CREATE OR REPLACE FUNCTION wp_internal.op_cod_account()
 RETURNS UUID
 LANGUAGE sql
@@ -1091,6 +1134,8 @@ DECLARE
     v_cut NUMERIC;
     v_entering_paid BOOLEAN;
     v_leaving_paid BOOLEAN;
+    v_cur_settled BOOLEAN;
+    v_tgt_settled BOOLEAN;
 BEGIN
     SELECT * INTO s FROM sales WHERE id = p_order_id FOR NO KEY UPDATE;
     IF NOT FOUND THEN
@@ -1147,11 +1192,46 @@ BEGIN
         RAISE EXCEPTION 'This order''s payment details were just changed by someone else, so your change wasn''t saved. The list has been refreshed. Please check the order and try again.';
     END IF;
 
-    v_entering_paid := v_target IN ('Paid', 'Settled', 'Paid/Settled') AND v_cur NOT IN ('Paid', 'Settled', 'Paid/Settled');
-    v_leaving_paid := v_target_given AND v_target NOT IN ('Paid', 'Settled', 'Paid/Settled') AND v_cur IN ('Paid', 'Settled', 'Paid/Settled');
+    -- "Settled" = the receipt is on the books: Paid / Settled / Paid/Settled,
+    -- or Get File for a courier ticked in Sales Setup (op_get_file_books_cod
+    -- decides when an order ENTERS Get File; once booked, the stamped settle
+    -- date keeps it settled even if the courier is unticked later).
+    v_cur_settled := wp_internal.op_is_settled(v_cur, s.settle_date);
+    v_tgt_settled := v_target IN ('Paid', 'Settled', 'Paid/Settled')
+        OR (v_target = 'Get File' AND CASE WHEN v_cur = 'Get File' THEN v_cur_settled
+                                           ELSE wp_internal.op_get_file_books_cod(COALESCE(NULLIF(u->>'shipping_company', ''), s.shipping_company)) END);
+    v_entering_paid := v_tgt_settled AND NOT v_cur_settled;
+    v_leaving_paid := v_target_given AND NOT v_tgt_settled AND v_cur_settled;
     -- Only a settlement is ever COD: a deposit, a delivery fee or a cancel
     -- saying so is ignored (and the stored flag left alone).
-    IF v_target NOT IN ('Paid', 'Settled', 'Paid/Settled') THEN v_cod := NULL; END IF;
+    IF NOT v_tgt_settled THEN v_cod := NULL; END IF;
+    IF v_target = 'Get File' AND v_tgt_settled THEN
+        IF v_entering_paid THEN
+            -- Get File booked as COD: the courier holds the whole order's
+            -- money. Booked now, as a settlement of the full total (the app
+            -- sends the deposit as Received and no settle date for Get File),
+            -- dated today; the stamped settle date marks it booked.
+            v_cod := true;
+            v_post := true;
+            u := u || jsonb_build_object('amount_received', COALESCE(s.total, 0),
+                                         'settle_date', COALESCE(NULLIF(v_fields->>'now', ''), now()::TEXT));
+        ELSE
+            -- Into Get File from a settled status (or a re-save): the receipt
+            -- stands as booked — the app's Get File figures (deposit as
+            -- Received, no settle date) must not rewrite it or clear the date.
+            u := u - 'amount_received' - 'settle_date';
+        END IF;
+    ELSIF v_cur = 'Get File' AND v_cur_settled AND v_tgt_settled THEN
+        -- A booked Get File marked Paid: nothing more to book (the courier's
+        -- remittance is Accounting › COD Remittances), and the receipt keeps
+        -- its Get File date — the Paid save's settle date is not applied.
+        u := u - 'settle_date';
+    END IF;
+    IF v_leaving_paid AND v_cur = 'Get File' THEN
+        -- A booked Get File taken back (Unpaid, Cancel, ...): its receipt is
+        -- removed below and the order is no longer the courier's.
+        v_cod := false;
+    END IF;
 
     v_name := COALESCE(NULLIF(u->>'customer_name', ''), NULLIF(s.customer_snapshot->>'name', ''), 'Customer');
     v_phone := COALESCE(NULLIF(u->>'customer_phone', ''), NULLIF(s.customer_snapshot->>'phone', ''));
@@ -1297,7 +1377,7 @@ BEGIN
                 END IF;
             END IF;
         END IF;
-    ELSIF v_target IN ('Paid', 'Settled', 'Paid/Settled') AND NOT v_leaving_paid THEN
+    ELSIF v_tgt_settled AND NOT v_leaving_paid THEN
         -- A paid order's settle date, received amount or Pay By was
         -- corrected without a transition: the income row follows.
         -- Compared as the user's LOCAL days (a settle stamped between midnight
@@ -1592,7 +1672,8 @@ $$;
 -- order's income row (matched by order_id ONLY — never by customer name and
 -- amount, which could delete a sibling order's income) and its Draft ledger
 -- entry are removed (a Posted one stays, with a notice), its Received amount
--- and settle date are reset, and every order's payment goes to Cancel — a
+-- and settle date are reset (and its COD flag cleared; a Get File booked
+-- as COD counts as previously-Paid), and every order's payment goes to Cancel — a
 -- PdFee order keeps PdFee (the delivery fee was collected and stays booked).
 -- A restocked order's COGS still booked after that (a Posted receipt entry,
 -- a deposit-covered ORD-…-COGS) is reversed by a Draft ORD-<id>-COGS-REV.
@@ -1613,9 +1694,9 @@ DECLARE
     v_today DATE := COALESCE(NULLIF(p_fields->>'today', '')::DATE, CURRENT_DATE);
     r RECORD;
 BEGIN
-    FOR r IN SELECT id, payment_status FROM sales WHERE id = ANY(p_ids) ORDER BY id FOR NO KEY UPDATE
+    FOR r IN SELECT id, payment_status, settle_date FROM sales WHERE id = ANY(p_ids) ORDER BY id FOR NO KEY UPDATE
     LOOP
-        IF COALESCE(r.payment_status, '') IN ('Paid', 'Settled', 'Paid/Settled') THEN
+        IF wp_internal.op_is_settled(r.payment_status, r.settle_date) THEN
             v_paid := v_paid || r.id;
             v_res := wp_internal.op_remove_paid_income(r.id, v_today);
             v_removed := v_removed || (v_res->'removed');
@@ -1631,7 +1712,9 @@ BEGIN
         UPDATE sales SET payment_status = 'Cancel' WHERE id = ANY(v_cancel);
     END IF;
     IF cardinality(v_paid) > 0 THEN
-        UPDATE sales SET amount_received = 0, settle_date = NULL WHERE id = ANY(v_paid);
+        -- Its receipt is gone, so the order is no longer the courier's money
+        -- either: a later settle starts from the shipping-state default.
+        UPDATE sales SET amount_received = 0, settle_date = NULL, cod_collected = false WHERE id = ANY(v_paid);
     END IF;
 
     -- The goods are back in the pool (restock_returned_orders): COGS still

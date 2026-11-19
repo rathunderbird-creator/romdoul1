@@ -4164,6 +4164,12 @@
         "unknownError": "unknown error",
         "noneYet": "None added yet.",
         "removeItem": "Remove {name}",
+        "codGetFile": {
+          "title": "Get File books the COD receipt",
+          "help": "Tick a courier to book its orders' receipt the moment Pay Status becomes Get File (the courier has collected the money and sent its file): Dr 1210 COD receivable (courier) / Cr Sales Revenue, plus cost of goods sold, dated that day. A later Paid books nothing more — the courier's payout is recorded on Accounting › COD Remittances when it reaches the bank. Unticked couriers book the receipt when the order is marked Paid, as before.",
+          "on": "Books at Get File",
+          "off": "Books at Paid"
+        },
         "subtitle": "Defaults for new documents, what each customer pays, and where you started",
         "sections": {
           "defaults": "Defaults",

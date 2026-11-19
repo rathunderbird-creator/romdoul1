@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
-import { isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
+import { getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
 import { isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
 import { tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 import { insertJournalLines } from '../utils/journalEntryLines';
@@ -56,6 +56,9 @@ interface ConfigState {
     salesOrder?: string[]; // Added sales custom order
     productOrder?: string[]; // Custom order for the All Stock inventory table
     shippingRates?: Record<string, number>; // Cost per item for each shipping company
+    // Couriers whose Get File books the receipt to 1210 COD receivable at once
+    // (Sales Setup › Shipping Company; set_order_payment reads this key).
+    codGetFileCompanies?: string[];
     trackingUrlTemplates?: Record<string, string>; // Company -> tracking page URL with {tracking}
     users?: User[];
     roles?: Role[];
@@ -1850,7 +1853,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const removeShippingCompany = (name: string) => {
-        return updateConfigOps({ shippingCompanies: { op: 'removeItems', values: [name] } });
+        // A removed courier is unticked from "Get File books COD" too.
+        return updateConfigOps({
+            shippingCompanies: { op: 'removeItems', values: [name] },
+            codGetFileCompanies: { op: 'removeItems', values: [name] },
+        });
+    };
+
+    // Ticks / unticks a courier for "Get File books the COD receipt".
+    const setCodGetFileCompany = (company: string, on: boolean) => {
+        return updateConfigOps({
+            codGetFileCompanies: on ? { op: 'append', items: [company] } : { op: 'removeItems', values: [company] },
+        });
     };
 
     const updateShippingRate = (company: string, rate: number) => {
@@ -2753,6 +2767,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (u.depositAmount !== undefined && u.depositAmount > (ex?.depositAmount || 0) + 0.005) return true;
         if (u.amountReceived !== undefined && status && BOOKING_STATUSES.includes(status) && u.amountReceived > (ex?.amountReceived || 0) + 0.005) return true;
         if (u.postToLedger === true) return true;
+        // Get File for a courier ticked in Sales Setup books the receipt.
+        if (u.paymentStatus === 'Get File' && ex?.paymentStatus !== 'Get File'
+            && getFileBooksCod(config.codGetFileCompanies, u.shipping?.company ?? ex?.shipping?.company)) return true;
         return false;
     };
 
@@ -2827,7 +2844,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             ? {
                 ...sale,
                 paymentStatus: cancelledIds.has(sale.id) ? 'Cancel' : sale.paymentStatus,
-                ...(paidOrderIds.includes(sale.id) ? { amountReceived: 0, settleDate: undefined } : {}),
+                // The database clears the COD flag with the receipt (a stale
+                // true here would tick a later Settle form's COD box).
+                ...(paidOrderIds.includes(sale.id) ? { amountReceived: 0, settleDate: undefined, codCollected: false } : {}),
                 lastEditedAt: currentUser ? now : sale.lastEditedAt,
                 lastEditedBy: currentUser ? currentUser.name : sale.lastEditedBy,
                 shipping: { ...(sale.shipping || { company: '', trackingNumber: '', cost: 0 }), status: 'ReStock' as any }
@@ -4746,6 +4765,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             deleteCustomer,
             shippingCompanies: config.shippingCompanies || [],
             shippingRates: config.shippingRates || {},
+            codGetFileCompanies: config.codGetFileCompanies || [],
+            setCodGetFileCompany,
             updateShippingRate,
             updateShippingRates,
             trackingUrlTemplates: config.trackingUrlTemplates || {},
