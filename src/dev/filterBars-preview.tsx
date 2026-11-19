@@ -3,7 +3,10 @@
 //
 // Mounts the real Journal Entries / Purchase Orders pages with a mock store so
 // their filter bars can be checked without logging in. The pages' own hooks
-// still READ their lists through the anon key; nothing here writes.
+// still READ their lists through the anon key; blockDbWrites (imported first)
+// refuses every write, so a bulk Post / Unpost / Delete pressed here is
+// answered with a 403 and never reaches the store.
+import './blockDbWrites';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
