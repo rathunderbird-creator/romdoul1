@@ -4333,7 +4333,7 @@
         "openOrder": "Open this order",
         "last7Days": "Last 7 Days",
         "matchingFilter": "Matching Filter",
-        "searchPlaceholder": "Search description or user...",
+        "searchPlaceholder": "Search description, user or #order...",
         "allUsers": "All Users",
         "refresh": "Refresh",
         "clear": "Clear ({n})",
@@ -4361,7 +4361,12 @@
           "payment_updated": "Payment Updated",
           "user_login": "User Login",
           "settings_updated": "Settings Updated",
-          "permission_changed": "Permission Changed"
+          "permission_changed": "Permission Changed",
+          "order_restored": "Order Restored",
+          "order_update": "Order Updated",
+          "bulk_ship": "Bulk Ship",
+          "bulk_tracking": "Bulk Tracking",
+          "bulk_edit": "Bulk Edit"
         },
         "categories": {
           "Orders": "Orders",
@@ -4378,7 +4383,15 @@
           "Description": "Description",
           "Order": "Order",
           "Details": "Details"
-        }
+        },
+        "export": "Export CSV",
+        "exportTitle": "Download every entry matching these filters as CSV",
+        "exportFailed": "Could not export the activity log. Please try again.",
+        "hideLogins": "Hide logins",
+        "hideLoginsTitle": "Leave out \"logged in\" entries so the real changes stand out",
+        "onlyUser": "Show only {name}",
+        "showAllUsers": "Show all users",
+        "onlyCategory": "Show only {cat}"
       },
       "dashboard": {
         "draft": "Draft",
