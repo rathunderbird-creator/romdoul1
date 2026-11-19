@@ -383,6 +383,7 @@ const JournalEntriesPage = () => {
     // Bulk checkbox selection (derived values and handlers are defined below,
     // once filteredEntries exists).
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [isBulkPosting, setIsBulkPosting] = useState(false);
     const [isBulkUnposting, setIsBulkUnposting] = useState(false);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
@@ -782,6 +783,10 @@ const JournalEntriesPage = () => {
         () => selectedRows.filter(e => !busyIds.has(e.id) && e.status !== 'Draft'),
         [selectedRows, busyIds]
     );
+    const selectedDraftRows = useMemo(
+        () => selectedRows.filter(e => !busyIds.has(e.id) && e.status === 'Draft'),
+        [selectedRows, busyIds]
+    );
     // Select-all covers only the rendered rows — never entries hidden behind
     // "Show more", so a bulk Delete/Unpost can't grab rows nobody has seen.
     const selectableIds = useMemo(() => visibleEntries.filter(e => !busyIds.has(e.id)).map(e => e.id), [visibleEntries, busyIds]);
@@ -799,6 +804,72 @@ const JournalEntriesPage = () => {
         else selectableIds.forEach(id => n.add(id));
         return n;
     });
+
+    // A draft is postable only when it has lines and its debits equal its
+    // credits — a bulk Post covers many entries nobody opened one by one, so
+    // an unbalanced one is left as Draft (and counted in the confirm/toast)
+    // instead of reaching the books.
+    const isEntryBalanced = (entry: JournalEntry) => {
+        const tot = entryTotals(entry);
+        return tot.debit > 0 && Math.abs(tot.debit - tot.credit) < 0.005;
+    };
+
+    const handleBulkPost = async () => {
+        const drafts = selectedDraftRows;
+        if (drafts.length === 0 || isBulkPosting) return;
+        const targets = drafts.filter(isEntryBalanced);
+        const unbalanced = drafts.length - targets.length;
+        if (targets.length === 0) { showToast(t('ui.wholesale.journal.toast.allUnbalanced'), 'info'); return; }
+        const warn = unbalanced > 0 ? `\n${fill(t('ui.wholesale.journal.confirm.unbalancedSkip'), { n: unbalanced })}` : '';
+        if (!confirm(`${fill(targets.length === 1 ? t('ui.wholesale.journal.confirm.postManyOne') : t('ui.wholesale.journal.confirm.postMany'), { n: targets.length })}${warn}`)) return;
+        setIsBulkPosting(true);
+        const ids = targets.map(e => e.id);
+        setBusyIds(prev => new Set([...prev, ...ids]));
+        let allIds = ids;
+        try {
+            // Mirror of bulk Unpost: a TX-<id> receipt's ORD-<orderId>-COGS
+            // companion goes back to Posted with it, so revenue and its cost
+            // are never on the books one without the other. Companions come
+            // from the ledger already loaded here (with lines), and only a
+            // balanced Draft one is included.
+            const txIds = targets.filter(e => isSystemEntry(e)).map(e => (e.reference_id || '').slice(3));
+            if (txIds.length > 0) {
+                const txRows: { order_id?: string | null }[] = [];
+                for (const batch of chunk(txIds, CHUNK)) {
+                    const { data, error: txErr } = await supabase.from('transactions').select('id, order_id').in('id', batch);
+                    if (txErr) throw txErr;
+                    txRows.push(...(data || []));
+                }
+                const companionRefs = new Set(txRows.map(r => r.order_id).filter((id): id is string => !!id).map(id => `ORD-${id}-COGS`));
+                const companionIds = journalEntries
+                    .filter(e => e.status === 'Draft' && companionRefs.has(e.reference_id || '') && !busyIds.has(e.id) && !ids.includes(e.id) && isEntryBalanced(e))
+                    .map(e => e.id);
+                if (companionIds.length > 0) {
+                    allIds = [...ids, ...companionIds];
+                    setBusyIds(prev => new Set([...prev, ...companionIds]));
+                }
+            }
+            for (const batch of chunk(allIds, CHUNK)) {
+                // status=Draft in the filter: a row someone posted or changed
+                // meanwhile is left alone rather than touched twice.
+                const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).in('id', batch).eq('status', 'Draft');
+                if (error) throw error;
+            }
+            const extra = allIds.length - ids.length;
+            showToast(`${fill(targets.length === 1 ? t('ui.wholesale.journal.toast.postedNOne') : t('ui.wholesale.journal.toast.postedN'), { n: targets.length })}${extra > 0 ? fill(extra === 1 ? t('ui.wholesale.journal.toast.plusCogsOne') : t('ui.wholesale.journal.toast.plusCogs'), { n: extra }) : ''}${unbalanced > 0 ? fill(t('ui.wholesale.journal.toast.unbalancedLeft'), { n: unbalanced }) : ''}`, 'success');
+            setSelectedIds(prev => { const n = new Set(prev); allIds.forEach(id => n.delete(id)); return n; });
+            fetchJournalEntries();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast(/status/i.test(msg)
+                ? t('ui.wholesale.journal.toast.postNeedsStatus')
+                : t('ui.wholesale.journal.toast.bulkPostFailed') + msg, 'error');
+            fetchJournalEntries();
+        } finally {
+            setBusyIds(prev => { const n = new Set(prev); allIds.forEach(id => n.delete(id)); return n; });
+            setIsBulkPosting(false);
+        }
+    };
 
     const handleBulkUnpost = async () => {
         const targets = selectedPostedRows;
@@ -1209,13 +1280,14 @@ const JournalEntriesPage = () => {
 
             {/* Bulk selection bar — floats at the bottom-center once any row is
                 checked, same place/style as Customer Payment's and Revenue/
-                Expense's. Unpost (admin only) shows when the selection
+                Expense's. Post shows when the selection includes a Draft row
+                (anyone, same as the row's own Post). Unpost (admin only) shows when the selection
                 includes a Posted row; Delete applies to Draft entries for
                 anyone and Posted entries for an admin only. Stays mounted
                 (via the isBulk*ing OR below) through an in-flight operation
                 even if selectedIds empties out some other way. */}
-            {(selectedRows.length > 0 || isBulkUnposting || isBulkDeleting) && (() => {
-                const bulkBusy = isBulkUnposting || isBulkDeleting;
+            {(selectedRows.length > 0 || isBulkPosting || isBulkUnposting || isBulkDeleting) && (() => {
+                const bulkBusy = isBulkPosting || isBulkUnposting || isBulkDeleting;
                 return (
                     <div style={{
                         position: 'fixed', left: '50%', bottom: '24px', transform: 'translateX(-50%)',
@@ -1228,6 +1300,22 @@ const JournalEntriesPage = () => {
                         <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
                             {selectedRows.length > 0 ? fill(t('ui.wholesale.journal.nSelected'), { n: selectedRows.length }) : t('ui.wholesale.journal.working')}
                         </span>
+                        {(selectedDraftRows.length > 0 || isBulkPosting) && (
+                            <button
+                                onClick={handleBulkPost}
+                                disabled={bulkBusy}
+                                title={t('ui.wholesale.journal.postTitle')}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px',
+                                    padding: '8px 16px', borderRadius: '8px', border: 'none',
+                                    background: '#5469d4', color: '#fff',
+                                    fontSize: '13px', fontWeight: 600, cursor: bulkBusy ? 'not-allowed' : 'pointer',
+                                    opacity: bulkBusy ? 0.7 : 1, whiteSpace: 'nowrap'
+                                }}
+                            >
+                                <CheckCircle2 size={14} /> {isBulkPosting ? t('ui.wholesale.journal.posting') : fill(t('ui.wholesale.journal.postN'), { n: selectedDraftRows.length })}
+                            </button>
+                        )}
                         {isAdmin && (selectedPostedRows.length > 0 || isBulkUnposting) && (
                             <button
                                 onClick={handleBulkUnpost}

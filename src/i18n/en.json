@@ -2037,7 +2037,12 @@
           "unpostFailed": "Failed to unpost: ",
           "deletedN": "Deleted {n} entries",
           "deletedNOne": "Deleted {n} entry",
-          "bulkDeleteFailed": "Failed to delete: "
+          "bulkDeleteFailed": "Failed to delete: ",
+          "postedN": "Posted {n} entries",
+          "postedNOne": "Posted {n} entry",
+          "unbalancedLeft": " · {n} unbalanced left as Draft",
+          "allUnbalanced": "Nothing posted: every selected draft is unbalanced (debits ≠ credits) or has no lines",
+          "bulkPostFailed": "Failed to post: "
         },
         "confirm": {
           "postedWarn": "This entry is already Posted — deleting it changes the finalized books.",
@@ -2047,7 +2052,10 @@
           "postedWarnOne": "{n} is already Posted — deleting them changes the finalized books.",
           "postedWarnMany": "{n} are already Posted — deleting them changes the finalized books.",
           "deleteMany": "Delete {n} entries? Their lines are removed too.",
-          "deleteManyOne": "Delete {n} entry? Their lines are removed too."
+          "deleteManyOne": "Delete {n} entry? Their lines are removed too.",
+          "postMany": "Post {n} draft entries to the ledger?",
+          "postManyOne": "Post {n} draft entry to the ledger?",
+          "unbalancedSkip": "{n} unbalanced (debits ≠ credits) will be left as Draft."
         },
         "importTitle": "Bring supplier payments, wholesale receipts and payroll into the ledger as drafts",
         "working": "Working…",
@@ -2082,6 +2090,9 @@
         "unpostN": "Unpost ({n})",
         "deleting": "Deleting…",
         "deleteN": "Delete ({n})",
+        "postTitle": "Post the selected draft entries to the ledger",
+        "posting": "Posting…",
+        "postN": "Post ({n})",
         "importIntroBefore": "Supplier payments, wholesale receipts and payroll from operations become",
         "importIntroDraft": "draft",
         "importIntroAfter": "journal entries for you to review and post. Income & Expense's own entries stay out of the ledger, and nothing imports twice.",
