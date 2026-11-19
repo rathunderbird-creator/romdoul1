@@ -43,6 +43,15 @@ const parseDescription = (d: string): { courier: string; ref: string } => {
     const m = /^COD remittance — (.*?)(?: · REF (.*))?$/.exec(d || '');
     return m ? { courier: m[1] || '', ref: m[2] || '' } : { courier: d || '', ref: '' };
 };
+// The income row behind a receipt entry: reference TX-<tx id>, and
+// TX-<tx id>-ADJ for its LED-6 correction (add_order_payment_functions.sql).
+const txIdOf = (ref: string): string | null => {
+    const m = /^TX-([0-9a-fA-F-]{36})(?:-ADJ)?$/.exec(ref || '');
+    return m ? m[1] : null;
+};
+// Couriers are grouped by name, case and spaces ignored (the same match
+// Sales Setup's lists make).
+const courierKey = (name: string): string => name.trim().toLowerCase();
 
 interface RemitRow {
     entryId: string;
@@ -85,7 +94,8 @@ const CodRemittancesPage: React.FC = () => {
     const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
     // Every line on 1210 (Draft and Posted: the receipts are Drafts until the
     // owner posts them, and the couriers hold that money all the same).
-    type CodLine = { entryId: string; debit: number; credit: number; status: string; date: string };
+    // `courier`: who holds / remitted this line's money ('' = unassigned).
+    type CodLine = { entryId: string; debit: number; credit: number; status: string; date: string; courier: string };
     const [codLines, setCodLines] = useState<CodLine[] | null>(null);
     const [rows, setRows] = useState<RemitRow[] | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -118,7 +128,7 @@ const CodRemittancesPage: React.FC = () => {
                 // columns arrive with add_khr_currency.sql.
                 const loadCod = () => cod
                     ? supabase.from('journal_entry_lines')
-                        .select(`id, journal_entry_id, account_id, debit, credit, entry:journal_entries!inner(id, date, status)`)
+                        .select(`id, journal_entry_id, account_id, debit, credit, entry:journal_entries!inner(id, date, status, reference_id, description)`)
                         .eq('account_id', cod.id).limit(5000)
                     : Promise.resolve({ data: [], error: null } as { data: unknown[]; error: null });
                 const loadRemits = (withCurrency: boolean) => supabase
@@ -132,12 +142,49 @@ const CodRemittancesPage: React.FC = () => {
                 if (remits.error) throw remits.error;
                 const codRes = await loadCod();
                 if (codRes.error) throw codRes.error;
+
+                // Which courier each 1210 line belongs to. A remittance names
+                // its courier in the description. A receipt (TX-<tx>, and its
+                // -ADJ correction) belongs to the income row's shipping
+                // company, else its order's (a Paid checkout's income row
+                // carries none). Anything else — the opening entry, a manual
+                // journal — is unassigned.
+                type CodRaw = { journal_entry_id: unknown; debit: unknown; credit: unknown; entry: { id?: unknown; date?: unknown; status?: unknown; reference_id?: unknown; description?: unknown } | null };
+                const rawCod = (codRes.data || []) as unknown as CodRaw[];
+                const txIds = Array.from(new Set(rawCod.map(l => txIdOf(String(l.entry?.reference_id || ''))).filter((x): x is string => !!x)));
+                const txCourier = new Map<string, string>();
+                const txOrder = new Map<string, string>();
+                for (let i = 0; i < txIds.length; i += 200) {
+                    // transactions.shipping_co (not shipping_company — that is
+                    // the sales column).
+                    const { data, error } = await supabase.from('transactions').select('id, shipping_co, order_id').in('id', txIds.slice(i, i + 200));
+                    if (error) throw error;
+                    for (const tr of (data || []) as { id: unknown; shipping_co?: unknown; order_id?: unknown }[]) {
+                        if (tr.shipping_co) txCourier.set(String(tr.id), String(tr.shipping_co));
+                        else if (tr.order_id) txOrder.set(String(tr.id), String(tr.order_id));
+                    }
+                }
+                const orderIds = Array.from(new Set(txOrder.values()));
+                const orderCourier = new Map<string, string>();
+                for (let i = 0; i < orderIds.length; i += 200) {
+                    const { data, error } = await supabase.from('sales').select('id, shipping_company').in('id', orderIds.slice(i, i + 200));
+                    if (error) throw error;
+                    for (const s of (data || []) as { id: unknown; shipping_company?: unknown }[]) {
+                        if (s.shipping_company) orderCourier.set(String(s.id), String(s.shipping_company));
+                    }
+                }
+                const courierOf = (ref: string, description: string): string => {
+                    if (ref.startsWith(COD_REMIT_PREFIX)) return parseDescription(description).courier.trim();
+                    const txId = txIdOf(ref);
+                    if (!txId) return '';
+                    return (txCourier.get(txId) || orderCourier.get(txOrder.get(txId) || '') || '').trim();
+                };
                 if (!alive) return;
 
-                type CodRaw = { journal_entry_id: unknown; debit: unknown; credit: unknown; entry: { id?: unknown; date?: unknown; status?: unknown } | null };
-                setCodLines(((codRes.data || []) as unknown as CodRaw[]).map(l => ({
+                setCodLines(rawCod.map(l => ({
                     entryId: String(l.journal_entry_id), debit: Number(l.debit) || 0, credit: Number(l.credit) || 0,
                     status: String(l.entry?.status || 'Posted'), date: String(l.entry?.date || '').slice(0, 10),
+                    courier: courierOf(String(l.entry?.reference_id || ''), String(l.entry?.description || '')),
                 })));
                 const byId = new Map((accs || []).map(a => [a.id, a]));
                 type RemitRaw = { id: unknown; date: unknown; description: unknown; reference_id: unknown; entry_number?: unknown; status?: unknown; currency?: unknown; original_amount?: unknown; exchange_rate?: unknown; lines: { account_id: unknown; debit: unknown; credit: unknown }[] | null };
@@ -193,6 +240,24 @@ const CodRemittancesPage: React.FC = () => {
         return { held: all, heldPosted: posted, remittedMonth, count: (rows || []).length };
     }, [codLines, rows]);
 
+    // Per courier: 1210 debits are what it collected, credits what it
+    // remitted, the difference what it still holds. Named couriers by what
+    // they hold, the unassigned remainder last.
+    type CourierTotals = { name: string; collected: number; remitted: number; held: number };
+    const byCourier = useMemo((): CourierTotals[] => {
+        const groups = new Map<string, CourierTotals>();
+        for (const l of codLines || []) {
+            const key = courierKey(l.courier);
+            const g = groups.get(key) || { name: l.courier.trim(), collected: 0, remitted: 0, held: 0 };
+            g.collected += l.debit;
+            g.remitted += l.credit;
+            g.held += l.debit - l.credit;
+            groups.set(key, g);
+        }
+        return Array.from(groups.values()).sort((a, b) =>
+            Number(a.name === '') - Number(b.name === '') || b.held - a.held || a.name.localeCompare(b.name));
+    }, [codLines]);
+
     // ── Form ──
     const [date, setDate] = useState(todayYmd());
     const [courier, setCourier] = useState('');
@@ -224,6 +289,7 @@ const CodRemittancesPage: React.FC = () => {
     }, [bankAccounts]);
 
     const courierName = (courier === '__other__' ? courierOther : courier).trim();
+    const chosenHolds = useMemo(() => byCourier.find(g => g.name !== '' && courierKey(g.name) === courierKey(courierName)), [byCourier, courierName]);
     const amountUsd = field.usd;
     const canSave = !isSaving && amountUsd > 0 && !field.rateInvalid && !!bankId && !!codAccount && !!date && !!courierName;
 
@@ -368,6 +434,44 @@ const CodRemittancesPage: React.FC = () => {
                 ))}
             </div>
 
+            {/* Per courier: collected, remitted, still held. */}
+            {!loading && byCourier.length > 0 && (
+                <div style={{ ...cardStyle, overflow: 'hidden' }}>
+                    <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--color-text-main)' }}>{tc('byCourier.title')}</span>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{tc('byCourier.hint')}</span>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                                <tr>
+                                    <th style={th}>{tc('byCourier.courier')}</th>
+                                    <th style={{ ...th, textAlign: 'right' }}>{tc('byCourier.collected')}</th>
+                                    <th style={{ ...th, textAlign: 'right' }}>{tc('byCourier.remitted')}</th>
+                                    <th style={{ ...th, textAlign: 'right' }}>{tc('byCourier.held')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {byCourier.map(g => (
+                                    <tr key={g.name || '__unassigned__'}>
+                                        <td style={td}>{g.name || <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{tc('byCourier.unassigned')}</span>}</td>
+                                        <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(g.collected)}</td>
+                                        <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(g.remitted)}</td>
+                                        <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: g.held < -0.005 ? '#B91C1C' : g.held > 0.005 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{fmt(g.held)}</td>
+                                    </tr>
+                                ))}
+                                <tr>
+                                    <td style={{ ...td, fontWeight: 700, borderBottom: 'none' }}>{tc('byCourier.total')}</td>
+                                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, borderBottom: 'none' }}>{fmt(byCourier.reduce((s, g) => s + g.collected, 0))}</td>
+                                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, borderBottom: 'none' }}>{fmt(byCourier.reduce((s, g) => s + g.remitted, 0))}</td>
+                                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 800, borderBottom: 'none' }}>{fmt(totals.held)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
             {/* Form */}
             <div style={{ ...cardStyle, borderLeft: `4px solid ${editing ? '#F59E0B' : BLUE}`, background: editing ? 'rgba(245, 158, 11, 0.04)' : undefined, padding: '18px 20px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
@@ -399,6 +503,11 @@ const CodRemittancesPage: React.FC = () => {
                             </select>
                             {courier === '__other__' && (
                                 <input type="text" value={courierOther} onChange={e => setCourierOther(e.target.value)} placeholder={tc('courierOtherPh')} style={{ ...inputStyle, marginTop: '6px' }} />
+                            )}
+                            {chosenHolds && (
+                                <div style={{ marginTop: '6px', fontSize: '11px', color: chosenHolds.held < -0.005 ? '#B91C1C' : 'var(--color-text-muted)' }}>
+                                    {fill(tc('byCourier.holds'), { amount: fmt(chosenHolds.held) })}
+                                </div>
                             )}
                         </div>
                         <div>
