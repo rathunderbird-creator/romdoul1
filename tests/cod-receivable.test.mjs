@@ -492,4 +492,21 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
     await checkBalanced('M1-M12');
 }
 
+// ---------------------------------------------------------------------------
+// 12. What the COD Remittances page's per-courier table joins on: a receipt
+//     entry's reference is TX-<income id>; a settle's income row carries the
+//     order's courier in transactions.shipping_co; a Paid checkout's carries
+//     none but its order does (the page falls back to sales.shipping_company).
+// ---------------------------------------------------------------------------
+{
+    const c1 = await tx('C1');
+    const ec1 = await one(`SELECT reference_id FROM journal_entries WHERE reference_id = $1`, ['TX-' + c1.id]);
+    check('C1 receipt entry references TX-<income id>, income row names J&T, order id set',
+        ec1 && ec1.reference_id === 'TX-' + c1.id && c1.shipping_co === 'J&T' && c1.order_id === 'C1', c1);
+    const m9 = await tx('M9');
+    check('M9 Paid checkout income row: no shipping_co, order id set', m9.shipping_co === null && m9.order_id === 'M9', m9);
+    await q(`UPDATE sales SET shipping_company = 'VET' WHERE id = 'M9'`);
+    check('M9 order names the courier the page falls back to', (await one(`SELECT shipping_company FROM sales WHERE id = 'M9'`)).shipping_company === 'VET');
+}
+
 done();

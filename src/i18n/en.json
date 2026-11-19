@@ -2505,6 +2505,17 @@
           "remittedMonth": "Remitted this month",
           "count": "Remittances"
         },
+        "byCourier": {
+          "title": "By courier",
+          "hint": "A receipt counts for the courier on its order, a remittance for the courier named on it. Unassigned: the opening entry and manual journals.",
+          "courier": "Courier",
+          "collected": "Collected",
+          "remitted": "Remitted",
+          "held": "Still held",
+          "unassigned": "Unassigned",
+          "total": "Total",
+          "holds": "Still holds USD {amount}"
+        },
         "newEntry": "New remittance",
         "editEntry": "Edit remittance",
         "courier": "Courier",
