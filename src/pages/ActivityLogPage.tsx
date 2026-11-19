@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
 import { useMobile } from '../hooks/useMobile';
@@ -10,7 +10,7 @@ import { tNow, fill } from '../i18n/translate';
 import {
     Bell, Truck, Package, DollarSign, ShieldCheck, UserPlus, ArrowDownCircle,
     ArrowUpCircle, RotateCcw, Settings, RefreshCw, Search, ChevronLeft,
-    ChevronRight, History, CalendarDays, Activity, ExternalLink, X
+    ChevronRight, History, CalendarDays, Activity, ExternalLink, X, Download, EyeOff, Eye
 } from 'lucide-react';
 
 interface ActivityLogRow {
@@ -30,6 +30,12 @@ const ACTION_META: Record<string, { icon: React.ReactNode; color: string; label:
     order_status: { icon: <Truck size={14} />, color: '#F59E0B', label: 'Order Status' },
     order_updated: { icon: <Truck size={14} />, color: '#F59E0B', label: 'Order Updated' },
     order_deleted: { icon: <Truck size={14} />, color: '#EF4444', label: 'Order Deleted' },
+    order_restored: { icon: <RotateCcw size={14} />, color: '#10B981', label: 'Order Restored' },
+    // Written by Orders Management 2 (its own action names).
+    order_update: { icon: <Truck size={14} />, color: '#F59E0B', label: 'Order Updated' },
+    bulk_ship: { icon: <Truck size={14} />, color: '#10B981', label: 'Bulk Ship' },
+    bulk_tracking: { icon: <Truck size={14} />, color: '#3B82F6', label: 'Bulk Tracking' },
+    bulk_edit: { icon: <Truck size={14} />, color: '#F59E0B', label: 'Bulk Edit' },
     stock_in: { icon: <ArrowDownCircle size={14} />, color: '#10B981', label: 'Stock In' },
     stock_out: { icon: <ArrowUpCircle size={14} />, color: '#F59E0B', label: 'Stock Out' },
     stock_restock: { icon: <RotateCcw size={14} />, color: '#8B5CF6', label: 'Restock' },
@@ -45,7 +51,7 @@ const ACTION_META: Record<string, { icon: React.ReactNode; color: string; label:
 };
 
 const CATEGORY_ACTIONS: Record<string, string[]> = {
-    Orders: ['order_created', 'order_shipped', 'order_status', 'order_updated', 'order_deleted'],
+    Orders: ['order_created', 'order_shipped', 'order_status', 'order_updated', 'order_deleted', 'order_restored', 'order_update', 'bulk_ship', 'bulk_tracking', 'bulk_edit'],
     Stock: ['stock_in', 'stock_out', 'stock_restock'],
     Products: ['product_added', 'product_updated', 'product_deleted'],
     Money: ['transaction_added', 'transaction_deleted', 'payment_updated'],
@@ -54,6 +60,38 @@ const CATEGORY_ACTIONS: Record<string, string[]> = {
 };
 
 const CATEGORIES = ['All', ...Object.keys(CATEGORY_ACTIONS)];
+
+const categoryOf = (action: string): string | null =>
+    Object.keys(CATEGORY_ACTIONS).find(c => CATEGORY_ACTIONS[c].includes(action)) || null;
+
+// "some_new_action" -> "Some New Action" for actions this page doesn't know yet.
+const humanize = (action: string) =>
+    action.split('_').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+
+const fullTimestamp = (iso: string) => {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+};
+
+// Every order this entry points at: a single orderId, Orders Management 2's
+// { edit: { orderId } }, or a restock's orderIds list.
+const orderIdsOf = (log: ActivityLogRow): string[] => {
+    const m = log.metadata || {};
+    const ids: string[] = [];
+    if (typeof m.orderId === 'string' && m.orderId) ids.push(m.orderId);
+    if (typeof m.edit?.orderId === 'string' && m.edit.orderId) ids.push(m.edit.orderId);
+    if (Array.isArray(m.orderIds)) for (const id of m.orderIds) if (typeof id === 'string' && id) ids.push(id);
+    return Array.from(new Set(ids));
+};
+
+// The filter builder supabase.from(...).select(...) returns (its filters return `this`).
+type LogQuery = ReturnType<ReturnType<typeof supabase.from>['select']>;
+
+const HIDE_LOGINS_KEY = 'activity_log_hide_logins';
+const readHideLogins = () => {
+    try { return localStorage.getItem(HIDE_LOGINS_KEY) === '1'; } catch { return false; }
+};
 
 const toYMD = (d: Date) => {
     const y = d.getFullYear();
@@ -116,6 +154,21 @@ const MetadataDetails: React.FC<{ log: ActivityLogRow }> = ({ log }) => {
     if (m.remark && m.newRemark === undefined) parts.push(<span key="r">{m.remark}</span>);
     if (m.trackingNumber && m.newTracking === undefined) parts.push(<span key="t">{m.trackingNumber}</span>);
     if (m.status) parts.push(<span key="s" style={{ fontWeight: 600 }}>{m.status}</span>);
+    // Bulk edits: which field was set, and to what.
+    if (m.field !== undefined) {
+        parts.push(
+            <span key="f">
+                {String(m.field)}{m.value !== undefined && <>: <span style={{ fontWeight: 600 }}>{typeof m.value === 'object' ? JSON.stringify(m.value) : String(m.value) || none}</span></>}
+            </span>
+        );
+    }
+    // Orders Management 2 edits: the fields the drawer changed.
+    if (m.edit && typeof m.edit === 'object') {
+        const changed = Object.entries(m.edit)
+            .filter(([k, v]) => k !== 'orderId' && k !== 'expectedShippingStatus' && v !== undefined && v !== null && typeof v !== 'object')
+            .map(([k, v]) => `${k}: ${v}`);
+        if (changed.length) parts.push(<span key="e">{changed.join(' · ')}</span>);
+    }
     if (parts.length === 0) return null;
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '11px', color: 'var(--color-text-secondary)' }}>
@@ -137,12 +190,53 @@ const ActivityLogPage: React.FC = () => {
     const [statToday, setStatToday] = useState(0);
     const [statWeek, setStatWeek] = useState(0);
 
-    const [searchTerm, setSearchTerm] = useState('');
-    const [category, setCategory] = useState('All');
-    const [userFilter, setUserFilter] = useState('All');
-    const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
-    const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(100);
+    // Filters live in the URL, so opening an order and pressing Back returns
+    // to the same filtered view, and a filtered view can be shared as a link.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const searchTerm = searchParams.get('q') || '';
+    const category = CATEGORIES.includes(searchParams.get('cat') || '') ? searchParams.get('cat')! : 'All';
+    const userFilter = searchParams.get('user') || 'All';
+    const dateRange = useMemo(
+        () => ({ start: searchParams.get('from') || '', end: searchParams.get('to') || '' }),
+        [searchParams]
+    );
+    const currentPage = Math.max(1, Number(searchParams.get('page')) || 1);
+    const pageSize = [50, 100, 200, 500].includes(Number(searchParams.get('size'))) ? Number(searchParams.get('size')) : 100;
+
+    // Any filter change goes back to page 1; replace keeps Back meaningful.
+    const setParams = useCallback((changes: Record<string, string | null>, keepPage = false) => {
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            for (const [k, v] of Object.entries(changes)) {
+                if (v === null || v === '' || v === 'All') next.delete(k); else next.set(k, v);
+            }
+            if (!keepPage) next.delete('page');
+            return next;
+        }, { replace: true });
+    }, [setSearchParams]);
+    const setCategory = (c: string) => setParams({ cat: c });
+    const setUserFilter = (u: string) => setParams({ user: u });
+    const setDateRange = (r: { start: string; end: string }) => setParams({ from: r.start, to: r.end });
+    const setPageSize = (n: number) => setParams({ size: n === 100 ? null : String(n) });
+    const setCurrentPage = (fn: (p: number) => number) => setParams({ page: String(fn(currentPage)) }, true);
+
+    // Typing updates the box at once; the query waits for a 350ms pause.
+    const [searchInput, setSearchInput] = useState(searchTerm);
+    useEffect(() => { setSearchInput(searchTerm); }, [searchTerm]);
+    useEffect(() => {
+        if (searchInput === searchTerm) return;
+        const h = setTimeout(() => setParams({ q: searchInput.trim() }), 350);
+        return () => clearTimeout(h);
+    }, [searchInput, searchTerm, setParams]);
+
+    const [hideLogins, setHideLogins] = useState(readHideLogins);
+    const toggleHideLogins = () => {
+        setHideLogins(prev => {
+            try { localStorage.setItem(HIDE_LOGINS_KEY, prev ? '0' : '1'); } catch { /* private mode */ }
+            return !prev;
+        });
+    };
+    const [isExporting, setIsExporting] = useState(false);
 
     useEffect(() => {
         setHeaderContent({
@@ -156,41 +250,37 @@ const ActivityLogPage: React.FC = () => {
         return () => setHeaderContent(null);
     }, [setHeaderContent, isMobile, t]);
 
-    // Reset to page 1 whenever a filter changes.
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [searchTerm, category, userFilter, dateRange, pageSize]);
+    // The same filters for the list and for the CSV export.
+    const applyFilters = useCallback((query: LogQuery): LogQuery => {
+        if (category !== 'All') {
+            query = query.in('action', CATEGORY_ACTIONS[category] || []);
+        } else if (hideLogins) {
+            query = query.neq('action', 'user_login');
+        }
+        if (userFilter !== 'All') {
+            query = query.eq('user_name', userFilter);
+        }
+        if (dateRange.start) {
+            // YYYY-MM-DD + T00:00 parses as LOCAL midnight (a bare date is UTC).
+            const start = new Date(`${dateRange.start}T00:00:00`);
+            query = query.gte('created_at', start.toISOString());
+        }
+        if (dateRange.end) {
+            const end = new Date(`${dateRange.end}T23:59:59.999`);
+            query = query.lte('created_at', end.toISOString());
+        }
+        // "#a1b2c3d4" finds the order: descriptions carry the short id.
+        const esc = searchTerm.trim().replace(/^#/, '').replace(/[%(),*]/g, '');
+        if (esc) query = query.or(`description.ilike.%${esc}%,user_name.ilike.%${esc}%,action.ilike.%${esc}%`);
+        return query;
+    }, [searchTerm, category, userFilter, dateRange, hideLogins]);
 
     // silent = background refresh: no spinner, the list just updates in place.
     const fetchLogs = useCallback(async (silent = false) => {
         if (!silent) setIsLoading(true);
         try {
-            let query = supabase.from('activity_logs').select('*', { count: 'exact' });
-
-            if (category !== 'All') {
-                query = query.in('action', CATEGORY_ACTIONS[category] || []);
-            }
-            if (userFilter !== 'All') {
-                query = query.eq('user_name', userFilter);
-            }
-            if (dateRange.start) {
-                const start = new Date(dateRange.start);
-                start.setHours(0, 0, 0, 0);
-                query = query.gte('created_at', start.toISOString());
-            }
-            if (dateRange.end) {
-                const end = new Date(dateRange.end);
-                end.setHours(23, 59, 59, 999);
-                query = query.lte('created_at', end.toISOString());
-            }
-            const term = searchTerm.trim();
-            if (term) {
-                const esc = term.replace(/[%(),]/g, '');
-                if (esc) query = query.or(`description.ilike.%${esc}%,user_name.ilike.%${esc}%`);
-            }
-
             const from = (currentPage - 1) * pageSize;
-            const { data, count, error } = await query
+            const { data, count, error } = await applyFilters(supabase.from('activity_logs').select('*', { count: 'exact' }))
                 .order('created_at', { ascending: false })
                 .range(from, from + pageSize - 1);
             if (error) throw error;
@@ -201,7 +291,57 @@ const ActivityLogPage: React.FC = () => {
         } finally {
             if (!silent) setIsLoading(false);
         }
-    }, [searchTerm, category, userFilter, dateRange, currentPage, pageSize]);
+    }, [applyFilters, currentPage, pageSize]);
+
+    // CSV of everything matching the filters (not just this page), in 1000-row
+    // pages since that is the most one Supabase request returns.
+    const exportCsv = async () => {
+        setIsExporting(true);
+        try {
+            const rows: ActivityLogRow[] = [];
+            const CHUNK = 1000;
+            const MAX = 20000;
+            for (let from = 0; from < MAX; from += CHUNK) {
+                const { data, error } = await applyFilters(supabase.from('activity_logs').select('*'))
+                    .order('created_at', { ascending: false })
+                    .range(from, from + CHUNK - 1);
+                if (error) throw error;
+                rows.push(...((data || []) as ActivityLogRow[]));
+                if (!data || data.length < CHUNK) break;
+            }
+            const cell = (v: unknown) => {
+                const s = v === null || v === undefined ? '' : String(v);
+                return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+            };
+            const header = ['Date', 'Time', 'User', 'Action', 'Description', 'Orders', 'Details'];
+            const lines = rows.map(r => {
+                const d = new Date(r.created_at);
+                return [
+                    toYMD(d),
+                    d.toLocaleTimeString('en-GB'),
+                    r.user_name,
+                    ACTION_META[r.action]?.label || humanize(r.action || ''),
+                    r.description,
+                    orderIdsOf(r).join(' '),
+                    r.metadata && Object.keys(r.metadata).length ? JSON.stringify(r.metadata) : '',
+                ].map(cell).join(',');
+            });
+            const csv = [header.join(','), ...lines].join('\r\n');
+            // BOM so Excel opens the Khmer text as UTF-8.
+            const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `activity_log_${toYMD(new Date())}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Failed to export activity logs:', err);
+            alert(t('ui.admin.activity.exportFailed'));
+        } finally {
+            setIsExporting(false);
+        }
+    };
 
     useEffect(() => {
         fetchLogs();
@@ -252,14 +392,17 @@ const ActivityLogPage: React.FC = () => {
         ((dateRange.start || dateRange.end) ? 1 : 0);
 
     const clearFilters = () => {
-        setSearchTerm('');
-        setCategory('All');
-        setUserFilter('All');
-        setDateRange({ start: '', end: '' });
+        setSearchInput('');
+        setParams({ q: null, cat: null, user: null, from: null, to: null });
     };
 
     const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-    const userNames = ['All', ...Array.from(new Set(users.map(u => u.name))).sort()];
+    // Log names can outlive the user list (System, removed staff): keep the
+    // active one selectable so the dropdown never shows the wrong value.
+    const userNames = ['All', ...Array.from(new Set([
+        ...users.map(u => u.name),
+        ...(userFilter !== 'All' ? [userFilter] : []),
+    ])).sort()];
 
     // Group the loaded page by day for separator rows.
     const groupedLogs = useMemo(() => {
@@ -275,10 +418,6 @@ const ActivityLogPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [logs, t]);
 
-    const orderIdOf = (log: ActivityLogRow): string | null => {
-        const oid = log.metadata?.orderId;
-        return typeof oid === 'string' && oid.length > 0 ? oid : null;
-    };
 
     const statCard = (label: string, value: number, gradient: string, icon: React.ReactNode) => (
         <div style={{
@@ -300,10 +439,54 @@ const ActivityLogPage: React.FC = () => {
     );
 
     const actionMeta = (action: string) =>
-        ACTION_META[action] ? { ...ACTION_META[action], label: t(`ui.admin.activity.actions.${action}`) } : { icon: <Bell size={14} />, color: '#6B7280', label: action || t('ui.admin.activity.activity') };
+        ACTION_META[action] ? { ...ACTION_META[action], label: t(`ui.admin.activity.actions.${action}`) } : { icon: <Bell size={14} />, color: '#6B7280', label: action ? humanize(action) : t('ui.admin.activity.activity') };
+
+    // Click a name: show only that person's activity (click again to undo).
+    const userButton = (name: string) => (
+        <button
+            onClick={() => setUserFilter(userFilter === name ? 'All' : name)}
+            title={userFilter === name ? t('ui.admin.activity.showAllUsers') : fill(t('ui.admin.activity.onlyUser'), { name })}
+            style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 600, color: 'inherit', cursor: 'pointer', textDecoration: userFilter === name ? 'underline' : 'none' }}
+        >
+            {name}
+        </button>
+    );
+
+    // Click an action badge: narrow to that action's category.
+    const actionBadge = (action: string) => {
+        const meta = actionMeta(action);
+        const cat = categoryOf(action);
+        return (
+            <button
+                onClick={() => cat && setCategory(category === cat ? 'All' : cat)}
+                disabled={!cat}
+                title={cat ? fill(t('ui.admin.activity.onlyCategory'), { cat: t(`ui.admin.activity.categories.${cat}`) }) : undefined}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, background: `${meta.color}1A`, color: meta.color, border: 'none', cursor: cat ? 'pointer' : 'default' }}
+            >
+                {meta.icon} {meta.label}
+            </button>
+        );
+    };
+
+    // Up to 3 order links, then "+N" (a restock can cover many orders).
+    const orderLinks = (log: ActivityLogRow) => {
+        const ids = orderIdsOf(log);
+        if (ids.length === 0) return null;
+        return (
+            <span style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {ids.slice(0, 3).map(viewOrderButton)}
+                {ids.length > 3 && (
+                    <span title={ids.slice(3).map(id => '#' + id.slice(0, 8)).join(', ')} style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                        +{ids.length - 3}
+                    </span>
+                )}
+            </span>
+        );
+    };
 
     const viewOrderButton = (orderId: string) => (
         <button
+            key={orderId}
             onClick={() => navigate(`/orders/${orderId}`)}
             title={t('ui.admin.activity.openOrder')}
             style={{
@@ -339,8 +522,9 @@ const ActivityLogPage: React.FC = () => {
                         <input
                             type="text"
                             placeholder={t('ui.admin.activity.searchPlaceholder')}
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Escape') setSearchInput(''); }}
                             style={{ width: '100%', padding: '9px 10px 9px 32px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '13px', background: 'var(--color-bg)', color: 'var(--color-text-main)' }}
                         />
                     </div>
@@ -360,6 +544,15 @@ const ActivityLogPage: React.FC = () => {
                         style={{ width: '38px', height: '38px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                     >
                         <RefreshCw size={16} style={{ animation: isLoading ? 'spin 1s linear infinite' : 'none' }} />
+                    </button>
+                    <button
+                        onClick={exportCsv}
+                        disabled={isExporting || totalCount === 0}
+                        title={t('ui.admin.activity.exportTitle')}
+                        style={{ height: '38px', padding: '0 12px', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-main)', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, cursor: isExporting || totalCount === 0 ? 'not-allowed' : 'pointer', opacity: totalCount === 0 ? 0.5 : 1, flexShrink: 0 }}
+                    >
+                        {isExporting ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={15} />}
+                        {!isMobile && t('ui.admin.activity.export')}
                     </button>
                 </div>
                 {/* Category pills + quick dates + clear */}
@@ -396,6 +589,24 @@ const ActivityLogPage: React.FC = () => {
                             {chip.label}
                         </button>
                     ))}
+                    {category === 'All' && (
+                        <>
+                            <div style={{ width: '1px', height: '18px', background: 'var(--color-border)', margin: '0 4px' }} />
+                            <button
+                                onClick={toggleHideLogins}
+                                title={t('ui.admin.activity.hideLoginsTitle')}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                    padding: '6px 14px', borderRadius: '16px', fontSize: '12px', fontWeight: 600,
+                                    border: `1px solid ${hideLogins ? '#0891B2' : 'var(--color-border)'}`,
+                                    background: hideLogins ? '#0891B2' : 'var(--color-surface)',
+                                    color: hideLogins ? 'white' : 'var(--color-text-main)', cursor: 'pointer', transition: 'all 0.15s'
+                                }}
+                            >
+                                {hideLogins ? <EyeOff size={13} /> : <Eye size={13} />} {t('ui.admin.activity.hideLogins')}
+                            </button>
+                        </>
+                    )}
                     {activeFilterCount > 0 && (
                         <button
                             onClick={clearFilters}
@@ -432,23 +643,23 @@ const ActivityLogPage: React.FC = () => {
                                 </div>
                                 {group.items.map(log => {
                                     const meta = actionMeta(log.action);
-                                    const oid = orderIdOf(log);
                                     return (
                                         <div key={log.id} style={{ display: 'flex', gap: '10px', padding: '10px 12px', borderBottom: '1px solid var(--color-border)', borderLeft: `4px solid ${meta.color}` }}>
                                             <div style={{ width: '30px', height: '30px', borderRadius: '8px', backgroundColor: 'var(--color-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px', color: meta.color }}>
                                                 {meta.icon}
                                             </div>
                                             <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ marginBottom: '3px' }}>{actionBadge(log.action)}</div>
                                                 <div style={{ fontSize: '13px', color: 'var(--color-text-main)', lineHeight: 1.4, wordBreak: 'break-word' }}>
                                                     {log.description}
                                                 </div>
                                                 <MetadataDetails log={log} />
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', fontSize: '11px', color: 'var(--color-text-muted)', flexWrap: 'wrap' }}>
-                                                    <span style={{ fontWeight: 600 }}>{log.user_name}</span>
+                                                    {userButton(log.user_name)}
                                                     <span>·</span>
-                                                    <span>{formatTime(log.created_at)}</span>
+                                                    <span title={fullTimestamp(log.created_at)}>{formatTime(log.created_at)}</span>
                                                     {timeAgo(log.created_at) && <span style={{ opacity: 0.8 }}>({timeAgo(log.created_at)})</span>}
-                                                    {oid && viewOrderButton(oid)}
+                                                    {orderLinks(log)}
                                                 </div>
                                             </div>
                                         </div>
@@ -479,28 +690,25 @@ const ActivityLogPage: React.FC = () => {
                                             </td>
                                         </tr>
                                         {group.items.map((log, idx) => {
-                                            const meta = actionMeta(log.action);
-                                            const oid = orderIdOf(log);
                                             const ago = timeAgo(log.created_at);
+                                            const links = orderLinks(log);
                                             return (
                                                 <tr key={log.id} style={{ background: idx % 2 === 1 ? 'var(--color-bg)' : 'transparent' }}>
-                                                    <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>
+                                                    <td title={fullTimestamp(log.created_at)} style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }}>
                                                         {formatTime(log.created_at)}
                                                         {ago && <span style={{ marginLeft: '6px', fontSize: '11px', color: 'var(--color-text-muted)' }}>({ago})</span>}
                                                     </td>
                                                     <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontWeight: 600, borderBottom: '1px solid var(--color-border)' }}>
-                                                        {log.user_name}
+                                                        {userButton(log.user_name)}
                                                     </td>
                                                     <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', borderBottom: '1px solid var(--color-border)' }}>
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, background: `${meta.color}1A`, color: meta.color }}>
-                                                            {meta.icon} {meta.label}
-                                                        </span>
+                                                        {actionBadge(log.action)}
                                                     </td>
-                                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', maxWidth: '440px' }}>
+                                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', minWidth: '280px', maxWidth: '520px' }}>
                                                         {log.description}
                                                     </td>
                                                     <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', borderBottom: '1px solid var(--color-border)' }}>
-                                                        {oid ? viewOrderButton(oid) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
+                                                        {links || <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
                                                     </td>
                                                     <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)' }}>
                                                         <MetadataDetails log={log} />
