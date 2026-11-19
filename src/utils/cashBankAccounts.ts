@@ -104,6 +104,25 @@ export function codTicksFor(list: readonly string[] | null | undefined, company:
     return (list || []).filter(x => (x || '').trim().toLowerCase() === c);
 }
 
+// The 1210 COD receivable a receipt must keep debiting when it is finalized
+// (Customer Payment › Post Now), whatever "Deposited into" says: the courier
+// still owes that money, and COD Remittances books Dr bank / Cr 1210 when it
+// arrives — re-pointing the receipt to the bank would count it twice.
+//   - Rebuilding an existing Draft: its own debit decides. set_order_payment
+//     keeps the Draft's debit in step with the order's COD flag, so a 1210
+//     debit there means COD.
+//   - A fresh entry (no Draft yet): the order's stored cod_collected decides.
+// Returns undefined when the receipt is not COD or the store has no 1210.
+export function codReceiptDebitId<T extends CashBankCandidate & { id: string }>(
+    pool: T[],
+    opts: { oldDebitAccountIds?: readonly string[] | null; saleCod?: boolean | null }
+): string | undefined {
+    const cod = pool.find(a => a.account_type === 'Asset' && isCodReceivableAccount(a));
+    if (!cod) return undefined;
+    if (opts.oldDebitAccountIds) return opts.oldDebitAccountIds.includes(cod.id) ? cod.id : undefined;
+    return opts.saleCod === true ? cod.id : undefined;
+}
+
 export function pickCashBankAccount<T extends CashBankCandidate>(
     pool: T[],
     payBy?: string | null,
