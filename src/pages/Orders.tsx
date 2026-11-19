@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
-import { statusChangeRefusal, paymentChangeRefusal, settleDateChangeRefusal, orderStatusLabel, orderStatusesMatchingLabel } from '../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, paymentLockedForNonAdmin, settleDateChangeRefusal, orderStatusLabel, orderStatusesMatchingLabel } from '../utils/orderStatusRules';
 import { bodyZoom } from '../utils/bodyZoom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
@@ -2707,7 +2707,7 @@ const Orders: React.FC = () => {
                 const allowedIds = ids.filter(id => {
                     const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
                     const refusal = settleDateChangeRefusal(
-                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus },
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked },
                         { isAdmin, canRestock }
                     );
                     if (refusal) { lastReason = refusal; notSaved++; return false; }
@@ -2732,7 +2732,7 @@ const Orders: React.FC = () => {
                     // ORD-9: same rules as the single-row payment badge — a
                     // non-admin can't bulk-unpay or bulk-cancel Paid orders.
                     const refusal = paymentChangeRefusal(
-                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus },
+                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus, getFileBooked: order.getFileBooked },
                         value,
                         { isAdmin, canRestock }
                     );
@@ -4425,7 +4425,7 @@ const Orders: React.FC = () => {
                                                                             // logged income when leaving Paid.
                                                                             readOnly={claimOpen(order)
                                                                                 ? !canConfirmPayments
-                                                                                : (!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || order.paymentStatus === 'Cancel' || order.paymentStatus === 'Paid' || order.paymentStatus === 'PdFee')))}
+                                                                                : (!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || paymentLockedForNonAdmin(order))))}
                                                                         />
                                                                     </td>
                                                                 );

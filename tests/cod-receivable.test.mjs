@@ -331,6 +331,54 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
     g = await row('G8');
     check('G8 booked Get File restocked: in paid_reset, income removed, Cancel, flag false',
         (rs.paid_reset || []).includes('G8') && (await nIncome('G8')) === 0 && g.payment_status === 'Cancel' && g.cod_collected === false, [rs, g]);
+    check('G8 restocked: get_file_booked false', (await one(`SELECT get_file_booked FROM sales WHERE id = 'G8'`)).get_file_booked === false);
+
+    // ---- The review's cases: the booked marker is get_file_booked, not a date ----
+    const booked = async id => (await one(`SELECT get_file_booked FROM sales WHERE id = $1`, [id])).get_file_booked;
+    check('G2 (booked at Get File, now Paid): get_file_booked false — Paid says settled', (await booked('G2')) === false);
+    check('G6 (Paid -> Get File kept): get_file_booked true', (await booked('G6')) === true);
+    check('G1 (Get File before the tick, then Paid): get_file_booked false', (await booked('G1')) === false);
+
+    // An unbooked Get File given a settle date (Bulk Edit) still books once at Paid.
+    await tick([]);
+    await order('G9', 17);
+    await getFile('G9', 'Unpaid');
+    await tick(['J&T']);
+    await pay('G9', 'Get File', { settle_date: DAY });
+    check('G9 unbooked Get File + typed settle date: still not booked', (await booked('G9')) === false && (await nIncome('G9')) === 0);
+    await pay('G9', 'Get File', { payment_status: 'Paid', amount_received: 17, settle_date: LATER, post_to_ledger: true, cod_collected: true }, LATER);
+    check('G9 then Paid: one receipt booked', (await nIncome('G9')) === 1);
+    await checkBalanced('G9');
+
+    // A checkout-born Paid order (no settle date stored) -> Get File -> Paid: one receipt.
+    const madeP = (await one(`SELECT public.create_retail_order($1::jsonb, $2::jsonb, $3::jsonb) AS r`, [
+        JSON.stringify({ id: 'G10', total: 17, payment_status: 'Paid', amount_received: 17, shipping_company: 'J&T', shipping_status: 'Delivered', customer_snapshot: { name: 'Cust G10' } }),
+        JSON.stringify([{ id: 'C', name: 'Cable', price: 17, quantity: 1 }]),
+        JSON.stringify({ added_by: 'test' }),
+    ])).r;
+    const settleNull = (await row('G10')).settle_date === null;
+    await getFile('G10', 'Paid');
+    check('G10 Paid (no settle date) -> Get File: receipt kept, marked booked', (await nIncome('G10')) === 1 && (await booked('G10')) === true, [madeP, settleNull]);
+    await pay('G10', 'Get File', { payment_status: 'Paid', amount_received: 17, settle_date: LATER, post_to_ledger: true, cod_collected: true }, LATER);
+    check('G10 then Paid: still one receipt', (await nIncome('G10')) === 1);
+    // ...and taking it back to Unpaid from a booked Get File removes it.
+    await getFile('G10', 'Paid');
+    await pay('G10', 'Get File', { payment_status: 'Unpaid', amount_received: 0, settle_date: null });
+    check('G10 booked Get File -> Unpaid: receipt removed, flag cleared', (await nIncome('G10')) === 0 && (await booked('G10')) === false);
+
+    // The entry is dated the user's local day (03:30 in Phnom Penh = 20:30Z the day before).
+    await order('G11', 17);
+    await one(`SELECT public.set_order_payment(p_order_id => 'G11', p_expected_status => 'Unpaid',
+        p_updates => '{"payment_status":"Get File","amount_received":0,"settle_date":null}'::jsonb,
+        p_fields => '{"today":"2026-11-19","tz_offset_min":420,"now":"2026-11-18T20:30:00Z"}'::jsonb) AS r`);
+    const e11 = await entry('TX-' + (await tx('G11')).id);
+    check('G11 Get File at 03:30 local on 19 Nov: entry dated 2026-11-19', e11.date === '2026-11-19', e11);
+    await checkBalanced('G11');
+
+    // The readback carries the marker for the app.
+    await order('G12', 17);
+    const r12 = await getFile('G12', 'Unpaid');
+    check('G12: the app gets get_file_booked true back', r12.payment && r12.payment.get_file_booked === true, r12.payment);
     await tick([]);
 }
 
