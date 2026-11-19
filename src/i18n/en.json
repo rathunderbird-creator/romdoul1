@@ -4166,6 +4166,11 @@
         "removeItem": "Remove {name}",
         "addPayBy": "Add a payment method…",
         "payByHelp": "How customers pay (Cash, QR, Bank…). Offered in Checkout, the settle and receipt forms, and the Pay By filters. Removing one leaves orders that already use it unchanged.",
+        "addSalesman": "Add a salesman…",
+        "salesmenHelp": "Salesman names offered in Orders Management (filter and order drawer) and seeded into the staff reports. Checkout picks the salesman from Users, not from this list. Removing a name leaves orders that already use it unchanged.",
+        "addCustomerCare": "Add a customer care name…",
+        "customerCareHelp": "Customer care names offered when shipping from Orders, in Orders Management and in the Delivery and Payment Tracking filters. Users with the Customer Care or Admin role are always included. Removing a name leaves orders that already use it unchanged.",
+        "fromUsers": "From Users",
         "courier": {
           "help": "Each courier's cost per parcel (used by the Shipping report) and tracking link — put {tracking} where the tracking number goes. J&T has a built-in link. Changes save when you leave the field.",
           "costPerParcel": "Cost per parcel ($)",
@@ -4191,6 +4196,8 @@
           "pageNames": "Page Name",
           "shippingCompanies": "Shipping Company",
           "payBy": "Pay By",
+          "salesmen": "Salesmen",
+          "customerCare": "Customer Care",
           "rejectionReasons": "Rejection Reasons",
           "openingBalances": "Opening Balances"
         },

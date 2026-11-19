@@ -86,16 +86,18 @@ const base: Record<string, unknown> = {
     purchaseSettings: { defaultPaymentAccountId: params.get('def') || '' },
     hasPermission: () => true,
     updateStoreProfile: logWrite('updateStoreProfile'),
-    shippingCompanies: ['J&T', 'VET'], customerCare: ['Dev'], products: [],
+    shippingCompanies: ['J&T', 'VET'], products: [],
     // Sales Setup (?form=setup): J&T ticked for Get File books COD.
     codGetFileCompanies: ['J&T'], setCodGetFileCompany: logWrite('setCodGetFileCompany'),
+    salesmen: ['Dev Salesman'], addSalesman: logWrite('addSalesman'), removeSalesman: logWrite('removeSalesman'),
+    customerCare: ['Dev Admin', 'Dev Care'], addCustomerCare: logWrite('addCustomerCare'), removeCustomerCare: logWrite('removeCustomerCare'),
     shippingRates: { 'J&T': 1.25 }, updateShippingRate: logWrite('updateShippingRate'), trackingUrlTemplates: {}, updateTrackingUrlTemplate: logWrite('updateTrackingUrlTemplate'),
     addPaymentMethod: logWrite('addPaymentMethod'), removePaymentMethod: logWrite('removePaymentMethod'),
     addPage: logWrite('addPage'), removePage: logWrite('removePage'), addShippingCompany: logWrite('addShippingCompany'), removeShippingCompany: logWrite('removeShippingCompany'),
     updateOrder: (...args: unknown[]) => { show('updateOrder', args); return Promise.resolve(true); },
     updateOrderStatus: (...args: unknown[]) => { show('updateOrderStatus', args); return Promise.resolve(true); },
     // Checkout (?form=checkout): lists it maps over, and the create it calls.
-    users: [{ id: 'u1', name: 'Dev Seller', roleId: 'salesman' }], sales: [], pages: ['Dev Page'], cities: [], blockedCustomers: [], telegramConfigs: [],
+    users: [{ id: 'u1', name: 'Dev Seller', roleId: 'salesman' }, { id: 'u2', name: 'Dev Admin', roleId: 'admin' }], sales: [], pages: ['Dev Page'], cities: [], blockedCustomers: [], telegramConfigs: [],
     addOnlineOrder: (o: Sale, opts?: unknown) => { show('addOnlineOrder', { total: o.total, discount: o.discount, customKhrAmount: o.customKhrAmount, amountReceived: o.amountReceived, paymentStatus: o.paymentStatus, opts }); return Promise.resolve({ ...o, id: 'dev-new' }); },
 };
 const mockStore = new Proxy(base, { get: (t, k: string) => (k in t ? t[k] : () => undefined) });

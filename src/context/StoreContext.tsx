@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
-import { getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
+import { codTicksFor, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
 import { isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
 import { tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 import { insertJournalLines } from '../utils/journalEntryLines';
@@ -1854,16 +1854,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const removeShippingCompany = (name: string) => {
         // A removed courier is unticked from "Get File books COD" too.
+        // codGetFileCompanies needs manage_orders (a refused key fails the
+        // whole save), and the checkout form's gear lets create_orders users
+        // remove couriers. So a user allowed to edit the ticks always sends
+        // the untick (the database applies it to the live list, even if
+        // another terminal ticked the courier after this one loaded); anyone
+        // else sends it only when this copy shows a tick.
+        const ticks = codTicksFor(config.codGetFileCompanies, name);
+        const canTick = hasPermission('manage_orders') || hasPermission('manage_settings');
+        const untick = Array.from(new Set([name, ...ticks]));
         return updateConfigOps({
             shippingCompanies: { op: 'removeItems', values: [name] },
-            codGetFileCompanies: { op: 'removeItems', values: [name] },
+            ...((canTick || ticks.length) ? { codGetFileCompanies: { op: 'removeItems', values: untick } } : {}),
         });
     };
 
     // Ticks / unticks a courier for "Get File books the COD receipt".
     const setCodGetFileCompany = (company: string, on: boolean) => {
         return updateConfigOps({
-            codGetFileCompanies: on ? { op: 'append', items: [company] } : { op: 'removeItems', values: [company] },
+            // Untick every stored spelling the checkbox matched (the box
+            // ignores case and spaces; the database removes exact values).
+            codGetFileCompanies: on ? { op: 'append', items: [company] }
+                : { op: 'removeItems', values: Array.from(new Set([company, ...codTicksFor(config.codGetFileCompanies, company)])) },
         });
     };
 

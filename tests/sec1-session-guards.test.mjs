@@ -77,6 +77,7 @@ const ROLES = [
     { id: 'richrole', name: 'Rich', permissions: ['manage_users', 'manage_orders', 'manage_settings', 'create_orders', 'view_orders', 'manage_procurement'] },
     { id: 'reporter', name: 'Reports', permissions: ['view_reports'] },
     { id: 'restocker', name: 'Restock clerk', permissions: ['restock_orders', 'view_orders'] },
+    { id: 'ordersmgr', name: 'Orders only', permissions: ['manage_orders', 'view_orders'] },
 ];
 await q(`UPDATE app_config SET data = jsonb_set(data, '{roles}', $1::jsonb, true) WHERE id = 1`, [JSON.stringify(ROLES)]);
 await q(`INSERT INTO users (id, name, email, role_id, pin) VALUES
@@ -86,7 +87,8 @@ await q(`INSERT INTO users (id, name, email, role_id, pin) VALUES
     ('stk','Stody','k@x.com','stocker','4444'),
     ('pay','Pel','p@x.com','payrollist','5555'),
     ('rep','Rina','r@x.com','reporter','6666'),
-    ('rst','Rotha','t@x.com','restocker','7777')
+    ('rst','Rotha','t@x.com','restocker','7777'),
+    ('ord','Orla','o@x.com','ordersmgr','8888')
     ON CONFLICT (id) DO NOTHING`);
 await q(`INSERT INTO products (id, name, price, stock) VALUES ('prod1', 'Speaker', 50, 10)`);
 
@@ -102,6 +104,7 @@ const S = {
     pay: await login('pay', '5555'),
     rep: await login('rep', '6666'),
     rst: await login('rst', '7777'),
+    ord: await login('ord', '8888'),
 };
 const BAD = JSON.stringify({ user_id: 'boss', token: 'deadbeef' });
 
@@ -313,6 +316,15 @@ check('config: pages ok for salesman (checkout inline add)', await cfg({ pages: 
 check('config: paymentMethods ok for salesman (checkout inline add)', await cfg({ paymentMethods: { op: 'append', items: ['ABA'] } }, S.sal) === '');
 check('config: shippingRates ok for reporter (view_reports inline editor)', await cfg({ shippingRates: { op: 'merge', value: { VET: 1.5 } } }, S.rep) === '');
 check('config: shippingRates refused for restock clerk', noPerm(await cfg({ shippingRates: { op: 'merge', value: { VET: 9 } } }, S.rst)));
+// Sales Setup's COD ticks: the route's manage_orders is enough, checkout's
+// create_orders is not (the tick changes how Get File books money).
+check('config: codGetFileCompanies ok for manage_orders without manage_settings', await cfg({ codGetFileCompanies: { op: 'append', items: ['J&T'] } }, S.ord) === '');
+check('config: codGetFileCompanies refused for salesman (create_orders)', noPerm(await cfg({ codGetFileCompanies: { op: 'removeItems', values: ['J&T'] } }, S.sal)));
+check('config: shippingCompanies removal alone ok for salesman (checkout gear)', await cfg({ shippingCompanies: { op: 'removeItems', values: ['Gone Co'] } }, S.sal) === '');
+check('config: removal bundled with a COD untick refused for salesman (why the app sends it only for a ticked courier)',
+    noPerm(await cfg({ shippingCompanies: { op: 'removeItems', values: ['Gone Co'] }, codGetFileCompanies: { op: 'removeItems', values: ['Gone Co'] } }, S.sal)));
+check('config: salesmen and customerCare ok for manage_orders (Sales Setup lists)',
+    await cfg({ salesmen: { op: 'append', items: ['Dara'] } }, S.ord) === '' && await cfg({ customerCare: { op: 'append', items: ['Nita'] } }, S.ord) === '');
 
 // The roles (and legacy users) keys are strict: a NULL session is refused
 // even while enforcement is off — sg_permission reads this key, so leaving

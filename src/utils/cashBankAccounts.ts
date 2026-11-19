@@ -90,8 +90,18 @@ export function defaultCodCollected(order: {
 // books the COD receipt" — the same match set_order_payment's
 // wp_internal.op_get_file_books_cod makes (case- and space-insensitive).
 export function getFileBooksCod(list: readonly string[] | null | undefined, company: string | null | undefined): boolean {
+    return codTicksFor(list, company).length > 0;
+}
+
+// The ticked entries that name this courier (same case/space-insensitive
+// match as the database). Removing a courier unticks exactly these, and
+// sends no codGetFileCompanies change at all when there are none: that key
+// needs manage_orders, so an untouched tick must not block a checkout
+// clerk's courier removal.
+export function codTicksFor(list: readonly string[] | null | undefined, company: string | null | undefined): string[] {
     const c = (company || '').trim().toLowerCase();
-    return c !== '' && (list || []).some(x => (x || '').trim().toLowerCase() === c);
+    if (c === '') return [];
+    return (list || []).filter(x => (x || '').trim().toLowerCase() === c);
 }
 
 export function pickCashBankAccount<T extends CashBankCandidate>(
