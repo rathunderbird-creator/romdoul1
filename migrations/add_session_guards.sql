@@ -146,6 +146,11 @@
 --                      view_reports (the Shipping report at /reports/shipping
 --                      has an inline rate editor and the route needs only
 --                      view_reports)
+--     codGetFileCompanies
+--                      manage_settings / manage_orders (Sales Setup ›
+--                      Shipping Company; set_order_payment reads it to book
+--                      Get File as COD, so create_orders is NOT enough. The
+--                      app only sends it when a ticked courier is removed.)
 --     anything else    manage_settings
 --
 -- USERS TABLE LOCKDOWN (finishes SEC-3 server-side)
@@ -971,6 +976,8 @@ BEGIN
         -- view_reports: the Shipping report's inline rate editor (see header).
         WHEN 'shippingRates'      THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory', 'view_reports']
         WHEN 'trackingUrlTemplates' THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
+        -- Sales Setup › Shipping Company "Get File books the COD receipt".
+        WHEN 'codGetFileCompanies'  THEN ARRAY['manage_settings', 'manage_orders']
         ELSE ARRAY['manage_settings']
     END;
     IF NOT EXISTS (

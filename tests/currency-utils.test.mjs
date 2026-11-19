@@ -64,6 +64,10 @@ check('getFileBooksCod: case and spaces ignored', gf([' j&t '], 'J&T ') === true
 check('getFileBooksCod: another courier → false', gf(['J&T'], 'VET') === false);
 check('getFileBooksCod: no list / empty list → false', gf(undefined, 'J&T') === false && gf([], 'J&T') === false);
 check('getFileBooksCod: no courier on the order → false', gf(['J&T'], '') === false && gf(['J&T'], null) === false && gf([''], '') === false);
+const ct = m.codTicksFor;
+check('codTicksFor: returns the stored spelling to untick', JSON.stringify(ct([' j&t ', 'VET'], 'J&T')) === JSON.stringify([' j&t ']));
+check('codTicksFor: unticked courier → nothing to send', ct(['J&T'], 'VET').length === 0 && ct(undefined, 'VET').length === 0);
+check('codTicksFor: blank courier → nothing', ct(['', 'J&T'], ' ').length === 0);
 
 // ── conversions ──
 check('khrToUsd 82000 @ 4100 = 20', m.khrToUsd(82000, 4100) === 20);

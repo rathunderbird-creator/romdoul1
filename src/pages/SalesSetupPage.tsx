@@ -3,13 +3,13 @@
 // Wholesale Setup. The Defaults section is still DESIGN ONLY (local state,
 // matching the mockup; nothing reads those values yet). Page Name, Shipping
 // Company (with each courier's cost per parcel, tracking link and "Get File
-// books the COD receipt"), Pay By and Provinces are real, store-backed
-// settings. The remaining sections are placeholders until their own data
+// books the COD receipt"), Pay By, Salesmen, Customer Care and Provinces are
+// real, store-backed settings. The remaining sections are placeholders until their own data
 // model exists.
 import React, { useId, useState } from 'react';
 import {
     SlidersHorizontal, Tag, Tags, Users, MapPin, Percent, Truck, Ban, Landmark,
-    Megaphone, Building2, Plus, Trash2, Wallet
+    Megaphone, Building2, Plus, Trash2, Wallet, UserCheck, Headphones
 } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
@@ -25,7 +25,7 @@ import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
 type SectionKey =
     | 'defaults' | 'paymentTerms' | 'priceLevels' | 'customerGroups' | 'provinces'
     | 'discounts' | 'deliveryTypes' | 'rejectionReasons' | 'openingBalances'
-    | 'pageNames' | 'shippingCompanies' | 'payBy';
+    | 'pageNames' | 'shippingCompanies' | 'payBy' | 'salesmen' | 'customerCare';
 
 const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
     { key: 'defaults', label: 'Defaults', icon: SlidersHorizontal },
@@ -38,12 +38,14 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
     { key: 'pageNames', label: 'Page Name', icon: Megaphone },
     { key: 'shippingCompanies', label: 'Shipping Company', icon: Building2 },
     { key: 'payBy', label: 'Pay By', icon: Wallet },
+    { key: 'salesmen', label: 'Salesmen', icon: UserCheck },
+    { key: 'customerCare', label: 'Customer Care', icon: Headphones },
     { key: 'rejectionReasons', label: 'Rejection Reasons', icon: Ban },
     { key: 'openingBalances', label: 'Opening Balances', icon: Landmark },
 ];
 
 // Sections not in this set fall through to the "reserved" placeholder below.
-const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'provinces']);
+const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces']);
 
 // Add/remove UI for a flat string list backed by the store's config blob
 // (same data CheckoutForm's gear-icon ConfigModal edits — this just gives it
@@ -53,7 +55,10 @@ const SetupListSection: React.FC<{
     onAdd: (name: string) => Promise<unknown>; onRemove: (name: string) => Promise<unknown>;
     // Optional: a line of help under the title, and per-row fields under each item.
     help?: string; renderRowExtra?: (item: string) => React.ReactNode;
-}> = ({ title, placeholder, items, onAdd, onRemove, help, renderRowExtra }) => {
+    // Optional: a row this list cannot remove shows this note instead of the
+    // Remove button (e.g. a Customer Care name that comes from Users).
+    lockedNote?: (item: string) => string | null;
+}> = ({ title, placeholder, items, onAdd, onRemove, help, renderRowExtra, lockedNote }) => {
     const { showToast } = useToast();
     const { t } = useLanguage();
     const [draft, setDraft] = useState('');
@@ -64,6 +69,8 @@ const SetupListSection: React.FC<{
     const handleAdd = () => {
         const name = draft.trim();
         if (!name || busy) return;
+        // Already listed: nothing to save (the database would skip it too).
+        if (items.includes(name)) { setDraft(''); return; }
         setBusy(true);
         Promise.resolve(onAdd(name)).catch(reportError).finally(() => setBusy(false));
         setDraft('');
@@ -96,9 +103,11 @@ const SetupListSection: React.FC<{
                     <div key={item} style={{ padding: '9px 12px', borderBottom: '1px solid var(--color-border)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', color: 'var(--color-text-main)' }}>
                             <span style={{ fontWeight: renderRowExtra ? 600 : 400 }}>{item}</span>
-                            <button onClick={() => handleRemove(item)} title={fill(t('ui.admin.salesSetup.removeItem'), { name: item })} aria-label={fill(t('ui.admin.salesSetup.removeItem'), { name: item })} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            {lockedNote?.(item) ? (
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{lockedNote(item)}</span>
+                            ) : <button onClick={() => handleRemove(item)} title={fill(t('ui.admin.salesSetup.removeItem'), { name: item })} aria-label={fill(t('ui.admin.salesSetup.removeItem'), { name: item })} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                                 <Trash2 size={15} />
-                            </button>
+                            </button>}
                         </div>
                         {renderRowExtra && renderRowExtra(item)}
                     </div>
@@ -230,7 +239,16 @@ const disabledInputStyle: React.CSSProperties = { ...inputStyle, color: 'var(--c
 const SalesSetupPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
-    const { pages, shippingCompanies, addPage, removePage, addShippingCompany, removeShippingCompany, paymentMethods, addPaymentMethod, removePaymentMethod } = useStore();
+    const {
+        pages, shippingCompanies, addPage, removePage, addShippingCompany, removeShippingCompany, paymentMethods, addPaymentMethod, removePaymentMethod,
+        salesmen, addSalesman, removeSalesman, customerCare, addCustomerCare, removeCustomerCare, users,
+    } = useStore();
+    // The store's customerCare list also carries every user whose role is
+    // Customer Care or Admin; those rows come from Users and cannot be
+    // removed here (removing only edits the configured names).
+    const careFromUsers = React.useMemo(() => new Set(users
+        .filter(u => u.roleId === 'customer_care' || u.roleId === 'admin')
+        .map(u => u.name)), [users]);
     const [section, setSection] = useState<SectionKey>('defaults');
     const [saving, setSaving] = useState(false);
 
@@ -422,6 +440,18 @@ const SalesSetupPage: React.FC = () => {
             {section === 'payBy' && (
                 <SetupListSection title={t('ui.admin.salesSetup.sections.payBy')} placeholder={t('ui.admin.salesSetup.addPayBy')} items={paymentMethods}
                     onAdd={addPaymentMethod} onRemove={removePaymentMethod} help={t('ui.admin.salesSetup.payByHelp')} />
+            )}
+
+            {/* ── Salesmen / Customer Care: the staff names Orders Management,
+                Delivery and Payment Tracking and the staff reports offer. ── */}
+            {section === 'salesmen' && (
+                <SetupListSection title={t('ui.admin.salesSetup.sections.salesmen')} placeholder={t('ui.admin.salesSetup.addSalesman')} items={salesmen}
+                    onAdd={addSalesman} onRemove={removeSalesman} help={t('ui.admin.salesSetup.salesmenHelp')} />
+            )}
+            {section === 'customerCare' && (
+                <SetupListSection title={t('ui.admin.salesSetup.sections.customerCare')} placeholder={t('ui.admin.salesSetup.addCustomerCare')} items={customerCare}
+                    onAdd={addCustomerCare} onRemove={removeCustomerCare} help={t('ui.admin.salesSetup.customerCareHelp')}
+                    lockedNote={name => careFromUsers.has(name) ? t('ui.admin.salesSetup.fromUsers') : null} />
             )}
 
             {/* ── Provinces: the shared address tree + Shipping Points per commune. ── */}
