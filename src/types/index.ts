@@ -393,6 +393,10 @@ export interface StoreContextType {
     wholesaleSettings: WholesaleSettings;
     updateWholesaleSettings: (settings: WholesaleSettings) => Promise<void>;
 
+    // Sales Setup › Defaults; '' clears a field.
+    salesSettings: SalesSettings;
+    updateSalesSetting: (key: keyof SalesSettings, value: string) => Promise<void>;
+
     // Warehouses
     warehouses: Warehouse[];
     warehouseStock: WarehouseStock[];
@@ -587,6 +591,15 @@ export interface WholesaleOpeningBalance {
     customer_id: string;
     amount: number;
     as_of?: string; // YYYY-MM-DD
+}
+
+// Sales Setup › Defaults (app_config salesSettings). Each field saves on its
+// own (merge / unsetKeys), so editing one never reverts another.
+export interface SalesSettings {
+    // The cash/bank account retail receipts, deposits and delivery fees go to
+    // when nobody picks one: USD, and riel for KHR payments.
+    defaultDepositAccountId?: string;
+    defaultDepositAccountIdKhr?: string;
 }
 
 export interface WholesaleSettings {

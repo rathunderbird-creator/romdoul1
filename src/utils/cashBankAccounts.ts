@@ -145,10 +145,41 @@ export function codReceiptDebitId<T extends CashBankCandidate & { id: string }>(
     return opts.saleCod === true ? cod.id : undefined;
 }
 
+const isPettyCash = (a: { account_name: string }) => /petty/i.test(a.account_name);
+
+// When a form's Pay By changes: the account to move to, if the form is still
+// on the automatic pick for the old method (never a pick the user made), and
+// only with a default set — a Cash method on Cash on Hand, else the default.
+// undefined: leave the account alone.
+export function followMethodAccount<T extends CashBankCandidate>(
+    accounts: T[],
+    currentId: string | null | undefined,
+    prevMethod: string | null | undefined,
+    nextMethod: string | null | undefined,
+    opts: { currency?: Currency; defaultId?: string | null }
+): string | undefined {
+    if (!opts.defaultId || !currentId) return undefined;
+    const auto = (m: string | null | undefined) => defaultCashBankAccountId(accounts, { currency: opts.currency || 'USD', defaultId: opts.defaultId, method: m });
+    if (auto(prevMethod) !== currentId) return undefined;
+    const next = auto(nextMethod);
+    return next && next !== currentId ? next : undefined;
+}
+
+// Sales Setup › Defaults › Default deposit account for a payment's currency
+// (app_config salesSettings): the riel one for KHR, the USD one otherwise.
+export function depositDefaultFor(
+    s: { defaultDepositAccountId?: string | null; defaultDepositAccountIdKhr?: string | null } | null | undefined,
+    currency?: Currency | null
+): string | undefined {
+    return (currency === 'KHR' ? s?.defaultDepositAccountIdKhr : s?.defaultDepositAccountId) || undefined;
+}
+
 export function pickCashBankAccount<T extends CashBankCandidate>(
     pool: T[],
     payBy?: string | null,
-    opts?: { preferBank?: boolean; currency?: Currency; cod?: boolean }
+    // defaultId: Sales Setup's default deposit account for this currency
+    // (depositDefaultFor) — see the step after the exact-name match.
+    opts?: { preferBank?: boolean; currency?: Currency; cod?: boolean; defaultId?: string | null }
 ): T | undefined {
     // A courier-collected receipt lands on the COD receivable, whatever the
     // Method says (the SQL twin, wp_internal.op_post_receipt_entry, makes
@@ -172,6 +203,18 @@ export function pickCashBankAccount<T extends CashBankCandidate>(
     const candidates = all.filter(a => isKhrAccountName(a.account_name) === wantKhr);
     if (candidates.length === 0) return undefined;
     const find = (re: RegExp) => candidates.find(a => re.test(a.account_name.toLowerCase()));
+    // Sales Setup's default deposit account, while it is still an active
+    // cash/bank account in this currency: a Cash method still goes to Cash on
+    // Hand, every other method to the default. Unset: as before.
+    const def = opts?.defaultId ? candidates.find(a => a.id === opts.defaultId && !isPettyCash(a)) : undefined;
+    if (def) {
+        if (hint.includes('cash')) {
+            // Never into the petty-cash float, even with no Cash on Hand.
+            const cash = candidates.find(a => /cash on hand/i.test(a.account_name)) || candidates.find(a => /cash/i.test(a.account_name) && !isPettyCash(a));
+            if (cash) return cash;
+        }
+        return def;
+    }
     if (opts?.preferBank) {
         const bank = find(/aba/) || find(/bank/);
         if (bank) return bank;
@@ -195,7 +238,9 @@ export function pickCashBankAccount<T extends CashBankCandidate>(
 // a USD payment never opens on a riel account.
 export function defaultCashBankAccountId<T extends CashBankCandidate>(
     accounts: T[],
-    opts?: { preferredId?: string | null; hint?: string | null; cashHint?: boolean; currency?: Currency }
+    // method: the form's Pay By. Only consulted with a default set (a Cash
+    // method then opens on Cash on Hand), so forms without one are unchanged.
+    opts?: { preferredId?: string | null; hint?: string | null; cashHint?: boolean; currency?: Currency; defaultId?: string | null; method?: string | null }
 ): string {
     const all = accounts.filter(isCashBank).sort(byCode);
     const wantKhr = opts?.currency === 'KHR';
@@ -211,6 +256,16 @@ export function defaultCashBankAccountId<T extends CashBankCandidate>(
         const exact = scope.find(a => a.account_name.toLowerCase() === hint);
         if (exact) return exact.id;
     }
+    // Sales Setup's default deposit account (in this currency only), with a
+    // cash hint still opening on Cash on Hand — same rule as the posting pick.
+    const def = opts?.defaultId ? pool.find(a => a.id === opts.defaultId && !isPettyCash(a)) : undefined;
+    if (def) {
+        if ((opts?.cashHint && hint.includes('cash')) || (opts?.method || '').toLowerCase().includes('cash')) {
+            const cash = pool.find(a => /cash on hand/i.test(a.account_name)) || pool.find(a => /cash/i.test(a.account_name) && !isPettyCash(a));
+            if (cash) return cash.id;
+        }
+        return def.id;
+    }
     const pick = (opts?.cashHint && hint.includes('cash') ? pool.find(a => /cash/i.test(a.account_name)) : undefined)
         || pool.find(a => a.account_name.toLowerCase().includes('bank'))
         || pool[0];
@@ -223,13 +278,24 @@ export function defaultCashBankAccountId<T extends CashBankCandidate>(
 export function counterpartAccount<T extends CashBankCandidate>(
     accounts: T[],
     currentId: string | null | undefined,
-    target: Currency
+    target: Currency,
+    // Sales Setup's default deposit accounts: flipping a non-cash account
+    // lands on the default of the new currency (a cash one stays cash).
+    defaults?: { usd?: string | null; khr?: string | null }
 ): T | undefined {
     const all = accounts.filter(isCashBank).sort(byCode);
     const current = all.find(a => a.id === currentId);
     if (current && (isKhrAccountName(current.account_name) ? 'KHR' : 'USD') === target) return current;
     const family = current && /bank|aba|acleda/i.test(current.account_name) ? 'bank' : (current ? 'cash' : 'bank');
     const pool = all.filter(a => isKhrAccountName(a.account_name) === (target === 'KHR'));
+    const targetDefault = target === 'KHR' ? defaults?.khr : defaults?.usd;
+    const sourceDefault = target === 'KHR' ? defaults?.usd : defaults?.khr;
+    // A bank account, or the other currency's default itself (even a cash
+    // one), moves to this currency's default; any other cash stays cash.
+    if (targetDefault && (!current || family !== 'cash' || current.id === sourceDefault)) {
+        const def = pool.find(a => a.id === targetDefault && !isPettyCash(a));
+        if (def) return def;
+    }
     const sameFamily = pool.find(a => (family === 'bank') === /bank|aba|acleda/i.test(a.account_name));
     return sameFamily || pickCashBankAccount(pool, family, { preferBank: family === 'bank', currency: target });
 }

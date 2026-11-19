@@ -6,7 +6,7 @@ import type { PaidMoney, PaymentClaim, Sale } from '../types';
 import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
-import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, depositDefaultFor, followMethodAccount } from '../utils/cashBankAccounts';
 import { accountCurrency, khrMeta, rielToReopen, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { useTx } from './useTx';
 
@@ -31,7 +31,10 @@ const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset
 
 // Records the upfront deposit for a retail order (rest is collected via COD).
 const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, showDepositAccount = false, claim, paid }) => {
-    const { paymentMethods, khrExchangeRate } = useStore();
+    const { paymentMethods, khrExchangeRate, salesSettings } = useStore();
+    // Sales Setup's default deposit accounts (USD / riel).
+    const defUsd = depositDefaultFor(salesSettings, 'USD');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR');
     const { accounts, fetchAccounts } = useAccounting();
     // A deposit is less than the order total, so above it is a typo (riel).
     const field = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: order?.total || null });
@@ -69,9 +72,12 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
             // in, on an account in that currency (the one it went into, when
             // it still is).
             const booked = !fromClaim && showDepositAccount && order.depositAmount && order.depositAmount > 0 ? paid : undefined;
-            const accountId = (claimRiel && showDepositAccount ? defaultCashBankAccountId(paymentAccounts, { currency: 'KHR' }) : '')
-                || (booked ? defaultCashBankAccountId(paymentAccounts, { currency: booked.currency, preferredId: order.depositAccountId }) : '')
-                || defaultCashBankAccountId(paymentAccounts, { preferredId: order.depositAccountId });
+            // The Pay By this opening starts on (a Cash method opens on Cash
+            // on Hand when a default is set).
+            const startMethod = order.depositMethod || (fromClaim?.method && paymentMethods.includes(fromClaim.method) ? fromClaim.method : '') || bank || paymentMethods[0] || 'Bank';
+            const accountId = (claimRiel && showDepositAccount ? defaultCashBankAccountId(paymentAccounts, { currency: 'KHR', defaultId: defKhr, method: startMethod }) : '')
+                || (booked ? defaultCashBankAccountId(paymentAccounts, { currency: booked.currency, preferredId: order.depositAccountId, defaultId: booked.currency === 'KHR' ? defKhr : defUsd, method: startMethod }) : '')
+                || defaultCashBankAccountId(paymentAccounts, { preferredId: order.depositAccountId, defaultId: defUsd, method: startMethod });
             setDepositAccountId(accountId);
             const prev = order.depositAmount && order.depositAmount > 0 ? order.depositAmount : (fromClaim ? fromClaim.amount : '');
             const inRiel = showDepositAccount && accountCurrency(paymentAccounts.find(a => a.id === accountId)) === 'KHR';
@@ -87,7 +93,7 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [order, paymentAccounts, paid]);
 
-    const coupling = useAccountCurrency(field, showDepositAccount ? paymentAccounts : [], depositAccountId, setDepositAccountId);
+    const coupling = useAccountCurrency(field, showDepositAccount ? paymentAccounts : [], depositAccountId, setDepositAccountId, { usd: defUsd, khr: defKhr });
 
     if (!order) return null;
 
@@ -147,7 +153,12 @@ const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
                             <label style={labelStyle}>{tx('orders.payBy', 'Pay By')}</label>
-                            <select value={method} onChange={e => setMethod(e.target.value)} style={inputStyle}>
+                            <select value={method} onChange={e => {
+                                const m = e.target.value;
+                                const next = showDepositAccount ? followMethodAccount(paymentAccounts, depositAccountId, method, m, { currency: field.currency, defaultId: field.currency === 'KHR' ? defKhr : defUsd }) : undefined;
+                                setMethod(m);
+                                if (next) setDepositAccountId(next);
+                            }} style={inputStyle}>
                                 {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                         </div>

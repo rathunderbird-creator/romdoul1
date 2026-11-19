@@ -37,7 +37,7 @@ import MoneyInput from '../components/MoneyInput';
 import CashBankOptions from '../components/CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
 import { useAccounting } from '../hooks/useAccounting';
-import { defaultCashBankAccountId, defaultCodCollected } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, defaultCodCollected, depositDefaultFor } from '../utils/cashBankAccounts';
 import * as XLSX from 'xlsx';
 import type { Sale, CartItem, PaidMoney } from '../types';
 import { beginLiveResize, endLiveResize, liveDelta, showLiveWidth, type LiveResize } from '../utils/liveColumnResize';
@@ -117,7 +117,9 @@ const ShippingModalComponent: React.FC<{
     order: Sale | null;
     targetStatus?: 'Confirmed' | 'Shipped';
 }> = ({ isOpen, onClose, order, targetStatus = 'Shipped' }) => {
-    const { shippingCompanies, customerCare, products, updateOrder, updateOrderStatus, khrExchangeRate } = useStore();
+    const { shippingCompanies, customerCare, products, updateOrder, updateOrderStatus, khrExchangeRate, salesSettings } = useStore();
+    const defUsd = depositDefaultFor(salesSettings, 'USD');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR');
     const { showToast } = useToast();
     const { t } = useLanguage();
 
@@ -140,7 +142,7 @@ const ShippingModalComponent: React.FC<{
         () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name)),
         [accounts]
     );
-    const depositCoupling = useAccountCurrency(depositField, paymentAccounts, depositAccountId, setDepositAccountId);
+    const depositCoupling = useAccountCurrency(depositField, paymentAccounts, depositAccountId, setDepositAccountId, { usd: defUsd, khr: defKhr });
     // '' = auto-compute from the total/deposit — stays live until the user
     // types a KHR figure of their own, same pattern the Receipt used to have.
     const [customKhr, setCustomKhr] = useState<string>('');
@@ -175,7 +177,7 @@ const ShippingModalComponent: React.FC<{
             setItems((order.items || []).map(i => ({ ...i })));
             // Never a riel account by default; a deposit already taken into a
             // riel account reopens in riel (same as the Deposit modal).
-            const accountId = defaultCashBankAccountId(paymentAccounts, { preferredId: order.depositAccountId });
+            const accountId = defaultCashBankAccountId(paymentAccounts, { preferredId: order.depositAccountId, defaultId: defUsd });
             setDepositAccountId(accountId);
             const prev = order.depositAmount || 0;
             const inRiel = prev > 0 && accountCurrency(paymentAccounts.find(a => a.id === accountId)) === 'KHR';
@@ -189,7 +191,7 @@ const ShippingModalComponent: React.FC<{
             setKhrEdited(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, order, shippingCompanies, paymentAccounts]);
+    }, [isOpen, order, shippingCompanies, paymentAccounts, defUsd]);
 
     if (!order) return null;
 

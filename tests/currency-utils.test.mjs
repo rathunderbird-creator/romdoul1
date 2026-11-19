@@ -82,6 +82,55 @@ check('codReceiptDebitId: fresh entry, COD order → 1210', cr(POOL, { saleCod: 
 check('codReceiptDebitId: fresh entry, not COD → picked account', cr(POOL, { saleCod: false }) === undefined && cr(POOL, {}) === undefined);
 check('codReceiptDebitId: store without 1210 → picked account', cr(POOL.filter(a => a.id !== 'cod'), { saleCod: true }) === undefined);
 
+// ── Sales Setup default deposit account (defaultId) ──
+const DPOOL = [
+    { id: 'coh', account_code: '1001', account_name: 'Cash on Hand', account_type: 'Asset' },
+    { id: 'cohk', account_code: '1002', account_name: 'Cash on Hand (KHR)', account_type: 'Asset' },
+    { id: 'aba', account_code: '1011', account_name: 'ABA Bank', account_type: 'Asset' },
+    { id: 'acl', account_code: '1012', account_name: 'ACLEDA Bank', account_type: 'Asset' },
+    { id: 'abak', account_code: '1013', account_name: 'ABA Bank (KHR)', account_type: 'Asset' },
+    { id: 'cod', account_code: '1210', account_name: 'COD receivable (courier)', account_type: 'Asset' },
+];
+const pk = (payBy, o) => m.pickCashBankAccount(DPOOL, payBy, { preferBank: true, ...o })?.id;
+check('default: unset → bank as before', pk('QR', { currency: 'USD' }) === 'aba');
+check('default: set → a non-cash method goes to it', pk('QR', { currency: 'USD', defaultId: 'acl' }) === 'acl' && pk('Bank', { currency: 'USD', defaultId: 'acl' }) === 'acl');
+check('default: a Cash method still goes to Cash on Hand', pk('Cash', { currency: 'USD', defaultId: 'acl' }) === 'coh');
+check('default: riel Cash → riel Cash on Hand', pk('Cash', { currency: 'KHR', defaultId: 'abak' }) === 'cohk');
+check('default: a method named exactly like an account wins', pk('ABA Bank', { currency: 'USD', defaultId: 'acl' }) === 'aba');
+check('default: COD still lands on 1210', pk('QR', { currency: 'USD', defaultId: 'acl', cod: true }) === 'cod');
+check('default: a riel default is ignored for a USD payment', pk('QR', { currency: 'USD', defaultId: 'abak' }) === 'aba');
+check('default: a missing / deactivated id is ignored', pk('QR', { currency: 'USD', defaultId: 'gone' }) === 'aba');
+check('default: the receivable is never a deposit default', pk('QR', { currency: 'USD', defaultId: 'cod' }) === 'aba');
+const dd = (o) => m.defaultCashBankAccountId(DPOOL, o);
+check('modal default: unset → first bank', dd({ currency: 'USD' }) === 'aba');
+check('modal default: set → the default', dd({ currency: 'USD', defaultId: 'acl' }) === 'acl');
+check('modal default: a re-opened payment keeps its account', dd({ currency: 'USD', preferredId: 'aba', defaultId: 'acl' }) === 'aba');
+check('modal default: cash hint → Cash on Hand', dd({ currency: 'USD', hint: 'Cash', cashHint: true, defaultId: 'acl' }) === 'coh');
+check('modal default: riel default only for riel', dd({ currency: 'KHR', defaultId: 'abak' }) === 'abak' && dd({ currency: 'USD', defaultId: 'abak' }) === 'aba');
+const DPOOL2 = [...DPOOL, { id: 'pet', account_code: '1003', account_name: 'Petty Cash', account_type: 'Asset' }];
+check('default: Petty Cash is never a deposit default', m.pickCashBankAccount(DPOOL2, 'QR', { preferBank: true, currency: 'USD', defaultId: 'pet' })?.id === 'aba'
+    && m.defaultCashBankAccountId(DPOOL2, { currency: 'USD', defaultId: 'pet' }) === 'aba');
+check('modal default: method Cash → Cash on Hand (only with a default)', dd({ currency: 'USD', defaultId: 'acl', method: 'Cash' }) === 'coh'
+    && dd({ currency: 'USD', method: 'Cash' }) === 'aba');
+const fm = (cur, prev, next, o) => m.followMethodAccount(DPOOL, cur, prev, next, o);
+check('follow: auto pick moves Bank → Cash', fm('acl', 'Bank', 'Cash', { currency: 'USD', defaultId: 'acl' }) === 'coh');
+check('follow: and back Cash → QR', fm('coh', 'Cash', 'QR', { currency: 'USD', defaultId: 'acl' }) === 'acl');
+check('follow: a user pick is left alone', fm('aba', 'Bank', 'Cash', { currency: 'USD', defaultId: 'acl' }) === undefined);
+check('follow: no default → no change (as before)', fm('aba', 'Bank', 'Cash', { currency: 'USD' }) === undefined);
+check('follow: riel', fm('abak', 'Bank', 'Cash', { currency: 'KHR', defaultId: 'abak' }) === 'cohk');
+const cp = (cur, target, d) => m.counterpartAccount(DPOOL, cur, target, d)?.id;
+check('toggle: bank → riel default', cp('acl', 'KHR', { usd: 'acl', khr: 'abak' }) === 'abak' && cp('aba', 'KHR', { khr: 'abak' }) === 'abak');
+check('toggle: riel → USD default', cp('abak', 'USD', { usd: 'acl', khr: 'abak' }) === 'acl');
+check('toggle: cash stays cash', cp('coh', 'KHR', { usd: 'acl', khr: 'abak' }) === 'cohk');
+check('toggle: no defaults → as before (first bank of the family)', cp('acl', 'KHR') === 'abak' && cp('abak', 'USD') === 'aba');
+const NOCOH = [{ id: 'pet', account_code: '1001', account_name: 'Petty Cash', account_type: 'Asset' }, { id: 'aba', account_code: '1011', account_name: 'ABA Bank', account_type: 'Asset' }, { id: 'acl', account_code: '1012', account_name: 'ACLEDA Bank', account_type: 'Asset' }];
+check('default: Cash with no Cash on Hand never lands on Petty Cash', m.pickCashBankAccount(NOCOH, 'Cash', { preferBank: true, currency: 'USD', defaultId: 'acl' })?.id === 'acl'
+    && m.defaultCashBankAccountId(NOCOH, { currency: 'USD', defaultId: 'acl', method: 'Cash' }) === 'acl');
+check('toggle: a cash default moves to the other currency default', cp('coh', 'KHR', { usd: 'coh', khr: 'abak' }) === 'abak');
+check('depositDefaultFor picks by currency', m.depositDefaultFor({ defaultDepositAccountId: 'u', defaultDepositAccountIdKhr: 'k' }, 'KHR') === 'k'
+    && m.depositDefaultFor({ defaultDepositAccountId: 'u' }, 'USD') === 'u' && m.depositDefaultFor({ defaultDepositAccountId: 'u' }, undefined) === 'u'
+    && m.depositDefaultFor({ defaultDepositAccountId: '' }, 'USD') === undefined && m.depositDefaultFor(null, 'KHR') === undefined);
+
 // ── conversions ──
 check('khrToUsd 82000 @ 4100 = 20', m.khrToUsd(82000, 4100) === 20);
 check('khrToUsd 4269000 @ 4100 = 1041.22 (rounded to cents)', m.khrToUsd(4269000, 4100) === 1041.22);
