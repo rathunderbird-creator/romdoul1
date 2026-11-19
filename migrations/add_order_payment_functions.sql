@@ -51,6 +51,14 @@
 -- debit between 1210 and cash/bank (a POSTED one stays, with a notice).
 -- Deposits and delivery fees are never COD.
 --
+-- COD payment methods (Sales Setup › Pay By): a Pay By listed in
+-- app_config.data.codPaymentMethods (the key absent: a Method named COD)
+-- means the courier collects, so a settlement paid by it is COD when the
+-- save says nothing about cod_collected and the order was never marked
+-- (wp_internal.op_cod_method — the app's forms start their box from the
+-- same list). The save's own flag always wins. create_retail_order applies
+-- the same default to a Paid checkout that sends no flag.
+--
 -- Get File booked as COD (Sales Setup › Shipping Company): for a courier
 -- listed in app_config.data.codGetFileCompanies, Get File means the courier
 -- collected the money and sent its settlement file, so entering Get File is
@@ -385,6 +393,24 @@ AS $$
                jsonb_array_elements_text(CASE WHEN jsonb_typeof(c.data->'codGetFileCompanies') = 'array'
                                               THEN c.data->'codGetFileCompanies' ELSE '[]'::jsonb END) x
          WHERE c.id::TEXT = '1' AND lower(btrim(x)) = lower(btrim(p_company)));
+$$;
+
+-- Whether a Pay By is one of Sales Setup › Pay By's "COD payment methods"
+-- (app_config.data.codPaymentMethods, names compared case- and
+-- space-insensitively). With the key never saved, a Method named COD. The
+-- app's twin is utils/cashBankAccounts isCodPaymentMethod /
+-- defaultCodPaymentMethods.
+CREATE OR REPLACE FUNCTION wp_internal.op_cod_method(p_method TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT COALESCE(btrim(p_method), '') <> '' AND EXISTS (
+        SELECT 1
+          FROM app_config c,
+               jsonb_array_elements_text(CASE WHEN jsonb_typeof(c.data->'codPaymentMethods') = 'array'
+                                              THEN c.data->'codPaymentMethods' ELSE '["COD"]'::jsonb END) x
+         WHERE c.id::TEXT = '1' AND lower(btrim(x)) = lower(btrim(p_method)));
 $$;
 
 -- Whether an order at this payment status has its receipt on the books:
@@ -944,7 +970,10 @@ BEGIN
             p_order->>'tracking_number',
             p_order->>'shipping_status',
             p_order->>'remark',
-            COALESCE(NULLIF(p_order->>'cod_collected', '')::BOOLEAN, false));
+            -- No flag sent: a Paid checkout by a COD payment method is COD
+            -- (op_cod_method), anything else is not.
+            COALESCE(NULLIF(p_order->>'cod_collected', '')::BOOLEAN,
+                     v_status IN ('Paid', 'Settled', 'Paid/Settled') AND wp_internal.op_cod_method(NULLIF(p_order->>'payment_method', ''))));
     EXCEPTION WHEN unique_violation THEN
         RAISE EXCEPTION 'An order with this id already exists. Nothing was saved — try again.';
     END;
@@ -1211,6 +1240,14 @@ BEGIN
     -- Only a settlement is ever COD: a deposit, a delivery fee or a cancel
     -- saying so is ignored (and the stored flag left alone).
     IF NOT v_tgt_settled THEN v_cod := NULL; END IF;
+    -- A settlement paid by a COD payment method (Sales Setup › Pay By) is
+    -- COD when the save says nothing and the order was never marked — the
+    -- same default the Settle form's box starts from. Entering only: a
+    -- settled order re-saved keeps whatever was decided with its receipt.
+    IF v_cod IS NULL AND v_entering_paid AND NOT COALESCE(s.cod_collected, false)
+       AND wp_internal.op_cod_method(COALESCE(NULLIF(u->>'payment_method', ''), s.payment_method)) THEN
+        v_cod := true;
+    END IF;
     IF v_target = 'Get File' AND v_tgt_settled THEN
         IF v_entering_paid THEN
             -- Get File booked as COD: the courier holds the whole order's
@@ -1759,6 +1796,7 @@ GRANT EXECUTE ON FUNCTION wp_internal.op_unbook_cogs(TEXT, NUMERIC) TO anon, aut
 GRANT EXECUTE ON FUNCTION wp_internal.op_drop_draft_cogs_entries(TEXT, TEXT[]) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_reverse_booked_cogs(TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_cod_account() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_cod_method(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT, BOOLEAN) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_repoint_receipt_debit(TEXT, BOOLEAN, UUID, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_cogs_only(TEXT, DATE, TEXT) TO anon, authenticated;

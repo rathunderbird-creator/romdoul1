@@ -8,7 +8,7 @@ import { dayKeyFromDate } from '../utils/dateRange';
 import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
-import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, isCodPaymentMethod } from '../utils/cashBankAccounts';
 import { accountCurrency, formatMoneyLine, isKhrRow, type MoneyMeta, type MoneyRow } from '../utils/currency';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
@@ -74,7 +74,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     codDefault,
 }) => {
     const tx = useTx();
-    const { paymentMethods, khrExchangeRate } = useStore();
+    const { paymentMethods, khrExchangeRate, codPaymentMethods } = useStore();
     const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
@@ -84,6 +84,9 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     const [receiptNotes, setReceiptNotes] = useState<string>('');
     const showCod = codDefault !== undefined;
     const [codCollected, setCodCollected] = useState<boolean>(false);
+    // Until the user clicks the COD box, it follows the Method (see
+    // SettlePaymentModal).
+    const [codTouched, setCodTouched] = useState(false);
     const [accountsLoaded, setAccountsLoaded] = useState(false);
     const initializedRef = useRef(false);
 
@@ -120,9 +123,15 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
         setReceiptReference('');
         setReceiptNotes('');
         setCodCollected(codDefault === true);
+        setCodTouched(false);
         // field.reset follows the shop rate only; the rest are this open's inputs.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, initialMethod, initialDate, paymentMethods, finalizeMode, order.total, order.depositAmount, order.amountReceived, codDefault]);
+
+    useEffect(() => {
+        if (!isOpen || !showCod || codTouched) return;
+        setCodCollected(codDefault === true || isCodPaymentMethod(codPaymentMethods, selectedMethod));
+    }, [isOpen, showCod, codTouched, codDefault, codPaymentMethods, selectedMethod]);
 
     // Default "Deposited into" until the user picks one: the preferred id, then
     // a name match on the hint (a cash method picks the cash account), then Bank.
@@ -302,7 +311,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                 {showCod && (
                     <div data-receipt-cod>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={codCollected} onChange={e => setCodCollected(e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                            <input type="checkbox" checked={codCollected} onChange={e => { setCodTouched(true); setCodCollected(e.target.checked); }} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
                             {tx('ui.components.settle.codCollected', 'អ្នកដឹកប្រមូល (COD)')}
                         </label>
                         <p style={{ margin: '6px 0 0 24px', fontSize: '12px', color: 'var(--color-text-muted)' }}>

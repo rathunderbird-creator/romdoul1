@@ -14,7 +14,7 @@ import { sendTelegramOrderNotification } from '../utils/telegram';
 import { useTx, orderStatusDisplay } from './useTx';
 import { amountWarningLine, amountWarningText, checkKhrAmount, checkUsdAmount, formatKhr, formatRate, formatUsd, khrMeta, khrToUsd, resolveMoney, shopRate, usdToKhr } from '../utils/currency';
 import { roundCents } from '../utils/money';
-import { defaultCodCollected } from '../utils/cashBankAccounts';
+import { defaultCodCollected, isCodPaymentMethod } from '../utils/cashBankAccounts';
 
 interface CheckoutFormProps {
     cartItems: CartItem[];
@@ -53,7 +53,7 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 };
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, pages, shippingCompanies, paymentMethods, cities, addOnlineOrder, updateOrder, paymentClaimsReady, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
+    const { products, pages, shippingCompanies, paymentMethods, codPaymentMethods, cities, addOnlineOrder, updateOrder, paymentClaimsReady, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
     const { showToast } = useToast();
     const tx = useTx();
     const rate = shopRate(khrExchangeRate);
@@ -157,7 +157,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         shippingStatus: orderToEdit?.shipping?.status || 'Drafted',
         paymentStatus: orderToEdit?.paymentStatus || 'Unpaid',
         date: orderToEdit?.date || new Date().toISOString(),
-        codCollected: orderToEdit ? defaultCodCollected(orderToEdit) : false,
+        codCollected: orderToEdit ? defaultCodCollected(orderToEdit, codPaymentMethods) : false,
     };
 
     const [formData, setFormData] = useState(initialFormState);
@@ -397,7 +397,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 shippingStatus: orderToEdit.shipping?.status || 'Drafted',
                 paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Deposit' | 'Paid' | 'PdFee' | 'Get File' | 'Cancel') || 'Unpaid',
                 date: orderToEdit.date || '',
-                codCollected: defaultCodCollected(orderToEdit),
+                codCollected: defaultCodCollected(orderToEdit, codPaymentMethods),
             });
             // An order sold above its items' price (a negative discount)
             // reopens with the selling price ticked. A positive discount
@@ -1266,7 +1266,15 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         className="search-input"
                                         style={{ flex: 1, padding: '10px 12px', background: formData.paymentAfterDelivery ? 'var(--color-bg)' : 'white' }}
                                         value={formData.paymentMethod || ''}
-                                        onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as any })}
+                                        onChange={e => setFormData({
+                                            ...formData,
+                                            paymentMethod: e.target.value as Sale['paymentMethod'],
+                                            // A Pay By ticked as a COD payment method (Sales
+                                            // Setup) ticks the Paid save's COD box; any other
+                                            // puts it back at the order's own default.
+                                            codCollected: isCodPaymentMethod(codPaymentMethods, e.target.value)
+                                                || (orderToEdit ? defaultCodCollected({ ...orderToEdit, paymentMethod: e.target.value }, codPaymentMethods) : false),
+                                        })}
                                         disabled={formData.paymentAfterDelivery}
                                     >
                                         <option value="">ជ្រើសរើសវិធីសាស្ត្រទូទាត់...</option>

@@ -70,14 +70,23 @@ const byCode = <T extends CashBankCandidate>(a: T, b: T) => (a.account_code || '
 // shipping state decides. The user can flip it either way. Every path that
 // marks an order Paid sends this default (the Settle / Record Receipt
 // forms as the box's start, bulk Paid and the OM2 drawer as the value).
+//
+// `codMethods` (Sales Setup › Pay By, "COD payment methods" —
+// app_config.codPaymentMethods, the store's `codPaymentMethods`): an order
+// whose Pay By is one of them is COD whatever its shipping state — the
+// Method says the courier collects. The SQL twin, set_order_payment's
+// wp_internal.op_cod_method, applies the same list when a save says
+// nothing about the flag.
 const SETTLED_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
 export function defaultCodCollected(order: {
     codCollected?: boolean | null;
     paymentStatus?: string | null;
+    paymentMethod?: string | null;
     shipping?: { company?: string | null; status?: string | null } | null;
-}): boolean {
+}, codMethods?: readonly string[] | null): boolean {
     if (order.codCollected === true) return true;
     if (order.codCollected === false && SETTLED_STATUSES.includes(order.paymentStatus || '')) return false;
+    if (isCodPaymentMethod(codMethods, order.paymentMethod)) return true;
     // Get File: the courier collected the money and sent its settlement file
     // (add_cod_get_file.sql stores true on entering it), so it counts even
     // when the courier's name was never filled in.
@@ -97,12 +106,25 @@ export function getFileBooksCod(list: readonly string[] | null | undefined, comp
 // match as the database). Removing a courier unticks exactly these, and
 // sends no codGetFileCompanies change at all when there are none: that key
 // needs manage_orders, so an untouched tick must not block a checkout
-// clerk's courier removal.
+// clerk's courier removal. Also the match for the COD payment methods list
+// (isCodPaymentMethod / removePaymentMethod).
 export function codTicksFor(list: readonly string[] | null | undefined, company: string | null | undefined): string[] {
     const c = (company || '').trim().toLowerCase();
     if (c === '') return [];
     return (list || []).filter(x => (x || '').trim().toLowerCase() === c);
 }
+
+// Whether a Pay By is ticked in Sales Setup › Pay By as a "COD payment
+// method" (app_config.codPaymentMethods; absent, a Method named COD) — the
+// match set_order_payment's wp_internal.op_cod_method makes.
+export function isCodPaymentMethod(list: readonly string[] | null | undefined, method: string | null | undefined): boolean {
+    return codTicksFor(list, method).length > 0;
+}
+
+// The list Sales Setup shows and the forms use when the store has never
+// saved one: a Method named COD, if there is one.
+export const defaultCodPaymentMethods = (paymentMethods: readonly string[] | null | undefined): string[] =>
+    (paymentMethods || []).filter(m => (m || '').trim().toLowerCase() === 'cod');
 
 export function pickCashBankAccount<T extends CashBankCandidate>(
     pool: T[],

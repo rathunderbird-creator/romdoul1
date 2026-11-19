@@ -7,7 +7,7 @@ import { dayKeyFromDate } from '../utils/dateRange';
 import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField, syncFieldToAccount } from '../hooks/useMoneyField';
-import { defaultCashBankAccountId } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, isCodPaymentMethod } from '../utils/cashBankAccounts';
 import { accountCurrency, formatUsd, khrToUsd, SNAP_TOLERANCE_USD, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { roundCents } from '../utils/money';
 
@@ -80,9 +80,13 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     codDefault
 }) => {
     const tx = useTx();
-    const { paymentMethods, khrExchangeRate } = useStore();
+    const { paymentMethods, khrExchangeRate, codPaymentMethods } = useStore();
     const showCod = codDefault !== undefined;
     const [codCollected, setCodCollected] = useState<boolean>(false);
+    // Until the user clicks the COD box, it follows the Method: a Pay By
+    // ticked as a COD payment method in Sales Setup ticks it, any other
+    // leaves it at codDefault.
+    const [codTouched, setCodTouched] = useState(false);
     // The amount actually received, in dollars or riel (USD | KHR toggle,
     // kept in step with the Deposited into account). A riel figure within a
     // few cents of the amount due books exactly the amount due (snapToUsd).
@@ -129,6 +133,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
             setSettleDate(initialDate ? (/^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : dayKeyFromDate(new Date(initialDate))) : localYMD());
             setDepositAccountId('');
             setCodCollected(codDefault === true);
+            setCodTouched(false);
         }
         // paymentAccounts stays OUT of these deps: the accounts arrive after the
         // modal opens, and re-running this then would clobber whatever date or
@@ -136,6 +141,11 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
         // effect below for exactly that reason.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, initialMethod, initialDate, paymentMethods, preferInitialMethod, codDefault]);
+
+    useEffect(() => {
+        if (!isOpen || !showCod || codTouched) return;
+        setCodCollected(codDefault === true || isCodPaymentMethod(codPaymentMethods, selectedMethod));
+    }, [isOpen, showCod, codTouched, codDefault, codPaymentMethods, selectedMethod]);
 
     // Seed the account default once the accounts arrive — but never overwrite
     // a pick the user already made.
@@ -301,7 +311,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                             <input
                                 type="checkbox"
                                 checked={codCollected}
-                                onChange={e => setCodCollected(e.target.checked)}
+                                onChange={e => { setCodTouched(true); setCodCollected(e.target.checked); }}
                                 style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                             />
                             {tx('ui.components.settle.codCollected', 'អ្នកដឹកប្រមូល (COD)')}

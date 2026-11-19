@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
-import { codTicksFor, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
+import { codTicksFor, defaultCodPaymentMethods, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
 import { isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
 import { tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 import { insertJournalLines } from '../utils/journalEntryLines';
@@ -59,6 +59,9 @@ interface ConfigState {
     // Couriers whose Get File books the receipt to 1210 COD receivable at once
     // (Sales Setup › Shipping Company; set_order_payment reads this key).
     codGetFileCompanies?: string[];
+    // Pay By methods whose receipt is courier-collected (Sales Setup › Pay
+    // By; set_order_payment reads this key). Absent: a Method named COD.
+    codPaymentMethods?: string[];
     trackingUrlTemplates?: Record<string, string>; // Company -> tracking page URL with {tracking}
     users?: User[];
     roles?: Role[];
@@ -1988,7 +1991,42 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const removePaymentMethod = (name: string) => {
-        return updateConfigOps({ paymentMethods: { op: 'removeItems', values: [name] } });
+        // A removed Method is unticked from "COD payment methods" too, on
+        // the same terms as removeShippingCompany's codGetFileCompanies
+        // untick: that key needs manage_orders (sg_config_key_check), and the
+        // checkout form's gear lets create_orders users remove Methods, so
+        // the untick goes only when the user may edit ticks or this copy
+        // shows the Method ticked — and only when the list was ever saved
+        // (an unsaved one is derived from the Methods, nothing to untick).
+        const ticks = Array.isArray(config.codPaymentMethods) ? codTicksFor(config.codPaymentMethods, name) : [];
+        const canTick = hasPermission('manage_orders') || hasPermission('manage_settings');
+        const untick = Array.from(new Set([name, ...ticks]));
+        return updateConfigOps({
+            paymentMethods: { op: 'removeItems', values: [name] },
+            ...((Array.isArray(config.codPaymentMethods) && (canTick || ticks.length)) ? { codPaymentMethods: { op: 'removeItems', values: untick } } : {}),
+        });
+    };
+
+    // The Pay By methods ticked as COD: the saved list, else a Method named
+    // COD (utils/cashBankAccounts defaultCodPaymentMethods — the SQL twin
+    // op_cod_method falls back to the same name).
+    const codPaymentMethods = Array.isArray(config.codPaymentMethods)
+        ? config.codPaymentMethods
+        : defaultCodPaymentMethods(config.paymentMethods);
+
+    // Ticks / unticks a Pay By as a COD payment method. The first tick on a
+    // store that never saved the list writes the whole derived list, so the
+    // implied COD entry is kept (an append on an absent key would drop it).
+    const setCodPaymentMethod = (method: string, on: boolean) => {
+        if (!Array.isArray(config.codPaymentMethods)) {
+            const next = on ? [...codPaymentMethods.filter(m => m !== method), method] : codPaymentMethods.filter(m => m !== method);
+            return updateConfigOps({ codPaymentMethods: { op: 'set', value: next } });
+        }
+        return updateConfigOps({
+            // Untick every stored spelling the checkbox matched.
+            codPaymentMethods: on ? { op: 'append', items: [method] }
+                : { op: 'removeItems', values: Array.from(new Set([method, ...codTicksFor(config.codPaymentMethods, method)])) },
+        });
     };
 
     const addCity = (name: string) => {
@@ -4796,6 +4834,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             shippingRates: config.shippingRates || {},
             codGetFileCompanies: config.codGetFileCompanies || [],
             setCodGetFileCompany,
+            codPaymentMethods,
+            setCodPaymentMethod,
             updateShippingRate,
             updateShippingRates,
             trackingUrlTemplates: config.trackingUrlTemplates || {},

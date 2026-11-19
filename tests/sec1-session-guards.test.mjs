@@ -323,6 +323,13 @@ check('config: codGetFileCompanies refused for salesman (create_orders)', noPerm
 check('config: shippingCompanies removal alone ok for salesman (checkout gear)', await cfg({ shippingCompanies: { op: 'removeItems', values: ['Gone Co'] } }, S.sal) === '');
 check('config: removal bundled with a COD untick refused for salesman (why the app sends it only for a ticked courier)',
     noPerm(await cfg({ shippingCompanies: { op: 'removeItems', values: ['Gone Co'] }, codGetFileCompanies: { op: 'removeItems', values: ['Gone Co'] } }, S.sal)));
+// Sales Setup › Pay By's COD payment methods: the same terms as the courier
+// ticks (a ticked Method changes how a settlement books money).
+check('config: codPaymentMethods ok for manage_orders without manage_settings', await cfg({ codPaymentMethods: { op: 'set', value: ['COD'] } }, S.ord) === '');
+check('config: codPaymentMethods refused for salesman (create_orders)', noPerm(await cfg({ codPaymentMethods: { op: 'removeItems', values: ['COD'] } }, S.sal)));
+check('config: paymentMethods removal alone ok for salesman (checkout gear)', await cfg({ paymentMethods: { op: 'removeItems', values: ['Gone Pay'] } }, S.sal) === '');
+check('config: paymentMethods removal bundled with a COD untick refused for salesman (why the app sends it only for a ticked Method)',
+    noPerm(await cfg({ paymentMethods: { op: 'removeItems', values: ['Gone Pay'] }, codPaymentMethods: { op: 'removeItems', values: ['Gone Pay'] } }, S.sal)));
 check('config: salesmen and customerCare ok for manage_orders (Sales Setup lists)',
     await cfg({ salesmen: { op: 'append', items: ['Dara'] } }, S.ord) === '' && await cfg({ customerCare: { op: 'append', items: ['Nita'] } }, S.ord) === '');
 

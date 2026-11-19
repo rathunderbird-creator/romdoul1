@@ -151,6 +151,12 @@
 --                      Shipping Company; set_order_payment reads it to book
 --                      Get File as COD, so create_orders is NOT enough. The
 --                      app only sends it when a ticked courier is removed.)
+--     codPaymentMethods
+--                      manage_settings / manage_orders (Sales Setup › Pay By
+--                      "COD payment methods"; set_order_payment reads it to
+--                      book a settlement as COD. Same terms as the courier
+--                      ticks: the app sends the untick on a Method removal
+--                      only for a ticked Method or a user who may edit ticks.)
 --     anything else    manage_settings
 --
 -- USERS TABLE LOCKDOWN (finishes SEC-3 server-side)
@@ -978,6 +984,8 @@ BEGIN
         WHEN 'trackingUrlTemplates' THEN ARRAY['manage_settings', 'manage_orders', 'manage_inventory']
         -- Sales Setup › Shipping Company "Get File books the COD receipt".
         WHEN 'codGetFileCompanies'  THEN ARRAY['manage_settings', 'manage_orders']
+        -- Sales Setup › Pay By "COD payment methods".
+        WHEN 'codPaymentMethods'    THEN ARRAY['manage_settings', 'manage_orders']
         ELSE ARRAY['manage_settings']
     END;
     IF NOT EXISTS (

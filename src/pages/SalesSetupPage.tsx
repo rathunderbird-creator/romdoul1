@@ -19,7 +19,7 @@ import { fill } from '../i18n/translate';
 // The Provinces section: address tree (gazetteer + custom/hidden districts
 // and communes) with the Shipping Points in each commune.
 import ProvincesSection from './salesSetup/ProvincesSection';
-import { getFileBooksCod } from '../utils/cashBankAccounts';
+import { getFileBooksCod, isCodPaymentMethod } from '../utils/cashBankAccounts';
 import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
 
 type SectionKey =
@@ -171,38 +171,42 @@ const ShippingCompanyFields: React.FC<{ company: string }> = ({ company }) => {
     );
 };
 
-// Which couriers' "Get File" books the order's receipt at once to 1210 COD
-// receivable (courier) — app_config.codGetFileCompanies, read by the
-// database's set_order_payment (migrations/add_order_payment_functions.sql).
-// Each tick saves on its own (append / removeItems), like the lists above.
-const CodGetFileSection: React.FC = () => {
-    const { shippingCompanies, codGetFileCompanies, setCodGetFileCompany } = useStore();
+// A card of ticks over one of the lists above (a courier, a Pay By): each
+// tick saves on its own (append / removeItems), like the lists themselves.
+// `labels` is the i18n branch: title, help, on, off.
+const TickListSection: React.FC<{
+    labels: string;
+    items: string[];
+    list: string[];
+    isOn: (list: readonly string[], name: string) => boolean;
+    save: (name: string, on: boolean) => Promise<void>;
+}> = ({ labels, items, list, isOn, save }) => {
     const { showToast } = useToast();
     const { t } = useLanguage();
     const [busy, setBusy] = useState<string | null>(null);
-    const toggle = (company: string, on: boolean) => {
+    const toggle = (name: string, on: boolean) => {
         if (busy) return;
-        setBusy(company);
-        setCodGetFileCompany(company, on)
+        setBusy(name);
+        save(name, on)
             .catch((err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error'))
             .finally(() => setBusy(null));
     };
     return (
         <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{t('ui.admin.salesSetup.codGetFile.title')}</div>
-            <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{t('ui.admin.salesSetup.codGetFile.help')}</p>
+            <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{t(`${labels}.title`)}</div>
+            <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{t(`${labels}.help`)}</p>
             <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
-                {shippingCompanies.length === 0 ? (
+                {items.length === 0 ? (
                     <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.salesSetup.noneYet')}</div>
-                ) : shippingCompanies.map(company => {
-                    const on = getFileBooksCod(codGetFileCompanies, company);
+                ) : items.map(name => {
+                    const on = isOn(list, name);
                     return (
-                        <label key={company} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-main)', cursor: busy ? 'wait' : 'pointer' }}>
-                            <input type="checkbox" checked={on} disabled={!!busy} onChange={e => toggle(company, e.target.checked)}
+                        <label key={name} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-main)', cursor: busy ? 'wait' : 'pointer' }}>
+                            <input type="checkbox" checked={on} disabled={!!busy} onChange={e => toggle(name, e.target.checked)}
                                 style={{ width: '16px', height: '16px', cursor: busy ? 'wait' : 'pointer' }} />
-                            <span style={{ flex: 1 }}>{company}</span>
+                            <span style={{ flex: 1 }}>{name}</span>
                             <span style={{ fontSize: '12px', color: on ? '#4c5fd0' : 'var(--color-text-secondary)', fontWeight: on ? 600 : 400 }}>
-                                {on ? t('ui.admin.salesSetup.codGetFile.on') : t('ui.admin.salesSetup.codGetFile.off')}
+                                {on ? t(`${labels}.on`) : t(`${labels}.off`)}
                             </span>
                         </label>
                     );
@@ -210,6 +214,27 @@ const CodGetFileSection: React.FC = () => {
             </div>
         </div>
     );
+};
+
+// Which couriers' "Get File" books the order's receipt at once to 1210 COD
+// receivable (courier) — app_config.codGetFileCompanies, read by the
+// database's set_order_payment (migrations/add_order_payment_functions.sql).
+const CodGetFileSection: React.FC = () => {
+    const { shippingCompanies, codGetFileCompanies, setCodGetFileCompany } = useStore();
+    return <TickListSection labels="ui.admin.salesSetup.codGetFile" items={shippingCompanies} list={codGetFileCompanies}
+        isOn={getFileBooksCod} save={setCodGetFileCompany} />;
+};
+
+// Which Pay By methods mean "the courier collects": an order paid by one of
+// them opens the Settle / Record Receipt / Checkout "អ្នកដឹកប្រមូល (COD)"
+// box ticked, so its receipt lands on 1210 COD receivable (courier) —
+// app_config.codPaymentMethods, also read by set_order_payment
+// (wp_internal.op_cod_method) when a save says nothing about the flag.
+// Never saved: a Method named COD, if there is one.
+const CodMethodsSection: React.FC = () => {
+    const { paymentMethods, codPaymentMethods, setCodPaymentMethod } = useStore();
+    return <TickListSection labels="ui.admin.salesSetup.codMethods" items={paymentMethods} list={codPaymentMethods}
+        isOn={isCodPaymentMethod} save={setCodPaymentMethod} />;
 };
 
 const NUMBERING_FIELDS: { key: 'quotations' | 'salesOrders' | 'invoices' | 'receipts' | 'refunds'; label: string; def: string }[] = [
@@ -438,8 +463,11 @@ const SalesSetupPage: React.FC = () => {
 
             {/* ── Pay By: the payment methods Checkout and the settle forms offer. ── */}
             {section === 'payBy' && (
-                <SetupListSection title={t('ui.admin.salesSetup.sections.payBy')} placeholder={t('ui.admin.salesSetup.addPayBy')} items={paymentMethods}
-                    onAdd={addPaymentMethod} onRemove={removePaymentMethod} help={t('ui.admin.salesSetup.payByHelp')} />
+                <div style={{ flex: '1 1 560px', maxWidth: '680px', display: 'grid', gap: '20px' }}>
+                    <SetupListSection title={t('ui.admin.salesSetup.sections.payBy')} placeholder={t('ui.admin.salesSetup.addPayBy')} items={paymentMethods}
+                        onAdd={addPaymentMethod} onRemove={removePaymentMethod} help={t('ui.admin.salesSetup.payByHelp')} />
+                    <CodMethodsSection />
+                </div>
             )}
 
             {/* ── Salesmen / Customer Care: the staff names Orders Management,

@@ -26,6 +26,11 @@
 //     and keeps the date; taking it back removes the receipt and clears the
 //     flag; an unticked courier, or a Get File from before the tick, books
 //     at Paid as before; restocking a booked Get File gives its income back;
+//   * COD payment methods (app_config.codPaymentMethods, op_cod_method): a
+//     settlement paid by a ticked Method with no flag in the save is COD;
+//     the save's own flag wins; another Method, a deposit, a settled order
+//     re-saved are unchanged; the key never saved means a Method named COD;
+//     create_retail_order stores the default for a Paid checkout;
 //   * the FIFO check stays at variance 0 throughout.
 // See tests/README.md for how to run it.
 import { makeDb, harness, mig, strip } from './fifo-test-db.mjs';
@@ -380,6 +385,111 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
     const r12 = await getFile('G12', 'Unpaid');
     check('G12: the app gets get_file_booked true back', r12.payment && r12.payment.get_file_booked === true, r12.payment);
     await tick([]);
+}
+
+// ---------------------------------------------------------------------------
+// 11. COD payment methods (app_config.data.codPaymentMethods).
+// ---------------------------------------------------------------------------
+{
+    const methods = async list => q(list === null
+        ? `UPDATE app_config SET data = COALESCE(data, '{}'::jsonb) - 'codPaymentMethods' WHERE id = 1`
+        : `UPDATE app_config SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{codPaymentMethods}', '${JSON.stringify(list)}'::jsonb) WHERE id = 1`);
+    const isCod = async m => (await one(`SELECT wp_internal.op_cod_method($1) AS b`, [m])).b;
+    const settle = (id, extra) => pay(id, 'Unpaid', { payment_status: 'Paid', amount_received: 17, settle_date: DAY, post_to_ledger: true, ...extra });
+    const direct = async id => {
+        // Not shipped and no courier: the shipping default alone says "not COD".
+        await order(id, 17, 1, 'Pending');
+        await q(`UPDATE sales SET shipping_company = NULL WHERE id = $1`, [id]);
+    };
+
+    // The key never saved: a Method named COD (case and spaces ignored).
+    await methods(null);
+    check('op_cod_method, nothing saved: " cod " yes; Bank, empty, null no',
+        (await isCod(' cod ')) === true && (await isCod('Bank')) === false && (await isCod('')) === false && (await isCod(null)) === false);
+    await methods(['ABA', ' j&t COD ']);
+    check('op_cod_method, list saved: j&t cod yes, COD no', (await isCod('j&t cod')) === true && (await isCod('COD')) === false);
+    await methods([]);
+    check('op_cod_method, empty list: COD no', (await isCod('COD')) === false);
+
+    // M1: Method COD in the save, no flag: Dr 1210, flag stored and returned.
+    await methods(['COD']);
+    await direct('M1');
+    const m1 = await settle('M1', { payment_method: 'COD' });
+    const em1 = await entry('TX-' + (await tx('M1')).id);
+    check('M1 Method COD, no flag sent: Dr 1210 17 / Cr revenue 17, COGS 3, nothing on cash/bank',
+        near(em1.cod_dr, 17) && near(em1.bank_dr, 0) && near(em1.rev_cr, 17) && near(em1.cogs, 3), em1);
+    check('M1: the money line says the courier holds it, pay_by COD on the income row',
+        /^COD held by courier — Cust M1$/.test(em1.money_desc) && (await tx('M1')).pay_by === 'COD', em1.money_desc);
+    check('M1: cod_collected true on the row and in the reply, no notice',
+        (await codFlag('M1')) === true && m1.payment.cod_collected === true && (m1.notices || []).length === 0, [m1.payment, m1.notices]);
+
+    // M2: Method COD but the save says false: the save wins.
+    await direct('M2');
+    await settle('M2', { payment_method: 'COD', cod_collected: false });
+    const em2 = await entry('TX-' + (await tx('M2')).id);
+    check('M2 Method COD, flag false sent: Dr bank 17, nothing on 1210, flag false', near(em2.bank_dr, 17) && near(em2.cod_dr, 0) && (await codFlag('M2')) === false, em2);
+
+    // M3: another Method, no flag: the bank, as before.
+    await direct('M3');
+    await settle('M3', { payment_method: 'ABA' });
+    const em3 = await entry('TX-' + (await tx('M3')).id);
+    check('M3 Method ABA, no flag: Dr bank 17, flag false', near(em3.bank_dr, 17) && near(em3.cod_dr, 0) && (await codFlag('M3')) === false, em3);
+
+    // M3 re-saved as a settled order with Method COD and no flag: untouched
+    // (the rule applies on entering Paid only).
+    const m3b = await pay('M3', 'Paid', { payment_method: 'COD' });
+    const em3b = await entry('TX-' + (await tx('M3')).id);
+    check('M3 settled, re-saved with Method COD: still Dr bank 17, flag false, no notice',
+        near(em3b.bank_dr, 17) && near(em3b.cod_dr, 0) && (await codFlag('M3')) === false && (m3b.notices || []).length === 0, [em3b, m3b.notices]);
+
+    // M4: the order's stored Method counts when the save names none.
+    await direct('M4');
+    await q(`UPDATE sales SET payment_method = 'COD' WHERE id = 'M4'`);
+    await settle('M4', {});
+    const em4 = await entry('TX-' + (await tx('M4')).id);
+    check('M4 stored Method COD, no flag: Dr 1210 17, flag true', near(em4.cod_dr, 17) && near(em4.bank_dr, 0) && (await codFlag('M4')) === true, em4);
+
+    // M5: a deposit by a COD Method is never COD; its COD remainder is.
+    await direct('M5');
+    await q(`UPDATE sales SET total = 100 WHERE id = 'M5'`);
+    await q(`UPDATE sale_items SET price = 100 WHERE sale_id = 'M5'`);
+    await pay('M5', 'Unpaid', { payment_status: 'Deposit', deposit_amount: 30, deposit_date: DAY, amount_received: 30, post_to_ledger: true, payment_method: 'COD' });
+    const dm5 = await entry('TX-' + (await tx('M5', 'កក់ប្រាក់')).id);
+    check('M5 deposit by Method COD: Dr bank 30, nothing on 1210, flag false', near(dm5.bank_dr, 30) && near(dm5.cod_dr, 0) && (await codFlag('M5')) === false, dm5);
+    await pay('M5', 'Deposit', { payment_status: 'Paid', amount_received: 100, settle_date: DAY, post_to_ledger: true });
+    const rm5 = await entry('TX-' + (await tx('M5')).id);
+    check('M5 settled, Method COD stored: the 70 remainder Dr 1210 70, flag true', near(rm5.cod_dr, 70) && near(rm5.bank_dr, 0) && (await codFlag('M5')) === true, rm5);
+
+    // M6: the key never saved: a Method named COD still counts; 'Cash' does not.
+    await methods(null);
+    await direct('M6');
+    await settle('M6', { payment_method: 'cod' });
+    check('M6 nothing saved, Method cod: Dr 1210 17', near((await entry('TX-' + (await tx('M6')).id)).cod_dr, 17));
+    await direct('M7');
+    await settle('M7', { payment_method: 'Cash' });
+    check('M7 nothing saved, Method Cash: Dr bank 17', near((await entry('TX-' + (await tx('M7')).id)).bank_dr, 17));
+
+    // M8: an explicit empty list switches the name rule off.
+    await methods([]);
+    await direct('M8');
+    await settle('M8', { payment_method: 'COD' });
+    check('M8 empty list, Method COD: Dr bank 17, flag false', near((await entry('TX-' + (await tx('M8')).id)).bank_dr, 17) && (await codFlag('M8')) === false);
+
+    // create_retail_order: a Paid checkout without the key takes the default.
+    await methods(['COD']);
+    const mk = async (id, extra) => (await one(`SELECT public.create_retail_order($1::jsonb, $2::jsonb, '{}'::jsonb) AS r`, [
+        JSON.stringify({ id, total: 17, customer_snapshot: { name: 'Cust ' + id }, ...extra }),
+        JSON.stringify([{ id: 'C', name: 'Cable', price: 17, quantity: 1 }]),
+    ])).r;
+    await mk('M9', { payment_status: 'Paid', amount_received: 17, payment_method: 'COD' });
+    check('M9 Paid checkout by COD, no key: cod_collected true', (await codFlag('M9')) === true);
+    await mk('M10', { payment_status: 'Paid', amount_received: 17, payment_method: 'COD', cod_collected: false });
+    check('M10 Paid checkout by COD, key false: cod_collected false', (await codFlag('M10')) === false);
+    await mk('M11', { payment_status: 'Unpaid', payment_method: 'COD' });
+    check('M11 Unpaid checkout by COD: cod_collected false (decided at settle)', (await codFlag('M11')) === false);
+    await mk('M12', { payment_status: 'Paid', amount_received: 17, payment_method: 'ABA' });
+    check('M12 Paid checkout by ABA: cod_collected false', (await codFlag('M12')) === false);
+    await checkBalanced('M1-M12');
 }
 
 done();

@@ -269,6 +269,13 @@ export interface StoreContextType {
     // codGetFileCompanies, read by set_order_payment).
     codGetFileCompanies: string[];
     setCodGetFileCompany: (company: string, on: boolean) => Promise<void>;
+    // Pay By methods whose receipt is courier-collected: the Settle / Record
+    // Receipt / Checkout "អ្នកដឹកប្រមូល (COD)" box starts ticked for an order
+    // paid by one of them (Sales Setup › Pay By; app_config
+    // codPaymentMethods, read by set_order_payment when a save says nothing
+    // about the flag). Never saved: a Method named COD, if there is one.
+    codPaymentMethods: string[];
+    setCodPaymentMethod: (method: string, on: boolean) => Promise<void>;
     salesmen: string[];
     categories: string[];
     pages: string[];

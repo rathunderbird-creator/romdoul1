@@ -907,7 +907,7 @@ async function paidMoneyOf(orderId: string, kind: PaymentKind, bookedUsd: number
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods } = useStore();
     const { t } = useLanguage();
     // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
     const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
@@ -2751,7 +2751,7 @@ const Orders: React.FC = () => {
                         // collected the money (the Settle box's default), when
                         // the receipt debits 1210 COD receivable instead.
                         individualUpdates.postToLedger = true;
-                        individualUpdates.codCollected = defaultCodCollected(order);
+                        individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods);
                     } else if (value === 'Get File') {
                         // File collected, money not settled yet — no settle date. Keep a
                         // deposit visible in Received when one was taken.
@@ -5169,7 +5169,7 @@ const Orders: React.FC = () => {
                     // "អ្នកដឹកប្រមូល (COD)": on for an order a courier has out / has
                     // delivered or one waiting for its payment proof, off for a
                     // direct transfer; a paid order re-opened keeps its flag.
-                    codDefault={defaultCodCollected(paymentMethodTargetOrder)}
+                    codDefault={defaultCodCollected(paymentMethodTargetOrder, codPaymentMethods)}
                     description={paymentMethodTargetOrder.paymentClaim
                         ? fill(t('ui.orders.claim.confirmingDesc'), {
                             kind: paymentMethodTargetOrder.paymentClaim.status === 'Paid' ? t('ui.orders.claim.payment') : t('ui.orders.claim.deposit'),
