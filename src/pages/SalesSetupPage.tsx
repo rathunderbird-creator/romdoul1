@@ -29,6 +29,10 @@ import type { SalesSettings } from '../types';
 import { discountPresetProblem, discountPresetValueLabel } from '../utils/discountPresets';
 import { courierDeliveryType } from '../utils/deliveryTypes';
 import { MAX_QUOTATION_VALIDITY_DAYS, quotationValidityDays, quotationValidityInput } from '../utils/quotationValidity';
+import {
+    DEFAULT_PAYMENT_REQUEST_MESSAGE, MAX_PAYMENT_REQUEST_LENGTH, PAYMENT_REQUEST_FIELDS, fillPaymentRequest,
+    paymentRequestInput, paymentRequestTemplate, paymentRequestText, unknownPaymentRequestFields,
+} from '../utils/paymentRequest';
 import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
 
 type SectionKey =
@@ -367,6 +371,88 @@ const QuotationValidityDefault: React.FC<{ fieldId: (name: string) => string }> 
     );
 };
 
+// Defaults › Payment request message: the text Order Details › Copy payment
+// request fills from an order. Saves on leaving the box (empty, or the
+// default text, goes back to the default); a sample shows the result.
+const PAYMENT_REQUEST_SAMPLE: Record<string, string> = {
+    name: 'Sok Dara', phone: '012 345 678', order: '07', date: '20-11-2026',
+    items: ['- Rice cooker x1 ($25.00)', '- Kettle x2 ($20.00)'].join('\n'), total: '$45.00', paid: '$10.00',
+    due: '$35.00', dueKhr: '៛143,500', page: 'Romdoul Page', store: 'Romdoul',
+};
+const PaymentRequestDefault: React.FC<{ fieldId: (name: string) => string }> = ({ fieldId }) => {
+    const { t } = useLanguage();
+    const { showToast } = useToast();
+    const { salesSettings, updateSalesSetting, storeName } = useStore();
+    const savedRaw = typeof salesSettings.paymentRequestMessage === 'string' ? salesSettings.paymentRequestMessage : '';
+    const current = paymentRequestTemplate(savedRaw);
+    const [draft, setDraft] = useState(current);
+    const [saving, setSaving] = useState(false);
+    // Follow a save made elsewhere (another tab, another user).
+    React.useEffect(() => { setDraft(current); }, [current]);
+    // The saved text's length (ends trimmed), the same rule the save uses.
+    const savedLength = paymentRequestText(draft).length;
+    const tooLong = paymentRequestInput(draft) === null;
+    const unknown = unknownPaymentRequestFields(draft);
+    const save = (value: string) => {
+        if (saving) return;
+        if (value === (savedRaw.trim() ? savedRaw : '')) { setDraft(paymentRequestTemplate(value)); return; }
+        setSaving(true);
+        updateSalesSetting('paymentRequestMessage', value)
+            .catch((err: unknown) => {
+                setDraft(current);
+                showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error');
+            })
+            .finally(() => setSaving(false));
+    };
+    const commit = () => {
+        const value = paymentRequestInput(draft);
+        if (value === null) return; // too long: the message below says so
+        save(value);
+    };
+    const id = fieldId('paymentRequestMessage');
+    const preview = fillPaymentRequest(draft, { ...PAYMENT_REQUEST_SAMPLE, store: storeName || PAYMENT_REQUEST_SAMPLE.store });
+    const isDefault = !savedRaw.trim();
+    return (
+        <div>
+            <label htmlFor={id} style={labelStyle}>{t('ui.admin.salesSetup.paymentRequestMessage')}</label>
+            {/* readOnly while saving keeps focus (disabled would drop it). */}
+            <textarea id={id} className="setup-field" rows={8} value={draft} readOnly={saving} aria-busy={saving}
+                aria-invalid={tooLong} aria-describedby={`${id}-help`}
+                style={{ ...inputStyle, fontFamily: 'inherit', lineHeight: 1.45, resize: 'vertical' }}
+                onChange={e => setDraft(e.target.value)} onBlur={commit} />
+            <div id={`${id}-help`} style={helpStyle}>
+                {t('ui.admin.salesSetup.paymentRequestHelp')}{' '}
+                {PAYMENT_REQUEST_FIELDS.map((f, i) => <React.Fragment key={f}>{i ? ' ' : ''}<code>{'{' + f + '}'}</code></React.Fragment>)}
+            </div>
+            {tooLong && (
+                <div role="alert" style={{ ...helpStyle, color: 'var(--color-red)' }}>
+                    {fill(t('ui.admin.salesSetup.paymentRequestTooLong'), { max: MAX_PAYMENT_REQUEST_LENGTH, n: savedLength })}
+                </div>
+            )}
+            {!tooLong && unknown.length > 0 && (
+                <div role="status" style={{ ...helpStyle, color: 'var(--color-text-main)' }}>
+                    {fill(t('ui.admin.salesSetup.paymentRequestUnknown'), { fields: unknown.map(f => '{' + f + '}').join(', ') })}
+                </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px', flexWrap: 'wrap' }}>
+                <span style={{ ...helpStyle, marginTop: 0 }}>{t(isDefault ? 'ui.admin.salesSetup.paymentRequestIsDefault' : 'ui.admin.salesSetup.paymentRequestIsCustom')}</span>
+                {!isDefault && (
+                    <button type="button" className="secondary-button" disabled={saving}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => { setDraft(DEFAULT_PAYMENT_REQUEST_MESSAGE); save(''); }}
+                        style={{ padding: '5px 10px', fontSize: '12px' }}>
+                        {t('ui.admin.salesSetup.paymentRequestReset')}
+                    </button>
+                )}
+            </div>
+            <div style={{ ...labelStyle, fontWeight: 500, marginTop: '12px' }}>{t('ui.admin.salesSetup.paymentRequestPreview')}</div>
+            <pre style={{ margin: 0, padding: '10px 12px', borderRadius: '8px', background: 'var(--color-bg)', border: '1px dashed var(--color-border)', fontFamily: 'inherit', fontSize: '12.5px', color: 'var(--color-text-main)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.45 }}>
+                {preview}
+            </pre>
+        </div>
+    );
+};
+
 // Delivery Types › each shipping company's type. An order shows its
 // courier's type (Orders "Delivery type" column), past orders too, so this
 // is the only place a type is set. Each select saves on change.
@@ -504,7 +590,6 @@ const NOT_USED_ROWS: { label: string; today: string }[] = [
     { label: 'defaultWarehouse', today: 'warehouse' },
     { label: 'holdsStock', today: 'holdsStock' },
     { label: 'documentNumbering', today: 'numbering' },
-    { label: 'paymentRequestMessage', today: 'paymentRequest' },
 ];
 const NotUsedYet: React.FC = () => {
     const { t } = useLanguage();
@@ -628,6 +713,8 @@ const SalesSetupPage: React.FC = () => {
                     <DepositAccountDefaults fieldId={fieldId} />
 
                     <QuotationValidityDefault fieldId={fieldId} />
+
+                    <PaymentRequestDefault fieldId={fieldId} />
 
                     <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
                         {t('ui.admin.salesSetup.glNoteBefore')}<b style={{ color: 'var(--color-text-main)' }}>{t('nav.chartOfAccounts')}</b>{t('ui.admin.salesSetup.glNoteAfter')}
