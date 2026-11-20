@@ -1269,6 +1269,18 @@
         "shipping": "Shipping:",
         "status": "Status:",
         "title": "Order Details"
+      },
+      "returnReason": {
+        "title": "Why did this order fail?",
+        "intro": "The order is now {status}. Pick the reason, or Skip — you can set it later in the Reason column.",
+        "other": "Other",
+        "otherEllipsis": "Other…",
+        "otherPlaceholder": "Type the reason…",
+        "skip": "Skip",
+        "saving": "Saving…",
+        "saved": "Reason saved",
+        "column": "Reason",
+        "none": "— No reason —"
       }
     },
     "purchase": {
@@ -3887,7 +3899,8 @@
         "restoredStillPending": "Orders restored, but these are still Pending (their stock was not taken): {orders}. Set their status from the Orders page.",
         "importFailed": "Failed to import orders: {error}",
         "importItemsFailed": "Failed to import order items: {error}",
-        "moneyChangedElsewhere": "This order's deposit or total was changed elsewhere since you opened it. Nothing was saved — the order has been refreshed; please settle it again."
+        "moneyChangedElsewhere": "This order's deposit or total was changed elsewhere since you opened it. Nothing was saved — the order has been refreshed; please settle it again.",
+        "returnReasonMissing": "The reason was not saved: run migrations/add_sales_return_reason.sql on this store first."
       },
       "product": {
         "setStockMissing": "Stock can't be changed here on this store yet: until FIFO costing is set up (a stock count, true-up and pool rebuild), change stock on the Stock Adjustments page instead (menu Inventory › Adjust Stock: create an adjustment and post it). Nothing was changed.",
@@ -4328,7 +4341,9 @@
         "saveSettings": "Save settings",
         "addPageName": "Add a page name...",
         "addShippingCompany": "Add a shipping company...",
-        "reserved": "{name} isn't set up yet — this section is reserved for it."
+        "reserved": "{name} isn't set up yet — this section is reserved for it.",
+        "addRejectionReason": "Add a reason…",
+        "rejectionReasonsHelp": "Why an order did not go through — offered when an order moves to Returning or Cancelled, and in the Orders \"Reason\" column (with Other for anything not listed). Removing a reason leaves orders that already use it unchanged. Saving a reason on an order needs migrations/add_sales_return_reason.sql on this store."
       },
       "provinces": {
         "shutdownBadge": "បិទបណ្តោះអាសន្ន · Shutdown",

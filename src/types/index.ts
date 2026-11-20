@@ -70,6 +70,9 @@ export interface Sale {
     salesman?: string;
     customerCare?: string;
     remark?: string;
+    // Why it ended Returned/Cancelled/ReStock (Sales Setup › Rejection
+    // Reasons); null clears it. Needs migrations/add_sales_return_reason.sql.
+    returnReason?: string | null;
     amountReceived?: number;
     settleDate?: string;
     // Upfront deposit (always kept, even if the order is later cancelled/returned).
@@ -291,6 +294,10 @@ export interface StoreContextType {
     removePage: (name: string) => Promise<void>;
     addCustomerCare: (name: string) => Promise<void>;
     removeCustomerCare: (name: string) => Promise<void>;
+    // Sales Setup › Rejection Reasons (the defaults until a store edits it).
+    rejectionReasons: string[];
+    addRejectionReason: (name: string) => Promise<void>;
+    removeRejectionReason: (name: string) => Promise<void>;
 
     // Cities
     cities: string[];

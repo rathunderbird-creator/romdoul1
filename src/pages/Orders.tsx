@@ -33,6 +33,10 @@ import { fetchAll } from '../utils/fetchAll';
 import { mapSaleEntity } from '../utils/mapper';
 import { accountCurrency, formatKhr, formatMoneyLine, formatUsd, isKhrRow, khrMeta, khrToUsd, rielToReopen, shopRate, SNAP_TOLERANCE_USD, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { roundCents } from '../utils/money';
+import { reasonApplies, reasonOptions } from '../utils/rejectionReasons';
+
+// The "Other…" pick in the reason pop-up and Reason column (never saved).
+const OTHER_REASON = '__other__';
 import MoneyInput from '../components/MoneyInput';
 import CashBankOptions from '../components/CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
@@ -589,6 +593,94 @@ const ShippingModalComponent: React.FC<{
     );
 };
 
+// Asked right after an order moved to Returned or Cancelled: why. Picks
+// from Sales Setup › Rejection Reasons, or "Other" with free text; Skip
+// leaves the order without one (it can be set later in the Reason column).
+// Saves only sales.return_reason — the status change is already done.
+const ReturnReasonModalComponent: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    order: Sale | null;
+    status: string;
+}> = ({ isOpen, onClose, order, status }) => {
+    const { updateOrder, rejectionReasons } = useStore();
+    const { showToast } = useToast();
+    const { t } = useLanguage();
+    const [choice, setChoice] = useState('');
+    const [other, setOther] = useState('');
+    const [saving, setSaving] = useState(false);
+    const savingRef = useRef(false);
+
+    useEffect(() => {
+        if (isOpen && order) {
+            const cur = (order.returnReason || '').trim();
+            const listed = rejectionReasons.find(r => r.trim().toLowerCase() === cur.toLowerCase());
+            setChoice(cur ? (listed ?? OTHER_REASON) : '');
+            setOther(cur && !listed ? cur : '');
+        }
+        // Only when it opens: a list reload must not reset what is being picked.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, order]);
+
+    if (!order) return null;
+    const reason = choice === OTHER_REASON ? other.trim() : choice;
+    const save = async () => {
+        if (savingRef.current || !reason) return;
+        savingRef.current = true;
+        setSaving(true);
+        try {
+            if (reason !== (order.returnReason || '')) {
+                if (!(await updateOrder(order.id, { returnReason: reason }))) return;
+            }
+            showToast(t('ui.orders.returnReason.saved'), 'success');
+            onClose();
+        } finally {
+            savingRef.current = false;
+            setSaving(false);
+        }
+    };
+    const chip = (active: boolean): React.CSSProperties => ({
+        padding: '8px 12px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', textAlign: 'left',
+        border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
+        background: active ? 'var(--color-primary-light, rgba(59,130,246,0.1))' : 'var(--color-surface)',
+        color: 'var(--color-text-main)', fontWeight: active ? 600 : 400,
+    });
+    const options = [...rejectionReasons, OTHER_REASON];
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={t('ui.orders.returnReason.title')}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                    {fill(t('ui.orders.returnReason.intro'), { status: status === 'Cancelled' ? t('status.cancelled') : t('status.returned') })}
+                </p>
+                <div role="radiogroup" aria-label={t('ui.orders.returnReason.title')} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px' }}>
+                    {options.map(r => (
+                        <button key={r} type="button" role="radio" aria-checked={choice === r} onClick={() => setChoice(r)} style={chip(choice === r)}>
+                            {r === OTHER_REASON ? t('ui.orders.returnReason.other') : r}
+                        </button>
+                    ))}
+                </div>
+                {choice === OTHER_REASON && (
+                    <input type="text" autoFocus value={other} onChange={e => setOther(e.target.value)} maxLength={200}
+                        placeholder={t('ui.orders.returnReason.otherPlaceholder')} aria-label={t('ui.orders.returnReason.other')}
+                        onKeyDown={e => { if (e.key === 'Enter') save(); }}
+                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px', outline: 'none' }} />
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '4px' }}>
+                    <button onClick={onClose} disabled={saving}
+                        style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-main)', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>
+                        {t('ui.orders.returnReason.skip')}
+                    </button>
+                    <button onClick={save} disabled={saving || !reason}
+                        style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'var(--color-primary)', color: 'white', cursor: saving || !reason ? 'not-allowed' : 'pointer', opacity: saving || !reason ? 0.6 : 1, fontSize: '14px', fontWeight: 500 }}>
+                        {saving ? t('ui.orders.returnReason.saving') : t('common.save')}
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 const PendingRemarkModalComponent: React.FC<{
     isOpen: boolean;
     onClose: () => void;
@@ -909,7 +1001,7 @@ async function paidMoneyOf(orderId: string, kind: PaymentKind, bookedUsd: number
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods, rejectionReasons } = useStore();
     const { t } = useLanguage();
     // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
     const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
@@ -1339,6 +1431,7 @@ const Orders: React.FC = () => {
         { id: 'payStatus', label: t('orders.payStatus') },
         { id: 'shippingCo', label: t('orders.shippingCo') },
         { id: 'remark', label: t('orders.remark') },
+        { id: 'returnReason', label: t('ui.orders.returnReason.column') },
         { id: 'tracking', label: t('orders.trackingId') },
         { id: 'settleDate', label: t('orders.settledPaidDate') },
         { id: 'lastEdit', label: t('orders.lastEdit') },
@@ -1349,14 +1442,26 @@ const Orders: React.FC = () => {
         const saved = localStorage.getItem('orders_visibleColumns');
         if (saved) {
             try {
-                return JSON.parse(saved);
+                const cols: string[] = JSON.parse(saved);
+                // The Reason column is new: shown once (after Remark) on a
+                // saved layout; hiding it afterwards sticks.
+                try {
+                    if (!localStorage.getItem('orders_returnReasonColAdded')) {
+                        localStorage.setItem('orders_returnReasonColAdded', '1');
+                        if (Array.isArray(cols) && !cols.includes('returnReason')) {
+                            const at = cols.indexOf('remark');
+                            cols.splice(at >= 0 ? at + 1 : cols.length, 0, 'returnReason');
+                        }
+                    }
+                } catch { /* storage blocked: keep the saved layout */ }
+                return cols;
             } catch (e) {
                 console.error('Failed to parse visible columns:', e);
             }
         }
         return [
             'actions', 'date', 'customer', 'phone', 'address', 'page', 'salesman', 'customerCare', 'items', 'total', 'payBy',
-            'balance', 'status', 'received', 'payStatus', 'shippingCo', 'remark', 'tracking', 'settleDate', 'lastEdit'
+            'balance', 'status', 'received', 'payStatus', 'shippingCo', 'remark', 'returnReason', 'tracking', 'settleDate', 'lastEdit'
         ];
     });
 
@@ -1519,6 +1624,9 @@ const Orders: React.FC = () => {
         document.body.removeChild(measurer);
         setColumnWidths(newWidths);
     };
+
+    // Rejection reason asked after a move to Returned / Cancelled.
+    const [reasonTarget, setReasonTarget] = useState<{ order: Sale; status: string } | null>(null);
 
     // Pending Modal State
     const [isPendingRemarkModalOpen, setIsPendingRemarkModalOpen] = useState(false);
@@ -1976,6 +2084,9 @@ const Orders: React.FC = () => {
                     case 'remark':
                         query = query.ilike('remark', `%${esc}%`);
                         break;
+                    case 'returnReason':
+                        query = query.ilike('return_reason', `%${esc}%`);
+                        break;
                     case 'tracking':
                         query = query.ilike('tracking_number', `%${esc}%`);
                         break;
@@ -2146,6 +2257,7 @@ const Orders: React.FC = () => {
                     'received': 'amount_received',
                     'payStatus': 'payment_status',
                     'remark': 'remark',
+                    'returnReason': 'return_reason',
                     'settleDate': 'settle_date',
                     'lastEdit': 'last_edited_at'
                 };
@@ -2588,7 +2700,8 @@ const Orders: React.FC = () => {
             'Shipping Company': order.shipping?.company || 'N/A',
             'Shipping Status': order.shipping?.status || 'Pending',
             'Tracking Number': order.shipping?.trackingNumber || 'N/A',
-            'Remarks': order.remark || ''
+            'Remarks': order.remark || '',
+            'Return Reason': order.returnReason || ''
         }));
 
         const wb = XLSX.utils.book_new();
@@ -2614,7 +2727,8 @@ const Orders: React.FC = () => {
             { wch: 20 }, // Ship Company
             { wch: 15 }, // Ship Status
             { wch: 20 }, // Tracking
-            { wch: 30 }  // Remarks
+            { wch: 30 }, // Remarks
+            { wch: 24 }  // Return Reason
         ];
         ws['!cols'] = colWidths;
 
@@ -3996,7 +4110,9 @@ const Orders: React.FC = () => {
                                                     } else if (status === 'Returned' || status === 'Cancelled') {
                                                         // null, not undefined — updateOrder skips undefined fields,
                                                         // which left the old settle_date on cancelled orders.
-                                                        await updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status } as any });
+                                                        const saved = await updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status } as any });
+                                                        // Then ask why (Skip allowed); only once the move stuck.
+                                                        if (saved) setReasonTarget({ order, status });
                                                     }
                                                 } catch (e) {
                                                     console.error('Status change failed:', e);
@@ -4525,7 +4641,9 @@ const Orders: React.FC = () => {
                                                                                         } else if (newStatus === 'Returned' || newStatus === 'Cancelled') {
                                                                                             // null, not undefined — updateOrder skips undefined fields,
                                                                                             // which left the old settle_date on cancelled orders.
-                                                                                            await updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: newStatus } as any });
+                                                                                            const saved = await updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: newStatus } as any });
+                                                                                            // Then ask why (Skip allowed); only once the move stuck.
+                                                                                            if (saved) setReasonTarget({ order, status: newStatus });
                                                                                         }
                                                                                     } catch (e) {
                                                                                         console.error('Status change failed:', e);
@@ -4660,6 +4778,38 @@ const Orders: React.FC = () => {
                                                                         />
                                                                     </td>
                                                                 );
+                                                            case 'returnReason': {
+                                                                // Only for orders that ended Returned / Cancelled /
+                                                                // ReStock; a reason left on a reopened order stays
+                                                                // saved but isn't shown.
+                                                                const applies = reasonApplies(order.shipping?.status);
+                                                                if (!applies) return <td key={colId} style={cellStyle}>-</td>;
+                                                                if (!canEdit) return <td key={colId} style={cellStyle} title={order.returnReason || ''}>{order.returnReason || '-'}</td>;
+                                                                const opts = reasonOptions(rejectionReasons, order.returnReason);
+                                                                return (
+                                                                    <td key={colId} style={{ ...cellStyle, padding: '4px' }}>
+                                                                        <select
+                                                                            value={order.returnReason || ''}
+                                                                            aria-label={t('ui.orders.returnReason.column')}
+                                                                            className="search-input"
+                                                                            style={{ width: '100%', padding: '4px 6px', fontSize: 'inherit', color: order.returnReason ? 'inherit' : 'var(--color-text-muted)', border: '1px solid transparent', background: 'transparent', cursor: 'pointer' }}
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            onMouseDown={(e) => e.stopPropagation()}
+                                                                            onPointerDown={(e) => e.stopPropagation()}
+                                                                            onKeyDown={(e) => { if (e.key === ' ') e.stopPropagation(); }}
+                                                                            onChange={(e) => {
+                                                                                const v = e.target.value;
+                                                                                if (v === OTHER_REASON) { setReasonTarget({ order, status: order.shipping?.status || 'Returned' }); return; }
+                                                                                if (v !== (order.returnReason || '')) updateOrder(order.id, { returnReason: v || null });
+                                                                            }}
+                                                                        >
+                                                                            <option value="">{t('ui.orders.returnReason.none')}</option>
+                                                                            {opts.map(r => <option key={r} value={r}>{r}</option>)}
+                                                                            <option value={OTHER_REASON}>{t('ui.orders.returnReason.otherEllipsis')}</option>
+                                                                        </select>
+                                                                    </td>
+                                                                );
+                                                            }
                                                             case 'lastEdit':
                                                                 return (
                                                                     <td key={colId} style={cellStyle}>
@@ -5140,6 +5290,13 @@ const Orders: React.FC = () => {
                 onClose={() => { setIsShippingModalOpen(false); setShippingOrderToUpdate(null); }}
                 order={shippingOrderToUpdate}
                 targetStatus={shippingTargetStatus}
+            />
+            {/* Rejection reason, asked after a move to Returned / Cancelled */}
+            <ReturnReasonModalComponent
+                isOpen={!!reasonTarget}
+                onClose={() => setReasonTarget(null)}
+                order={reasonTarget ? (sales.find(s => s.id === reasonTarget.order.id) || reasonTarget.order) : null}
+                status={reasonTarget?.status || 'Returned'}
             />
             {/* Pending Remark Modal */}
             <PendingRemarkModalComponent

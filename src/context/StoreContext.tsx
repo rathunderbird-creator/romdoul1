@@ -13,6 +13,7 @@ import { createRetryKeys } from '../utils/retryKey';
 import { fetchAll } from '../utils/fetchAll';
 import { isFifoReadMissingError } from '../utils/supabaseErrors';
 import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../utils/configOps';
+import { rejectionReasonList, rejectionReasonOp } from '../utils/rejectionReasons';
 import { BACKUP_TABLES, buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
 import { ALL_PERMISSIONS } from '../types';
 import { orderStatusText } from '../utils/orderStatusRules';
@@ -63,6 +64,8 @@ interface ConfigState {
     // Pay By methods whose receipt is courier-collected (Sales Setup › Pay
     // By; set_order_payment reads this key). Absent: a Method named COD.
     codPaymentMethods?: string[];
+    // Sales Setup › Rejection Reasons. Absent: the defaults (rejectionReasons.ts).
+    rejectionReasons?: string[];
     trackingUrlTemplates?: Record<string, string>; // Company -> tracking page URL with {tracking}
     users?: User[];
     roles?: Role[];
@@ -2014,6 +2017,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return updateConfigOps({ customerCare: { op: 'removeItems', values: [name] } });
     };
 
+    // Sales Setup › Rejection Reasons. The first edit of a store that never
+    // saved a list saves the whole list, defaults included (rejectionReasonOp).
+    const rejectionReasons = useMemo(() => rejectionReasonList(config.rejectionReasons), [config.rejectionReasons]);
+    const addRejectionReason = async (name: string) => {
+        const op = rejectionReasonOp(config.rejectionReasons, 'add', name);
+        if (op) await updateConfigOps({ rejectionReasons: op });
+    };
+    const removeRejectionReason = async (name: string) => {
+        const op = rejectionReasonOp(config.rejectionReasons, 'remove', name);
+        if (op) await updateConfigOps({ rejectionReasons: op });
+    };
+
     const addPaymentMethod = (name: string) => {
         if ((config.paymentMethods || []).includes(name)) return Promise.resolve();
         return updateConfigOps({ paymentMethods: { op: 'append', items: [name] } });
@@ -3668,6 +3683,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.salesman !== undefined) dbUpdates.salesman = updates.salesman;
         if (updates.customerCare !== undefined) dbUpdates.customer_care = updates.customerCare;
         if (updates.remark !== undefined) dbUpdates.remark = updates.remark;
+        if (updates.returnReason !== undefined) dbUpdates.return_reason = updates.returnReason?.trim() || null;
         if (updates.customKhrAmount !== undefined) dbUpdates.custom_khr_amount = updates.customKhrAmount;
         // A Salesman's unconfirmed payment (set), or its confirmation (null).
         if (updates.paymentClaim !== undefined) dbUpdates.payment_claim = updates.paymentClaim;
@@ -3724,6 +3740,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     delete dbUpdatesWithoutKhr.custom_khr_amount;
                     ({ error } = await supabase.from('sales').update(dbUpdatesWithoutKhr).eq('id', id));
                     if (!error) console.info('Saved without the custom KH(៛) override — run migrations/add_sales_custom_khr.sql to store it');
+                }
+                // A reason needs migrations/add_sales_return_reason.sql: say so
+                // plainly instead of PostgREST's schema-cache message.
+                if (error && 'return_reason' in dbUpdates && /return_reason/i.test(error.message || '')) {
+                    throw new Error(tNow('ui.store.order.returnReasonMissing'));
                 }
                 if (error) throw error;
             }
@@ -4903,6 +4924,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             customerCare,
             addCustomerCare,
             removeCustomerCare,
+            rejectionReasons,
+            addRejectionReason,
+            removeRejectionReason,
             cities: config.cities || [],
             addCity,
             removeCity,
