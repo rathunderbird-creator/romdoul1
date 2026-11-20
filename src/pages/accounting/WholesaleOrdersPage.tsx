@@ -41,7 +41,7 @@ const WholesaleOrdersPage: React.FC = () => {
     // Display labels for stored status codes (the codes themselves stay English).
     const orderStatusLabel = (s?: string) => s === 'Delivered' ? t('status.delivered') : s === 'Cancelled' ? t('status.cancelled') : (!s || s === 'Open') ? t('ui.wholesale.status.open') : s;
     const payStatusLabel = (s?: string) => s === 'Paid' ? t('status.paid') : s === 'Partial' ? t('status.partial') : (!s || s === 'Unpaid') ? t('status.unpaid') : s;
-    const { products, warehouses, currentUser, refreshData, storeName, storeAddress, phone, email, logo, wholesaleSettings } = useStore();
+    const { products, warehouses, currentUser, refreshData, storeName, storeAddress, phone, email, logo, wholesaleSettings, defaultWarehouseId } = useStore();
     const { wholesaleOrders, customers, isLoading, tableMissing, fetchWholesaleOrders, fetchCustomers, nextInvoiceNumber, createWholesaleOrder, updateWholesaleOrder, deleteWholesaleOrder, updateWholesaleOrderStatus, recordCustomerPayment, deleteCustomerPayment } = useWholesale();
     const isAdmin = currentUser?.roleId === 'admin';
 
@@ -154,9 +154,10 @@ const WholesaleOrdersPage: React.FC = () => {
     const openCreate = () => {
         setCustomerName(''); setCustomerPhone('');
         // Wholesale Setup defaults: warehouse, payment-terms due date, invoice prefix.
+        // No Wholesale Setup warehouse: the Warehouses page default, then the first.
         const defaultWh = wholesaleSettings.defaultWarehouseId && warehouses.some(w => w.id === wholesaleSettings.defaultWarehouseId)
             ? wholesaleSettings.defaultWarehouseId
-            : (warehouses[0]?.id || '');
+            : (defaultWarehouseId || warehouses[0]?.id || '');
         setWarehouseId(defaultWh);
         setOrderDate(today());
         const termsDays = Number(wholesaleSettings.paymentTermsDays);

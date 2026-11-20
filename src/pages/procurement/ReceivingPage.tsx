@@ -59,7 +59,7 @@ const PRINT_CSS = `
 const ReceivingPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const navigate = useNavigate();
-    const { currentUser, receivePurchaseOrder, warehouses } = useStore();
+    const { currentUser, receivePurchaseOrder, warehouses, purchaseSettings, defaultWarehouseId } = useStore();
     const { showToast } = useToast();
     const { purchaseOrders, isLoading, fetchPurchaseOrders, savePurchaseOrder } = useProcurement();
     const { journalEntries, fetchJournalEntries } = useAccounting();
@@ -104,7 +104,10 @@ const ReceivingPage: React.FC = () => {
     const receiptDateOf = (po: PurchaseOrder): string => jeByPoId.get(po.id)?.date || po.order_date;
 
     const receipts = useMemo(() => purchaseOrders.filter(po => po.status === 'Received'), [purchaseOrders]);
-    const warehouseName = warehouses[0]?.name || '—';
+    // Purchase Setup's warehouse, else the Warehouses page default, else the first.
+    const warehouseName = (warehouses.find(w => w.id === purchaseSettings.defaultWarehouseId)
+        || warehouses.find(w => w.id === defaultWarehouseId)
+        || warehouses[0])?.name || '—';
 
     // "GRN-YYYYMMDD-NNN", computed for display only — purchase_orders has no
     // receipt-reference column of its own, so this is derived fresh each
