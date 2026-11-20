@@ -134,6 +134,9 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS get_file_booked BOOLEAN NOT NULL DEFA
 ALTER TABLE deleted_orders ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC DEFAULT 0;
 ALTER TABLE deleted_orders ADD COLUMN IF NOT EXISTS deposit_date DATE;
 ALTER TABLE deleted_orders ADD COLUMN IF NOT EXISTS deposit_method TEXT;
+-- Sales Setup › Rejection Reasons: a deleted order keeps its reason (read
+-- from sales through to_jsonb, so this works before add_sales_return_reason.sql).
+ALTER TABLE deleted_orders ADD COLUMN IF NOT EXISTS return_reason TEXT;
 
 -- The probe the app uses to ask whether this file has been run.
 CREATE OR REPLACE FUNCTION order_payment_functions_ready()
@@ -1581,13 +1584,15 @@ BEGIN
                                 remark, amount_received, settle_date, payment_status, order_status,
                                 shipping_company, tracking_number, shipping_status, shipping_cost,
                                 customer_snapshot, page_source, last_edited_at, last_edited_by,
-                                created_at, daily_number, deposit_amount, deposit_date, deposit_method)
-    SELECT id, total, discount, date, payment_method, type, salesman, customer_care,
-           remark, amount_received, settle_date, payment_status, order_status,
-           shipping_company, tracking_number, shipping_status, shipping_cost,
-           customer_snapshot, page_source, last_edited_at, last_edited_by,
-           created_at, daily_number, deposit_amount, deposit_date, deposit_method
-      FROM sales WHERE id = ANY(v_ids)
+                                created_at, daily_number, deposit_amount, deposit_date, deposit_method,
+                                return_reason)
+    SELECT s.id, s.total, s.discount, s.date, s.payment_method, s.type, s.salesman, s.customer_care,
+           s.remark, s.amount_received, s.settle_date, s.payment_status, s.order_status,
+           s.shipping_company, s.tracking_number, s.shipping_status, s.shipping_cost,
+           s.customer_snapshot, s.page_source, s.last_edited_at, s.last_edited_by,
+           s.created_at, s.daily_number, s.deposit_amount, s.deposit_date, s.deposit_method,
+           NULLIF(btrim(to_jsonb(s)->>'return_reason'), '')
+      FROM sales s WHERE s.id = ANY(v_ids)
     ON CONFLICT (id) DO NOTHING;
     INSERT INTO deleted_sale_items (id, sale_id, product_id, name, price, quantity, image, created_at)
     SELECT id, sale_id, product_id, name, price, quantity, image, created_at

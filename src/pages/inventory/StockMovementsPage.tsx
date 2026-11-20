@@ -15,6 +15,12 @@ import { dayKeyFromDate } from '../../utils/dateRange';
 import { useLanguage } from '../../context/LanguageContext';
 import { fill } from '../../i18n/translate';
 
+// Source/Reason column: an in's source, plus its reason when it has one
+// (a Customer Return carries the restocked orders' rejection reasons);
+// an out's reason.
+const movementSourceLabel = (m: { type: string; source?: string | null; reason?: string | null }): string =>
+    m.type === 'in' ? [m.source, m.reason].filter(Boolean).join(' · ') : (m.reason || '');
+
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 };
@@ -251,8 +257,8 @@ const StockMovementsPage: React.FC = () => {
                     const bCreated = new Date(b.created_at).getTime();
                     return sortConfig.direction === 'asc' ? aCreated - bCreated : bCreated - aCreated;
                 } else if (sortConfig.key === 'source') {
-                    aValue = a.type === 'in' ? a.source : a.reason;
-                    bValue = b.type === 'in' ? b.source : b.reason;
+                    aValue = movementSourceLabel(a);
+                    bValue = movementSourceLabel(b);
                 } else if (sortConfig.key === 'supplier') {
                     aValue = a.supplier || a.customer_name;
                     bValue = b.supplier || b.customer_name;
@@ -441,7 +447,7 @@ const StockMovementsPage: React.FC = () => {
             'Unit Price': m.unit_price,
             'Total Value': m.quantity * (m.unit_price || 0),
             'Warehouse': warehouses.find(w => w.id === m.warehouse_id)?.name || '-',
-            'Source/Reason': m.type === 'in' ? m.source : m.reason,
+            'Source/Reason': movementSourceLabel(m),
             'Supplier': m.supplier || '-',
             'Customer': m.customer_name || '-',
             'Salesman': (() => { const s = salesmanTextOf(m.id).text; return s === '…' ? '-' : s; })(),
@@ -749,7 +755,7 @@ const StockMovementsPage: React.FC = () => {
                                                 {record.product_name}
                                             </div>
                                             <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {(isIn ? record.source : record.reason) || '—'}{who ? ` · ${who}` : ''}{!sm.muted ? ` · ${sm.text}` : ''}
+                                                {movementSourceLabel(record) || '—'}{who ? ` · ${who}` : ''}{!sm.muted ? ` · ${sm.text}` : ''}
                                             </div>
                                         </div>
                                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -857,7 +863,7 @@ const StockMovementsPage: React.FC = () => {
                                                 {warehouse?.name || <span style={{ color: 'var(--color-text-muted)' }}>-</span>}
                                             </td>
                                             <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--color-text)' }}>
-                                                {record.type === 'in' ? record.source : record.reason || <span style={{ color: 'var(--color-text-muted)' }}>-</span>}
+                                                {movementSourceLabel(record) || <span style={{ color: 'var(--color-text-muted)' }}>-</span>}
                                             </td>
                                             <td style={{ padding: '11px 14px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                                                 {record.supplier || record.customer_name || <span style={{ color: 'var(--color-text-muted)' }}>-</span>}
@@ -1074,6 +1080,8 @@ const StockMovementsPage: React.FC = () => {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     <DetailField label={t('ui.inventory.warehouse')} value={warehouses.find(w => w.id === detailRecord.warehouse_id)?.name || '-'} />
                                     <DetailField label={detailRecord.type === 'in' ? t('ui.inventory.reports.source') : t('ui.inventory.reason')} value={(detailRecord.type === 'in' ? detailRecord.source : detailRecord.reason) || '-'} />
+                                    {/* A Customer Return's rejection reasons (ReStock). */}
+                                    {detailRecord.type === 'in' && detailRecord.reason && <DetailField label={t('ui.inventory.reason')} value={detailRecord.reason} />}
                                 </div>
                             </div>
 

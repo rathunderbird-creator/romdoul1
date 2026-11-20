@@ -187,6 +187,8 @@ check('restock with a Draft receipt: receipt deleted with its COGS, no COGS-REV'
 check('restock: the rows are back in stock', num((await one(`SELECT count(*) AS n FROM inventory_items WHERE id = ANY($1) AND status = 'in_stock'`, [firstRows])).n) === 3);
 const ret = (await q(`SELECT product_id, unit_cost FROM stock_movements WHERE source = 'Customer Return' ORDER BY product_id`)).rows;
 check('restock: Customer Return movements carry the returned cost', ret.length === 2 && near(ret[0].unit_cost, 5) && near(ret[1].unit_cost, 10), ret);
+check('restock on a store without sales.return_reason: the movement reason is empty, no error',
+    (await q(`SELECT reason FROM stock_movements WHERE source = 'Customer Return'`)).rows.every(r => r.reason === ''));
 await checkBalanced('restocked (Draft receipt)');
 
 await order('O5', [['o5-a', 'A', 1]]);
@@ -765,6 +767,28 @@ await editTo('NF1', kOne);
 check('NF1 (deposit-covered, edited away and back, unpaid, shipped) edited again: no ADJ, 5000 nets 0',
     (await entries('ORD-NF1-COGS-ADJ')).length === 0 && near(await cogsOf('NF1'), 0), await entries('ORD-NF1-COGS%'));
 await checkBalanced('NF1 edited', V10);
+
+// ---------------------------------------------------------------------------
+// 11. Rejection reasons (sales.return_reason, add_sales_return_reason.sql):
+//     ReStock writes the orders' distinct reasons on the movement; delete
+//     keeps the reason in deleted_orders.
+// ---------------------------------------------------------------------------
+await q(`ALTER TABLE sales ADD COLUMN IF NOT EXISTS return_reason TEXT`);
+await q(`INSERT INTO products (id, name, price, stock, purchase_cost) VALUES ('RR', 'RR', 10, 4, 4)`);
+await seedLayers('RR', 4, 4, '2026-03-01T00:00:00Z');
+for (const id of ['RR1', 'RR2', 'RR4', 'RR5']) {
+    await order(id, [[id.toLowerCase() + '-a', 'RR', 1]]);
+    await ship(id, 'Pending', 'Shipped');
+    await ship(id, 'Shipped', 'Returned');
+}
+await q(`UPDATE sales SET return_reason = CASE id WHEN 'RR1' THEN 'Wrong address' WHEN 'RR2' THEN 'Wrong address'
+                                          WHEN 'RR4' THEN 'Customer refused' WHEN 'RR5' THEN 'Changed mind' END
+          WHERE id IN ('RR1', 'RR2', 'RR4', 'RR5')`);
+await q(`SELECT public.restock_returned_orders(p_ids => ARRAY['RR1', 'RR2', 'RR4'], p_fields => '{}'::jsonb)`);
+const rrMv = (await q(`SELECT quantity, reason FROM stock_movements WHERE product_id = 'RR' AND source = 'Customer Return'`)).rows;
+check('restock: the movement carries the distinct reasons, in order', rrMv.length === 1 && rrMv[0].quantity === 3 && rrMv[0].reason === 'Wrong address, Customer refused', rrMv);
+await q(`SELECT public.delete_retail_orders(p_ids => ARRAY['RR5'], p_fields => '{}'::jsonb)`);
+check('delete: deleted_orders keeps the reason', (await one(`SELECT return_reason FROM deleted_orders WHERE id = 'RR5'`)).return_reason === 'Changed mind');
 
 // The packs refuse to load before add_fifo_costing.sql and the rebuild.
 check('nothing left without a consumer link while sold',

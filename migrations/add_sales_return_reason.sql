@@ -9,6 +9,8 @@
 -- Editing the Sales Setup list with manage_orders (not manage_settings)
 -- also needs add_session_guards.sql re-run (its rejectionReasons line).
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS return_reason TEXT;
+-- A deleted order keeps it (delete_retail_orders in add_order_payment_functions.sql).
+ALTER TABLE deleted_orders ADD COLUMN IF NOT EXISTS return_reason TEXT;
 
 -- Make PostgREST pick the new column up immediately.
 NOTIFY pgrst, 'reload schema';
