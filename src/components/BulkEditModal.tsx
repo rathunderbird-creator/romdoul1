@@ -6,17 +6,21 @@ import { useTx, orderStatusDisplay } from './useTx';
 interface BulkEditModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onApply: (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any, settleDate?: string, payBy?: string) => Promise<void>;
+    onApply: (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any, settleDate?: string, payBy?: string, reason?: string) => Promise<void>;
     count: number;
+    // Offer a Sales Setup › Rejection Reasons pick with a bulk move to
+    // Returned / Cancelled (only where onApply saves it: Orders).
+    offerReason?: boolean;
 }
 
-const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply, count }) => {
-    const { paymentMethods } = useStore();
+const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply, count, offerReason }) => {
+    const { paymentMethods, rejectionReasons } = useStore();
     const tx = useTx();
     const [field, setField] = useState<'date' | 'status' | 'paymentStatus' | 'settleDate'>('date');
     const [value, setValue] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
     const [payBy, setPayBy] = useState<string>('');
+    const [reason, setReason] = useState<string>('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Orders.tsx keeps this modal permanently mounted (unlike
@@ -30,6 +34,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
             setValue('');
             setSettleDate('');
             setPayBy('');
+            setReason('');
         }
     }, [isOpen]);
 
@@ -61,11 +66,13 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
     const settleDateValid = /^\d{4}-\d{2}-\d{2}$/.test(settleDate);
     const canApply = !!value && !isSubmitting && (!settleDateRequired || settleDateValid);
 
+    // Only with a move to Returned / Cancelled; anything else sends none.
+    const reasonShown = !!offerReason && field === 'status' && (value === 'Returned' || value === 'Cancelled');
     const handleApply = async () => {
         if (!canApply) return;
         setIsSubmitting(true);
         try {
-            await onApply(field, value, settleDate, payBy);
+            await onApply(field, value, settleDate, payBy, reasonShown && reason ? reason : undefined);
             onClose();
         } catch (error) {
             console.error(error);
@@ -248,6 +255,18 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({ isOpen, onClose, onApply,
                             <option value="">{tx('ui.components.bulkEdit.selectStatus', 'Select Status...')}</option>
                             {statusOptions.map(s => <option key={s} value={s}>{orderStatusDisplay(tx, s)}</option>)}
                         </select>
+                    )}
+                    {reasonShown && (
+                        <div style={{ marginTop: '12px' }}>
+                            <label htmlFor="bulk-edit-reason" style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
+                                {tx('ui.components.bulkEdit.reason', 'Reason (optional: orders moved, and those without one)')}
+                            </label>
+                            <select id="bulk-edit-reason" value={reason} onChange={(e) => setReason(e.target.value)}
+                                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '14px' }}>
+                                <option value="">{tx('ui.components.bulkEdit.noReason', '— No reason —')}</option>
+                                {rejectionReasons.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                        </div>
                     )}
                     {field === 'paymentStatus' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
