@@ -29,6 +29,7 @@ export const mapSaleEntity = (s: any): Sale => ({
     salesman: s.salesman,
     customerCare: s.customer_care,
     remark: s.remark,
+    returnReason: s.return_reason ?? undefined,
     amountReceived: Number(s.amount_received),
     settleDate: s.settle_date,
     depositAmount: Number(s.deposit_amount) || 0,

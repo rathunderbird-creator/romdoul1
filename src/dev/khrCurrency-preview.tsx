@@ -118,6 +118,7 @@ const base: Record<string, unknown> = {
     salesSettings: {}, updateSalesSetting: logWrite('updateSalesSetting'),
     salesmen: ['Dev Salesman'], addSalesman: logWrite('addSalesman'), removeSalesman: logWrite('removeSalesman'),
     customerCare: ['Dev Admin', 'Dev Care'], addCustomerCare: logWrite('addCustomerCare'), removeCustomerCare: logWrite('removeCustomerCare'),
+    rejectionReasons: ['Customer refused', 'Wrong address'], addRejectionReason: logWrite('addRejectionReason'), removeRejectionReason: logWrite('removeRejectionReason'),
     shippingRates: { 'J&T': 1.25 }, updateShippingRate: logWrite('updateShippingRate'), trackingUrlTemplates: {}, updateTrackingUrlTemplate: logWrite('updateTrackingUrlTemplate'),
     addPaymentMethod: logWrite('addPaymentMethod'), removePaymentMethod: logWrite('removePaymentMethod'),
     addPage: logWrite('addPage'), removePage: logWrite('removePage'), addShippingCompany: logWrite('addShippingCompany'), removeShippingCompany: logWrite('removeShippingCompany'),

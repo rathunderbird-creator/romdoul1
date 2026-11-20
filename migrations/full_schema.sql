@@ -1061,6 +1061,8 @@ ALTER TABLE stock_adjustment_lines DISABLE ROW LEVEL SECURITY;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS custom_khr_amount NUMERIC;
 -- A Salesman's deposit/payment waiting to be confirmed (migrations/add_payment_claim.sql).
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_claim JSONB;
+-- Why the order ended Returned/Cancelled/ReStock (migrations/add_sales_return_reason.sql).
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS return_reason TEXT;
 
 -- FIFO costing: layer keys and consumers on inventory_items, frozen line
 -- costs, movement unit cost (see add_fifo_costing.sql, which also holds the

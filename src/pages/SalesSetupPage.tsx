@@ -49,7 +49,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
 ];
 
 // Sections not in this set fall through to the "reserved" placeholder below.
-const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces']);
+const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces', 'rejectionReasons']);
 
 // Add/remove UI for a flat string list backed by the store's config blob
 // (same data CheckoutForm's gear-icon ConfigModal edits — this just gives it
@@ -323,6 +323,7 @@ const SalesSetupPage: React.FC = () => {
     const {
         pages, shippingCompanies, addPage, removePage, addShippingCompany, removeShippingCompany, paymentMethods, addPaymentMethod, removePaymentMethod,
         salesmen, addSalesman, removeSalesman, customerCare, addCustomerCare, removeCustomerCare, users,
+        rejectionReasons, addRejectionReason, removeRejectionReason,
     } = useStore();
     // The store's customerCare list also carries every user whose role is
     // Customer Care or Admin; those rows come from Users and cannot be
@@ -527,6 +528,13 @@ const SalesSetupPage: React.FC = () => {
                 <SetupListSection title={t('ui.admin.salesSetup.sections.customerCare')} placeholder={t('ui.admin.salesSetup.addCustomerCare')} items={customerCare}
                     onAdd={addCustomerCare} onRemove={removeCustomerCare} help={t('ui.admin.salesSetup.customerCareHelp')}
                     lockedNote={name => careFromUsers.has(name) ? t('ui.admin.salesSetup.fromUsers') : null} />
+            )}
+
+            {/* ── Rejection Reasons: offered when an order moves to Returned or
+                Cancelled, and in the Orders "Reason" column. ── */}
+            {section === 'rejectionReasons' && (
+                <SetupListSection title={t('ui.admin.salesSetup.sections.rejectionReasons')} placeholder={t('ui.admin.salesSetup.addRejectionReason')} items={rejectionReasons}
+                    onAdd={addRejectionReason} onRemove={removeRejectionReason} help={t('ui.admin.salesSetup.rejectionReasonsHelp')} />
             )}
 
             {/* ── Provinces: the shared address tree + Shipping Points per commune. ── */}
