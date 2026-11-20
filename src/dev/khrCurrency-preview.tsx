@@ -4,7 +4,7 @@
 // *khr variants add 1002 Cash on Hand (KHR) + 1011 Bank Account ABA (KHR)),
 // ?form= the form (delivery, deposit, settle, receipt, finalize, wholesale,
 // supplier, settings, money, setup = Sales Setup, shipping = Select Shipping Company popup,
-// checkout = the order Checkout form, ?edit=neg|khr reopening a saved one;
+// checkout = the order Checkout form, payreq = Copy payment request on an order owing and a Paid one, ?edit=neg|khr reopening a saved one;
 // ?dep= sets that order's existing deposit).
 //
 // The chart is answered locally (never read from the live store), every
@@ -19,6 +19,7 @@ import '../index.css';
 import { StoreContext } from '../context/StoreContext';
 import { HeaderProvider } from '../context/HeaderContext';
 import { ToastProvider } from '../context/ToastContext';
+import CopyPaymentRequestButton from '../components/CopyPaymentRequestButton';
 import { LanguageProvider } from '../context/LanguageContext';
 import DeliveryFeeModal from '../components/DeliveryFeeModal';
 import DepositModal from '../components/DepositModal';
@@ -107,7 +108,7 @@ const base: Record<string, unknown> = {
     paymentMethods: ['Cash', 'QR', 'Bank'],
     khrExchangeRate: Number(params.get('rate') || 4100),
     khrExchangeRateUpdatedAt: null,
-    timezone: 'Asia/Phnom_Penh', taxRate: 0, currency: 'USD ($)',
+    timezone: 'Asia/Phnom_Penh', taxRate: 0, currency: 'USD ($)', storeName: 'Dev Store',
     wholesaleSettings: { defaultPaymentAccountId: params.get('def') || '' },
     purchaseSettings: { defaultPaymentAccountId: params.get('def') || '' },
     hasPermission: () => true,
@@ -188,6 +189,13 @@ const Forms = () => {
         case 'cod': return <CodRemittancesPage />;
         case 'fx': return <FxRevaluationPage />;
         case 'setup': return <SalesSetupPage />;
+        case 'payreq': return (
+            <div style={{ display: 'flex', gap: 12 }}>
+                <CopyPaymentRequestButton order={{ ...editBase, total: 40 } as unknown as Sale} sales={[]} />
+                <CopyPaymentRequestButton order={{ ...editBase, total: 40, paymentStatus: 'Paid' } as unknown as Sale} sales={[]} />
+                <span>(only the first order owes: one button)</span>
+            </div>
+        );
         case 'shipping': return <ShippingModalComponent isOpen={open} onClose={close} order={order} />;
         default: return <DeliveryFeeModal order={open ? order : null} onClose={close} onConfirm={d => show('deliveryFee', d)} />;
     }

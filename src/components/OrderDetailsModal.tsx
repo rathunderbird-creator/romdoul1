@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import type { Sale } from '../types';
 import { useTx } from './useTx';
+import CopyPaymentRequestButton from './CopyPaymentRequestButton';
 
 interface OrderDetailsModalProps {
     isOpen: boolean;
@@ -110,6 +111,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
                         >
                             <Copy size={16} /> {tx('ui.components.orderDetails.copyInfo', 'Copy Info')}
                         </button>
+                        <CopyPaymentRequestButton order={order} sales={sales} />
                     </div>
 
                     <OrderDetailsContent order={order} showHeading={false} showPermalink={false} />

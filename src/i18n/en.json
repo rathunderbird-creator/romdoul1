@@ -4387,8 +4387,7 @@
         "documentNumbering": "Document numbering",
         "numberingHelp": "Prefixes only. Changing a prefix affects new records only — documents that already exist keep their reference.",
         "paymentRequestMessage": "Payment request message",
-        "paymentRequestPlaceholder": "Leave blank for the standard wording",
-        "paymentRequestHelp": "The paragraph above the invoice list on a payment request letter. Leave blank to use the standard wording.",
+        "paymentRequestHelp": "Order Details › Copy payment request fills this in from the order, ready to paste into Telegram or Messenger. Fields:",
         "glNoteBefore": "The accounts a retail sale posts to — revenue, cost of goods sold, delivery fees and the COD receivable (1210) — are kept in the ",
         "glNoteAfter": ", where the posting engine reads them.",
         "saveSettings": "Save settings",
@@ -4419,8 +4418,7 @@
           "paymentTerms": "Retail orders are COD or paid up front, so they have no due date. Credit terms are for wholesale: Wholesale Setup › Payment Terms.",
           "warehouse": "Retail orders take stock from each product's total stock, not from a warehouse. (The default warehouse in Inventory › Warehouses is used by stock adjustments and wholesale orders.)",
           "holdsStock": "Stock leaves when an order is Shipped (or Delivered) and comes back on ReStock.",
-          "numbering": "Order numbers and journal entry numbers (for example JE-…-RCP-…) are set by the app.",
-          "paymentRequest": "Payment request letters aren't sent from retail orders."
+          "numbering": "Order numbers and journal entry numbers (for example JE-…-RCP-…) are set by the app."
         },
         "pointer": {
           "paymentTerms": "Retail orders are COD or paid up front, so they have no payment terms. Credit terms (net days, presets) are set for wholesale customers in Wholesale Setup.",
@@ -4439,7 +4437,13 @@
         },
         "quotationValidityNone": "Not set",
         "quotationValidityHelp": "A new quotation in CRM › Quotations is valid until today plus this many days (you can still change the date on each quote). Leave empty to start with no date.",
-        "quotationValidityBad": "Enter a whole number of days from 1 to {max}, or leave it empty."
+        "quotationValidityBad": "Enter a whole number of days from 1 to {max}, or leave it empty.",
+        "paymentRequestTooLong": "At most {max} characters ({n} now). Not saved.",
+        "paymentRequestUnknown": "Not a field, copied as typed: {fields}",
+        "paymentRequestIsDefault": "Using the default message.",
+        "paymentRequestIsCustom": "Using your message.",
+        "paymentRequestReset": "Back to the default",
+        "paymentRequestPreview": "Preview (sample order)"
       },
       "provinces": {
         "shutdownBadge": "បិទបណ្តោះអាសន្ន · Shutdown",
@@ -5314,7 +5318,11 @@
         "status": "Status:",
         "title": "Order Details",
         "tracking": "Tracking:",
-        "via": "Via"
+        "via": "Via",
+        "copyPaymentRequest": "Copy payment request",
+        "paymentRequestHint": "Copies the Sales Setup payment request message filled from this order",
+        "paymentRequestCopied": "Payment request copied to clipboard",
+        "paymentRequestCopyFailed": "Could not copy to the clipboard"
       },
       "payStatus": {
         "notSettle": "Not Settle",

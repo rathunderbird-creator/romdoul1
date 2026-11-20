@@ -7,6 +7,7 @@ import { generateOrderCopyText } from '../utils/orderUtils';
 import { useLanguage } from '../context/LanguageContext';
 
 import OrderDetailsContent from '../components/OrderDetailsContent';
+import CopyPaymentRequestButton from '../components/CopyPaymentRequestButton';
 
 const OrderDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -60,6 +61,7 @@ const OrderDetailPage: React.FC = () => {
                 >
                     <Copy size={16} /> {t('ui.people.orderDetail.copyInfo')}
                 </button>
+                <CopyPaymentRequestButton order={order} sales={sales} />
             </div>
 
             <OrderDetailsContent order={order} />

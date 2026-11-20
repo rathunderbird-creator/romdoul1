@@ -649,6 +649,9 @@ export interface SalesSettings {
     // Days a new quotation stays valid (CRM › Quotations pre-fills its
     // Valid until); a whole number 1–365 as text, see quotationValidity.ts.
     quotationValidityDays?: string;
+    // The message Order Details › Copy payment request fills from an order
+    // ({name}, {due}, …); absent = the default, see paymentRequest.ts.
+    paymentRequestMessage?: string;
 }
 
 export interface WholesaleSettings {
