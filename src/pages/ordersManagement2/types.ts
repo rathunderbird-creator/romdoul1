@@ -76,7 +76,8 @@ export interface OM2Actions {
     // Mirrors classic Orders.tsx's BulkEditModal onApply contract exactly
     // (src/components/BulkEditModal.tsx) — that component is reused as-is
     // here, so its prop shape is the source of truth for `field`/`value`.
-    onBulkEdit: (orderIds: string[], field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: string, settleDate?: string, payBy?: string) => Promise<void>;
+    // reason: a Rejection Reason picked with a move to Returned / Cancelled.
+    onBulkEdit: (orderIds: string[], field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: string, settleDate?: string, payBy?: string, reason?: string) => Promise<void>;
 }
 
 export interface OM2ViewProps {

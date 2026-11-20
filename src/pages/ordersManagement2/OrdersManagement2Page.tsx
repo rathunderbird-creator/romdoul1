@@ -245,7 +245,7 @@ const OrdersManagement2Page: React.FC = () => {
         // Mirrors classic Orders.tsx's handleBulkEdit (../Orders.tsx ~L1768)
         // verbatim — same fields, same per-branch update shape — since
         // BulkEditModal (../../components) is reused as-is here too.
-        onBulkEdit: async (orderIds, field, value, settleDate, payBy) => {
+        onBulkEdit: async (orderIds, field, value, settleDate, payBy, reason) => {
             // Orders whose change was refused or failed (already explained, or the
             // reason kept in lastReason): reported instead of a blanket success.
             let notSaved = 0;
@@ -259,9 +259,13 @@ const OrdersManagement2Page: React.FC = () => {
                 // Sequential, through updateOrderStatus — same reasoning as
                 // classic: shares the single-row transition rules and stock
                 // handling, and avoids racing shared-product stock updates.
+                // The orders now at the target status get the picked reason
+                // afterwards (same rules as classic Orders' Bulk Edit).
+                const atTarget: string[] = [];
                 for (const id of orderIds) {
                     const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
-                    if (order?.shipping?.status === value) continue;
+                    // Already there: fill in a missing reason, never replace one.
+                    if (order?.shipping?.status === value) { if (!(order?.returnReason || '').trim()) atTarget.push(id); continue; }
                     const refusal = statusChangeRefusal(
                         { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked },
                         value,
@@ -274,6 +278,19 @@ const OrdersManagement2Page: React.FC = () => {
                         onRefused: m => { lastReason = m; },
                     });
                     if (!moved) notSaved++;
+                    else atTarget.push(id);
+                }
+                if (reason && (value === 'Returned' || value === 'Cancelled')) {
+                    // One at a time; stop at the first failure and count the
+                    // rest (a store without add_sales_return_reason.sql says so once).
+                    for (let i = 0; i < atTarget.length; i++) {
+                        if (!(await updateOrder(atTarget[i], { returnReason: reason }))) {
+                            const missed = atTarget.length - i;
+                            notSaved += missed;
+                            lastReason = lastReason || tx('om2.toast.reasonNotSaved', 'the reason was not saved on {n} order(s)', { n: missed });
+                            break;
+                        }
+                    }
                 }
             } else if (field === 'settleDate') {
                 // ORD-9: a posted Paid/PdFee/Cancel order's settle date is its
