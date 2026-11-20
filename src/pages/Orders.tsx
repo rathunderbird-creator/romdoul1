@@ -5,7 +5,7 @@ import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
 import { statusChangeRefusal, paymentChangeRefusal, paymentLockedForNonAdmin, settleDateChangeRefusal, orderStatusLabel, orderStatusesMatchingLabel } from '../utils/orderStatusRules';
 import { bodyZoom } from '../utils/bodyZoom';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone, Boxes } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone, Boxes, HandCoins } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
 import { useShipmentTracking } from '../hooks/useShipmentTracking';
 import { buildTrackingUrl, canAutoTrack, timeAgo } from '../utils/tracking';
@@ -26,6 +26,15 @@ const IncomeExpense = lazy(() => import('./IncomeExpense'));
 const DeletedOrdersContent = lazy(() => import('./DeletedOrders').then(module => ({ default: module.DeletedOrdersContent })));
 
 import { generateOrderCopyText, getShippingCoColor } from '../utils/orderUtils';
+import { usePaymentRequest } from '../hooks/usePaymentRequest';
+import CopyPaymentRequestButton from '../components/CopyPaymentRequestButton';
+import { copyText } from '../utils/clipboard';
+
+// Narrowest a column may be resized / auto-fitted to (else 50 by hand, 40 by
+// auto-fit). Actions holds four icons (Print, Edit, Copy, Payment request) and
+// has no text for auto-fit to measure; a narrower saved width is widened on load.
+const COLUMN_MIN_WIDTH: Record<string, number> = { actions: 140 };
+const columnMinWidth = (colId: string, fallback: number) => Math.max(COLUMN_MIN_WIDTH[colId] ?? 0, fallback);
 import { getPaymentIcon, getPaymentColor } from '../utils/payment';
 import { getShippingLogo } from '../utils/shipping';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -1528,7 +1537,11 @@ const Orders: React.FC = () => {
     // Resizing State
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
         const saved = localStorage.getItem('pos_column_widths');
-        return saved ? JSON.parse(saved) : {};
+        const widths: Record<string, number> = saved ? JSON.parse(saved) : {};
+        for (const [colId, min] of Object.entries(COLUMN_MIN_WIDTH)) {
+            if (typeof widths[colId] === 'number' && widths[colId] < min) widths[colId] = min;
+        }
+        return widths;
     });
 
     useEffect(() => {
@@ -1548,8 +1561,8 @@ const Orders: React.FC = () => {
 
     const handleGlobalMouseMove = React.useCallback((e: MouseEvent) => {
         if (!resizeRef.current) return;
-        const { startX, startWidth, live } = resizeRef.current;
-        const newWidth = Math.max(50, startWidth + liveDelta(live, e.clientX - startX));
+        const { startX, startWidth, colId, live } = resizeRef.current;
+        const newWidth = Math.max(columnMinWidth(colId, 50), startWidth + liveDelta(live, e.clientX - startX));
         // Straight onto the header cell, once per frame (no re-render, and no
         // page-wide CSS variable restyling every row): utils/liveColumnResize.
         showLiveWidth(live, newWidth);
@@ -1558,7 +1571,7 @@ const Orders: React.FC = () => {
     const handleGlobalMouseUp = React.useCallback((e: MouseEvent) => {
         if (!resizeRef.current) return;
         const { startX, startWidth, colId, live } = resizeRef.current;
-        const newWidth = Math.round(Math.max(50, startWidth + liveDelta(live, e.clientX - startX)));
+        const newWidth = Math.round(Math.max(columnMinWidth(colId, 50), startWidth + liveDelta(live, e.clientX - startX)));
         endLiveResize(live, newWidth);
 
         // Save to state/localStorage only on mouse up
@@ -1607,7 +1620,7 @@ const Orders: React.FC = () => {
         }
 
         document.body.removeChild(measurer);
-        const finalWidth = Math.min(Math.max(maxWidth, 40), 600);
+        const finalWidth = Math.min(Math.max(maxWidth, columnMinWidth(colId, 40)), 600);
 
         if (resizeRef.current && resizeRef.current.colId === colId) {
             document.documentElement.style.removeProperty(`--col-${colId}-width`);
@@ -1656,7 +1669,7 @@ const Orders: React.FC = () => {
                 }
             }
 
-            newWidths[col.id] = Math.min(Math.max(maxWidth, 40), 600);
+            newWidths[col.id] = Math.min(Math.max(maxWidth, columnMinWidth(col.id, 40)), 600);
         });
 
         document.body.removeChild(measurer);
@@ -3080,67 +3093,12 @@ const Orders: React.FC = () => {
         }
     };
 
-    const handleCopyOrder = (order: Sale) => {
-        const text = generateOrderCopyText(order, sales);
+    // Copy payment request (row icon, mobile card): see usePaymentRequest.
+    const paymentRequest = usePaymentRequest(sales);
 
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text)
-                .then(() => showToast(t('ui.orders.toast.copied'), 'success'))
-                .catch((err) => {
-                    console.error('Clipboard write failed:', err);
-                    fallbackCopyTextToClipboard(text);
-                });
-        } else {
-            fallbackCopyTextToClipboard(text);
-        }
-    };
-
-    const fallbackCopyTextToClipboard = (text: string) => {
-        const textArea = document.createElement("textarea");
-        textArea.value = text;
-
-        // Ensure strictly accessible for selection but minimally visible
-        textArea.style.position = 'fixed';
-        textArea.style.top = '0';
-        textArea.style.left = '0';
-        textArea.style.width = '2em';
-        textArea.style.height = '2em';
-        textArea.style.padding = '0';
-        textArea.style.border = 'none';
-        textArea.style.outline = 'none';
-        textArea.style.boxShadow = 'none';
-        textArea.style.background = 'transparent';
-
-        // Using very low opacity instead of 0, as some browsers ignore opacity:0 selection
-        textArea.style.opacity = '0.01';
-
-        document.body.appendChild(textArea);
-
-        if (navigator.userAgent.match(/ipad|iphone/i)) {
-            // iOS needs contentEditable
-            textArea.contentEditable = 'true';
-            textArea.readOnly = false;
-        } else {
-            textArea.focus();
-        }
-
-        // Just use select() and setSelectionRange, creating a range on a textarea value does not work via selectNodeContents
-        textArea.select();
-        textArea.setSelectionRange(0, 999999); // Universal
-
-        try {
-            const successful = document.execCommand('copy');
-            if (successful) {
-                showToast(t('ui.orders.toast.copied'), 'success');
-            } else {
-                showToast(t('ui.orders.toast.copyFailed'), 'error');
-            }
-        } catch (err) {
-            console.error('Fallback copy failed:', err);
-            showToast(t('ui.orders.toast.copyError'), 'error');
-        }
-
-        document.body.removeChild(textArea);
+    const handleCopyOrder = async (order: Sale) => {
+        const ok = await copyText(generateOrderCopyText(order, sales));
+        showToast(t(ok ? 'ui.orders.toast.copied' : 'ui.orders.toast.copyFailed'), ok ? 'success' : 'error');
     };
 
     const hasFilters = statusFilter.length > 0 || salesmanFilter !== 'All' || searchTerm !== '' || payStatusFilter.length > 0 || shippingCoFilter.length > 0 || pageFilter.length > 0 || (dateRange.start && dateRange.end) || Object.keys(columnFilters).length > 0;
@@ -4136,6 +4094,7 @@ const Orders: React.FC = () => {
                                         onView={(o) => { setSelectedOrder(o); setIsViewModalOpen(true); }}
                                         onPrint={(o) => setReceiptSale(o)}
                                         onCopy={(o) => handleCopyOrder(o)}
+                                        onCopyPaymentRequest={paymentRequest.canRequest(order) ? (o) => { void paymentRequest.copy(o); } : undefined}
                                         trackingUrl={buildTrackingUrl(order.shipping?.company, order.shipping?.trackingNumber, trackingUrlTemplates)}
                                         carrierStatus={(() => {
                                             const row = trackingMap[order.shipping?.trackingNumber || ''];
@@ -4502,6 +4461,18 @@ const Orders: React.FC = () => {
                                                                             <button onClick={(e) => { e.stopPropagation(); handleCopyOrder(order); }} className="icon-button" title={t('ui.orders.row.copyDetails')} style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                                                                                 <Copy size={16} color="var(--color-text-secondary)" />
                                                                             </button>
+                                                                            {(() => {
+                                                                                // Kept in place (dimmed) when nothing is due so the icons don't shift.
+                                                                                const can = paymentRequest.canRequest(order);
+                                                                                return (
+                                                                                    <button onClick={(e) => { e.stopPropagation(); if (can) void paymentRequest.copy(order); }} className="icon-button" disabled={!can}
+                                                                                        title={can ? t('ui.components.orderDetails.copyPaymentRequest') : t('ui.orders.row.paymentRequestNone')}
+                                                                                        aria-label={t('ui.components.orderDetails.copyPaymentRequest')}
+                                                                                        style={{ padding: '4px', background: 'transparent', border: 'none', cursor: can ? 'pointer' : 'not-allowed', opacity: can ? 1 : 0.35 }}>
+                                                                                        <HandCoins size={16} color="var(--color-text-secondary)" />
+                                                                                    </button>
+                                                                                );
+                                                                            })()}
                                                                         </div>
                                                                     </td>
                                                                 );
@@ -5265,6 +5236,8 @@ const Orders: React.FC = () => {
                                     >
                                         <Copy size={16} /> {t('ui.orders.view.copy')}
                                     </button>
+                                    <CopyPaymentRequestButton order={selectedOrder} sales={sales} short
+                                        style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }} />
                                     <button
                                         onClick={() => window.open(`/orders/${selectedOrder.id}`, '_blank')}
                                         style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: '6px', cursor: 'pointer', padding: '6px', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
