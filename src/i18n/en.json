@@ -4317,7 +4317,7 @@
           "receipts": "Receipts",
           "refunds": "Refunds"
         },
-        "defaultsNote": "These are starting values for new documents only. Changing them never alters a quotation or invoice that has already been saved.",
+        "defaultsNote": "The default deposit accounts save as soon as you pick. The rest of this page lists settings planned for later, with what the app does today.",
         "vatRate": "Default VAT rate (%)",
         "paymentTermsDays": "Payment terms (days)",
         "quotationValidity": "Quotation validity (days)",
@@ -4337,7 +4337,7 @@
         "paymentRequestMessage": "Payment request message",
         "paymentRequestPlaceholder": "Leave blank for the standard wording",
         "paymentRequestHelp": "The paragraph above the invoice list on a payment request letter. Leave blank to use the standard wording.",
-        "glNoteBefore": "The GL accounts a sale posts to — receivables, revenue, VAT, discounts and cost of goods sold — are configured in the ",
+        "glNoteBefore": "The accounts a retail sale posts to — revenue, cost of goods sold, delivery fees and the COD receivable (1210) — are kept in the ",
         "glNoteAfter": ", where the posting engine reads them.",
         "saveSettings": "Save settings",
         "addPageName": "Add a page name...",
@@ -4359,6 +4359,25 @@
           "duplicate": "A discount with this name already exists.",
           "badValue": "Enter an amount above 0.",
           "pctOver100": "A percent can be at most 100."
+        },
+        "notUsed": {
+          "title": "Not used yet",
+          "intro": "Planned settings that nothing in the app reads yet, so they can't be changed here. Each line says what happens today.",
+          "vat": "No VAT is added to retail orders. (The tax rate in Settings › General isn't applied to orders either.)",
+          "paymentTerms": "Retail orders are COD or paid up front, so they have no due date. Credit terms are for wholesale: Wholesale Setup › Payment Terms.",
+          "quotation": "Each quotation sets its own valid-until date.",
+          "warehouse": "Retail orders take stock from the one stock list.",
+          "holdsStock": "Stock leaves when an order is Shipped (or Delivered) and comes back on ReStock.",
+          "numbering": "Order numbers and journal entry numbers (for example JE-…-RCP-…) are set by the app.",
+          "paymentRequest": "Payment request letters aren't sent from retail orders."
+        },
+        "pointer": {
+          "paymentTerms": "Retail orders are COD or paid up front, so they have no payment terms. Credit terms (net days, presets) are set for wholesale customers in Wholesale Setup.",
+          "paymentTermsLink": "Open Wholesale Setup › Payment Terms",
+          "openingBalances": "Retail customers don't carry a balance: what is owed sits on each order (unpaid, or COD with the courier). Customer opening balances are kept for wholesale customers in Wholesale Setup.",
+          "openingBalancesLink": "Open Wholesale Setup › Opening Balances",
+          "priceLevels": "Not used yet. Retail orders are priced from each product's price, and the checkout discount or selling price adjusts a single order. Price levels (for example dealer prices) are planned.",
+          "customerGroups": "Not used yet. Customers aren't grouped for pricing or reports; use Page Name and the Orders filters to slice sales. Customer groups are planned."
         }
       },
       "provinces": {
