@@ -42,6 +42,8 @@ const ACTION_META: Record<string, { icon: React.ReactNode; color: string; label:
     product_added: { icon: <Package size={14} />, color: '#3B82F6', label: 'Product Added' },
     product_updated: { icon: <Package size={14} />, color: '#F59E0B', label: 'Product Updated' },
     product_deleted: { icon: <Package size={14} />, color: '#EF4444', label: 'Product Deleted' },
+    product_deactivated: { icon: <Package size={14} />, color: '#6B7280', label: 'Product Marked Inactive' },
+    product_reactivated: { icon: <Package size={14} />, color: '#10B981', label: 'Product Reactivated' },
     transaction_added: { icon: <DollarSign size={14} />, color: '#10B981', label: 'Transaction Added' },
     transaction_deleted: { icon: <DollarSign size={14} />, color: '#EF4444', label: 'Transaction Deleted' },
     payment_updated: { icon: <DollarSign size={14} />, color: '#F59E0B', label: 'Payment Updated' },
@@ -53,7 +55,7 @@ const ACTION_META: Record<string, { icon: React.ReactNode; color: string; label:
 const CATEGORY_ACTIONS: Record<string, string[]> = {
     Orders: ['order_created', 'order_shipped', 'order_status', 'order_updated', 'order_deleted', 'order_restored', 'order_update', 'bulk_ship', 'bulk_tracking', 'bulk_edit'],
     Stock: ['stock_in', 'stock_out', 'stock_restock'],
-    Products: ['product_added', 'product_updated', 'product_deleted'],
+    Products: ['product_added', 'product_updated', 'product_deleted', 'product_deactivated', 'product_reactivated'],
     Money: ['transaction_added', 'transaction_deleted', 'payment_updated'],
     Users: ['user_login'],
     System: ['settings_updated', 'permission_changed'],

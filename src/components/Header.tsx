@@ -31,6 +31,8 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
     product_added: <Package size={14} style={{ color: '#3B82F6' }} />,
     product_updated: <Package size={14} style={{ color: '#F59E0B' }} />,
     product_deleted: <Package size={14} style={{ color: '#EF4444' }} />,
+    product_deactivated: <Package size={14} style={{ color: '#6B7280' }} />,
+    product_reactivated: <Package size={14} style={{ color: '#10B981' }} />,
     transaction_added: <DollarSign size={14} style={{ color: '#10B981' }} />,
     transaction_deleted: <DollarSign size={14} style={{ color: '#EF4444' }} />,
     payment_updated: <DollarSign size={14} style={{ color: '#F59E0B' }} />,

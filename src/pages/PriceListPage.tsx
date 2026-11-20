@@ -85,10 +85,11 @@ const PriceListPage: React.FC = () => {
         return () => setHeaderContent(null);
     }, [setHeaderContent, isMobile, t]);
 
-    // All products, same as the Inventory page. (Do NOT filter on isActive —
+    // All products the store still sells. (Do NOT filter on isActive —
     // nothing else in the app uses that flag and the data has it false for
-    // many/all products, which left this list empty.)
-    const activeProducts = products;
+    // many/all products, which left this list empty.) `inactive` is the
+    // separate Inventory › "Mark as inactive" flag, false by default.
+    const activeProducts = useMemo(() => products.filter(p => !p.inactive), [products]);
 
     // Category chips, minus the hidden ones. Only shown when there is a real
     // choice to make (more than just "All").

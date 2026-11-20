@@ -55,6 +55,8 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS invoice_number TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier TEXT;
+-- Not sold any more but not deleted (migrations/add_product_inactive.sql).
+ALTER TABLE products ADD COLUMN IF NOT EXISTS inactive BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,

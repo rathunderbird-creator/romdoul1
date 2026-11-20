@@ -19,6 +19,7 @@
 // each product's own `isActive` field, not whether it's in this array).
 import { supabase } from '../lib/supabase';
 import { fetchAll } from './fetchAll';
+import { isMissingColumnError } from './supabaseErrors';
 import type { Product } from '../types';
 
 const PRODUCTS_SELECT = 'id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, invoice_number, supplier, created_at, is_active';
@@ -26,6 +27,7 @@ const PRODUCTS_SELECT = 'id, name, model, sku, price, purchase_cost, stock, cate
 const mapProduct = (p: any): Product => ({
     ...p,
     isActive: p.is_active ?? true,
+    inactive: p.inactive === true,
     lowStockThreshold: p.low_stock_threshold || p.lowStockThreshold || 5,
     stock: Number(p.stock),
     price: Number(p.price),
@@ -37,8 +39,16 @@ const mapProduct = (p: any): Product => ({
 });
 
 export const fetchAllProducts = async (): Promise<Product[]> => {
-    const rows = await fetchAll((from, to) =>
-        supabase.from('products').select(PRODUCTS_SELECT).order('id', { ascending: true }).range(from, to)
+    const load = (cols: string) => fetchAll((from, to) =>
+        supabase.from('products').select(cols).order('id', { ascending: true }).range(from, to)
     );
+    let rows: Awaited<ReturnType<typeof load>>;
+    try {
+        rows = await load(`${PRODUCTS_SELECT}, inactive`);
+    } catch (e) {
+        // Store without add_product_inactive.sql: every product reads active.
+        if (!isMissingColumnError(e, 'inactive')) throw e;
+        rows = await load(PRODUCTS_SELECT);
+    }
     return rows.map(mapProduct);
 };

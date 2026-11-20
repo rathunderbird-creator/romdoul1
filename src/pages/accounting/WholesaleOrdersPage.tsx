@@ -937,7 +937,8 @@ const WholesaleOrdersPage: React.FC = () => {
                                                     <td style={{ padding: '10px 12px' }}>
                                                         <select style={{ ...fieldInput, padding: '8px 10px', fontSize: '13px' }} value={l.product_id || ''} onChange={e => setLine(idx, { product_id: e.target.value })}>
                                                             <option value="">{t('ui.wholesale.orders.form.selectProduct')}</option>
-                                                            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                            {/* Inactive products are not offered, except the one this line already holds. */}
+                                                            {products.filter(p => !p.inactive || p.id === l.product_id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                                         </select>
                                                     </td>
                                                     <td style={{ padding: '10px 12px' }}>

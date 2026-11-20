@@ -14,7 +14,11 @@ export interface Product {
     category: string;
     invoiceNumber?: string;
     supplier?: string;
+    // false = soft-deleted (deleteProduct); such rows never reach the store.
     isActive?: boolean;
+    // true = no longer sold: kept in Inventory and reports, hidden from the
+    // pickers that start a new sale (products.inactive, add_product_inactive.sql).
+    inactive?: boolean;
     createdAt?: string;
 }
 
@@ -222,6 +226,8 @@ export interface StoreContextType {
     updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
     deleteProduct: (id: string) => Promise<void>;
     deleteProducts: (ids: string[]) => Promise<void>;
+    // Mark products inactive (true) or active again (false). Throws on failure.
+    setProductsInactive: (ids: string[], inactive: boolean) => Promise<void>;
     // opts.money: the riel details of the money this save books (the
     // income row and its journal entry are tagged after the save).
     updateOrder: (id: string, updates: Partial<Sale>, opts?: { money?: MoneyRecord & { category?: string }; expectMoney?: { deposit: number; total: number } }) => Promise<boolean>; // false: not everything was saved (the user has been told why)

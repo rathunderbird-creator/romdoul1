@@ -2873,6 +2873,18 @@
       "viewDetails": "View Details",
       "viewDetailsOf": "View details of {name}",
       "markOutOfStock": "Mark Out of Stock",
+      "inactive": {
+        "badge": "Inactive",
+        "markInactive": "Mark as inactive (stop selling)",
+        "markActive": "Mark as active again",
+        "confirm": "Mark \"{name}\" as inactive? It stays in Inventory and reports with its stock, but can no longer be picked for new orders. You can make it active again any time.",
+        "toastInactive": "\"{name}\" is now inactive",
+        "toastActive": "\"{name}\" is active again",
+        "filterLabel": "Active or inactive products",
+        "filterActive": "Active products",
+        "filterInactive": "Inactive products ({n})",
+        "filterAll": "Active + inactive"
+      },
       "adjustStock": "Adjust Stock",
       "wholesaleOrder": "Wholesale Order",
       "editProduct": "Edit Product",
@@ -3911,6 +3923,8 @@
         "openingStockFailed": "Product \"{name}\" was added with stock 0: its opening stock of {qty} was not added ({error}). Add it with Add Stock.",
         "deleteFailed": "Failed to delete product: {error}",
         "deleteManyFailed": "Failed to delete products: {error}",
+        "inactiveFailed": "Could not change the product status: {error}",
+        "inactiveNeedsMigration": "Marking products inactive needs a database update first. Run migrations/add_product_inactive.sql on this store.",
         "importFailed": "Failed to import products: {error}"
       },
       "auth": {
@@ -4453,6 +4467,8 @@
           "product_added": "Product Added",
           "product_updated": "Product Updated",
           "product_deleted": "Product Deleted",
+          "product_deactivated": "Product Marked Inactive",
+          "product_reactivated": "Product Reactivated",
           "transaction_added": "Transaction Added",
           "transaction_deleted": "Transaction Deleted",
           "payment_updated": "Payment Updated",

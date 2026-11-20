@@ -11,7 +11,7 @@ import { callDbFunction, noticesOf, rpcWithSession, resetGuardedSignatureCache }
 import { setSessionAuth, registerSessionExpiredHandler } from '../utils/session';
 import { createRetryKeys } from '../utils/retryKey';
 import { fetchAll } from '../utils/fetchAll';
-import { isFifoReadMissingError } from '../utils/supabaseErrors';
+import { isFifoReadMissingError, isMissingColumnError } from '../utils/supabaseErrors';
 import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../utils/configOps';
 import { rejectionReasonList, rejectionReasonOp } from '../utils/rejectionReasons';
 import { BACKUP_TABLES, buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
@@ -1148,15 +1148,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // products x warehouses. Wrapped to the { data, error } result shape
             // the blocks below expect.
             const fetchAllProductsRows = async () => {
+                const baseCols = 'id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, invoice_number, supplier, created_at, is_active';
+                const load = (cols: string) => fetchAll((from, to) => supabase
+                    .from('products')
+                    .select(cols)
+                    // created_at ties are possible — the unique id breaks them.
+                    .order('created_at', { ascending: false })
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'StoreContext.refreshData products' });
                 try {
-                    const data = await fetchAll((from, to) => supabase
-                        .from('products')
-                        .select('id, name, model, sku, price, purchase_cost, stock, category, low_stock_threshold, image, invoice_number, supplier, created_at, is_active')
-                        // created_at ties are possible — the unique id breaks them.
-                        .order('created_at', { ascending: false })
-                        .order('id', { ascending: true })
-                        .range(from, to), 1000, { label: 'StoreContext.refreshData products' });
-                    return { data, error: null };
+                    try {
+                        return { data: await load(`${baseCols}, inactive`), error: null };
+                    } catch (error) {
+                        // Store without add_product_inactive.sql yet: every
+                        // product reads as active.
+                        if (!isMissingColumnError(error, 'inactive')) throw error;
+                        return { data: await load(baseCols), error: null };
+                    }
                 } catch (error) { return { data: null, error }; }
             };
             const fetchAllCustomers = async () => {
@@ -1235,6 +1243,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     .map((p: any) => ({
                     ...p,
                     isActive: p.is_active ?? true,
+                    inactive: p.inactive === true,
                     lowStockThreshold: p.low_stock_threshold || p.lowStockThreshold || 5,
                     stock: Number(p.stock),
                     price: Number(p.price),
@@ -2553,6 +2562,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setProducts(prev => prev.filter(p => !ids.includes(p.id)));
             setProductsUpdatedAt(Date.now());
         }
+    };
+
+    // Inactive = not sold any more, NOT deleted (that is is_active above):
+    // the product stays in Inventory, reports and past orders, and only drops
+    // out of the pickers that start a new sale. Throws a readable Error.
+    const setProductsInactive = async (ids: string[], inactive: boolean) => {
+        if (ids.length === 0) return;
+        const { error } = await supabase.from('products').update({ inactive }).in('id', ids);
+        if (error) {
+            console.error('Error changing product inactive flag:', error);
+            throw new Error(isMissingColumnError(error, 'inactive')
+                ? tNow('ui.store.product.inactiveNeedsMigration')
+                : tNow('ui.store.product.inactiveFailed', { error: error.message }));
+        }
+        const idSet = new Set(ids);
+        setProducts(prev => prev.map(p => idSet.has(p.id) ? { ...p, inactive } : p));
+        setProductsUpdatedAt(Date.now());
+        dispatchActivity({
+            action: inactive ? 'product_deactivated' : 'product_reactivated',
+            description: `${ids.length} product(s) marked ${inactive ? 'inactive' : 'active'}`,
+            userId: currentUser?.id, userName: currentUser?.name, metadata: { productIds: ids },
+        });
     };
 
     // `supplier` feeds the "Supplier / Customer" column in Stock Movements. Without it
@@ -4882,6 +4913,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updateProduct,
             deleteProduct,
             deleteProducts,
+            setProductsInactive,
             addStock, // Added addStock to context
             receivePurchaseOrder,
             adjustStock, // Added adjustStock to context

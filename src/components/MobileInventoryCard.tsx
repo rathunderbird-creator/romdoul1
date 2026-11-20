@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit2, Trash2, AlertTriangle, ChevronDown, Truck, Eye } from 'lucide-react';
+import { Edit2, Trash2, AlertTriangle, ChevronDown, Truck, Eye, Archive, ArchiveRestore } from 'lucide-react';
 import type { Product } from '../types';
 import './MobileInventoryCard.css';
 import LazyAvatar from './LazyAvatar';
@@ -15,6 +15,8 @@ interface MobileInventoryCardProps {
     onDelete: (id: string) => void;
     onWholesale?: (product: Product) => void;
     onView?: (product: Product) => void;
+    /** Marks the product inactive, or active again when it already is. */
+    onToggleInactive?: (product: Product) => void;
     /** Hides the edit/delete/wholesale actions for view-only roles. */
     canManage?: boolean;
     /** Shows Last cost and FIFO avg, same as the table's cost column. */
@@ -33,6 +35,7 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
     onDelete,
     onWholesale,
     onView,
+    onToggleInactive,
     canManage = true,
     showCosts = false,
     fifoAvgCost
@@ -64,8 +67,15 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                 {/* Thumb & Info */}
                 <LazyAvatar productId={product.id} initialImage={product.image} alt={product.name} className="mic-image" />
 
-                <div className="mic-info">
-                    <div className="mic-name">{product.name}</div>
+                <div className="mic-info" style={product.inactive ? { opacity: 0.6 } : undefined}>
+                    <div className="mic-name">
+                        {product.name}
+                        {product.inactive && (
+                            <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', background: '#E5E7EB', color: '#4B5563', verticalAlign: 'middle' }}>
+                                {tx('ui.inventory.inactive.badge', 'Inactive')}
+                            </span>
+                        )}
+                    </div>
                     <div className="mic-meta-row">
                         <span style={{ fontWeight: 500 }}>${product.price}</span>
                         <span>•</span>
@@ -142,6 +152,19 @@ const MobileInventoryCard: React.FC<MobileInventoryCardProps> = ({
                                 }}
                             >
                                 <Trash2 size={18} />
+                            </button>
+                        )}
+                        {canManage && onToggleInactive && (
+                            <button
+                                className="mic-action-btn"
+                                title={product.inactive ? tx('ui.inventory.inactive.markActive', 'Mark as active') : tx('ui.inventory.inactive.markInactive', 'Mark as inactive')}
+                                aria-label={product.inactive ? tx('ui.inventory.inactive.markActive', 'Mark as active') : tx('ui.inventory.inactive.markInactive', 'Mark as inactive')}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onToggleInactive(product);
+                                }}
+                            >
+                                {product.inactive ? <ArchiveRestore size={18} /> : <Archive size={18} />}
                             </button>
                         )}
                         {canManage && onWholesale && (

@@ -53,6 +53,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ orderToEdit, onCancelEdit }
     const allCategories = ['All', ...categories];
 
     const filteredProducts = products.filter(p => {
+        if (p.inactive) return false; // no longer sold (Inventory › Mark as inactive)
         const productName = (p.name || '').trim();
         const productModel = (p.model || '').trim();
         const searchQuery = searchTerm.trim().toLowerCase();

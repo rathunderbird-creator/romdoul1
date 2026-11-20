@@ -2873,6 +2873,18 @@
       "viewDetails": "មើលព័ត៌មានលម្អិត",
       "viewDetailsOf": "មើលព័ត៌មានលម្អិតរបស់ {name}",
       "markOutOfStock": "កំណត់ថាអស់ស្តុក",
+      "inactive": {
+        "badge": "អសកម្ម",
+        "markInactive": "កំណត់ជាអសកម្ម (ឈប់លក់)",
+        "markActive": "ធ្វើឱ្យសកម្មវិញ",
+        "confirm": "កំណត់ \"{name}\" ជាអសកម្មមែនទេ? វានៅតែមាននៅក្នុងស្តុក និងរបាយការណ៍ជាមួយស្តុករបស់វា ប៉ុន្តែមិនអាចជ្រើសរើសសម្រាប់ការបញ្ជាទិញថ្មីបានទៀតទេ។ អ្នកអាចធ្វើឱ្យវាសកម្មវិញបានគ្រប់ពេល។",
+        "toastInactive": "\"{name}\" ឥឡូវនេះអសកម្ម",
+        "toastActive": "\"{name}\" សកម្មវិញហើយ",
+        "filterLabel": "ផលិតផលសកម្ម ឬអសកម្ម",
+        "filterActive": "ផលិតផលសកម្ម",
+        "filterInactive": "ផលិតផលអសកម្ម ({n})",
+        "filterAll": "សកម្ម + អសកម្ម"
+      },
       "adjustStock": "កែតម្រូវស្តុក",
       "wholesaleOrder": "ការបញ្ជាទិញលក់ដុំ",
       "editProduct": "កែប្រែផលិតផល",
@@ -3911,6 +3923,8 @@
         "openingStockFailed": "ផលិតផល \"{name}\" បានបន្ថែមដោយស្តុក 0៖ ស្តុកដើម {qty} មិនបានបញ្ចូលទេ ({error})។ សូមបញ្ចូលវាដោយ បន្ថែមស្តុក។",
         "deleteFailed": "មិនអាចលុបផលិតផលបានទេ៖ {error}",
         "deleteManyFailed": "មិនអាចលុបផលិតផលបានទេ៖ {error}",
+        "inactiveFailed": "មិនអាចប្ដូរស្ថានភាពផលិតផលបានទេ៖ {error}",
+        "inactiveNeedsMigration": "ការកំណត់ផលិតផលជាអសកម្មត្រូវការធ្វើបច្ចុប្បន្នភាពមូលដ្ឋានទិន្នន័យជាមុនសិន។ សូមដំណើរការ migrations/add_product_inactive.sql លើហាងនេះ។",
         "importFailed": "មិនអាចនាំចូលផលិតផលបានទេ៖ {error}"
       },
       "auth": {
@@ -4453,6 +4467,8 @@
           "product_added": "បានបន្ថែមផលិតផល",
           "product_updated": "បានកែប្រែផលិតផល",
           "product_deleted": "បានលុបផលិតផល",
+          "product_deactivated": "បានកំណត់ផលិតផលជាអសកម្ម",
+          "product_reactivated": "បានធ្វើឱ្យផលិតផលសកម្មវិញ",
           "transaction_added": "បានបន្ថែមប្រតិបត្តិការ",
           "transaction_deleted": "បានលុបប្រតិបត្តិការ",
           "payment_updated": "បានកែប្រែការទូទាត់",
