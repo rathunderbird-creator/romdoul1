@@ -646,6 +646,9 @@ export interface SalesSettings {
     // when nobody picks one: USD, and riel for KHR payments.
     defaultDepositAccountId?: string;
     defaultDepositAccountIdKhr?: string;
+    // Days a new quotation stays valid (CRM › Quotations pre-fills its
+    // Valid until); a whole number 1–365 as text, see quotationValidity.ts.
+    quotationValidityDays?: string;
 }
 
 export interface WholesaleSettings {

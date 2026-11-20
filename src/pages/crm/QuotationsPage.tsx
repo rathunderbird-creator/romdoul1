@@ -7,6 +7,7 @@ import { useCrm } from '../../hooks/useCrm';
 import { useLanguage } from '../../context/LanguageContext';
 import type { Quotation, QuotationItem } from '../../types';
 import { dayKeyFromDate } from '../../utils/dateRange';
+import { defaultQuotationValidUntil } from '../../utils/quotationValidity';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
 const QUOTE_STATUSES: Quotation['status'][] = ['Draft', 'Sent', 'Accepted', 'Rejected'];
@@ -22,7 +23,7 @@ const statusConfig = (s?: string) => {
 
 const QuotationsPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
-    const { products } = useStore();
+    const { products, salesSettings } = useStore();
     const { t } = useLanguage();
     const qStatusLabel = (s: string) => ({
         All: t('common.all'),
@@ -92,7 +93,9 @@ const QuotationsPage: React.FC = () => {
             setEditing(q); setLeadId(q.lead_id || ''); setStatus(q.status); setValidUntil(q.valid_until || '');
             setLines(q.items && q.items.length > 0 ? q.items.map(i => ({ ...i })) : [{ name: '', quantity: 1, unit_price: 0 }]);
         } else {
-            setEditing(null); setLeadId(leads[0]?.id || ''); setStatus('Draft'); setValidUntil('');
+            setEditing(null); setLeadId(leads[0]?.id || ''); setStatus('Draft');
+            // Sales Setup › Defaults › Quotation validity (days); '' with none set.
+            setValidUntil(defaultQuotationValidUntil(salesSettings.quotationValidityDays, dayKeyFromDate(new Date())));
             setLines([{ name: '', quantity: 1, unit_price: 0 }]);
         }
         setIsModalOpen(true);

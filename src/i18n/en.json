@@ -4417,7 +4417,6 @@
           "intro": "Planned settings that nothing in the app reads yet, so they can't be changed here. Each line says what happens today.",
           "vat": "No VAT is added to retail orders. (The tax rate in Settings › General isn't applied to orders either.)",
           "paymentTerms": "Retail orders are COD or paid up front, so they have no due date. Credit terms are for wholesale: Wholesale Setup › Payment Terms.",
-          "quotation": "Each quotation sets its own valid-until date.",
           "warehouse": "Retail orders take stock from each product's total stock, not from a warehouse. (The default warehouse in Inventory › Warehouses is used by stock adjustments and wholesale orders.)",
           "holdsStock": "Stock leaves when an order is Shipped (or Delivered) and comes back on ReStock.",
           "numbering": "Order numbers and journal entry numbers (for example JE-…-RCP-…) are set by the app.",
@@ -4437,7 +4436,10 @@
           "byCourier": "Type of each shipping company",
           "byCourierHelp": "Saved as soon as you pick. A courier used both in Phnom Penh and in the provinces can have only one type.",
           "none": "— No type —"
-        }
+        },
+        "quotationValidityNone": "Not set",
+        "quotationValidityHelp": "A new quotation in CRM › Quotations is valid until today plus this many days (you can still change the date on each quote). Leave empty to start with no date.",
+        "quotationValidityBad": "Enter a whole number of days from 1 to {max}, or leave it empty."
       },
       "provinces": {
         "shutdownBadge": "បិទបណ្តោះអាសន្ន · Shutdown",
