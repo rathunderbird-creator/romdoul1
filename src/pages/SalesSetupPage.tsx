@@ -27,6 +27,7 @@ import { isKhrAccountName } from '../utils/currency';
 import { useAccounting } from '../hooks/useAccounting';
 import type { SalesSettings } from '../types';
 import { discountPresetProblem, discountPresetValueLabel } from '../utils/discountPresets';
+import { courierDeliveryType } from '../utils/deliveryTypes';
 import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
 
 type SectionKey =
@@ -52,7 +53,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
 ];
 
 // Sections not in this set fall through to the "reserved" placeholder below.
-const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces', 'rejectionReasons', 'discounts']);
+const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces', 'rejectionReasons', 'discounts', 'deliveryTypes']);
 
 // Add/remove UI for a flat string list backed by the store's config blob
 // (same data CheckoutForm's gear-icon ConfigModal edits — this just gives it
@@ -83,8 +84,12 @@ const SetupListSection: React.FC<{
         setDraft('');
     };
 
+    // One save at a time, like add: a list saved whole (defaults on screen)
+    // must not be built from a read taken before another remove landed.
     const handleRemove = (name: string) => {
-        Promise.resolve(onRemove(name)).catch(reportError);
+        if (busy) return;
+        setBusy(true);
+        Promise.resolve(onRemove(name)).catch(reportError).finally(() => setBusy(false));
     };
 
     return (
@@ -312,6 +317,51 @@ const DepositAccountDefaults: React.FC<{ fieldId: (name: string) => string }> = 
     );
 };
 
+// Delivery Types › each shipping company's type. An order shows its
+// courier's type (Orders "Delivery type" column), past orders too, so this
+// is the only place a type is set. Each select saves on change.
+const CourierDeliveryTypes: React.FC = () => {
+    const { t } = useLanguage();
+    const { showToast } = useToast();
+    const { shippingCompanies, deliveryTypes, courierDeliveryTypes, setCourierDeliveryType } = useStore();
+    const idBase = useId();
+    const [busy, setBusy] = useState<string | null>(null);
+    const change = (company: string, type: string) => {
+        if (busy) return;
+        setBusy(company);
+        setCourierDeliveryType(company, type)
+            .catch((err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error'))
+            .finally(() => setBusy(null));
+    };
+    return (
+        <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{t('ui.admin.salesSetup.deliveryType.byCourier')}</div>
+                <div style={helpStyle}>{t('ui.admin.salesSetup.deliveryType.byCourierHelp')}</div>
+            </div>
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
+                {shippingCompanies.length === 0 ? (
+                    <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.salesSetup.noneYet')}</div>
+                ) : shippingCompanies.map((company, i) => {
+                    const current = courierDeliveryType(courierDeliveryTypes, company);
+                    // A type removed from the list (or another spelling) still shows.
+                    const options = current && !deliveryTypes.includes(current) ? [...deliveryTypes, current] : deliveryTypes;
+                    return (
+                        <div key={company} style={{ display: 'grid', gridTemplateColumns: 'minmax(110px, 1fr) minmax(150px, 1.4fr)', gap: '10px', alignItems: 'center', padding: '8px 14px', borderTop: i ? '1px solid var(--color-border)' : 'none' }}>
+                            <label htmlFor={`${idBase}-${i}`} style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</label>
+                            <select id={`${idBase}-${i}`} className="setup-field" value={current} disabled={!!busy}
+                                onChange={e => change(company, e.target.value)} style={{ ...inputStyle, padding: '7px 10px', cursor: 'pointer' }}>
+                                <option value="">{t('ui.admin.salesSetup.deliveryType.none')}</option>
+                                {options.map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
 // Discounts: presets offered as quick picks next to Checkout's discount
 // field (app_config discountPresets). A pick fills the USD discount — a
 // percent of the items' price, or a fixed amount — and stays editable.
@@ -455,6 +505,7 @@ const SalesSetupPage: React.FC = () => {
         pages, shippingCompanies, addPage, removePage, addShippingCompany, removeShippingCompany, paymentMethods, addPaymentMethod, removePaymentMethod,
         salesmen, addSalesman, removeSalesman, customerCare, addCustomerCare, removeCustomerCare, users,
         rejectionReasons, addRejectionReason, removeRejectionReason,
+        deliveryTypes, addDeliveryType, removeDeliveryType,
     } = useStore();
     // The store's customerCare list also carries every user whose role is
     // Customer Care or Admin; those rows come from Users and cannot be
@@ -572,6 +623,16 @@ const SalesSetupPage: React.FC = () => {
                 <SetupListSection title={t('ui.admin.salesSetup.sections.customerCare')} placeholder={t('ui.admin.salesSetup.addCustomerCare')} items={customerCare}
                     onAdd={addCustomerCare} onRemove={removeCustomerCare} help={t('ui.admin.salesSetup.customerCareHelp')}
                     lockedNote={name => careFromUsers.has(name) ? t('ui.admin.salesSetup.fromUsers') : null} />
+            )}
+
+            {/* ── Delivery Types: the list, and each courier's type (an order
+                shows its courier's type). ── */}
+            {section === 'deliveryTypes' && (
+                <div style={{ flex: '1 1 560px', maxWidth: '680px', display: 'grid', gap: '20px' }}>
+                    <SetupListSection title={t('ui.admin.salesSetup.sections.deliveryTypes')} placeholder={t('ui.admin.salesSetup.deliveryType.add')} items={deliveryTypes}
+                        onAdd={addDeliveryType} onRemove={removeDeliveryType} help={t('ui.admin.salesSetup.deliveryType.help')} />
+                    <CourierDeliveryTypes />
+                </div>
             )}
 
             {/* ── Discounts: Checkout's quick-pick presets. ── */}

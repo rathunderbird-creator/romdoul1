@@ -35,6 +35,7 @@ import { mapSaleEntity } from '../utils/mapper';
 import { accountCurrency, formatKhr, formatMoneyLine, formatUsd, isKhrRow, khrMeta, khrToUsd, rielToReopen, shopRate, SNAP_TOLERANCE_USD, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { roundCents } from '../utils/money';
 import { reasonApplies, reasonOptions } from '../utils/rejectionReasons';
+import { courierDeliveryType, couriersMatchingTypeText } from '../utils/deliveryTypes';
 
 // The "Other…" pick in the reason pop-up and Reason column (never saved).
 const OTHER_REASON = '__other__';
@@ -1004,7 +1005,7 @@ async function paidMoneyOf(orderId: string, kind: PaymentKind, bookedUsd: number
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods, rejectionReasons } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods, rejectionReasons, courierDeliveryTypes } = useStore();
     const { t } = useLanguage();
     // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
     const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
@@ -1452,6 +1453,7 @@ const Orders: React.FC = () => {
         { id: 'received', label: t('orders.received') },
         { id: 'payStatus', label: t('orders.payStatus') },
         { id: 'shippingCo', label: t('orders.shippingCo') },
+        { id: 'deliveryType', label: t('ui.orders.deliveryType.column') },
         { id: 'remark', label: t('orders.remark') },
         { id: 'returnReason', label: t('ui.orders.returnReason.column') },
         { id: 'tracking', label: t('orders.trackingId') },
@@ -1468,6 +1470,14 @@ const Orders: React.FC = () => {
                 // The Reason column is new: shown once (after Remark) on a
                 // saved layout; hiding it afterwards sticks.
                 try {
+                    // Same for Delivery type (after Shipping Co).
+                    if (!localStorage.getItem('orders_deliveryTypeColAdded')) {
+                        localStorage.setItem('orders_deliveryTypeColAdded', '1');
+                        if (Array.isArray(cols) && !cols.includes('deliveryType')) {
+                            const at = cols.indexOf('shippingCo');
+                            cols.splice(at >= 0 ? at + 1 : cols.length, 0, 'deliveryType');
+                        }
+                    }
                     if (!localStorage.getItem('orders_returnReasonColAdded')) {
                         localStorage.setItem('orders_returnReasonColAdded', '1');
                         if (Array.isArray(cols) && !cols.includes('returnReason')) {
@@ -1481,9 +1491,15 @@ const Orders: React.FC = () => {
                 console.error('Failed to parse visible columns:', e);
             }
         }
+        // The defaults already hold the newer columns: their one-time adds
+        // are done (hiding one later then sticks).
+        try {
+            localStorage.setItem('orders_deliveryTypeColAdded', '1');
+            localStorage.setItem('orders_returnReasonColAdded', '1');
+        } catch { /* storage blocked */ }
         return [
             'actions', 'date', 'customer', 'phone', 'address', 'page', 'salesman', 'customerCare', 'items', 'total', 'payBy',
-            'balance', 'status', 'received', 'payStatus', 'shippingCo', 'remark', 'returnReason', 'tracking', 'settleDate', 'lastEdit'
+            'balance', 'status', 'received', 'payStatus', 'shippingCo', 'deliveryType', 'remark', 'returnReason', 'tracking', 'settleDate', 'lastEdit'
         ];
     });
 
@@ -2107,6 +2123,17 @@ const Orders: React.FC = () => {
                     case 'shippingCo':
                         query = query.ilike('shipping_company', `%${esc}%`);
                         break;
+                    case 'deliveryType': {
+                        // Derived from the courier (Sales Setup › Delivery
+                        // Types): the couriers whose type matches the text.
+                        // Matched like the cell: case-insensitive equality
+                        // (ilike without wildcards; % _ \ " escaped).
+                        const couriers = couriersMatchingTypeText(courierDeliveryTypes, v);
+                        if (!couriers.length) { query = query.in('shipping_company', ['__no_courier_has_this_type__']); break; }
+                        const pat = (c: string) => c.trim().replace(/[\\%_]/g, ch => '\\' + ch).replace(/"/g, '\\"');
+                        query = query.or(couriers.map(c => `shipping_company.ilike."${pat(c)}"`).join(','));
+                        break;
+                    }
                     case 'remark':
                         query = query.ilike('remark', `%${esc}%`);
                         break;
@@ -2252,7 +2279,7 @@ const Orders: React.FC = () => {
         // async function makes `await` EXECUTE the query and hand back its result
         // instead of the builder. Wrap it so the caller gets the builder intact.
         return { query };
-    }, [applyScopeFilters, statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, currentUser, columnFilters, showToast, salesUpdatedAt]);
+    }, [applyScopeFilters, statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, currentUser, columnFilters, showToast, salesUpdatedAt, courierDeliveryTypes]);
 
     // Stale-response guard: a click-through's filtered refetch races the
     // unfiltered mount fetch (and any other superseded fetch); without this,
@@ -2278,6 +2305,8 @@ const Orders: React.FC = () => {
                     'balance': 'total',
                     'payBy': 'payment_method',
                     'shippingCo': 'shipping_company',
+                    // Derived from the courier: grouped by courier.
+                    'deliveryType': 'shipping_company',
                     'tracking': 'tracking_number',
                     'status': 'shipping_status',
                     'received': 'amount_received',
@@ -2727,6 +2756,7 @@ const Orders: React.FC = () => {
                 return d ? new Date(d).toLocaleDateString() : 'N/A';
             })(),
             'Shipping Company': order.shipping?.company || 'N/A',
+            'Delivery Type': courierDeliveryType(courierDeliveryTypes, order.shipping?.company) || '',
             'Shipping Status': order.shipping?.status || 'Pending',
             'Tracking Number': order.shipping?.trackingNumber || 'N/A',
             'Remarks': order.remark || '',
@@ -2754,6 +2784,7 @@ const Orders: React.FC = () => {
             { wch: 15 }, // Pay Status
             { wch: 15 }, // Settle Date
             { wch: 20 }, // Ship Company
+            { wch: 18 }, // Delivery Type
             { wch: 15 }, // Ship Status
             { wch: 20 }, // Tracking
             { wch: 30 }, // Remarks
@@ -4809,6 +4840,10 @@ const Orders: React.FC = () => {
                                                                         />
                                                                     </td>
                                                                 );
+                                                            case 'deliveryType': {
+                                                                const dt = courierDeliveryType(courierDeliveryTypes, order.shipping?.company);
+                                                                return <td key={colId} style={{ ...cellStyle, color: dt ? 'inherit' : 'var(--color-text-muted)' }} title={dt}>{dt || '-'}</td>;
+                                                            }
                                                             case 'returnReason': {
                                                                 // Settable on Returned / Cancelled / ReStock orders. A
                                                                 // reason left on a reopened order still shows (and can

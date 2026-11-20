@@ -15,6 +15,7 @@ import { isFifoReadMissingError, isMissingColumnError } from '../utils/supabaseE
 import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../utils/configOps';
 import { rejectionReasonList, rejectionReasonOp } from '../utils/rejectionReasons';
 import { discountPresetList, withDiscountPreset, withoutDiscountPreset, type DiscountPreset } from '../utils/discountPresets';
+import { courierTypeMap, courierTypeOp, deliveryTypeList, deliveryTypeOp, freeCouriersOfTypeOp } from '../utils/deliveryTypes';
 import { BACKUP_TABLES, buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
 import { ALL_PERMISSIONS } from '../types';
 import { orderStatusText } from '../utils/orderStatusRules';
@@ -71,6 +72,9 @@ interface ConfigState {
     rejectionReasons?: string[];
     // Sales Setup › Discounts (Checkout's quick picks; discountPresets.ts).
     discountPresets?: DiscountPreset[];
+    // Sales Setup › Delivery Types: the list, and courier -> type.
+    deliveryTypes?: string[];
+    courierDeliveryTypes?: Record<string, string>;
     trackingUrlTemplates?: Record<string, string>; // Company -> tracking page URL with {tracking}
     users?: User[];
     roles?: Role[];
@@ -2069,6 +2073,42 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // this copy's config never loaded (a plain 'set' would be).
         await updateConfigOps(() => ({ discountPresets: { op: 'set', value: next } }));
     };
+    // Sales Setup › Delivery Types. Both keys are written from the row read
+    // fresh (builder: works when this copy's config never loaded). Removing a
+    // type also takes it off the couriers that had it, in the same write.
+    const deliveryTypes = useMemo(() => deliveryTypeList(config.deliveryTypes), [config.deliveryTypes]);
+    // Same object until the map's contents change: Orders refetches on it.
+    const courierMapKey = JSON.stringify(courierTypeMap(config.courierDeliveryTypes));
+    const courierDeliveryTypes = useMemo<Record<string, string>>(() => JSON.parse(courierMapKey), [courierMapKey]);
+    const readConfigRow = async (): Promise<Record<string, unknown>> => {
+        const { data: row, error } = await supabase.from('app_config').select('data').eq('id', 1).single();
+        if (error && error.code !== 'PGRST116') throw error;
+        return (row?.data as Record<string, unknown> | undefined) || {};
+    };
+    const addDeliveryType = async (name: string) => {
+        const row = await readConfigRow();
+        const op = deliveryTypeOp(row.deliveryTypes, 'add', name);
+        if (op) await updateConfigOps(() => ({ deliveryTypes: op }));
+        else setConfig(prev => ({ ...prev, deliveryTypes: row.deliveryTypes as string[] | undefined }));
+    };
+    const removeDeliveryType = async (name: string) => {
+        const row = await readConfigRow();
+        const op = deliveryTypeOp(row.deliveryTypes, 'remove', name);
+        if (!op) { setConfig(prev => ({ ...prev, deliveryTypes: row.deliveryTypes as string[] | undefined })); return; }
+        // Only the couriers that had it are unset (a scoped op, not the whole map).
+        const free = freeCouriersOfTypeOp(courierTypeMap(row.courierDeliveryTypes), name);
+        await updateConfigOps(() => ({ deliveryTypes: op, ...(free ? { courierDeliveryTypes: free } : {}) }));
+    };
+    const setCourierDeliveryType = async (company: string, type: string) => {
+        const row = await readConfigRow();
+        const map = courierTypeMap(row.courierDeliveryTypes);
+        // Scoped to this courier's keys: another courier's edit landing
+        // meanwhile is kept.
+        const op = courierTypeOp(map, company, type);
+        if (!op) { setConfig(prev => ({ ...prev, courierDeliveryTypes: map })); return; }
+        await updateConfigOps(() => ({ courierDeliveryTypes: op }));
+    };
+
     const addDiscountPreset = async (p: DiscountPreset) => {
         let taken = false;
         await editDiscountPresets(list => {
@@ -5063,6 +5103,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             discountPresets,
             addDiscountPreset,
             removeDiscountPreset,
+            deliveryTypes,
+            courierDeliveryTypes,
+            addDeliveryType,
+            removeDeliveryType,
+            setCourierDeliveryType,
             cities: config.cities || [],
             addCity,
             removeCity,
