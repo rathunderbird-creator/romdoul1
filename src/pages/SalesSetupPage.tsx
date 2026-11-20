@@ -24,6 +24,7 @@ import { getFileBooksCod, isCashBankAccount, isCodPaymentMethod } from '../utils
 import { isKhrAccountName } from '../utils/currency';
 import { useAccounting } from '../hooks/useAccounting';
 import type { SalesSettings } from '../types';
+import { discountPresetProblem, discountPresetValueLabel } from '../utils/discountPresets';
 import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
 
 type SectionKey =
@@ -49,7 +50,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
 ];
 
 // Sections not in this set fall through to the "reserved" placeholder below.
-const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces', 'rejectionReasons']);
+const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces', 'rejectionReasons', 'discounts']);
 
 // Add/remove UI for a flat string list backed by the store's config blob
 // (same data CheckoutForm's gear-icon ConfigModal edits — this just gives it
@@ -317,6 +318,89 @@ const DepositAccountDefaults: React.FC<{ fieldId: (name: string) => string }> = 
     );
 };
 
+// Discounts: presets offered as quick picks next to Checkout's discount
+// field (app_config discountPresets). A pick fills the USD discount — a
+// percent of the items' price, or a fixed amount — and stays editable.
+const DiscountsSection: React.FC = () => {
+    const { t } = useLanguage();
+    const { showToast } = useToast();
+    const { discountPresets, addDiscountPreset, removeDiscountPreset } = useStore();
+    const idBase = useId();
+    const [name, setName] = useState('');
+    const [type, setType] = useState<'pct' | 'usd'>('pct');
+    const [value, setValue] = useState('');
+    const [busy, setBusy] = useState(false);
+    // An add was tried: an empty name or value is then an error, not "still typing".
+    const [tried, setTried] = useState(false);
+    const fail = (err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error');
+    const problem = discountPresetProblem(discountPresets, name, type, value);
+    const shownProblem = problem && (tried || (problem !== 'needName' && !(problem === 'badValue' && value.trim() === ''))) ? problem : null;
+    const nameBad = shownProblem === 'needName' || shownProblem === 'duplicate';
+    const valueBad = shownProblem === 'badValue' || shownProblem === 'pctOver100';
+    const add = async () => {
+        if (busy) return;
+        if (problem) { setTried(true); return; }
+        setBusy(true);
+        try {
+            await addDiscountPreset({ name: name.trim(), type, value: Number(value) });
+            setName(''); setValue(''); setTried(false);
+        } catch (err) { fail(err); } finally { setBusy(false); }
+    };
+    const remove = async (n: string) => {
+        if (busy) return;
+        setBusy(true);
+        try { await removeDiscountPreset(n); } catch (err) { fail(err); } finally { setBusy(false); }
+    };
+    const enterAdds = (e: React.KeyboardEvent) => { if (e.key === 'Enter') add(); };
+    return (
+        <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{t('ui.admin.salesSetup.sections.discounts')}</div>
+                <div style={helpStyle}>{t('ui.admin.salesSetup.discount.help')}</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(125px, 1fr))', gap: '8px', alignItems: 'end' }}>
+                <div>
+                    <label htmlFor={idBase + '-name'} style={labelStyle}>{t('ui.admin.salesSetup.discount.name')}</label>
+                    <input id={idBase + '-name'} className="setup-field" value={name} maxLength={40} placeholder={t('ui.admin.salesSetup.discount.namePlaceholder')}
+                        onChange={e => setName(e.target.value)} onKeyDown={enterAdds} aria-invalid={nameBad} aria-describedby={nameBad ? idBase + '-err' : undefined} style={inputStyle} />
+                </div>
+                <div>
+                    <label htmlFor={idBase + '-type'} style={labelStyle}>{t('ui.admin.salesSetup.discount.type')}</label>
+                    <select id={idBase + '-type'} className="setup-field" value={type} onChange={e => setType(e.target.value as 'pct' | 'usd')} style={{ ...inputStyle, cursor: 'pointer' }}>
+                        <option value="pct">{t('ui.admin.salesSetup.discount.pct')}</option>
+                        <option value="usd">{t('ui.admin.salesSetup.discount.usd')}</option>
+                    </select>
+                </div>
+                <div>
+                    <label htmlFor={idBase + '-value'} style={labelStyle}>{type === 'pct' ? t('ui.admin.salesSetup.discount.valuePct') : t('ui.admin.salesSetup.discount.valueUsd')}</label>
+                    <input id={idBase + '-value'} className="setup-field" type="number" min="0" step="0.01" inputMode="decimal" value={value} placeholder={type === 'pct' ? '10' : '2.00'}
+                        onChange={e => setValue(e.target.value)} onKeyDown={enterAdds} aria-invalid={valueBad} aria-describedby={valueBad ? idBase + '-err' : undefined} style={inputStyle} />
+                </div>
+                <button onClick={add} disabled={busy} aria-disabled={!!problem} className="primary-button"
+                    style={{ padding: '9px 14px', borderRadius: '9px', border: 'none', background: 'var(--color-primary)', color: 'white', fontSize: '13px', fontWeight: 700, cursor: problem || busy ? 'not-allowed' : 'pointer', opacity: problem || busy ? 0.6 : 1 }}>
+                    {t('ui.admin.salesSetup.discount.add')}
+                </button>
+            </div>
+            {shownProblem && <div id={idBase + '-err'} role="alert" style={{ fontSize: '12px', color: '#DC2626' }}>{t(`ui.admin.salesSetup.discount.${shownProblem}`)}</div>}
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
+                {discountPresets.length === 0 ? (
+                    <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.salesSetup.noneYet')}</div>
+                ) : discountPresets.map((p, i) => (
+                    <div key={p.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '10px 14px', borderTop: i ? '1px solid var(--color-border)' : 'none' }}>
+                        <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>
+                            <b>{p.name}</b> <span style={{ color: 'var(--color-text-secondary)' }}>· {discountPresetValueLabel(p)}</span>
+                        </span>
+                        <button onClick={() => remove(p.name)} disabled={busy} title={fill(t('ui.admin.salesSetup.removeItem'), { name: p.name })} aria-label={fill(t('ui.admin.salesSetup.removeItem'), { name: p.name })}
+                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            <Trash2 size={15} />
+                        </button>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 const SalesSetupPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
@@ -529,6 +613,9 @@ const SalesSetupPage: React.FC = () => {
                     onAdd={addCustomerCare} onRemove={removeCustomerCare} help={t('ui.admin.salesSetup.customerCareHelp')}
                     lockedNote={name => careFromUsers.has(name) ? t('ui.admin.salesSetup.fromUsers') : null} />
             )}
+
+            {/* ── Discounts: Checkout's quick-pick presets. ── */}
+            {section === 'discounts' && <DiscountsSection />}
 
             {/* ── Rejection Reasons: offered when an order moves to Returned or
                 Cancelled, and in the Orders "Reason" column. ── */}

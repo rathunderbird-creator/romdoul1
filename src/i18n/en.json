@@ -4344,7 +4344,22 @@
         "addShippingCompany": "Add a shipping company...",
         "reserved": "{name} isn't set up yet — this section is reserved for it.",
         "addRejectionReason": "Add a reason…",
-        "rejectionReasonsHelp": "Why an order did not go through — offered when an order moves to Returning or Cancelled, and in the Orders \"Reason\" column (with Other for anything not listed). Removing a reason leaves orders that already use it unchanged. Saving a reason on an order needs migrations/add_sales_return_reason.sql on this store."
+        "rejectionReasonsHelp": "Why an order did not go through — offered when an order moves to Returning or Cancelled, and in the Orders \"Reason\" column (with Other for anything not listed). Removing a reason leaves orders that already use it unchanged. Saving a reason on an order needs migrations/add_sales_return_reason.sql on this store.",
+        "discount": {
+          "help": "Preset discounts offered as quick picks next to Checkout's discount field. A pick fills the dollar amount — a percent of the items' price, or a fixed amount, never more than the items' price — and it stays editable. The order still saves one dollar discount, so receipts and the books work as before. Not offered while a selling price is ticked.",
+          "name": "Name",
+          "namePlaceholder": "e.g. VIP, Repeat buyer",
+          "type": "Type",
+          "pct": "Percent (%)",
+          "usd": "Amount ($)",
+          "valuePct": "Percent",
+          "valueUsd": "Amount ($)",
+          "add": "Add",
+          "needName": "Give the discount a name.",
+          "duplicate": "A discount with this name already exists.",
+          "badValue": "Enter an amount above 0.",
+          "pctOver100": "A percent can be at most 100."
+        }
       },
       "provinces": {
         "shutdownBadge": "បិទបណ្តោះអាសន្ន · Shutdown",
@@ -5044,7 +5059,9 @@
         "scammerBlocked": "⛔ Scammer — Blocked",
         "subtitle": "Complete the order information below",
         "telegramError": "Telegram Error: {msg}",
-        "updateOrder": "Update Order"
+        "updateOrder": "Update Order",
+        "quickDiscounts": "Quick discounts",
+        "quickDiscountTitle": "{name}: -{amount} on this order"
       },
       "common": {
         "bankOrCash": "Bank or cash account…",
