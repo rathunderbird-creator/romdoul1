@@ -1282,6 +1282,9 @@
         "saved": "Reason saved",
         "column": "Reason",
         "none": "— No reason —"
+      },
+      "deliveryType": {
+        "column": "Delivery type"
       }
     },
     "purchase": {
@@ -4426,6 +4429,13 @@
           "openingBalancesLink": "Open Wholesale Setup › Opening Balances",
           "priceLevels": "Not used yet. Retail orders are priced from each product's price, and the checkout discount or selling price adjusts a single order. Price levels (for example dealer prices) are planned.",
           "customerGroups": "Not used yet. Customers aren't grouped for pricing or reports; use Page Name and the Orders filters to slice sales. Customer groups are planned."
+        },
+        "deliveryType": {
+          "add": "Add a delivery type…",
+          "help": "How an order travels. An order's type follows its courier: give each shipping company a type below, and every order — past ones too — shows it in the Orders \"Delivery type\" column (with a filter and in the export). Removing a type takes it off the couriers that had it.",
+          "byCourier": "Type of each shipping company",
+          "byCourierHelp": "Saved as soon as you pick. A courier used both in Phnom Penh and in the provinces can have only one type.",
+          "none": "— No type —"
         }
       },
       "provinces": {

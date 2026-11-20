@@ -119,6 +119,8 @@ const base: Record<string, unknown> = {
     salesmen: ['Dev Salesman'], addSalesman: logWrite('addSalesman'), removeSalesman: logWrite('removeSalesman'),
     customerCare: ['Dev Admin', 'Dev Care'], addCustomerCare: logWrite('addCustomerCare'), removeCustomerCare: logWrite('removeCustomerCare'),
     discountPresets: [{ name: 'VIP', type: 'pct', value: 10 }, { name: 'Repeat buyer', type: 'usd', value: 2 }], addDiscountPreset: logWrite('addDiscountPreset'), removeDiscountPreset: logWrite('removeDiscountPreset'),
+    deliveryTypes: ['Phnom Penh delivery', 'Province courier', 'Grab / Express', 'Customer pickup'], courierDeliveryTypes: { 'J&T': 'Province courier' },
+    addDeliveryType: logWrite('addDeliveryType'), removeDeliveryType: logWrite('removeDeliveryType'), setCourierDeliveryType: logWrite('setCourierDeliveryType'),
     rejectionReasons: ['Customer refused', 'Wrong address'], addRejectionReason: logWrite('addRejectionReason'), removeRejectionReason: logWrite('removeRejectionReason'),
     shippingRates: { 'J&T': 1.25 }, updateShippingRate: logWrite('updateShippingRate'), trackingUrlTemplates: {}, updateTrackingUrlTemplate: logWrite('updateTrackingUrlTemplate'),
     addPaymentMethod: logWrite('addPaymentMethod'), removePaymentMethod: logWrite('removePaymentMethod'),

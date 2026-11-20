@@ -302,6 +302,13 @@ export interface StoreContextType {
     removePage: (name: string) => Promise<void>;
     addCustomerCare: (name: string) => Promise<void>;
     removeCustomerCare: (name: string) => Promise<void>;
+    // Sales Setup › Delivery Types: the list (defaults until saved) and each
+    // courier's type; an order shows its courier's type (deliveryTypes.ts).
+    deliveryTypes: string[];
+    courierDeliveryTypes: Record<string, string>;
+    addDeliveryType: (name: string) => Promise<void>;
+    removeDeliveryType: (name: string) => Promise<void>;
+    setCourierDeliveryType: (company: string, type: string) => Promise<void>;
     // Sales Setup › Discounts: Checkout's quick-pick presets.
     discountPresets: DiscountPreset[];
     addDiscountPreset: (preset: DiscountPreset) => Promise<void>;

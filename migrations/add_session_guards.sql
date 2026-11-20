@@ -146,6 +146,9 @@
 --                      view_reports (the Shipping report at /reports/shipping
 --                      has an inline rate editor and the route needs only
 --                      view_reports)
+--     deliveryTypes, courierDeliveryTypes
+--                      manage_settings / manage_orders (Sales Setup ›
+--                      Delivery Types; an order's type follows its courier)
 --     discountPresets  manage_settings / manage_orders (Sales Setup ›
 --                      Discounts; Checkout only reads it)
 --     rejectionReasons manage_settings / manage_orders (Sales Setup ›
@@ -997,6 +1000,9 @@ BEGIN
         WHEN 'rejectionReasons'     THEN ARRAY['manage_settings', 'manage_orders']
         -- Sales Setup › Discounts (Checkout's quick-pick presets).
         WHEN 'discountPresets'      THEN ARRAY['manage_settings', 'manage_orders']
+        -- Sales Setup › Delivery Types (the list, and courier -> type).
+        WHEN 'deliveryTypes'        THEN ARRAY['manage_settings', 'manage_orders']
+        WHEN 'courierDeliveryTypes' THEN ARRAY['manage_settings', 'manage_orders']
         ELSE ARRAY['manage_settings']
     END;
     IF NOT EXISTS (
