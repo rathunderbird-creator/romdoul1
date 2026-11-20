@@ -37,6 +37,10 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
+    // Pre-bundle recharts with React at startup. Otherwise Vite discovers it
+    // lazily the first time a chart page loads, re-optimizes mid-session, and
+    // the browser ends up with two React copies ("reading 'useContext'" null).
+    include: ['react', 'react-dom', 'react-router-dom', 'recharts'],
     esbuildOptions: {
       target: 'es2022',
     },
