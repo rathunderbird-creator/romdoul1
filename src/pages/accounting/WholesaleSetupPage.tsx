@@ -3,6 +3,7 @@
 // numbering prefixes), named payment-term presets, and AR opening balances
 // per customer. Everything persists in the shared app config.
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { SlidersHorizontal, CalendarClock, Landmark, Plus, Trash2 } from 'lucide-react';
 import { useHeader } from '../../context/HeaderContext';
 import { useStore } from '../../context/StoreContext';
@@ -34,7 +35,12 @@ const WholesaleSetupPage: React.FC = () => {
     const { accounts, fetchAccounts } = useAccounting();
     const { customers, fetchCustomers } = useWholesale();
 
-    const [tab, setTab] = useState<TabKey>('defaults');
+    // ?tab=terms|opening opens that tab (Sales Setup links here).
+    const [searchParams] = useSearchParams();
+    const [tab, setTab] = useState<TabKey>(() => {
+        const q = searchParams.get('tab');
+        return q === 'terms' || q === 'opening' ? q : 'defaults';
+    });
     const [saving, setSaving] = useState(false);
 
     // Local draft of the whole settings object, loaded from the store once.
