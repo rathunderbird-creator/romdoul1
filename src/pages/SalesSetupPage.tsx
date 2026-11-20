@@ -28,6 +28,7 @@ import { useAccounting } from '../hooks/useAccounting';
 import type { SalesSettings } from '../types';
 import { discountPresetProblem, discountPresetValueLabel } from '../utils/discountPresets';
 import { courierDeliveryType } from '../utils/deliveryTypes';
+import { MAX_QUOTATION_VALIDITY_DAYS, quotationValidityDays, quotationValidityInput } from '../utils/quotationValidity';
 import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
 
 type SectionKey =
@@ -317,6 +318,55 @@ const DepositAccountDefaults: React.FC<{ fieldId: (name: string) => string }> = 
     );
 };
 
+// Defaults › Quotation validity (days): CRM › Quotations pre-fills a new
+// quote's Valid until with today + this. Saves on leaving the field (or
+// Enter) as its own salesSettings field; empty clears it.
+const QuotationValidityDefault: React.FC<{ fieldId: (name: string) => string }> = ({ fieldId }) => {
+    const { t } = useLanguage();
+    const { showToast } = useToast();
+    const { salesSettings, updateSalesSetting } = useStore();
+    const saved = quotationValidityDays(salesSettings.quotationValidityDays);
+    const savedText = saved === null ? '' : String(saved);
+    const [draft, setDraft] = useState(savedText);
+    const [bad, setBad] = useState(false);
+    const [saving, setSaving] = useState(false);
+    // Follow a save made elsewhere (another tab, another user).
+    React.useEffect(() => { setDraft(savedText); setBad(false); }, [savedText]);
+    const commit = () => {
+        if (saving) return; // one save at a time (Enter, then the blur that follows)
+        const value = quotationValidityInput(draft);
+        if (value === null) { setBad(true); return; }
+        setBad(false);
+        if (value === savedText) { setDraft(savedText); return; }
+        setSaving(true);
+        updateSalesSetting('quotationValidityDays', value)
+            .catch((err: unknown) => {
+                setDraft(savedText);
+                showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error');
+            })
+            .finally(() => setSaving(false));
+    };
+    const id = fieldId('quotationValidityDays');
+    return (
+        <div>
+            <label htmlFor={id} style={labelStyle}>{t('ui.admin.salesSetup.quotationValidity')}</label>
+            {/* type=text: a number input reports unparseable text ("14e") as "",
+                which would read as Clear; quotationValidityInput judges the raw text.
+                readOnly while saving keeps keyboard focus (disabled would drop it). */}
+            <input id={id} type="text" inputMode="numeric" autoComplete="off"
+                className="setup-field" style={{ ...inputStyle, maxWidth: '160px' }}
+                value={draft} readOnly={saving} aria-busy={saving} placeholder={t('ui.admin.salesSetup.quotationValidityNone')}
+                aria-invalid={bad} aria-describedby={`${id}-help`}
+                onChange={e => { setDraft(e.target.value); setBad(false); }}
+                onBlur={commit}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }} />
+            <div id={`${id}-help`} style={{ ...helpStyle, color: bad ? 'var(--color-red)' : helpStyle.color }}>
+                {bad ? fill(t('ui.admin.salesSetup.quotationValidityBad'), { max: MAX_QUOTATION_VALIDITY_DAYS }) : t('ui.admin.salesSetup.quotationValidityHelp')}
+            </div>
+        </div>
+    );
+};
+
 // Delivery Types › each shipping company's type. An order shows its
 // courier's type (Orders "Delivery type" column), past orders too, so this
 // is the only place a type is set. Each select saves on change.
@@ -451,7 +501,6 @@ const DiscountsSection: React.FC = () => {
 const NOT_USED_ROWS: { label: string; today: string }[] = [
     { label: 'vatRate', today: 'vat' },
     { label: 'paymentTermsDays', today: 'paymentTerms' },
-    { label: 'quotationValidity', today: 'quotation' },
     { label: 'defaultWarehouse', today: 'warehouse' },
     { label: 'holdsStock', today: 'holdsStock' },
     { label: 'documentNumbering', today: 'numbering' },
@@ -577,6 +626,8 @@ const SalesSetupPage: React.FC = () => {
                     </p>
 
                     <DepositAccountDefaults fieldId={fieldId} />
+
+                    <QuotationValidityDefault fieldId={fieldId} />
 
                     <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
                         {t('ui.admin.salesSetup.glNoteBefore')}<b style={{ color: 'var(--color-text-main)' }}>{t('nav.chartOfAccounts')}</b>{t('ui.admin.salesSetup.glNoteAfter')}
