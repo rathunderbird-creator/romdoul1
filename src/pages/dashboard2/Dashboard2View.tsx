@@ -1,6 +1,6 @@
-// Dashboard 2 — pure view. Top to bottom (spec §4): sticky toolbar → hero
-// KPIs → order pipeline → payments → needs-attention → collected-vs-outstanding
-// chart → tabbed performance panel → classic cards (collapsed) → collapsed
+// Dashboard 2 — pure view. Top to bottom (spec §4): sticky toolbar → classic
+// cards (collapsed) → hero KPIs → order pipeline → payments → needs-attention
+// → collected-vs-outstanding chart → tabbed performance panel → collapsed
 // inventory detail.
 import React, { useMemo } from 'react';
 import { LayoutGrid, Plus, RefreshCw, ShoppingBag } from 'lucide-react';
@@ -149,6 +149,43 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
                     </div>
                 )}
 
+                {/* The classic dashboard's cards first, on the same range and the
+                    same already-fetched orders (no extra queries); the Dashboard 2
+                    sections follow below. Collapsed by default (a stored choice
+                    still wins), so it costs one header row until opened. */}
+                {!salesError && !isEmpty && (
+                    <section aria-label={t('dashboard2.classicCards')} style={{ marginBottom: 14 }}>
+                        {/* Tinted well, not a white card: the classic cards are white
+                            .glass-panels and disappear on a white background. */}
+                        <div className="d2-classic-cards" style={{ ...cardStyle, background: D2.bg, padding: classicCollapsed ? '10px 16px 0' : '12px 16px 14px' }}>
+                            <SectionHeader
+                                title={t('dashboard2.classicCards')}
+                                icon={LayoutGrid}
+                                collapsed={classicCollapsed}
+                                onToggle={() => setClassicCollapsed(c => !c)}
+                                id={CLASSIC_BODY_ID}
+                            />
+                            {!classicCollapsed && (
+                                <div id={CLASSIC_BODY_ID}>
+                                    <ClassicDashboardSections
+                                        orders={orders}
+                                        products={products}
+                                        getFileGlobal={getFile ?? { count: 0, total: 0 }}
+                                        stockIn={stockIn}
+                                        stockOut={stockOut}
+                                        dateRange={range}
+                                        t={t}
+                                        onOpenOrders={actions.onOpenOrders}
+                                        onOpenInventory={actions.onOpenInventory}
+                                        onOpenStockIn={actions.onOpenStockIn}
+                                        onOpenStockOut={actions.onOpenStockOut}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                )}
+
                 {!salesError && !isEmpty && (
                     <>
                         <div style={{ marginBottom: 14 }}>
@@ -201,44 +238,6 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
                             />
                         </div>
                     </>
-                )}
-
-                {/* The classic dashboard's cards, on the same range and the same
-                    already-fetched orders (no extra queries). Placed after the
-                    Dashboard 2 sections: most of its figures (payment status,
-                    low stock, top sellers) are already shown above, so it is
-                    detail, not the headline — and collapsed by default. */}
-                {!salesError && !isEmpty && (
-                    <section aria-label={t('dashboard2.classicCards')} style={{ marginBottom: 14 }}>
-                        {/* Tinted well, not a white card: the classic cards are white
-                            .glass-panels and disappear on a white background. */}
-                        <div className="d2-classic-cards" style={{ ...cardStyle, background: D2.bg, padding: classicCollapsed ? '10px 16px 0' : '12px 16px 14px' }}>
-                            <SectionHeader
-                                title={t('dashboard2.classicCards')}
-                                icon={LayoutGrid}
-                                collapsed={classicCollapsed}
-                                onToggle={() => setClassicCollapsed(c => !c)}
-                                id={CLASSIC_BODY_ID}
-                            />
-                            {!classicCollapsed && (
-                                <div id={CLASSIC_BODY_ID}>
-                                    <ClassicDashboardSections
-                                        orders={orders}
-                                        products={products}
-                                        getFileGlobal={getFile ?? { count: 0, total: 0 }}
-                                        stockIn={stockIn}
-                                        stockOut={stockOut}
-                                        dateRange={range}
-                                        t={t}
-                                        onOpenOrders={actions.onOpenOrders}
-                                        onOpenInventory={actions.onOpenInventory}
-                                        onOpenStockIn={actions.onOpenStockIn}
-                                        onOpenStockOut={actions.onOpenStockOut}
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    </section>
                 )}
 
                 <InventoryDetail
