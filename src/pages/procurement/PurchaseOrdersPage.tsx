@@ -1467,7 +1467,8 @@ const PurchaseOrdersPage = () => {
                                                         >
                                                             <option value="">{tp('orders.form.selectProduct')}</option>
                                                             <option value="__new__">{tp('orders.form.createNewProduct')}</option>
-                                                            {products.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                                                            {/* Inactive products are not offered, except the one this line already holds. */}
+                                                            {products.filter(p => !p.inactive || p.id === line.product_id).map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
                                                         </select>
                                                     </td>
                                                     <td style={{ padding: '10px 12px' }}>

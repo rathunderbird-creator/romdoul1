@@ -9,7 +9,18 @@ export const isMissingTableError = (e: unknown): boolean => {
     );
 };
 
-export const errMessage = (e: unknown): string => (e as { message?: string })?.message || String(e);
+// PostgREST's answers for a column a migration hasn't added yet — on a select
+// (42703 "column … does not exist") or a write (PGRST204 "could not find the
+// '…' column"). Only true when the message names that column.
+export const isMissingColumnError = (e: unknown, column: string): boolean => {
+    const err = e as { code?: string; message?: string } | null;
+    if (!err) return false;
+    const code = String(err.code || '');
+    const msg = String(err.message || '');
+    return (code === '42703' || code === 'PGRST204' || /does not exist|could not find/i.test(msg)) && msg.includes(column);
+};
+
+export const errMessage =(e: unknown): string => (e as { message?: string })?.message || String(e);
 
 // A FIFO read RPC (order_cogs, fifo_peek, …) the store cannot answer yet: the
 // function is missing (PGRST202 / 42883, as isRpcMissingError in StoreContext),

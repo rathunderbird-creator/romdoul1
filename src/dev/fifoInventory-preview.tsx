@@ -6,7 +6,8 @@
 // client is replaced in memory before anything renders, so nothing here
 // reaches a database: every rpc and table read answers from the fixtures.
 /* eslint-disable react-refresh/only-export-components -- dev entry point, never hot-reloaded as a module */
-import { StrictMode } from 'react';
+import { StrictMode, useMemo, useState, type ReactNode } from 'react';
+import { tNow } from '../i18n/translate';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import '../index.css';
@@ -35,7 +36,8 @@ const products = [
     { id: 'p1', name: 'Router NR-3026', sku: 'NR-3026', model: 'NR-3026', category: 'Network', price: 15, stock: 40, purchaseCost: 9.3, isActive: true, reorderLevel: 10, lowStockThreshold: 5 },
     { id: 'p2', name: 'Switch NR-6012', sku: 'NR-6012', model: 'NR-6012', category: 'Network', price: 18, stock: 12, purchaseCost: 10.7, isActive: true, reorderLevel: 15, lowStockThreshold: 5 },
     { id: 'p3', name: 'Charger AI 65W', sku: 'CH-AI65', model: 'AI65', category: 'Power', price: 9, stock: 25, purchaseCost: 4.2, isActive: true, reorderLevel: 5, lowStockThreshold: 5 },
-    { id: 'p4', name: 'Cable Koller H51', sku: 'KL-H51', model: 'H51', category: 'Cables', price: 3, stock: 0, purchaseCost: 1.1, isActive: true, reorderLevel: 20, lowStockThreshold: 5 },
+    // Discontinued: Inventory hides it until the filter says Inactive / All.
+    { id: 'p4', name: 'Cable Koller H51', sku: 'KL-H51', model: 'H51', category: 'Cables', price: 3, stock: 0, purchaseCost: 1.1, isActive: true, inactive: true, reorderLevel: 20, lowStockThreshold: 5 },
     { id: 'p5', name: 'Antenna NR-8801', sku: 'NR-8801', model: 'NR-8801', category: 'Network', price: 22, stock: 6, purchaseCost: 12.5, isActive: true, reorderLevel: 2, lowStockThreshold: 5 },
 ];
 
@@ -142,7 +144,24 @@ const base: Record<string, unknown> = {
     hasPermission: () => true,
     refreshData: () => Promise.resolve(),
 };
-const mockStore = new Proxy(base, { get: (t, k: string) => (k in t ? t[k] : () => undefined) });
+const proxied = (o: Record<string, unknown>) => new Proxy(o, { get: (t, k: string) => (k in t ? t[k] : () => undefined) });
+
+// products live in state so Inventory's Mark inactive / active toggle shows.
+// &inactive=missing answers like a store without add_product_inactive.sql.
+const inactiveMissing = params.get('inactive') === 'missing';
+const MockStore = ({ children }: { children: ReactNode }) => {
+    const [list, setList] = useState(products);
+    const value = useMemo(() => proxied({
+        ...base,
+        products: list,
+        setProductsInactive: async (ids: string[], inactive: boolean) => {
+            if (inactiveMissing) throw new Error(tNow('ui.store.product.inactiveNeedsMigration'));
+            setList(prev => prev.map(p => ids.includes(p.id) ? { ...p, inactive } : p));
+        },
+    }), [list]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return <StoreContext.Provider value={value as any}>{children}</StoreContext.Provider>;
+};
 
 const HeaderSlot = () => {
     const { headerContent } = useHeader();
@@ -165,13 +184,12 @@ createRoot(document.getElementById('root')!).render(
             <ToastProvider>
                 <HeaderProvider>
                     <MemoryRouter>
-                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                        <StoreContext.Provider value={mockStore as any}>
+                        <MockStore>
                             <HeaderSlot />
                             <main style={{ padding: '12px' }}>
                                 <Page />
                             </main>
-                        </StoreContext.Provider>
+                        </MockStore>
                     </MemoryRouter>
                 </HeaderProvider>
             </ToastProvider>

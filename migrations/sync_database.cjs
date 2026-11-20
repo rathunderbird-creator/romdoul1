@@ -28,7 +28,9 @@ const EXPECTED_TABLES = {
         // StoreContext.tsx's own products select (line ~353) — without these
         // here, a column missing on some instance would report "products ✅"
         // even though it breaks the exact features that depend on it.
-        'purchase_cost', 'is_active', 'sku', 'invoice_number', 'supplier'
+        'purchase_cost', 'is_active', 'sku', 'invoice_number', 'supplier',
+        // Inventory › mark product inactive (add_product_inactive.sql).
+        'inactive'
     ],
     customers: [
         'id', 'name', 'phone', 'email', 'address', 'city',

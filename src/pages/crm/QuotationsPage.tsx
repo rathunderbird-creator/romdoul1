@@ -248,7 +248,7 @@ const QuotationsPage: React.FC = () => {
                                 <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.4fr 0.7fr 0.9fr auto', gap: '8px', alignItems: 'center' }}>
                                     <select className="search-input" value="" onChange={e => pickProduct(idx, e.target.value)}>
                                         <option value="">{t('ui.people.crm.quotes.pickProduct')}</option>
-                                        {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                        {products.filter(p => !p.inactive).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                     </select>
                                     <input className="search-input" placeholder={t('ui.people.crm.quotes.itemName')} value={l.name || ''} onChange={e => setLine(idx, { name: e.target.value })} />
                                     <input type="number" className="search-input" placeholder={t('ui.people.common.qty')} min="0" value={l.quantity ?? ''} onChange={e => setLine(idx, { quantity: Number(e.target.value) })} />

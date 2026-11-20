@@ -160,7 +160,9 @@ const ShippingModalComponent: React.FC<{
     // Save is in flight (see the Save handler).
     const [saving, setSaving] = useState(false);
     const savingRef = useRef(false);
-    const activeProducts = useMemo(() => products.filter(p => p.isActive !== false), [products]);
+    // Inactive (no longer sold) products drop out too; a line already on the
+    // order keeps its own fallback option below.
+    const activeProducts = useMemo(() => products.filter(p => p.isActive !== false && !p.inactive), [products]);
 
     const handleShippingPointSelect = (data: any) => {
         const parts = [data.addressDetail || data.customName, data.commune, data.district, data.province].filter(Boolean);

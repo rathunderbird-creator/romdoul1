@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Download, Truck, CheckCircle2, User, CreditCard, Eye } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Download, Truck, CheckCircle2, User, CreditCard, Eye, Archive, ArchiveRestore } from 'lucide-react';
 import {
     DndContext,
     closestCenter,
@@ -151,7 +151,7 @@ const InlineEditCell = ({
 const PIE_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4'];
 
 const Inventory: React.FC = () => {
-    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, categories, currentUser, productOrder, updateProductOrder, refreshData, addStock, adjustStock, addOnlineOrder, updateOrderStatus, hasPermission } = useStore();
+    const { products, addProduct, updateProduct, deleteProduct, deleteProducts, setProductsInactive, categories, currentUser, productOrder, updateProductOrder, refreshData, addStock, adjustStock, addOnlineOrder, updateOrderStatus, hasPermission } = useStore();
     const { showToast } = useToast();
     const { t } = useLanguage();
     const { setHeaderContent } = useHeader();
@@ -444,7 +444,20 @@ const Inventory: React.FC = () => {
         }
     };
 
-    const handleBulkCategoryUpdate = (newCategory: string) => {
+    // Inactive = no longer sold, not deleted: stock, cost history and past
+    // orders stay; only the pickers that start a new sale stop offering it.
+    const toggleInactive = async (product: Product) => {
+        const makeInactive = !product.inactive;
+        if (makeInactive && !confirm(fill(t('ui.inventory.inactive.confirm'), { name: product.name }))) return;
+        try {
+            await setProductsInactive([product.id], makeInactive);
+            showToast(fill(t(makeInactive ? 'ui.inventory.inactive.toastInactive' : 'ui.inventory.inactive.toastActive'), { name: product.name }), 'success');
+        } catch (err) {
+            showToast(err instanceof Error ? err.message : t('ui.inventory.unknownError'), 'error');
+        }
+    };
+
+    const handleBulkCategoryUpdate =(newCategory: string) => {
         if (confirm(fill(t('ui.inventory.confirm.bulkCategory'), { n: selectedIds.size, category: newCategory }))) {
             Array.from(selectedIds).forEach(id => {
                 updateProduct(id, { category: newCategory });
@@ -488,6 +501,9 @@ const Inventory: React.FC = () => {
     const [categoryFilter, setCategoryFilter] = useState<string>('All');
     const [supplierFilter, setSupplierFilter] = useState<string>('All');
     const [statusFilter, setStatusFilter] = useState<'All' | 'In Stock' | 'Low Stock' | 'Out of Stock'>('All');
+    // Inactive products are hidden by default; the filter brings them back
+    // so they can be reviewed or reactivated.
+    const [activeFilter, setActiveFilter] = useState<'Active' | 'Inactive' | 'All'>('Active');
     const [sortConfig, setSortConfig] = useState<SortConfig>(null);
 
     // Pagination State
@@ -554,8 +570,9 @@ const Inventory: React.FC = () => {
             const matchesCategory = categoryFilter === 'All' || product.category === categoryFilter;
             const matchesSupplier = supplierFilter === 'All' || (product.supplier || '') === supplierFilter;
             const matchesStatus = statusFilter === 'All' || getStockStatus(product) === statusFilter;
+            const matchesActive = activeFilter === 'All' || (activeFilter === 'Inactive') === !!product.inactive;
 
-            return matchesSearch && matchesCategory && matchesSupplier && matchesStatus;
+            return matchesSearch && matchesCategory && matchesSupplier && matchesStatus && matchesActive;
         });
 
         if (sortConfig) {
@@ -587,14 +604,10 @@ const Inventory: React.FC = () => {
         }
 
         return result;
-    }, [products, searchTerm, categoryFilter, supplierFilter, statusFilter, sortConfig, productOrder]);
+    }, [products, searchTerm, categoryFilter, supplierFilter, statusFilter, activeFilter, sortConfig, productOrder]);
 
-    // Every product currently has an empty SKU, and a column of "N/A" in the leading
-    // position costs width and reads as missing data. Show it only once a SKU exists.
-    const hasAnySku = useMemo(
-        () => products.some(p => (p.sku || '').trim() !== ''),
-        [products]
-    );
+    const inactiveCount = useMemo(() => products.filter(p => p.inactive).length, [products]);
+
 
     // The single page of rows actually rendered. Shared by the desktop table and the
     // mobile card list so the two can never drift out of sync.
@@ -896,6 +909,16 @@ const Inventory: React.FC = () => {
                     <option value="Low Stock">{t('ui.inventory.stockStatus.lowStock')}</option>
                     <option value="Out of Stock">{t('ui.inventory.stockStatus.outOfStock')}</option>
                 </select>
+                <select
+                    value={activeFilter}
+                    onChange={(e) => { setActiveFilter(e.target.value as typeof activeFilter); setCurrentPage(1); }}
+                    style={filterSelectStyle}
+                    aria-label={t('ui.inventory.inactive.filterLabel')}
+                >
+                    <option value="Active">{t('ui.inventory.inactive.filterActive')}</option>
+                    <option value="Inactive">{fill(t('ui.inventory.inactive.filterInactive'), { n: inactiveCount })}</option>
+                    <option value="All">{t('ui.inventory.inactive.filterAll')}</option>
+                </select>
                 <div style={{ flex: 1, minWidth: '200px', position: 'relative', background: 'var(--color-surface)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
                     <Search size={18} color="var(--color-text-muted)" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
                     <input
@@ -932,6 +955,7 @@ const Inventory: React.FC = () => {
                                 onDelete={promptDelete}
                                 onWholesale={openWholesaleModal}
                                 onView={(p) => setViewingProductId(p.id)}
+                                onToggleInactive={toggleInactive}
                                 canManage={canManageInventory}
                                 showCosts={canViewFinancials}
                                 fifoAvgCost={fifo.status === 'ready' ? fifoAvgOf(product.id) : undefined}
@@ -947,11 +971,9 @@ const Inventory: React.FC = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: '12px' }}>
-                            {hasAnySku && (
-                                <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('sku')}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>SKU {sortConfig?.key === 'sku' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
-                                </th>
-                            )}
+                            <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('sku')}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>SKU {sortConfig?.key === 'sku' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
+                            </th>
                             <th style={{ padding: '16px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('name')}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{t('inventory.productName')} {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />}</div>
                             </th>
@@ -997,18 +1019,22 @@ const Inventory: React.FC = () => {
                                         : isOutOfStock ? 'rgba(239, 68, 68, 0.06)'
                                         : isLowStock ? 'rgba(245, 158, 11, 0.07)'
                                         : 'transparent',
-                                    transition: 'background-color 0.8s ease'
+                                    transition: 'background-color 0.8s ease',
+                                    opacity: product.inactive ? 0.6 : 1
                                 }}>
-                                    {hasAnySku && (
-                                        <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#4B5563' }}>
-                                            {product.sku || '—'}
-                                        </td>
-                                    )}
+                                    <td style={{ padding: '16px', fontSize: '13px', fontWeight: 600, color: '#4B5563' }}>
+                                        {product.sku || '—'}
+                                    </td>
                                     <td style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                                         <div style={{ width: '24px', height: '24px', borderRadius: '4px', background: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                             <Package size={14} color="#6366f1" />
                                         </div>
                                         <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>{product.name}</span>
+                                        {product.inactive && (
+                                            <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', background: '#E5E7EB', color: '#4B5563', whiteSpace: 'nowrap' }}>
+                                                {t('ui.inventory.inactive.badge')}
+                                            </span>
+                                        )}
                                     </td>
                                     <td style={{ padding: '16px', fontSize: '13px', color: '#6B7280' }}>
                                         {product.category}
@@ -1078,6 +1104,9 @@ const Inventory: React.FC = () => {
                                                     </button>
                                                     <button onClick={() => openWholesaleModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3B82F6' }} title={t('ui.inventory.wholesaleOrder')}>
                                                         <Truck size={14} />
+                                                    </button>
+                                                    <button onClick={() => toggleInactive(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280' }} title={t(product.inactive ? 'ui.inventory.inactive.markActive' : 'ui.inventory.inactive.markInactive')} aria-label={t(product.inactive ? 'ui.inventory.inactive.markActive' : 'ui.inventory.inactive.markInactive')}>
+                                                        {product.inactive ? <ArchiveRestore size={14} /> : <Archive size={14} />}
                                                     </button>
                                                     <button onClick={() => openEditModal(product)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)' }} title={t('ui.inventory.editProduct')}>
                                                         <Edit2 size={14} />
