@@ -18,12 +18,18 @@ interface CheckStockRow {
     model: string;
     category: string;
     stock: number;
+    /** Units sold in the last SOLD_WINDOW_DAYS (drives the default order). */
+    sold: number;
     threshold: number;
     status: StockStatus;
     lines: StockOnHandLine[];
 }
 
-type SortKey = 'name' | 'category' | 'stock';
+type SortKey = 'sold' | 'name' | 'category' | 'stock';
+
+// Same "top sold" window and counting rule as the Price List page: sale line
+// items from the last 90 days, excluding Cancelled / Returned / ReStock orders.
+const SOLD_WINDOW_DAYS = 90;
 
 interface ProductStockRow {
     id: string;
@@ -65,7 +71,7 @@ const CheckStockModal: React.FC<CheckStockModalProps> = ({ isOpen, onClose }) =>
     const [loadedAt, setLoadedAt] = useState<Date | null>(null);
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<'all' | 'inStock' | 'low' | 'out'>('all');
-    const [sort, setSort] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
+    const [sort, setSort] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'sold', direction: 'desc' });
     const fetchSeq = useRef(0);
     const searchRef = useRef<HTMLInputElement>(null);
 
@@ -74,7 +80,8 @@ const CheckStockModal: React.FC<CheckStockModalProps> = ({ isOpen, onClose }) =>
         const isStale = () => seq !== fetchSeq.current;
         setIsLoading(true);
         try {
-            const [products, whRows] = await Promise.all([
+            const since = new Date(Date.now() - SOLD_WINDOW_DAYS * 86400000).toISOString();
+            const [products, whRows, soldRows] = await Promise.all([
                 fetchAll<ProductStockRow>((from, to) => supabase
                     .from('products')
                     .select('id, name, model, category, stock, low_stock_threshold, is_active')
@@ -85,8 +92,23 @@ const CheckStockModal: React.FC<CheckStockModalProps> = ({ isOpen, onClose }) =>
                     .select('id, product_id, warehouse_id, quantity')
                     .order('id', { ascending: true })
                     .range(from, to), 1000, { label: 'CheckStockModal warehouse stock' }),
+                // Sold counts only decide the order — if they fail, still show stock.
+                fetchAll<{ id: string; product_id: string | null; quantity: number | null }>((from, to) => supabase
+                    .from('sale_items')
+                    .select('id, product_id, quantity, sales!inner(date, shipping_status)')
+                    .gte('sales.date', since)
+                    .not('sales.shipping_status', 'in', '("Cancelled","Returned","ReStock")')
+                    .order('id', { ascending: true })
+                    .range(from, to), 1000, { label: 'CheckStockModal sold', concurrency: 4 })
+                    .catch((e: unknown) => { console.error('Failed to load sold counts:', e); return []; }),
             ]);
             if (isStale()) return;
+
+            const soldBy = new Map<string, number>();
+            for (const si of soldRows) {
+                if (!si.product_id) continue;
+                soldBy.set(si.product_id, (soldBy.get(si.product_id) || 0) + (Number(si.quantity) || 0));
+            }
 
             const whName = new Map(warehouses.map(w => [w.id, w.name]));
             const tracked = new Map<string, { warehouseId: string; warehouseName: string; qty: number }[]>();
@@ -107,6 +129,7 @@ const CheckStockModal: React.FC<CheckStockModalProps> = ({ isOpen, onClose }) =>
                         model: p.model || '',
                         category: p.category || '',
                         stock,
+                        sold: soldBy.get(p.id) || 0,
                         threshold,
                         status: statusOf(stock, threshold),
                         lines: productWarehouseLines(stock, tracked.get(p.id) || []),
@@ -160,8 +183,9 @@ const CheckStockModal: React.FC<CheckStockModalProps> = ({ isOpen, onClose }) =>
         });
         const { key, direction } = sort;
         out = [...out].sort((a, b) => {
-            const cmp = key === 'stock' ? a.stock - b.stock : String(a[key]).localeCompare(String(b[key]));
-            return direction === 'asc' ? cmp : -cmp;
+            const cmp = key === 'stock' || key === 'sold' ? a[key] - b[key] : String(a[key]).localeCompare(String(b[key]));
+            // Ties (e.g. equal sold counts, or never sold) fall back to name A→Z.
+            return (direction === 'asc' ? cmp : -cmp) || a.name.localeCompare(b.name);
         });
         return out;
     }, [rows, search, filter, sort]);
@@ -176,6 +200,7 @@ const CheckStockModal: React.FC<CheckStockModalProps> = ({ isOpen, onClose }) =>
             'Model': r.model,
             'Category': r.category,
             'Stock': r.stock,
+            [`Sold (${SOLD_WINDOW_DAYS}d)`]: r.sold,
             'Status': r.status === 'out' ? 'Out of Stock' : r.status === 'low' ? 'Low Stock' : 'In Stock',
             ...(showWarehouses ? { 'Warehouses': r.lines.map(l => `${l.warehouseName}: ${l.qty}`).join(', ') } : {}),
         }));
@@ -189,7 +214,7 @@ const CheckStockModal: React.FC<CheckStockModalProps> = ({ isOpen, onClose }) =>
 
     const toggleSort = (key: SortKey) => setSort(prev => prev.key === key
         ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: key === 'stock' ? 'desc' : 'asc' });
+        : { key, direction: key === 'stock' || key === 'sold' ? 'desc' : 'asc' });
     const arrow = (key: SortKey) => sort.key === key
         ? <span style={{ marginLeft: '4px' }}>{sort.direction === 'asc' ? '↑' : '↓'}</span>
         : <span style={{ marginLeft: '4px', opacity: 0.35 }}>↕</span>;
@@ -319,6 +344,7 @@ const CheckStockModal: React.FC<CheckStockModalProps> = ({ isOpen, onClose }) =>
                                     <th onClick={() => toggleSort('name')} style={th}>{tx('ui.orders.checkStock.product', 'Product')}{arrow('name')}</th>
                                     {!isMobile && <th onClick={() => toggleSort('category')} style={th}>{tx('ui.orders.checkStock.category', 'Category')}{arrow('category')}</th>}
                                     <th onClick={() => toggleSort('stock')} style={{ ...th, textAlign: 'center' }}>{tx('ui.orders.checkStock.stock', 'Stock')}{arrow('stock')}</th>
+                                    <th onClick={() => toggleSort('sold')} title={tx('ui.orders.checkStock.soldHint', `Units sold in the last ${SOLD_WINDOW_DAYS} days`)} style={{ ...th, textAlign: 'center' }}>{tx('ui.orders.checkStock.sold', `Sold ${SOLD_WINDOW_DAYS}d`)}{arrow('sold')}</th>
                                     <th style={{ ...th, cursor: 'default', textAlign: 'center' }}>{tx('ui.orders.checkStock.status', 'Status')}</th>
                                     {showWarehouses && !isMobile && <th style={{ ...th, cursor: 'default' }}>{tx('ui.orders.checkStock.warehouses', 'Warehouses')}</th>}
                                 </tr>
@@ -332,6 +358,7 @@ const CheckStockModal: React.FC<CheckStockModalProps> = ({ isOpen, onClose }) =>
                                         </td>
                                         {!isMobile && <td style={{ ...cell, color: 'var(--color-text-secondary)' }}>{r.category || '—'}</td>}
                                         <td style={{ ...cell, textAlign: 'center', fontWeight: 800, fontSize: isMobile ? '13px' : '15px', fontVariantNumeric: 'tabular-nums', color: stockColor(r.status) }}>{r.stock}</td>
+                                        <td style={{ ...cell, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: r.sold > 0 ? 'var(--color-text-main)' : 'var(--color-text-secondary)' }}>{r.sold || '—'}</td>
                                         <td style={{ ...cell, textAlign: 'center' }}>{statusPill(r.status)}</td>
                                         {showWarehouses && !isMobile && (
                                             <td style={{ ...cell, fontSize: '12px', color: 'var(--color-text-secondary)' }}>
