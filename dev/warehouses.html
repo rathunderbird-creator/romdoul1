@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <!-- Dev-only: Warehouses page (default warehouse star, Move Stock) with an
+       in-memory store; nothing reaches a database. ?missing=1 answers the
+       move as a store without migrations/add_stock_transfers.sql. Not part
+       of the production build. -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Warehouses preview</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/dev/warehouses-preview.tsx"></script>
+</body>
+
+</html>

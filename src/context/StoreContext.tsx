@@ -36,6 +36,8 @@ import type {
     PurchaseSettings,
     WholesaleSettings,
     SalesSettings,
+    InventorySettings,
+    WarehouseTransferInput,
     CustomDistrict,
     CustomCommune,
     StockCountReason
@@ -86,6 +88,7 @@ interface ConfigState {
     purchaseSettings?: PurchaseSettings;
     wholesaleSettings?: WholesaleSettings;
     salesSettings?: SalesSettings;
+    inventorySettings?: InventorySettings;
 }
 // Add Stock retries reuse the restock id of a failed identical add (see addStock).
 const addStockKeys = createRetryKeys();
@@ -4842,6 +4845,57 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setWarehouses(prev => prev.filter(w => w.id !== id));
     };
 
+    // Warehouses › Default. Stored in app_config (inventorySettings, one
+    // field: merge sets it, unsetKeys clears it). A deleted warehouse reads
+    // as no default, so no screen preselects a warehouse that is gone.
+    const storedDefaultWarehouseId = config.inventorySettings?.defaultWarehouseId || '';
+    const defaultWarehouseId = useMemo(
+        () => (storedDefaultWarehouseId && warehouses.some(w => w.id === storedDefaultWarehouseId) ? storedDefaultWarehouseId : ''),
+        [storedDefaultWarehouseId, warehouses]
+    );
+    const setDefaultWarehouse = async (id: string) => {
+        await updateConfigOps({
+            inventorySettings: id
+                ? { op: 'merge', value: { defaultWarehouseId: id } }
+                : { op: 'unsetKeys', keys: ['defaultWarehouseId'] },
+        });
+    };
+
+    // Warehouses › Move Stock. One database function
+    // (migrations/add_stock_transfers.sql) moves every line or none, refusing
+    // more than the source holds; products.stock and FIFO costs are not
+    // touched. warehouse_stock is then re-read so every screen sees the move.
+    const transferWarehouseStock = async (input: WarehouseTransferInput) => {
+        const { error } = await rpcWithSession('transfer_warehouse_stock', {
+            p_from: input.fromWarehouseId || null,
+            p_to: input.toWarehouseId,
+            p_lines: input.lines.map(l => ({ product_id: l.productId, quantity: l.quantity })),
+            p_date: input.date,
+            p_note: input.note?.trim() || null,
+            p_by: currentUser?.id || null,
+        });
+        if (error) {
+            if (/transfer_warehouse_stock/i.test(error.message) && /could not find the function|schema cache|does not exist/i.test(error.message)) {
+                throw new Error(tNow('ui.inventory.wh.move.needsUpdate'));
+            }
+            throw new Error(error.message);
+        }
+        type WarehouseStockRow = { id: string; warehouse_id: string; product_id: string; quantity: number | string | null; created_at?: string; updated_at?: string };
+        const rows = await fetchAll<WarehouseStockRow>((from, to) => supabase
+            .from('warehouse_stock')
+            .select('*')
+            .order('id', { ascending: true })
+            .range(from, to), 1000, { label: 'StoreContext.transferWarehouseStock warehouse_stock' });
+        setWarehouseStock(rows.map(ws => ({
+            ...ws,
+            warehouseId: ws.warehouse_id,
+            productId: ws.product_id,
+            quantity: Number(ws.quantity) || 0,
+            createdAt: ws.created_at,
+            updatedAt: ws.updated_at
+        })));
+    };
+
     return (
         <StoreContext.Provider value={{
             products,
@@ -4873,6 +4927,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             addWarehouse,
             updateWarehouse,
             deleteWarehouse,
+            defaultWarehouseId,
+            setDefaultWarehouse,
+            transferWarehouseStock,
             addToCart,
             removeFromCart,
             updateCartQuantity,

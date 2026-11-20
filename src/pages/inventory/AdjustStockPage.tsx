@@ -71,7 +71,7 @@ const emptyLine = (): DraftLine => ({ key: genKey(), product_id: '', bin: 'Defau
 
 const AdjustStockPage: React.FC = () => {
     const { setHeaderContent } = useHeader();
-    const { products, warehouses, currentUser, refreshData } = useStore();
+    const { products, warehouses, currentUser, refreshData, defaultWarehouseId } = useStore();
     const { adjustments, isLoading, schemaReady, fetchAdjustments, saveAdjustment, updateAdjustment, deleteAdjustment, postAdjustment } = useStockAdjustments();
     const { showToast } = useToast();
     const { t } = useLanguage();
@@ -128,7 +128,7 @@ const AdjustStockPage: React.FC = () => {
 
     const openCreate = () => {
         setEditingId(null);
-        setWarehouseId(warehouses[0]?.id || '');
+        setWarehouseId(defaultWarehouseId || warehouses[0]?.id || '');
         setDate(todayYmd());
         setReason('Opening balance');
         setNotes('');

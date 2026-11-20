@@ -410,6 +410,26 @@ export interface StoreContextType {
     addWarehouse: (warehouse: Omit<Warehouse, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
     updateWarehouse: (id: string, updates: Partial<Warehouse>) => Promise<void>;
     deleteWarehouse: (id: string) => Promise<void>;
+    // Warehouses › Default: the warehouse every screen preselects when its own
+    // setup has none ('' when unset or the warehouse was deleted).
+    defaultWarehouseId: string;
+    setDefaultWarehouse: (id: string) => Promise<void>;
+    // Warehouses › Move Stock (transfer_warehouse_stock); fromWarehouseId
+    // null = Unassigned stock.
+    transferWarehouseStock: (input: WarehouseTransferInput) => Promise<void>;
+}
+
+// Warehouses › Default (app_config inventorySettings).
+export interface InventorySettings {
+    defaultWarehouseId?: string;
+}
+
+export interface WarehouseTransferInput {
+    fromWarehouseId: string | null;
+    toWarehouseId: string;
+    lines: { productId: string; quantity: number }[];
+    date: string; // YYYY-MM-DD, local
+    note?: string;
 }
 
 export interface Warehouse {

@@ -126,6 +126,9 @@ const EXPECTED_TABLES = {
     wholesale_customers: [],
     warehouse_transfers: [],
     warehouse_transfer_receipts: [],
+    // Warehouses › Move Stock (add_stock_transfers.sql adds the function too).
+    stock_transfers: [],
+    stock_transfer_lines: [],
 };
 
 // Every table now lives in the single consolidated full_schema.sql

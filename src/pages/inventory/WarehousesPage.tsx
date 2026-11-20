@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Warehouse, Plus, Edit2, Trash2, Search, Package, MapPin, Phone, CheckCircle, X, ChevronRight, Hash } from 'lucide-react';
+import { Warehouse, Plus, Edit2, Trash2, Search, Package, MapPin, Phone, CheckCircle, ChevronRight, Hash, Star, ArrowLeftRight } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import Modal from '../../components/Modal';
+import MoveStockModal from '../../components/MoveStockModal';
 import { useHeader } from '../../context/HeaderContext';
 import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
@@ -15,7 +17,7 @@ interface WarehouseFormData {
 }
 
 const WarehousesPage: React.FC = () => {
-    const { warehouses, warehouseStock, products, addWarehouse, updateWarehouse, deleteWarehouse, currentUser } = useStore();
+    const { warehouses, warehouseStock, products, addWarehouse, updateWarehouse, deleteWarehouse, currentUser, hasPermission, defaultWarehouseId, setDefaultWarehouse } = useStore();
     const { setHeaderContent } = useHeader();
     const { showToast } = useToast();
     const { t } = useLanguage();
@@ -31,6 +33,23 @@ const WarehousesPage: React.FC = () => {
     const [stockSearchTerm, setStockSearchTerm] = useState('');
 
     const isAdmin = currentUser?.roleId === 'admin';
+    const canMoveStock = isAdmin || hasPermission('manage_inventory');
+    const [isMoveOpen, setIsMoveOpen] = useState(false);
+    const [defaultSaving, setDefaultSaving] = useState(false);
+
+    // Star on a card: make it the default, or clear it when it already is.
+    const toggleDefault = async (id: string, name: string) => {
+        const clearing = defaultWarehouseId === id;
+        setDefaultSaving(true);
+        try {
+            await setDefaultWarehouse(clearing ? '' : id);
+            showToast(clearing ? t('ui.inventory.wh.defaultCleared') : fill(t('ui.inventory.wh.defaultSet'), { name }), 'success');
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : t('ui.inventory.wh.defaultFailed'), 'error');
+        } finally {
+            setDefaultSaving(false);
+        }
+    };
 
     useEffect(() => {
         setHeaderContent({
@@ -194,6 +213,13 @@ const WarehousesPage: React.FC = () => {
                             <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid var(--color-border)' }}>
                                 <div style={{ padding: '16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                                     <h3 style={{ fontSize: '16px', fontWeight: 600 }}>{t('ui.inventory.wh.inventory')}</h3>
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
+                                    {canMoveStock && warehouses.length > 1 && (
+                                        <button type="button" onClick={() => setIsMoveOpen(true)} className="secondary-button"
+                                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 12px' }}>
+                                            <ArrowLeftRight size={15} /> {t('ui.inventory.wh.move.button')}
+                                        </button>
+                                    )}
                                     <div style={{ position: 'relative', width: isMobile ? '100%' : '240px' }}>
                                         <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                                         <input
@@ -203,6 +229,7 @@ const WarehousesPage: React.FC = () => {
                                             onChange={(e) => setStockSearchTerm(e.target.value)}
                                             style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '13px', outline: 'none' }}
                                         />
+                                    </div>
                                     </div>
                                 </div>
 
@@ -272,11 +299,18 @@ const WarehousesPage: React.FC = () => {
                                 style={{ width: '100%', padding: '10px 16px 10px 40px', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '14px', outline: 'none' }}
                             />
                         </div>
-                        {isAdmin && (
-                            <button onClick={() => openModal()} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <Plus size={18} /> {t('ui.inventory.wh.new')}
-                            </button>
-                        )}
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {canMoveStock && warehouses.length > 0 && (
+                                <button onClick={() => setIsMoveOpen(true)} className="secondary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <ArrowLeftRight size={18} /> {t('ui.inventory.wh.move.button')}
+                                </button>
+                            )}
+                            {isAdmin && (
+                                <button onClick={() => openModal()} className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Plus size={18} /> {t('ui.inventory.wh.new')}
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {filteredWarehouses.length === 0 ? (
@@ -307,7 +341,14 @@ const WarehousesPage: React.FC = () => {
                                                         <Warehouse size={20} />
                                                     </div>
                                                     <div>
-                                                        <h3 style={{ fontSize: '16px', fontWeight: 600 }}>{warehouse.name}</h3>
+                                                        <h3 style={{ fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                            {warehouse.name}
+                                                            {defaultWarehouseId === warehouse.id && (
+                                                                <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px', background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
+                                                                    {t('ui.inventory.wh.default')}
+                                                                </span>
+                                                            )}
+                                                        </h3>
                                                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
                                                             {new Date(warehouse.createdAt || '').toLocaleDateString()}
                                                         </div>
@@ -315,6 +356,13 @@ const WarehousesPage: React.FC = () => {
                                                 </div>
                                                 {isAdmin && (
                                                     <div style={{ display: 'flex', gap: '4px' }}>
+                                                        <button onClick={() => toggleDefault(warehouse.id, warehouse.name)} disabled={defaultSaving}
+                                                            className="icon-button" style={{ padding: '6px', color: defaultWarehouseId === warehouse.id ? '#F59E0B' : 'var(--color-text-secondary)' }}
+                                                            title={defaultWarehouseId === warehouse.id ? t('ui.inventory.wh.clearDefault') : t('ui.inventory.wh.setDefault')}
+                                                            aria-label={defaultWarehouseId === warehouse.id ? t('ui.inventory.wh.clearDefault') : t('ui.inventory.wh.setDefault')}
+                                                            aria-pressed={defaultWarehouseId === warehouse.id}>
+                                                            <Star size={16} fill={defaultWarehouseId === warehouse.id ? '#F59E0B' : 'none'} />
+                                                        </button>
                                                         <button onClick={() => openModal(warehouse)} className="icon-button" style={{ padding: '6px', color: 'var(--color-text-secondary)' }}>
                                                             <Edit2 size={16} />
                                                         </button>
@@ -371,16 +419,12 @@ const WarehousesPage: React.FC = () => {
                 </div>
             )}
 
+            <MoveStockModal isOpen={isMoveOpen} onClose={() => setIsMoveOpen(false)} initialFromId={selectedWarehouseId} />
+
             {/* Modal */}
-            {isModalOpen && (
-                <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
-                    <div className="modal-content fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%' }}>
-                        <div className="modal-header">
-                            <h2 style={{ fontSize: '18px', fontWeight: 600 }}>{editingWarehouse ? t('ui.inventory.wh.edit') : t('ui.inventory.wh.add')}</h2>
-                            <button onClick={() => setIsModalOpen(false)} className="icon-button"><X size={20} /></button>
-                        </div>
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingWarehouse ? t('ui.inventory.wh.edit') : t('ui.inventory.wh.add')}>
                         <form onSubmit={handleSubmit}>
-                            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>
                                     <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>{t('ui.inventory.wh.name')} *</label>
                                     <div style={{ position: 'relative' }}>
@@ -439,16 +483,14 @@ const WarehousesPage: React.FC = () => {
                                     </div>
                                 </div>
                             </div>
-                            <div className="modal-footer">
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="secondary-button">{t('common.cancel')}</button>
                                 <button type="submit" className="primary-button" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <CheckCircle size={16} /> {t('ui.inventory.wh.save')}
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
-            )}
+            </Modal>
         </div>
     );
 };

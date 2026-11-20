@@ -1056,6 +1056,29 @@ CREATE TABLE IF NOT EXISTS stock_adjustment_lines (
 ALTER TABLE stock_adjustments DISABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_adjustment_lines DISABLE ROW LEVEL SECURITY;
 
+-- Warehouses › Move Stock (see add_stock_transfers.sql, which also holds
+-- the transfer_warehouse_stock function that writes them).
+CREATE TABLE IF NOT EXISTS stock_transfers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transfer_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    from_warehouse_id TEXT,              -- NULL = Unassigned
+    to_warehouse_id TEXT NOT NULL,
+    note TEXT,
+    created_by TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS stock_transfer_lines (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transfer_id UUID NOT NULL REFERENCES stock_transfers(id) ON DELETE CASCADE,
+    product_id TEXT NOT NULL,
+    product_name TEXT,
+    quantity INTEGER NOT NULL CHECK (quantity > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_stock_transfers_date ON stock_transfers(transfer_date DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_transfer_lines_transfer ON stock_transfer_lines(transfer_id);
+ALTER TABLE stock_transfers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_transfer_lines DISABLE ROW LEVEL SECURITY;
+
 -- Sales: an optional manual override for the receipt's TOTAL/REMAINING
 -- KH(₭) figure (see add_sales_custom_khr.sql).
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS custom_khr_amount NUMERIC;

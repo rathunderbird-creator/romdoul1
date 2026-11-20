@@ -446,3 +446,17 @@ setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite
     node tests/journal-entry-numbers.test.mjs
+
+## stock-transfers.test.mjs
+
+Runs `migrations/add_stock_transfers.sql` (twice) on the FIFO test store
+(tests/fifo-test-db.mjs) and checks Warehouses › Move Stock: a move takes
+from the source warehouse_stock row and adds to the destination (creating
+its row), records the transfer and its lines, and leaves products.stock,
+the FIFO pool and stock_movements alone; moving from Unassigned is capped at
+products.stock minus what warehouse_stock already tracks; every refusal
+(short stock, same warehouse, bad or duplicate lines, unknown warehouse or
+product) changes nothing. Same PGlite setup as auth-guards:
+
+    npm i --no-save @electric-sql/pglite
+    node tests/stock-transfers.test.mjs
