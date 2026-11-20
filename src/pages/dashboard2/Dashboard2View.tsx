@@ -1,6 +1,7 @@
 // Dashboard 2 — pure view. Top to bottom (spec §4): sticky toolbar → hero
-// KPIs → order pipeline → needs-attention → collected-vs-outstanding chart →
-// tabbed performance panel → collapsed inventory detail.
+// KPIs → order pipeline → payments → needs-attention → collected-vs-outstanding
+// chart → tabbed performance panel → classic cards (collapsed) → collapsed
+// inventory detail.
 import React, { useMemo } from 'react';
 import { LayoutGrid, Plus, RefreshCw, ShoppingBag } from 'lucide-react';
 import { DateRangePicker } from '../../components';
@@ -25,9 +26,9 @@ const CLASSIC_BODY_ID = 'd2-classic-cards-body';
 
 const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshing, salesError, inventoryError, actions, t, isMobile }) => {
     const { range, previous, orders, previousOrders, products, getFile, stockIn, stockOut, now } = data;
-    // The classic dashboard's card sections, merged below Dashboard 2's own
-    // (kept in full, per request). Collapsible; expanded by default.
-    const [classicCollapsed, setClassicCollapsed] = useLocalStorageState<boolean>('d2_classic_collapsed', false);
+    // The classic dashboard's card sections, kept in full below Dashboard 2's
+    // own. Collapsible; collapsed by default (a stored choice still wins).
+    const [classicCollapsed, setClassicCollapsed] = useLocalStorageState<boolean>('d2_classic_collapsed', true);
 
     const derived = useMemo<Dashboard2Derived>(() => {
         const missingTracking = missingTrackingOrders(orders);
@@ -148,42 +149,6 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
                     </div>
                 )}
 
-                {/* Everything from the classic dashboard first (per request), on the
-                    same range and the same already-fetched orders (no extra
-                    queries); the Dashboard 2 sections follow below. */}
-                {!salesError && !isEmpty && (
-                    <section aria-label={t('dashboard2.classicCards')} style={{ marginBottom: 14 }}>
-                        {/* Tinted well, not a white card: the classic cards are white
-                            .glass-panels and disappear on a white background. */}
-                        <div className="d2-classic-cards" style={{ ...cardStyle, background: D2.bg, padding: classicCollapsed ? '10px 16px 0' : '12px 16px 14px' }}>
-                            <SectionHeader
-                                title={t('dashboard2.classicCards')}
-                                icon={LayoutGrid}
-                                collapsed={classicCollapsed}
-                                onToggle={() => setClassicCollapsed(c => !c)}
-                                id={CLASSIC_BODY_ID}
-                            />
-                            {!classicCollapsed && (
-                                <div id={CLASSIC_BODY_ID}>
-                                    <ClassicDashboardSections
-                                        orders={orders}
-                                        products={products}
-                                        getFileGlobal={getFile ?? { count: 0, total: 0 }}
-                                        stockIn={stockIn}
-                                        stockOut={stockOut}
-                                        dateRange={range}
-                                        t={t}
-                                        onOpenOrders={actions.onOpenOrders}
-                                        onOpenInventory={actions.onOpenInventory}
-                                        onOpenStockIn={actions.onOpenStockIn}
-                                        onOpenStockOut={actions.onOpenStockOut}
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    </section>
-                )}
-
                 {!salesError && !isEmpty && (
                     <>
                         <div style={{ marginBottom: 14 }}>
@@ -236,6 +201,44 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
                             />
                         </div>
                     </>
+                )}
+
+                {/* The classic dashboard's cards, on the same range and the same
+                    already-fetched orders (no extra queries). Placed after the
+                    Dashboard 2 sections: most of its figures (payment status,
+                    low stock, top sellers) are already shown above, so it is
+                    detail, not the headline — and collapsed by default. */}
+                {!salesError && !isEmpty && (
+                    <section aria-label={t('dashboard2.classicCards')} style={{ marginBottom: 14 }}>
+                        {/* Tinted well, not a white card: the classic cards are white
+                            .glass-panels and disappear on a white background. */}
+                        <div className="d2-classic-cards" style={{ ...cardStyle, background: D2.bg, padding: classicCollapsed ? '10px 16px 0' : '12px 16px 14px' }}>
+                            <SectionHeader
+                                title={t('dashboard2.classicCards')}
+                                icon={LayoutGrid}
+                                collapsed={classicCollapsed}
+                                onToggle={() => setClassicCollapsed(c => !c)}
+                                id={CLASSIC_BODY_ID}
+                            />
+                            {!classicCollapsed && (
+                                <div id={CLASSIC_BODY_ID}>
+                                    <ClassicDashboardSections
+                                        orders={orders}
+                                        products={products}
+                                        getFileGlobal={getFile ?? { count: 0, total: 0 }}
+                                        stockIn={stockIn}
+                                        stockOut={stockOut}
+                                        dateRange={range}
+                                        t={t}
+                                        onOpenOrders={actions.onOpenOrders}
+                                        onOpenInventory={actions.onOpenInventory}
+                                        onOpenStockIn={actions.onOpenStockIn}
+                                        onOpenStockOut={actions.onOpenStockOut}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    </section>
                 )}
 
                 <InventoryDetail
