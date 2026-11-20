@@ -14,6 +14,7 @@ import { fetchAll } from '../utils/fetchAll';
 import { isFifoReadMissingError } from '../utils/supabaseErrors';
 import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../utils/configOps';
 import { rejectionReasonList, rejectionReasonOp } from '../utils/rejectionReasons';
+import { discountPresetList, withDiscountPreset, withoutDiscountPreset, type DiscountPreset } from '../utils/discountPresets';
 import { BACKUP_TABLES, buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
 import { ALL_PERMISSIONS } from '../types';
 import { orderStatusText } from '../utils/orderStatusRules';
@@ -66,6 +67,8 @@ interface ConfigState {
     codPaymentMethods?: string[];
     // Sales Setup › Rejection Reasons. Absent: the defaults (rejectionReasons.ts).
     rejectionReasons?: string[];
+    // Sales Setup › Discounts (Checkout's quick picks; discountPresets.ts).
+    discountPresets?: DiscountPreset[];
     trackingUrlTemplates?: Record<string, string>; // Company -> tracking page URL with {tracking}
     users?: User[];
     roles?: Role[];
@@ -2030,10 +2033,40 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             saved = (row?.data as Record<string, unknown> | undefined)?.rejectionReasons;
         }
         const op = rejectionReasonOp(saved, action, name);
-        if (op) await updateConfigOps({ rejectionReasons: op });
+        // A builder: built from the row just read, so it is not refused when
+        // this copy's config never loaded (a plain 'set' would be).
+        if (op) await updateConfigOps(() => ({ rejectionReasons: op }));
     };
     const addRejectionReason = (name: string) => editRejectionReasons('add', name);
     const removeRejectionReason = (name: string) => editRejectionReasons('remove', name);
+
+    // Sales Setup › Discounts. Saved as the whole list (objects), built from
+    // the list read fresh, so another editor's change since isn't dropped.
+    const discountPresets = useMemo(() => discountPresetList(config.discountPresets), [config.discountPresets]);
+    const editDiscountPresets = async (change: (list: DiscountPreset[]) => DiscountPreset[]) => {
+        const { data: row, error } = await supabase.from('app_config').select('data').eq('id', 1).single();
+        if (error && error.code !== 'PGRST116') throw error;
+        const fresh = discountPresetList((row?.data as Record<string, unknown> | undefined)?.discountPresets);
+        const next = change(fresh);
+        if (JSON.stringify(next) === JSON.stringify(fresh)) {
+            // Nothing to write, but show what is saved (an edit made elsewhere).
+            setConfig(prev => ({ ...prev, discountPresets: fresh }));
+            return;
+        }
+        // A builder: built from the row just read, so it is not refused when
+        // this copy's config never loaded (a plain 'set' would be).
+        await updateConfigOps(() => ({ discountPresets: { op: 'set', value: next } }));
+    };
+    const addDiscountPreset = async (p: DiscountPreset) => {
+        let taken = false;
+        await editDiscountPresets(list => {
+            taken = list.some(x => x.name.trim().toLowerCase() === p.name.trim().toLowerCase());
+            return taken ? list : withDiscountPreset(list, p.name, p.type, p.value);
+        });
+        // Added elsewhere meanwhile: the list on screen is now the saved one.
+        if (taken) throw new Error(tNow('ui.admin.salesSetup.discount.duplicate'));
+    };
+    const removeDiscountPreset = (name: string) => editDiscountPresets(list => withoutDiscountPreset(list, name));
 
     const addPaymentMethod = (name: string) => {
         if ((config.paymentMethods || []).includes(name)) return Promise.resolve();
@@ -4938,6 +4971,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             rejectionReasons,
             addRejectionReason,
             removeRejectionReason,
+            discountPresets,
+            addDiscountPreset,
+            removeDiscountPreset,
             cities: config.cities || [],
             addCity,
             removeCity,

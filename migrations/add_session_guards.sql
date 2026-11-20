@@ -146,6 +146,8 @@
 --                      view_reports (the Shipping report at /reports/shipping
 --                      has an inline rate editor and the route needs only
 --                      view_reports)
+--     discountPresets  manage_settings / manage_orders (Sales Setup ›
+--                      Discounts; Checkout only reads it)
 --     rejectionReasons manage_settings / manage_orders (Sales Setup ›
 --                      Rejection Reasons; picking a reason on an order writes
 --                      sales.return_reason, not this key)
@@ -993,6 +995,8 @@ BEGIN
         WHEN 'salesSettings'        THEN ARRAY['manage_settings', 'manage_orders']
         -- Sales Setup › Rejection Reasons (the list; an order's pick is sales.return_reason).
         WHEN 'rejectionReasons'     THEN ARRAY['manage_settings', 'manage_orders']
+        -- Sales Setup › Discounts (Checkout's quick-pick presets).
+        WHEN 'discountPresets'      THEN ARRAY['manage_settings', 'manage_orders']
         ELSE ARRAY['manage_settings']
     END;
     IF NOT EXISTS (

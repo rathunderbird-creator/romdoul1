@@ -14,6 +14,7 @@ import { sendTelegramOrderNotification } from '../utils/telegram';
 import { useTx, orderStatusDisplay } from './useTx';
 import { amountWarningLine, amountWarningText, checkKhrAmount, checkUsdAmount, formatKhr, formatRate, formatUsd, khrMeta, khrToUsd, resolveMoney, shopRate, usdToKhr } from '../utils/currency';
 import { roundCents } from '../utils/money';
+import { discountPresetAmount, discountPresetValueLabel } from '../utils/discountPresets';
 import { defaultCodCollected, isCodPaymentMethod } from '../utils/cashBankAccounts';
 
 interface CheckoutFormProps {
@@ -53,7 +54,7 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 };
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { products, pages, shippingCompanies, paymentMethods, codPaymentMethods, cities, addOnlineOrder, updateOrder, paymentClaimsReady, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
+    const { discountPresets, products, pages, shippingCompanies, paymentMethods, codPaymentMethods, cities, addOnlineOrder, updateOrder, paymentClaimsReady, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
     const { showToast } = useToast();
     const tx = useTx();
     const rate = shopRate(khrExchangeRate);
@@ -77,6 +78,10 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     // not the user): its discount and items' price then. Until the price is
     // touched, a change of items keeps that extra charge, not the total.
     const salePriceAuto = useRef<{ discount: number; subtotal: number; typed: string } | null>(null);
+    // The Sales Setup › Discounts preset last picked (by name). It follows
+    // the items until the amount is typed over (a percent of the new price; a
+    // fixed amount capped at a small cart grows back); null = typed by hand.
+    const [discountPresetPick, setDiscountPresetPick] = useState<string | null>(null);
 
     const isMobile = useMobile();
 
@@ -419,6 +424,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             setSalePriceCurrency(!sold || rielIsTotal ? 'KHR' : 'USD');
             setSalePriceTyped(sold ? String(rielIsTotal ? Math.round(savedRiel) : savedTotal) : '');
             salePriceTouched.current = false;
+            setDiscountPresetPick(null);
             salePriceAuto.current = sold
                 ? { discount: savedDiscount, subtotal: roundCents(savedTotal + savedDiscount), typed: String(rielIsTotal ? Math.round(savedRiel) : savedTotal) }
                 : null;
@@ -435,12 +441,21 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             setSalePriceTyped('');
             salePriceTouched.current = false;
             salePriceAuto.current = null;
+            setDiscountPresetPick(null);
         }
     }, [orderToEdit, currentUser]); // Added currentUser dependency
 
     // (Removed useEffect that was overwriting paymentStatus on load)
 
     const subtotal = React.useMemo(() => cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0), [cartItems]);
+    useEffect(() => {
+        if (!discountPresetPick || !formData.enableDiscount) return;
+        const p = discountPresets.find(x => x.name === discountPresetPick);
+        if (!p) return;
+        const amount = discountPresetAmount(p, subtotal);
+        setFormData(prev => (Number(prev.discount) === amount ? prev : { ...prev, discount: amount }));
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of items moves it
+    }, [subtotal]);
     // A reopened extra charge follows the items until the price is touched:
     // the saved price for the saved items, else the items' price plus the
     // same extra charge.
@@ -1532,11 +1547,14 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     type="checkbox"
                                     disabled={salePriceOn}
                                     checked={formData.enableDiscount}
-                                    onChange={e => setFormData({
-                                        ...formData,
-                                        enableDiscount: e.target.checked,
-                                        discount: e.target.checked ? formData.discount : 0
-                                    })}
+                                    onChange={e => {
+                                        setDiscountPresetPick(null);
+                                        setFormData({
+                                            ...formData,
+                                            enableDiscount: e.target.checked,
+                                            discount: e.target.checked ? formData.discount : 0
+                                        });
+                                    }}
                                     style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
                                 បន្ថែមការបញ្ចុះតម្លៃ
@@ -1554,11 +1572,36 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             // min="0" only styles the field — a typed negative
                                             // INCREASED the total past the sum of items and
                                             // mis-flagged full payments as deposits.
+                                            setDiscountPresetPick(null);
                                             setFormData({ ...formData, discount: val === '' ? '' : Math.max(0, Number(val) || 0) });
                                         }}
                                         placeholder="0.00"
                                         min="0"
                                     />
+                                </div>
+                            )}
+                            {formData.enableDiscount && !salePriceOn && discountPresets.length > 0 && (
+                                // Sales Setup › Discounts: a pick fills the amount above.
+                                <div role="group" aria-label={tx('ui.components.checkout.quickDiscounts', 'Quick discounts')} style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px', paddingLeft: '88px' }}>
+                                    {discountPresets.map(p => {
+                                        const on = discountPresetPick === p.name;
+                                        return (
+                                            <button key={p.name} type="button" aria-pressed={on}
+                                                title={tx('ui.components.checkout.quickDiscountTitle', '{name}: -{amount} on this order', { name: p.name, amount: '$' + discountPresetAmount(p, subtotal).toFixed(2) })}
+                                                onClick={() => {
+                                                    setDiscountPresetPick(p.name);
+                                                    setFormData({ ...formData, discount: discountPresetAmount(p, subtotal) });
+                                                }}
+                                                style={{
+                                                    padding: '4px 10px', borderRadius: '999px', fontSize: '12px', cursor: 'pointer',
+                                                    border: `1px solid ${on ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                                    background: on ? 'var(--color-primary)' : 'var(--color-surface)',
+                                                    color: on ? 'white' : 'var(--color-text-main)', fontWeight: on ? 600 : 500,
+                                                }}>
+                                                {p.name} · {discountPresetValueLabel(p)}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

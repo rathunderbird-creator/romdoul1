@@ -1,3 +1,5 @@
+import type { DiscountPreset } from '../utils/discountPresets';
+export type { DiscountPreset };
 export interface Product {
     id: string;
     name: string;
@@ -294,6 +296,10 @@ export interface StoreContextType {
     removePage: (name: string) => Promise<void>;
     addCustomerCare: (name: string) => Promise<void>;
     removeCustomerCare: (name: string) => Promise<void>;
+    // Sales Setup › Discounts: Checkout's quick-pick presets.
+    discountPresets: DiscountPreset[];
+    addDiscountPreset: (preset: DiscountPreset) => Promise<void>;
+    removeDiscountPreset: (name: string) => Promise<void>;
     // Sales Setup › Rejection Reasons (the defaults until a store edits it).
     rejectionReasons: string[];
     addRejectionReason: (name: string) => Promise<void>;
