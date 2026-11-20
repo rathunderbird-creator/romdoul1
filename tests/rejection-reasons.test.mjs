@@ -41,7 +41,8 @@ check('removing an unlisted name is a no-op', m.rejectionReasonOp(['A'], 'remove
 check('every op passes the config-op validator', (() => { try { for (const op of [firstAdd, firstRemove, m.rejectionReasonOp(['A'], 'add', 'B')]) m.assertValidConfigOps({ rejectionReasons: op }); return true; } catch { return false; } })());
 
 check('reason statuses', m.reasonApplies('Returned') && m.reasonApplies('Cancelled') && m.reasonApplies('ReStock') && !m.reasonApplies('Delivered') && !m.reasonApplies(undefined));
-check('options: listed current reason is not repeated', eq(m.reasonOptions(['A', 'B'], 'a'), ['A', 'B']));
+check('options: listed current reason is not repeated', eq(m.reasonOptions(['A', 'B'], 'A'), ['A', 'B']));
+check('options: another spelling of a listed reason gets its own option', eq(m.reasonOptions(['A', 'B'], 'a'), ['A', 'B', 'a']));
 check('options: an unlisted (Other / removed) reason is kept', eq(m.reasonOptions(['A'], 'Customer abroad'), ['A', 'Customer abroad']));
 check('options: no reason → just the list', eq(m.reasonOptions(['A'], null), ['A']) && eq(m.reasonOptions(['A'], '  '), ['A']));
 

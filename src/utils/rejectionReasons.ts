@@ -42,8 +42,9 @@ export const rejectionReasonOp = (saved: unknown, action: 'add' | 'remove', name
 };
 
 // The options a reason picker shows: the list, plus the order's current
-// reason when it is no longer listed (removed later, or typed as Other).
+// reason when it isn't listed exactly (removed later, typed as Other, or a
+// different spelling) — a <select> only shows a value it has an option for.
 export const reasonOptions = (list: string[], current?: string | null): string[] => {
-    const c = (current || '').trim();
-    return c && !list.some(r => same(r, c)) ? [...list, c] : list;
+    const c = current || '';
+    return c.trim() && !list.includes(c) ? [...list, c] : list;
 };

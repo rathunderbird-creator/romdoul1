@@ -618,9 +618,10 @@ const ReturnReasonModalComponent: React.FC<{
             setChoice(cur ? (listed ?? OTHER_REASON) : '');
             setOther(cur && !listed ? cur : '');
         }
-        // Only when it opens: a list reload must not reset what is being picked.
+        // Only when it opens (or for another order): a list or order reload
+        // must not reset what is being picked.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, order]);
+    }, [isOpen, order?.id]);
 
     if (!order) return null;
     const reason = choice === OTHER_REASON ? other.trim() : choice;
@@ -629,9 +630,8 @@ const ReturnReasonModalComponent: React.FC<{
         savingRef.current = true;
         setSaving(true);
         try {
-            if (reason !== (order.returnReason || '')) {
-                if (!(await updateOrder(order.id, { returnReason: reason }))) return;
-            }
+            // Always written: the copy here may be stale or optimistic.
+            if (!(await updateOrder(order.id, { returnReason: reason }))) return;
             showToast(t('ui.orders.returnReason.saved'), 'success');
             onClose();
         } finally {
@@ -651,11 +651,11 @@ const ReturnReasonModalComponent: React.FC<{
         <Modal isOpen={isOpen} onClose={onClose} title={t('ui.orders.returnReason.title')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                    {fill(t('ui.orders.returnReason.intro'), { status: status === 'Cancelled' ? t('status.cancelled') : t('status.returned') })}
+                    {fill(t('ui.orders.returnReason.intro'), { status: status === 'Cancelled' ? t('status.cancelled') : status === 'ReStock' ? t('status.restock') : t('status.returned') })}
                 </p>
-                <div role="radiogroup" aria-label={t('ui.orders.returnReason.title')} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px' }}>
+                <div role="group" aria-label={t('ui.orders.returnReason.title')} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px' }}>
                     {options.map(r => (
-                        <button key={r} type="button" role="radio" aria-checked={choice === r} onClick={() => setChoice(r)} style={chip(choice === r)}>
+                        <button key={r} type="button" aria-pressed={choice === r} onClick={() => setChoice(r)} style={chip(choice === r)}>
                             {r === OTHER_REASON ? t('ui.orders.returnReason.other') : r}
                         </button>
                     ))}
@@ -1625,6 +1625,10 @@ const Orders: React.FC = () => {
         setColumnWidths(newWidths);
     };
 
+    // fetchOrders reports a missing column without re-running on a toast change.
+    const showToastRef = useRef(showToast);
+    showToastRef.current = showToast;
+
     // Rejection reason asked after a move to Returned / Cancelled.
     const [reasonTarget, setReasonTarget] = useState<{ order: Sale; status: string } | null>(null);
 
@@ -2422,6 +2426,9 @@ const Orders: React.FC = () => {
             }
         } catch (err) {
             console.error("Fetch orders failed", err);
+            // A Reason filter or sort on a store without the column.
+            const e = err as { code?: string; message?: string } | null;
+            if (!isStale() && /return_reason/.test(e?.message || '')) showToastRef.current(tNow('ui.store.order.returnReasonMissing'), 'error');
         } finally {
             // Only the newest fetch may clear the spinner — a stale one
             // finishing late must not hide that a newer fetch is in flight.
@@ -4110,9 +4117,10 @@ const Orders: React.FC = () => {
                                                     } else if (status === 'Returned' || status === 'Cancelled') {
                                                         // null, not undefined — updateOrder skips undefined fields,
                                                         // which left the old settle_date on cancelled orders.
-                                                        const saved = await updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status } as any });
-                                                        // Then ask why (Skip allowed); only once the move stuck.
-                                                        if (saved) setReasonTarget({ order, status });
+                                                        await updateOrder(id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status } as any });
+                                                        // Then ask why (Skip allowed): the move above stuck,
+                                                        // even if the payment side was refused.
+                                                        setReasonTarget({ order, status });
                                                     }
                                                 } catch (e) {
                                                     console.error('Status change failed:', e);
@@ -4641,9 +4649,10 @@ const Orders: React.FC = () => {
                                                                                         } else if (newStatus === 'Returned' || newStatus === 'Cancelled') {
                                                                                             // null, not undefined — updateOrder skips undefined fields,
                                                                                             // which left the old settle_date on cancelled orders.
-                                                                                            const saved = await updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: newStatus } as any });
-                                                                                            // Then ask why (Skip allowed); only once the move stuck.
-                                                                                            if (saved) setReasonTarget({ order, status: newStatus });
+                                                                                            await updateOrder(order.id, { paymentStatus: 'Cancel', amountReceived: 0, settleDate: null as any, shipping: { ...order.shipping, status: newStatus } as any });
+                                                                                            // Then ask why (Skip allowed): the move above stuck,
+                                                                                            // even if the payment side was refused.
+                                                                                            setReasonTarget({ order, status: newStatus });
                                                                                         }
                                                                                     } catch (e) {
                                                                                         console.error('Status change failed:', e);
@@ -4779,11 +4788,11 @@ const Orders: React.FC = () => {
                                                                     </td>
                                                                 );
                                                             case 'returnReason': {
-                                                                // Only for orders that ended Returned / Cancelled /
-                                                                // ReStock; a reason left on a reopened order stays
-                                                                // saved but isn't shown.
+                                                                // Settable on Returned / Cancelled / ReStock orders. A
+                                                                // reason left on a reopened order still shows (and can
+                                                                // be cleared), so the cell matches the filter and sort.
                                                                 const applies = reasonApplies(order.shipping?.status);
-                                                                if (!applies) return <td key={colId} style={cellStyle}>-</td>;
+                                                                if (!applies && !order.returnReason) return <td key={colId} style={cellStyle}>-</td>;
                                                                 if (!canEdit) return <td key={colId} style={cellStyle} title={order.returnReason || ''}>{order.returnReason || '-'}</td>;
                                                                 const opts = reasonOptions(rejectionReasons, order.returnReason);
                                                                 return (
