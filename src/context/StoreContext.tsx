@@ -2020,14 +2020,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // Sales Setup › Rejection Reasons. The first edit of a store that never
     // saved a list saves the whole list, defaults included (rejectionReasonOp).
     const rejectionReasons = useMemo(() => rejectionReasonList(config.rejectionReasons), [config.rejectionReasons]);
-    const addRejectionReason = async (name: string) => {
-        const op = rejectionReasonOp(config.rejectionReasons, 'add', name);
+    // That whole-list save is built from what is saved NOW: re-read the key
+    // when this copy has none, so another editor's first save isn't replaced.
+    const editRejectionReasons = async (action: 'add' | 'remove', name: string) => {
+        let saved: unknown = config.rejectionReasons;
+        if (!Array.isArray(saved)) {
+            const { data: row, error } = await supabase.from('app_config').select('data').eq('id', 1).single();
+            if (error && error.code !== 'PGRST116') throw error;
+            saved = (row?.data as Record<string, unknown> | undefined)?.rejectionReasons;
+        }
+        const op = rejectionReasonOp(saved, action, name);
         if (op) await updateConfigOps({ rejectionReasons: op });
     };
-    const removeRejectionReason = async (name: string) => {
-        const op = rejectionReasonOp(config.rejectionReasons, 'remove', name);
-        if (op) await updateConfigOps({ rejectionReasons: op });
-    };
+    const addRejectionReason = (name: string) => editRejectionReasons('add', name);
+    const removeRejectionReason = (name: string) => editRejectionReasons('remove', name);
 
     const addPaymentMethod = (name: string) => {
         if ((config.paymentMethods || []).includes(name)) return Promise.resolve();
@@ -3790,6 +3796,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return true;
         } catch (error: any) {
             console.error('Error updating order:', error);
+            // The optimistic copy above must not keep a reason that wasn't
+            // saved (a retry would then look unchanged and skip the write).
+            if (updates.returnReason !== undefined) {
+                setSales(prev => prev.map(s => s.id === id ? { ...s, returnReason: existingOrder?.returnReason } : s));
+            }
             alert(tNow('ui.store.order.updateFailed', { error: error.message }));
             setSalesUpdatedAt(Date.now());
             return false;
