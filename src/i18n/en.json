@@ -1073,6 +1073,7 @@
         "totalN": "Total: {n}"
       },
       "header": {
+        "checkStock": "Check Stock",
         "checkIncome": "Check Income",
         "shippingPoints": "Shipping Points",
         "showMovement": "Show Movement"
