@@ -1073,6 +1073,7 @@
         "totalN": "សរុប៖ {n}"
       },
       "header": {
+        "checkStock": "ពិនិត្យស្តុក",
         "checkIncome": "ពិនិត្យចំណូល",
         "shippingPoints": "ចំណុចដឹកជញ្ជូន",
         "showMovement": "បង្ហាញចលនាស្តុក"

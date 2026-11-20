@@ -5,7 +5,7 @@ import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
 import { statusChangeRefusal, paymentChangeRefusal, paymentLockedForNonAdmin, settleDateChangeRefusal, orderStatusLabel, orderStatusesMatchingLabel } from '../utils/orderStatusRules';
 import { bodyZoom } from '../utils/bodyZoom';
-import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone } from 'lucide-react';
+import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone, Boxes } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
 import { useShipmentTracking } from '../hooks/useShipmentTracking';
 import { buildTrackingUrl, canAutoTrack, timeAgo } from '../utils/tracking';
@@ -16,6 +16,7 @@ import { useMobile } from '../hooks/useMobile';
 import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal, DepositModal, DeliveryFeeModal } from '../components';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import StockMovementSummaryModal from '../components/StockMovementSummaryModal';
+import CheckStockModal from '../components/CheckStockModal';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
 import DataImportModal from '../components/DataImportModal';
 
@@ -1168,6 +1169,23 @@ const Orders: React.FC = () => {
                             <Table2 size={18} /> {t('ui.orders.header.showMovement')}
                         </button>
                     )}
+                    {isAdmin && !isMobile && (
+                        <button
+                            onClick={() => setIsCheckStockOpen(true)}
+                            style={{
+                                padding: '8px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flex: isMobile ? 1 : 'initial',
+                                background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                                color: 'white',
+                                fontWeight: 600, cursor: 'pointer', border: 'none',
+                                boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
+                                transition: 'all 0.2s ease',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(245, 158, 11, 0.4)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(245, 158, 11, 0.3)'; }}
+                        >
+                            <Boxes size={18} /> {t('ui.orders.header.checkStock')}
+                        </button>
+                    )}
                     {/* Carrier tracking: check the shipped rows on screen with a
                         supported carrier (J&T), skipping delivered / recently checked. */}
                     {!isMobile && serverOrders.some(o => o.shipping?.status === 'Shipped' && o.shipping?.trackingNumber && canAutoTrack(o.shipping?.company)) && (
@@ -1262,6 +1280,8 @@ const Orders: React.FC = () => {
     const [isShippingPointModalOpen, setIsShippingPointModalOpen] = useState(false);
     // "Show Movement" opens the shared stock recap popup (defaults to today).
     const [isMovementSummaryOpen, setIsMovementSummaryOpen] = useState(false);
+    // "Check Stock" opens a live stock-on-hand lookup (CheckStockModal).
+    const [isCheckStockOpen, setIsCheckStockOpen] = useState(false);
     useEffect(() => {
         if (location.state) {
             const state = location.state as any;
@@ -5475,6 +5495,8 @@ const Orders: React.FC = () => {
                 onClose={() => setIsMovementSummaryOpen(false)}
                 initialRange={{ start: new Date().toLocaleDateString('en-CA'), end: new Date().toLocaleDateString('en-CA') }}
             />
+            {/* Check Stock — live stock on hand per product */}
+            <CheckStockModal isOpen={isCheckStockOpen} onClose={() => setIsCheckStockOpen(false)} />
             <DataImportModal
                 isOpen={isImportModalOpen}
                 onClose={() => setIsImportModalOpen(false)}
