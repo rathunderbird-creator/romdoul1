@@ -4041,8 +4041,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
 
             // Remove deleted_at before inserting back to sales
-            const salesToInsert = ordersToRestore.map(({ deleted_at, ...rest }) =>
-                heldStatus.has(rest.id) ? { ...rest, shipping_status: 'Pending' } : rest);
+            // return_reason: only sent when the order had one (the archive can
+            // have the column before this store's sales table does).
+            const salesToInsert = ordersToRestore.map(({ deleted_at, return_reason, ...rest }) => {
+                void deleted_at; // not a sales column
+                const row = return_reason ? { ...rest, return_reason } : rest;
+                return heldStatus.has(rest.id) ? { ...row, shipping_status: 'Pending' } : row;
+            });
 
             if (salesToInsert.length > 0) {
                 const { error: insOrdErr } = await supabase.from('sales').insert(salesToInsert);

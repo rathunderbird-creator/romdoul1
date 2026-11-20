@@ -1088,6 +1088,7 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS custom_khr_amount NUMERIC;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_claim JSONB;
 -- Why the order ended Returned/Cancelled/ReStock (migrations/add_sales_return_reason.sql).
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS return_reason TEXT;
+ALTER TABLE deleted_orders ADD COLUMN IF NOT EXISTS return_reason TEXT;
 
 -- FIFO costing: layer keys and consumers on inventory_items, frozen line
 -- costs, movement unit cost (see add_fifo_costing.sql, which also holds the

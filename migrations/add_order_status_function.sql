@@ -325,7 +325,11 @@ BEGIN
             -- Each contributing order once, in the order it was asked for.
             SELECT DISTINCT l.product_id, l.sale_id, array_position(p_ids, l.sale_id) AS pos,
                    NULLIF(s.customer_snapshot->>'name', '') AS cname,
-                   NULLIF(s.customer_snapshot->>'phone', '') AS cphone
+                   NULLIF(s.customer_snapshot->>'phone', '') AS cphone,
+                   -- Sales Setup › Rejection Reasons (sales.return_reason).
+                   -- Read through to_jsonb: NULL, not an error, on a store
+                   -- that hasn't run add_sales_return_reason.sql.
+                   NULLIF(btrim(to_jsonb(s)->>'return_reason'), '') AS creason
               FROM lines l JOIN sales s ON s.id = l.sale_id
         )
         SELECT p.id AS product_id, p.name AS product_name,
@@ -340,7 +344,10 @@ BEGIN
                      WHERE o.product_id = p.id AND o.cname IS NOT NULL GROUP BY o.cname) x) AS names,
                (SELECT string_agg(n, ', ' ORDER BY first_pos) FROM (
                     SELECT o.cphone AS n, min(o.pos) AS first_pos FROM orders o
-                     WHERE o.product_id = p.id AND o.cphone IS NOT NULL GROUP BY o.cphone) x) AS phones
+                     WHERE o.product_id = p.id AND o.cphone IS NOT NULL GROUP BY o.cphone) x) AS phones,
+               (SELECT string_agg(n, ', ' ORDER BY first_pos) FROM (
+                    SELECT o.creason AS n, min(o.pos) AS first_pos FROM orders o
+                     WHERE o.product_id = p.id AND o.creason IS NOT NULL GROUP BY o.creason) x) AS reasons
           FROM products p
          WHERE p.id IN (SELECT product_id FROM lines)
          ORDER BY p.id
@@ -356,12 +363,13 @@ BEGIN
             'id', v_rid, 'product_id', r.product_id, 'quantity', r.qty, 'cost', 0,
             'date', v_now, 'added_by', v_added_by, 'note', 'Bulk restocked from ' || r.sources));
 
+        -- reason: the restocked orders' rejection reasons (distinct, in order).
         INSERT INTO stock_movements (product_id, product_name, type, quantity, unit_price, unit_cost, source, shipping_co,
-                                     note, movement_date, created_by, customer_name, customer_phone)
+                                     note, movement_date, created_by, customer_name, customer_phone, reason)
         VALUES (r.product_id, COALESCE(NULLIF(r.product_name, ''), r.product_id), 'in', r.qty::INTEGER, 0,
                 round(COALESCE((v_value->>r.product_id)::NUMERIC, 0) / NULLIF(r.qty, 0), 4),
                 'Customer Return', '', 'Bulk restocked from ' || r.sources, v_date, v_created_by,
-                COALESCE(r.names, ''), COALESCE(r.phones, ''));
+                COALESCE(r.names, ''), COALESCE(r.phones, ''), COALESCE(r.reasons, ''));
     END LOOP;
 
     UPDATE sales SET
