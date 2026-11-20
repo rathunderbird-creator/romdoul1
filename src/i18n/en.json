@@ -1127,7 +1127,8 @@
         "lockedEdit": "{status} orders cannot be edited",
         "printDisabled": "Print disabled (Status must be Confirmed, Shipped, or Delivered)",
         "printReceipt": "Print Receipt",
-        "viewDetails": "View Details"
+        "viewDetails": "View Details",
+        "paymentRequestNone": "Nothing left to pay on this order"
       },
       "saving": "Saving…",
       "scammer": {
@@ -1199,7 +1200,6 @@
       "toast": {
         "balanceFilterTruncated": "Balance filter matches {n} orders — showing only the newest {cap}.",
         "copied": "Order details copied to clipboard",
-        "copyError": "Copy error",
         "copyFailed": "Copy failed. Please copy manually.",
         "deleteFailed": "Failed to delete orders: ",
         "deleted": "Orders deleted successfully",
@@ -5296,7 +5296,8 @@
         "noItems": "No items",
         "order": "Order",
         "payment": "Payment",
-        "track": "Track"
+        "track": "Track",
+        "payRequest": "Request"
       },
       "orderDetails": {
         "copied": "Order info copied to clipboard",

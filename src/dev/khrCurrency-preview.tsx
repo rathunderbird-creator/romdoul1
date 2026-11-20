@@ -20,6 +20,7 @@ import { StoreContext } from '../context/StoreContext';
 import { HeaderProvider } from '../context/HeaderContext';
 import { ToastProvider } from '../context/ToastContext';
 import CopyPaymentRequestButton from '../components/CopyPaymentRequestButton';
+import MobileOrderCard from '../components/MobileOrderCard';
 import { LanguageProvider } from '../context/LanguageContext';
 import DeliveryFeeModal from '../components/DeliveryFeeModal';
 import DepositModal from '../components/DepositModal';
@@ -190,10 +191,19 @@ const Forms = () => {
         case 'fx': return <FxRevaluationPage />;
         case 'setup': return <SalesSetupPage />;
         case 'payreq': return (
+            <div>
             <div style={{ display: 'flex', gap: 12 }}>
                 <CopyPaymentRequestButton order={{ ...editBase, total: 40 } as unknown as Sale} sales={[]} />
                 <CopyPaymentRequestButton order={{ ...editBase, total: 40, paymentStatus: 'Paid' } as unknown as Sale} sales={[]} />
-                <span>(only the first order owes: one button)</span>
+                <CopyPaymentRequestButton order={{ ...editBase, total: 40 } as unknown as Sale} sales={[]} short />
+                <span>(only the first order owes: one button, then the short label)</span>
+            </div>
+            <div style={{ width: 360, marginTop: 16, border: '1px dashed #ccc' }}>
+                <MobileOrderCard order={{ ...editBase, total: 40 } as unknown as Sale} isSelected={false} onToggleSelect={() => {}}
+                    isExpanded onToggleExpand={() => {}} onEdit={() => {}} onView={() => {}} onPrint={() => {}} onCopy={() => {}}
+                    onCopyPaymentRequest={() => console.info('[preview] copy payment request')}
+                    onUpdateStatus={() => {}} onUpdatePaymentStatus={() => {}} canEdit />
+            </div>
             </div>
         );
         case 'shipping': return <ShippingModalComponent isOpen={open} onClose={close} order={order} />;

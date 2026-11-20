@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Edit, Eye, Printer, Copy, MapPin, Phone, Globe, Package, CreditCard, Truck, ExternalLink } from 'lucide-react';
+import { Edit, Eye, Printer, Copy, HandCoins, MapPin, Phone, Globe, Package, CreditCard, Truck, ExternalLink } from 'lucide-react';
 import type { Sale } from '../types';
 import StatusBadge from './StatusBadge';
 import PaymentStatusBadge from './PaymentStatusBadge';
@@ -18,6 +18,8 @@ interface MobileOrderCardProps {
     onView: (order: Sale) => void;
     onPrint: (order: Sale) => void;
     onCopy: (order: Sale) => void;
+    /** Copy payment request; absent when the order has nothing left to pay. */
+    onCopyPaymentRequest?: (order: Sale) => void;
     onUpdateStatus: (id: string, status: any) => void;
     onUpdatePaymentStatus: (id: string, status: any) => void;
     canEdit: boolean;
@@ -45,6 +47,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
     onView,
     onPrint,
     onCopy,
+    onCopyPaymentRequest,
     onUpdateStatus,
     onUpdatePaymentStatus,
     canEdit,
@@ -364,6 +367,17 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                     <ExternalLink size={13} /> {tx('ui.components.orderCard.track', 'Track')}
                                 </a>
                             )}
+                        </div>
+                    )}
+
+                    {/* Copy payment request: its own row, so the action bar
+                        below keeps its four buttons on a narrow phone. */}
+                    {onCopyPaymentRequest && (
+                        <div className="moc-actions">
+                            <button onClick={(e) => { e.stopPropagation(); onCopyPaymentRequest(order); }} className="moc-action-btn">
+                                <HandCoins size={16} />
+                                <span>{tx('ui.components.orderDetails.copyPaymentRequest', 'Copy payment request')}</span>
+                            </button>
                         </div>
                     )}
 
