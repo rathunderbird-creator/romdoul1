@@ -5974,7 +5974,8 @@
           "shippedPartial": "{shipped} order(s) marked Shipped; {failed} could not be: {reason}",
           "trackingPartial": "Tracking IDs saved for {saved} order(s); {failed} could not be saved: {reason}",
           "trackingSaved": "Tracking IDs saved for {n} order(s).",
-          "undoNotSaved": "The undo was not saved."
+          "undoNotSaved": "The undo was not saved.",
+          "reasonNotSaved": "the reason was not saved on {n} order(s)"
         },
         "tracking": {
           "ownDriver": "own driver - no tracking needed",

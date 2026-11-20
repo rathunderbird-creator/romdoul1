@@ -104,7 +104,7 @@ const SCENARIOS: Scenario[] = ['normal', 'loading', 'empty', 'error'];
 // touches — so unlike the rest of this harness, that one modal needs a
 // minimal store value to render at all. Everything else in OM2View still
 // only reads its own props, not this context.
-const mockStore = { paymentMethods: ['Cash', 'Card', 'QR', 'Bank Transfer', 'COD'] } as any;
+const mockStore = { paymentMethods: ['Cash', 'Card', 'QR', 'Bank Transfer', 'COD'], rejectionReasons: ['Customer refused', 'Wrong address', 'Changed mind'] } as any;
 
 const devBarStyle = {
     display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', gap: 10,
@@ -161,7 +161,7 @@ const Preview = () => {
             onBulkMarkShipped: (orderIds) => { log('bulkMarkShipped', orderIds); return Promise.resolve(); },
             onBulkPrint: (orderIds) => log('bulkPrint', orderIds),
             onBulkExport: (orderIds) => log('bulkExport', orderIds),
-            onBulkEdit: (orderIds, field, value, settleDate, payBy) => { log('bulkEdit', { orderIds, field, value, settleDate, payBy }); return Promise.resolve(); },
+            onBulkEdit: (orderIds, field, value, settleDate, payBy, reason) => { log('bulkEdit', { orderIds, field, value, settleDate, payBy, reason }); return Promise.resolve(); },
         };
     }, []);
 

@@ -185,8 +185,9 @@ const OM2View: React.FC<OM2ViewProps> = ({ filters, data, loading, refreshing, s
                     isOpen={isBulkEditOpen}
                     onClose={() => setIsBulkEditOpen(false)}
                     count={selectedOrders.length}
-                    onApply={async (field, value, settleDate, payBy) => {
-                        await actions.onBulkEdit(selectedOrders.map(o => o.id), field, value, settleDate, payBy);
+                    offerReason
+                    onApply={async (field, value, settleDate, payBy, reason) => {
+                        await actions.onBulkEdit(selectedOrders.map(o => o.id), field, value, settleDate, payBy, reason);
                         setSelectedIds(new Set());
                     }}
                 />
