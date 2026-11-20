@@ -2818,7 +2818,8 @@ const Orders: React.FC = () => {
     };
 
     // settleDate / payBy come from the Bulk Edit modal's Payment section.
-    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any, settleDate?: string, payBy?: string) => {
+    // reason: a Rejection Reason picked with a move to Returned / Cancelled.
+    const handleBulkEdit = async (field: 'date' | 'status' | 'paymentStatus' | 'settleDate', value: any, settleDate?: string, payBy?: string, reason?: string) => {
         if (selectedIds.size === 0) return;
 
         try {
@@ -2856,10 +2857,14 @@ const Orders: React.FC = () => {
                     await fetchOrders();
                     return;
                 }
+                // The orders now at the target status (moved, or already there)
+                // get the picked reason afterwards.
+                const atTarget: string[] = [];
                 for (const id of ids) {
                     const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
                     const current = order?.shipping?.status;
-                    if (current === value) continue;
+                    // Already there: fill in a missing reason, never replace one.
+                    if (current === value) { if (!(order?.returnReason || '').trim()) atTarget.push(id); continue; }
                     // ORD-9: Bulk Edit obeys the same per-order rules as the
                     // single-row badge — refused orders are skipped and counted.
                     const refusal = statusChangeRefusal(
@@ -2876,6 +2881,21 @@ const Orders: React.FC = () => {
                         onRefused: m => { lastReason = m; },
                     });
                     if (!moved) notSaved++;
+                    else atTarget.push(id);
+                }
+                if (reason && (value === 'Returned' || value === 'Cancelled')) {
+                    // One at a time; stop at the first failure (a store without
+                    // add_sales_return_reason.sql says so once, not per order).
+                    for (let i = 0; i < atTarget.length; i++) {
+                        if (!(await updateOrder(atTarget[i], { returnReason: reason }))) {
+                            // This one and the rest got no reason: report them
+                            // (updateOrder already said why, once).
+                            const missed = atTarget.length - i;
+                            notSaved += missed;
+                            lastReason = lastReason || fill(t('ui.orders.bulk.reasonNotSaved'), { n: missed });
+                            break;
+                        }
+                    }
                 }
             } else if (field === 'settleDate') {
                 // ORD-9: a posted Paid/PdFee/Cancel order's settle date is its
@@ -5545,6 +5565,7 @@ const Orders: React.FC = () => {
                 onClose={() => setIsBulkEditOpen(false)}
                 onApply={handleBulkEdit}
                 count={selectedIds.size}
+                offerReason
             />
             {/* Scammer Modal */}
             <Modal

@@ -1024,7 +1024,8 @@
         "restock": "Restock",
         "salesmanNoMoney": "Only Admin, Customer Care or an Accountant can record money as received.\n\nEnter the deposit or payment on the order form instead: it waits there (gray on the Orders page) for them to confirm.",
         "updateFailed": "Failed to update orders",
-        "updated": "Updated {n} orders"
+        "updated": "Updated {n} orders",
+        "reasonNotSaved": "the reason was not saved on {n} order(s)"
       },
       "claim": {
         "aSalesman": "a Salesman",
@@ -4417,7 +4418,7 @@
           "vat": "No VAT is added to retail orders. (The tax rate in Settings › General isn't applied to orders either.)",
           "paymentTerms": "Retail orders are COD or paid up front, so they have no due date. Credit terms are for wholesale: Wholesale Setup › Payment Terms.",
           "quotation": "Each quotation sets its own valid-until date.",
-          "warehouse": "Retail orders take stock from the one stock list.",
+          "warehouse": "Retail orders take stock from each product's total stock, not from a warehouse. (The default warehouse in Inventory › Warehouses is used by stock adjustments and wholesale orders.)",
           "holdsStock": "Stock leaves when an order is Shipped (or Delivered) and comes back on ReStock.",
           "numbering": "Order numbers and journal entry numbers (for example JE-…-RCP-…) are set by the app.",
           "paymentRequest": "Payment request letters aren't sent from retail orders."
@@ -5098,7 +5099,9 @@
         "settleRequiredSettled": "A settle date is required to mark orders Settled.",
         "title": "Bulk Edit {n} Orders",
         "update": "Update Orders",
-        "updating": "Updating..."
+        "updating": "Updating...",
+        "reason": "Reason (optional: orders moved, and those without one)",
+        "noReason": "— No reason —"
       },
       "calculator": {
         "clearHistory": "Clear history",
