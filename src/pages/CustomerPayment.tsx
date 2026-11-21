@@ -20,7 +20,7 @@ import { fetchAll } from '../utils/fetchAll';
 import { addDays, dayKeyFromDate, parseDay } from '../utils/dateRange';
 import { getShippingCoColor } from '../utils/orderUtils';
 import { getPaymentIcon, getPaymentColor } from '../utils/payment';
-import { depositDefaultFor, pickCashBankAccount, sortCashBankForPicker } from '../utils/cashBankAccounts';
+import { depositDefaultFor, isCodReceivableAccount, pickCashBankAccount, sortCashBankForPicker } from '../utils/cashBankAccounts';
 import { formatMoneyLine, isKhrAccountName, isKhrRow } from '../utils/currency';
 import { DateRangePicker, StatsCard, RecordReceiptModal, OrderDetailsModal } from '../components';
 import { fetchLedgerStartDate, isBeforeLedgerStart, formatLedgerStart } from '../utils/ledgerStart';
@@ -478,6 +478,7 @@ const CustomerPaymentPage: React.FC = () => {
     // background (Search and Export use it too).
     const [cashAccountByTx, setCashAccountByTx] = useState<Map<string, string>>(new Map());
     const [cashAccountNames, setCashAccountNames] = useState<Map<string, string> | null>(null);
+    const [codAccountIds, setCodAccountIds] = useState<Set<string>>(new Set());
     const [accountsDone, setAccountsDone] = useState(false);
     const requestedEntriesRef = useRef(new Set<string>());
     const accountGenRef = useRef(0);
@@ -486,9 +487,14 @@ const CustomerPaymentPage: React.FC = () => {
         supabase.from('chart_of_accounts').select('id, account_code, account_type, account_name').then(({ data, error }) => {
             if (cancelled) return;
             if (error) { console.error('Failed to load the chart of accounts for the Account column:', error); setCashAccountNames(new Map()); return; }
-            const cash = ((data || []) as { id: string; account_code: string | null; account_type: string | null; account_name: string | null }[])
-                .filter(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name || ''));
-            setCashAccountNames(new Map(cash.map(a => [a.id, a.account_name || a.account_code || '?'])));
+            const rows = (data || []) as { id: string; account_code: string | null; account_type: string | null; account_name: string | null }[];
+            // 1210 COD receivable (courier) too: a receipt booked at Get File
+            // debits it (the courier still holds the money), and without it
+            // those rows had no Account and no Method at all.
+            const cod = rows.filter(a => a.account_type === 'Asset' && isCodReceivableAccount({ account_code: a.account_code, account_name: a.account_name || '' }));
+            const cash = rows.filter(a => a.account_type === 'Asset' && /cash|bank/i.test(a.account_name || '') && !cod.includes(a));
+            setCodAccountIds(new Set(cod.map(a => a.id)));
+            setCashAccountNames(new Map([...cash, ...cod].map(a => [a.id, a.account_name || a.account_code || '?'])));
         });
         return () => { cancelled = true; };
     }, [ledgerNonce]);
@@ -554,20 +560,26 @@ const CustomerPaymentPage: React.FC = () => {
         })();
         return () => { cancelled = true; };
     }, [ledger.state, cashAccountNames, allRetailPayments, takeEntries, fetchCashAccounts]);
+    const accountIdOf = useCallback((r: CustomerPaymentRow): string | undefined =>
+        cashAccountByTx.get(String(r.id)) || ledger.debitAccountByTx.get(String(r.id)), [cashAccountByTx, ledger.debitAccountByTx]);
     const accountNameOf = useCallback((r: CustomerPaymentRow): string | null => {
-        const id = cashAccountByTx.get(String(r.id)) || ledger.debitAccountByTx.get(String(r.id));
+        const id = accountIdOf(r);
         return id ? (cashAccountNames?.get(id) || null) : null;
-    }, [cashAccountByTx, cashAccountNames, ledger.debitAccountByTx]);
-    // Method shows just Bank or Cash: from the account the money went into
-    // when there is one, else from the saved Method (QR / ABA / transfer =
-    // Bank; Cash / COD = Cash). The saved Method stays in the tooltip.
-    const bankOrCashOf = useCallback((r: CustomerPaymentRow): 'Bank' | 'Cash' | '' => {
+    }, [accountIdOf, cashAccountNames]);
+    // Method shows Bank, Cash or COD: from the account the money went into
+    // when there is one (1210 COD receivable = COD, the courier holds it),
+    // else from the saved Method (QR / ABA / transfer = Bank; Cash = Cash;
+    // COD = COD). The saved Method stays in the tooltip.
+    const bankOrCashOf = useCallback((r: CustomerPaymentRow): 'Bank' | 'Cash' | 'COD' | '' => {
+        const id = accountIdOf(r);
+        if (id && codAccountIds.has(id)) return 'COD';
         const name = accountNameOf(r);
         if (name) return /bank/i.test(name) ? 'Bank' : 'Cash';
         const m = (r.pay_by || '').trim();
         if (!m) return '';
+        if (/^cod$/i.test(m)) return 'COD';
         return /cash|cod/i.test(m) && !/bank/i.test(m) ? 'Cash' : 'Bank';
-    }, [accountNameOf]);
+    }, [accountIdOf, accountNameOf, codAccountIds]);
 
     // Rows posted in this session, so they flip to Posted immediately.
     const [postedIds, setPostedIds] = useState<Set<string>>(new Set());

@@ -5598,7 +5598,8 @@
         "viewOrder": "View order details",
         "methodLabel": {
           "Bank": "Bank",
-          "Cash": "Cash"
+          "Cash": "Cash",
+          "COD": "COD (courier)"
         }
       },
       "deleted": {

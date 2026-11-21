@@ -1314,7 +1314,11 @@ BEGIN
                         ELSE COALESCE(NULLIF(s.amount_received, 0), s.total, 0) END;
         v_to_record := GREATEST(0, round(v_gross - v_deposit_paid, 2));
         v_date := COALESCE(wp_internal.op_norm_ts(COALESCE(v_settle, NULLIF(s.settle_date::TEXT, ''))), now());
-        v_pay_by := COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name);
+        -- A courier-collected receipt with no Method and no picked account
+        -- (a Get File booking) saves COD, so its row is never blank. Only a
+        -- fallback: the debit still comes from the COD flag, never from this.
+        v_pay_by := COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name,
+                             CASE WHEN COALESCE(v_cod, s.cod_collected, false) THEN 'COD' END);
         IF v_to_record > 0 THEN
             v_txs := v_txs || jsonb_build_array(wp_internal.op_insert_income(
                 v_tx_id, v_date, 'លក់រាយ', v_to_record, v_name, v_added_by, v_shipping_co, v_pay_by,
