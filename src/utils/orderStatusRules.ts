@@ -15,40 +15,53 @@ export interface OrderStatusView {
     paymentStatus?: string | null;
     // A Get File whose receipt was booked as COD (Sales Setup's ticked
     // couriers): its receipt is on the books, so it locks like Paid.
+    // (Collected is always booked as COD, so needs no marker.)
     getFileBooked?: boolean | null;
 }
 
 /**
  * Whether a non-admin is locked out of this order's payment: Paid / PdFee /
- * Cancel, or a Get File booked as COD — un-paying any of them deletes booked
- * income and journal entries (ORD-9). The badges' readOnly uses this too.
+ * Cancel, or an order booked as the courier's COD (a booked Get File,
+ * Collected) — un-paying any of them deletes booked income and journal
+ * entries (ORD-9). The badges' readOnly uses this too.
  */
 export const paymentLockedForNonAdmin = (order: OrderStatusView): boolean =>
     ['Paid', 'PdFee', 'Cancel'].includes(order.paymentStatus || 'Unpaid')
-    || isBookedGetFile(order);
+    || isCourierBooked(order);
 
 /** A Get File whose receipt is already on the books (booked as COD). */
 export const isBookedGetFile = (order: OrderStatusView): boolean =>
     order.paymentStatus === 'Get File' && !!order.getFileBooked;
 
-// The one way forward out of a booked Get File: marking it Paid when the
-// courier remits. The database books nothing more for it (the receipt stands
-// from Get File) — only leaving for Unpaid / Deposit / PdFee / Cancel deletes
-// booked income, so that stays admin-only.
-export const BOOKED_GET_FILE_FORWARD = ['Paid', 'Settled', 'Paid/Settled'];
+/**
+ * An order whose receipt is on the books as the courier's COD: a booked Get
+ * File, or Collected (the courier collected the customer's money — always
+ * booked as COD receivable, add_order_payment_functions.sql). Marking it Paid
+ * books nothing more: the courier's remittance is Accounting › COD Remittances.
+ */
+export const isCourierBooked = (order: OrderStatusView): boolean =>
+    isBookedGetFile(order) || order.paymentStatus === 'Collected';
+
+// The ways forward out of a courier-booked order: Collected (from a booked
+// Get File) and Paid when the courier remits. The database books nothing more
+// for them (the receipt stands) — only leaving for Unpaid / Deposit / PdFee /
+// Cancel deletes booked income, so that stays admin-only.
+const PAID_FORWARD = ['Paid', 'Settled', 'Paid/Settled'];
+export const courierBookedForward = (order: OrderStatusView): string[] =>
+    isBookedGetFile(order) ? ['Collected', ...PAID_FORWARD] : isCourierBooked(order) ? PAID_FORWARD : [];
 
 /**
  * Whether the payment badge is read-only for a non-admin. Like
- * paymentLockedForNonAdmin, except a booked Get File stays open so staff can
- * move it on to Paid (the other options are disabled, see below).
+ * paymentLockedForNonAdmin, except a courier-booked order stays open so staff
+ * can move it forward (the other options are disabled, see below).
  */
 export const paymentBadgeReadOnlyForNonAdmin = (order: OrderStatusView): boolean =>
-    paymentLockedForNonAdmin(order) && !isBookedGetFile(order);
+    paymentLockedForNonAdmin(order) && !isCourierBooked(order);
 
 /** Payment badge options a non-admin may not pick on this order. */
 export const paymentBadgeDisabledForNonAdmin = (order: OrderStatusView): string[] =>
-    isBookedGetFile(order)
-        ? ['Unpaid', 'Deposit', 'Get File', 'PdFee', 'Cancel']
+    isCourierBooked(order)
+        ? ['Unpaid', 'Deposit', 'Get File', 'Collected', 'PdFee', 'Cancel'].filter(s => !courierBookedForward(order).includes(s))
         : ['Cancel'];
 
 export interface StatusActor {
@@ -181,10 +194,10 @@ export const paymentChangeRefusal = (
     // "Paid" on an already-Paid row rewrites its received amount, settle date
     // and pay-by and books another receipt, exactly the rewrite the single-row
     // badge's readOnly prevents (ORD-9 review).
-    // A booked Get File may still move FORWARD to Paid: nothing is un-booked
-    // (the shipping-state check below still applies).
-    const bookedGetFileForward = isBookedGetFile(order) && BOOKED_GET_FILE_FORWARD.includes(target);
-    if (paymentLockedForNonAdmin(order) && !bookedGetFileForward) {
+    // A courier-booked order may still move FORWARD (Collected, Paid):
+    // nothing is un-booked (the shipping-state check below still applies).
+    const bookedForward = courierBookedForward(order).includes(target);
+    if (paymentLockedForNonAdmin(order) && !bookedForward) {
         return tNow('ui.store.statusRules.paymentLocked', { status: orderStatusText(payment) });
     }
     if (payment === target) return null; // no-op rows are quietly fine

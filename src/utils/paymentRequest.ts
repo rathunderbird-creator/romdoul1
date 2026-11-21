@@ -66,7 +66,7 @@ export const pendingClaimPaid = (order: Sale): number => {
 // pending claim's amount.
 export const paymentRequestPaid = (order: Sale): number => {
     const total = Number(order.total) || 0;
-    if (order.paymentStatus === 'Paid' || order.paymentStatus === 'Get File') return roundCents(total);
+    if (order.paymentStatus === 'Paid' || order.paymentStatus === 'Get File' || order.paymentStatus === 'Collected') return roundCents(total);
     const booked = Math.max(0, Number(order.amountReceived) || Number(order.depositAmount) || 0);
     return roundCents(Math.min(total, Math.max(booked, pendingClaimPaid(order))));
 };

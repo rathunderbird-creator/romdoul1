@@ -37,6 +37,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
             case 'PdFee': return { bg: '#CFFAFE', color: '#0E7490', border: '#67E8F9' }; // Teal
             case 'Deposit': return { bg: '#F3E8FF', color: '#7E22CE', border: '#D8B4FE' }; // Purple
             case 'Get File': return { bg: '#DBEAFE', color: '#1D4ED8', border: '#93C5FD' }; // Blue
+            case 'Collected': return { bg: '#ECFCCB', color: '#4D7C0F', border: '#BEF264' }; // Lime
             case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
             case 'Settled': return { bg: '#E0E7FF', color: '#4F46E5', border: '#A5B4FC' }; // Indigo
             case 'Not Settle': return { bg: '#FEE2E2', color: '#DC2626', border: '#FCA5A5' }; // Red
@@ -67,7 +68,7 @@ const PaymentStatusBadge: React.FC<PaymentStatusBadgeProps> = ({ status, onChang
         width: '100%'
     };
 
-    const options = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'PdFee', 'Cancel'];
+    const options = ['Unpaid', 'Deposit', 'Get File', 'Collected', 'Paid', 'PdFee', 'Cancel'];
 
     // Close dropdown when clicking outside
     useEffect(() => {

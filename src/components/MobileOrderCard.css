@@ -194,6 +194,7 @@
 .moc-tag.pay-unpaid { background: #DC2626; }
 .moc-tag.pay-deposit { background: #7E22CE; }
 .moc-tag.pay-getfile { background: #2563EB; }
+.moc-tag.pay-collected { background: #65A30D; }
 .moc-tag.pay-cancel { background: #6B7280; text-decoration: line-through; }
 
 /* Salesman / page tags (like the inbox labels) */
@@ -264,6 +265,7 @@
 .moc-badge.pay-unpaid { background: #FEE2E2; color: #DC2626; }
 .moc-badge.pay-paid { background: #D1FAE5; color: #059669; }
 .moc-badge.pay-getfile { background: #DBEAFE; color: #1D4ED8; }
+.moc-badge.pay-collected { background: #ECFCCB; color: #4D7C0F; }
 .moc-badge.pay-cancel { background: #F3F4F6; color: var(--color-text-secondary); text-decoration: line-through; }
 
 /* Hide old status dot */

@@ -52,5 +52,13 @@ calls.length = 0;
 const ok = await m.saveGetFile(async (...a) => { calls.push(a); return false; }, order, { collectUsd: 18, money: usd(18) });
 check('refused money save: no Get File', ok === false && calls.length === 1);
 
+// Collected: same popup and save, its own status.
+check('Collected asks: Unpaid / unbooked Get File', m.getFileAsksAmount({ paymentStatus: 'Unpaid' }, 'Collected') && m.getFileAsksAmount({ paymentStatus: 'Get File', getFileBooked: false }, 'Collected'));
+check('Collected no ask: booked Get File / Paid / Collected', !m.getFileAsksAmount({ paymentStatus: 'Get File', getFileBooked: true }, 'Collected') && !m.getFileAsksAmount({ paymentStatus: 'Paid' }, 'Collected') && !m.getFileAsksAmount({ paymentStatus: 'Collected' }, 'Collected'));
+check('Get File no ask from Collected', !m.getFileAsksAmount({ paymentStatus: 'Collected' }));
+calls.length = 0;
+await m.saveGetFile(upd, order, { collectUsd: 18, money: usd(18) }, 'Collected');
+check('Collected: money first, then Collected', calls.length === 2 && calls[0].updates.total === 23 && calls[1].updates.paymentStatus === 'Collected', calls);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -89,5 +89,18 @@ check('badge: Paid / PdFee / Cancel stay read-only for staff', m.paymentBadgeRea
 check('badge: unbooked Get File / Unpaid open, only Cancel disabled', !m.paymentBadgeReadOnlyForNonAdmin(gfu) && JSON.stringify(m.paymentBadgeDisabledForNonAdmin(gfu)) === '["Cancel"]' && JSON.stringify(m.paymentBadgeDisabledForNonAdmin({ paymentStatus: 'Unpaid' })) === '["Cancel"]');
 check('paymentLockedForNonAdmin: Paid / booked Get File yes, unbooked Get File / Unpaid no', m.paymentLockedForNonAdmin({ paymentStatus: 'Paid' }) && m.paymentLockedForNonAdmin(gfb) && !m.paymentLockedForNonAdmin(gfu) && !m.paymentLockedForNonAdmin({ paymentStatus: 'Unpaid' }));
 
+// Collected: the courier collected the money — always booked as COD, so it
+// locks like a booked Get File and only moves forward to Paid.
+const col = { shippingStatus: 'Delivered', paymentStatus: 'Collected' };
+check('staff allowed booked Get File->Collected', p(gfb, 'Collected', staff) === null);
+check('staff allowed Collected->Paid', p(col, 'Paid', staff) === null && p(col, 'Settled', staff) === null);
+check('staff refused Collected->Unpaid / Get File / Deposit / Cancel', p(col, 'Unpaid', staff) !== null && p(col, 'Get File', staff) !== null && p(col, 'Deposit', staff) !== null && p(col, 'Cancel', staff) !== null);
+check('staff refused settle date on Collected', d(col, staff) !== null);
+check('admin allowed Collected->Unpaid', p(col, 'Unpaid', admin) === null);
+check('badge: Collected open for staff with only Paid enabled',
+    !m.paymentBadgeReadOnlyForNonAdmin(col)
+    && JSON.stringify(m.paymentBadgeDisabledForNonAdmin(col)) === JSON.stringify(['Unpaid', 'Deposit', 'Get File', 'Collected', 'PdFee', 'Cancel']));
+check('isCourierBooked: booked Get File / Collected yes, unbooked Get File / Paid no', m.isCourierBooked(gfb) && m.isCourierBooked(col) && !m.isCourierBooked(gfu) && !m.isCourierBooked({ paymentStatus: 'Paid' }));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

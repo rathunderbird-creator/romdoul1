@@ -30,7 +30,7 @@ interface CommandBarProps {
 }
 
 const ORDER_STATUS_OPTIONS = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Drafted', 'Cancelled', 'Returned'];
-const PAY_STATUS_OPTIONS = ['Unpaid', 'Deposit', 'Paid', 'Cancel', 'Get File'];
+const PAY_STATUS_OPTIONS = ['Unpaid', 'Deposit', 'Paid', 'Cancel', 'Get File', 'Collected'];
 type ArrayFilterKey = 'statuses' | 'payStatuses' | 'shippingCos' | 'pages';
 
 // `t()` falls back to the raw key when a translation is missing (see

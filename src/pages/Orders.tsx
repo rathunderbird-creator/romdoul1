@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
-import { statusChangeRefusal, paymentChangeRefusal, paymentBadgeReadOnlyForNonAdmin, paymentBadgeDisabledForNonAdmin, isBookedGetFile, settleDateChangeRefusal, orderStatusLabel, orderStatusesMatchingLabel } from '../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, paymentBadgeReadOnlyForNonAdmin, paymentBadgeDisabledForNonAdmin, isCourierBooked, settleDateChangeRefusal, orderStatusLabel, orderStatusesMatchingLabel } from '../utils/orderStatusRules';
 import { bodyZoom } from '../utils/bodyZoom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone, Boxes, HandCoins } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
@@ -18,7 +18,7 @@ import ShippingPointSelector from '../components/ShippingPointSelector';
 import StockMovementSummaryModal from '../components/StockMovementSummaryModal';
 import CheckStockModal from '../components/CheckStockModal';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
-import { getFileAsksAmount, saveGetFile } from '../utils/getFileSave';
+import { getFileAsksAmount, saveGetFile, type CourierStatus } from '../utils/getFileSave';
 import DataImportModal from '../components/DataImportModal';
 
 const POSInterface = lazy(() => import('../components/POSInterface'));
@@ -218,7 +218,7 @@ const ShippingModalComponent: React.FC<{
     if (!order) return null;
 
     const rate = shopRate(khrExchangeRate);
-    const isPaidOrder = ['Paid', 'Settled', 'Paid/Settled'].includes(order.paymentStatus || '');
+    const isPaidOrder = ['Paid', 'Settled', 'Paid/Settled', 'Collected'].includes(order.paymentStatus || '');
     const depositNum = depositField.usd;
     const depositChanged = Math.abs(depositNum - (order.depositAmount || 0)) > 0.0001;
     // A changed deposit on an unpaid order is booked (Deposit flow below), so
@@ -542,7 +542,7 @@ const ShippingModalComponent: React.FC<{
                                     // ledger entry — a bare number in the deposit column left
                                     // revenue short by the deposit. Not for a paid order (its
                                     // money is already booked; only the column is corrected).
-                                    if (depositNum > 0 && !['Paid', 'Settled', 'Paid/Settled'].includes(order.paymentStatus || '')) {
+                                    if (depositNum > 0 && !['Paid', 'Settled', 'Paid/Settled', 'Collected'].includes(order.paymentStatus || '')) {
                                         updates.paymentStatus = 'Deposit';
                                         updates.expectedPaymentStatus = order.paymentStatus;
                                         updates.amountReceived = depositNum;
@@ -799,7 +799,7 @@ const PendingRemarkModalComponent: React.FC<{
 // Pay Status filter options (toolbar dropdown + mobile drawer). Mirrors
 // PaymentStatusBadge's own options list — kept separate since this list drives
 // filtering, not the badge/dropdown itself.
-const PAY_STATUS_FILTER_OPTIONS = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'PdFee', 'Cancel'];
+const PAY_STATUS_FILTER_OPTIONS = ['Unpaid', 'Deposit', 'Get File', 'Collected', 'Paid', 'PdFee', 'Cancel'];
 
 // Mirrors the rule enforced in StoreContext: 'Delivered' and 'Returned' only make sense
 // once the goods have shipped. Checked here too so the UI doesn't open a payment or
@@ -1052,13 +1052,14 @@ const Orders: React.FC = () => {
         && (isAdmin || !['ReStock', 'Returned', 'Cancelled'].includes(order.shipping?.status || ''));
     const claimDisabledOptions = (order: Sale): string[] => isAdmin ? [] : [
         'Cancel',
-        // Get File / PdFee move the shipping status: still admin-only on the
-        // orders where the badge was locked before (a Salesman's new orders
-        // are Drafted).
-        ...(['Drafted', 'ReStock', 'Returned', 'Cancelled'].includes(order.shipping?.status || '') ? ['Get File', 'PdFee'] : []),
+        // Get File / Collected / PdFee move the shipping status: still
+        // admin-only on the orders where the badge was locked before (a
+        // Salesman's new orders are Drafted).
+        ...(['Drafted', 'ReStock', 'Returned', 'Cancelled'].includes(order.shipping?.status || '') ? ['Get File', 'Collected', 'PdFee'] : []),
     ];
-    // A Salesman books no money here (PdFee books the delivery fee).
-    const salesmanDisabled = isSalesmanUser ? ['Deposit', 'Paid', 'PdFee'] : [];
+    // A Salesman books no money here (PdFee books the delivery fee,
+    // Collected the courier's COD).
+    const salesmanDisabled = isSalesmanUser ? ['Deposit', 'Paid', 'Collected', 'PdFee'] : [];
 
     // What the gray Pay Status says on hover.
     const claimTooltip = (c: NonNullable<Sale['paymentClaim']>) =>
@@ -1752,8 +1753,8 @@ const Orders: React.FC = () => {
     };
 
     // Get File asks for the amount the courier collects first (GetFileModal).
-    const [getFileTarget, setGetFileTarget] = useState<Sale | null>(null);
-    const moveToGetFile = (order: Sale) => { void saveGetFile(updateOrder, order); };
+    const [getFileTarget, setGetFileTarget] = useState<{ order: Sale; status: CourierStatus } | null>(null);
+    const moveToGetFile = (order: Sale, status: CourierStatus = 'Get File') => { void saveGetFile(updateOrder, order, undefined, status); };
 
     // Mobile: the filter bar is replaced by a right-side slide-in drawer.
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
@@ -2599,7 +2600,7 @@ const Orders: React.FC = () => {
         const cats = orderIncome[order.id];
         const status = String(order.paymentStatus || '');
         const kinds: PaymentKind[] = status === 'Deposit' ? ['Deposit']
-            : ['Paid', 'Settled', 'Paid/Settled'].includes(status) ? ['Deposit', 'Paid']
+            : ['Paid', 'Settled', 'Paid/Settled', 'Collected'].includes(status) ? ['Deposit', 'Paid']
             : status === 'PdFee' ? ['PdFee'] : [];
         if (!cats || kinds.length === 0) return null;
         const parts = kinds.map(k => cats[PAID_CATEGORY[k]]).filter((s): s is IncomeSplit => !!s);
@@ -3018,9 +3019,10 @@ const Orders: React.FC = () => {
                         // the receipt debits 1210 COD receivable instead.
                         individualUpdates.postToLedger = true;
                         individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods);
-                    } else if (value === 'Get File') {
+                    } else if (value === 'Get File' || value === 'Collected') {
                         // File collected, money not settled yet — no settle date. Keep a
-                        // deposit visible in Received when one was taken.
+                        // deposit visible in Received when one was taken (Collected
+                        // books its COD receipt in the database).
                         individualUpdates.amountReceived = order.depositAmount || 0;
                         individualUpdates.settleDate = null as any;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
@@ -3038,7 +3040,7 @@ const Orders: React.FC = () => {
                 // in parallel, two orders with the same product would overwrite each other.
                 // false: not saved (updateOrder has said why).
                 const results: boolean[] = [];
-                if (value === 'Get File') { for (const id of ids) results.push(await saveOne(id)); } else { results.push(...await Promise.all(ids.map(saveOne))); }
+                if (value === 'Get File' || value === 'Collected') { for (const id of ids) results.push(await saveOne(id)); } else { results.push(...await Promise.all(ids.map(saveOne))); }
                 notSaved = results.filter(ok => !ok).length;
             }
 
@@ -4232,7 +4234,7 @@ const Orders: React.FC = () => {
                                                 void openPaymentForm(order, 'PdFee');
                                                 return;
                                             }
-                                            if ((status === 'Paid' || status === 'Settled') && isBookedGetFile(order)) {
+                                            if ((status === 'Paid' || status === 'Settled') && isCourierBooked(order)) {
                                                 updateOrder(id, { paymentStatus: status, expectedPaymentStatus: order.paymentStatus });
                                                 return;
                                             }
@@ -4241,9 +4243,9 @@ const Orders: React.FC = () => {
                                                 // in the settle modal instead of silently defaulting.
                                                 void openPaymentForm(order, 'Paid');
                                                 return;
-                                            } else if (status === 'Get File') {
-                                                if (getFileAsksAmount(order)) setGetFileTarget(order);
-                                                else moveToGetFile(order);
+                                            } else if (status === 'Get File' || status === 'Collected') {
+                                                if (getFileAsksAmount(order, status)) setGetFileTarget({ order, status });
+                                                else moveToGetFile(order, status);
                                                 return;
                                             } else {
                                                 updates.amountReceived = 0;
@@ -4662,9 +4664,9 @@ const Orders: React.FC = () => {
                                                                             onChange={(newStatus) => {
                                                                                 if (rejectClaimIfUnpaid(order, newStatus)) return;
                                                                                 const updates: any = { paymentStatus: newStatus };
-                                                                                if (newStatus === 'Paid' && isBookedGetFile(order)) {
-                                                                                    // Booked Get File: the receipt is already on the
-                                                                                    // books — just mark it Paid, no Settle form.
+                                                                                if (newStatus === 'Paid' && isCourierBooked(order)) {
+                                                                                    // Booked Get File / Collected: the receipt is already
+                                                                                    // on the books — just mark it Paid, no Settle form.
                                                                                     updateOrder(order.id, { paymentStatus: 'Paid', expectedPaymentStatus: order.paymentStatus });
                                                                                     return;
                                                                                 } else if (newStatus === 'Paid') {
@@ -4676,9 +4678,9 @@ const Orders: React.FC = () => {
                                                                                 } else if (newStatus === 'PdFee') {
                                                                                     void openPaymentForm(order, 'PdFee');
                                                                                     return;
-                                                                                } else if (newStatus === 'Get File') {
-                                                                                    if (getFileAsksAmount(order)) setGetFileTarget(order);
-                                                                                    else moveToGetFile(order);
+                                                                                } else if (newStatus === 'Get File' || newStatus === 'Collected') {
+                                                                                    if (getFileAsksAmount(order, newStatus)) setGetFileTarget({ order, status: newStatus });
+                                                                                    else moveToGetFile(order, newStatus);
                                                                                     return;
                                                                                 } else if (newStatus === 'Cancel') {
                                                                                     updates.amountReceived = 0;
@@ -5184,12 +5186,13 @@ const Orders: React.FC = () => {
                                     <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
                                     <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
                                         {(() => {
-                                            const payStatuses = ['Unpaid', 'Deposit', 'Get File', 'Paid', 'PdFee', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
+                                            const payStatuses = ['Unpaid', 'Deposit', 'Get File', 'Collected', 'Paid', 'PdFee', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
                                             const getPayStatusColors = (s: string) => {
                                                 switch (s) {
                                                     case 'Paid': return { bg: '#D1FAE5', color: '#059669' };
                                                     case 'Deposit': return { bg: '#F3E8FF', color: '#7E22CE' };
                                                     case 'Get File': return { bg: '#DBEAFE', color: '#1D4ED8' };
+                                                    case 'Collected': return { bg: '#ECFCCB', color: '#4D7C0F' };
                                                     case 'PdFee': return { bg: '#CFFAFE', color: '#0E7490' };
                                                     case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626' };
                                                     case 'Settled': return { bg: '#E0E7FF', color: '#4F46E5' };
@@ -5464,12 +5467,13 @@ const Orders: React.FC = () => {
             />
             {/* Get File: the amount the courier collects */}
             <GetFileModal
-                order={getFileTarget}
+                order={getFileTarget?.order ?? null}
+                status={getFileTarget?.status}
                 onClose={() => setGetFileTarget(null)}
                 onConfirm={({ collectUsd, money }) => {
-                    const order = getFileTarget;
+                    const target = getFileTarget;
                     setGetFileTarget(null);
-                    if (order) void saveGetFile(updateOrder, order, { collectUsd, money });
+                    if (target) void saveGetFile(updateOrder, target.order, { collectUsd, money }, target.status);
                 }}
             />
             {/* Settle Payment Modal */}

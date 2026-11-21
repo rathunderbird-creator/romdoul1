@@ -9,6 +9,8 @@ import { useTx } from './useTx';
 
 interface GetFileModalProps {
     order: Sale | null;
+    // The status being entered (the popup's title): Get File or Collected.
+    status?: 'Get File' | 'Collected';
     onClose: () => void;
     // collectUsd: what the courier collects (total − deposit), in USD;
     // money carries the riel amount and rate when it was typed in riel.
@@ -20,7 +22,7 @@ interface GetFileModalProps {
 // that amount booked as COD receivable the moment the order enters Get File).
 // A changed amount changes the order's total, the difference going into the
 // discount — the same rule as the Settle form's Received Amount.
-const GetFileModal: React.FC<GetFileModalProps> = ({ order, onClose, onConfirm }) => {
+const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File', onClose, onConfirm }) => {
     const { khrExchangeRate } = useStore();
     const tx = useTx();
     const field = useMoneyField({ shopRate: khrExchangeRate });
@@ -50,7 +52,7 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, onClose, onConfirm }
                             <FileCheck2 size={19} />
                         </div>
                         <div>
-                            <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>{tx('ui.components.getFile.title', 'Get File')}</h2>
+                            <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>{status === 'Collected' ? tx('dashboard2.pay.Collected', 'Collected') : tx('ui.components.getFile.title', 'Get File')}</h2>
                             <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '1px 0 0 0' }}>
                                 {order.customer?.name || tx('ui.components.common.customer', 'Customer')} · {tx('ui.components.deliveryFee.orderTotal', 'Order total')} ${(Number(order.total) || 0).toFixed(2)}
                                 {deposit > 0 ? ` · ${tx('ui.components.getFile.deposit', 'Deposit')} $${deposit.toFixed(2)}` : ''}

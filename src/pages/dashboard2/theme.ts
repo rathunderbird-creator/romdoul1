@@ -35,6 +35,7 @@ export const PAY_COLORS: Record<string, string> = {
     Paid: '#047857',
     Cancel: '#6b7280',
     'Get File': '#2563eb',
+    Collected: '#65a30d',
 };
 
 // Tier 3 (passive / zero) opacity.

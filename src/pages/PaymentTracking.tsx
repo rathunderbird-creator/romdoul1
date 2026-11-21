@@ -6,10 +6,10 @@ import { useNavigate } from 'react-router-dom';
 import { Search, X, Settings, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, FileText, Wallet, Copy, Edit, Trash2 } from 'lucide-react';
 import type { Sale } from '../types';
 import { PaymentStatusBadge, DateRangePicker, StatusBadge, RecordReceiptModal, POSInterface, BulkEditModal, DepositModal, DeliveryFeeModal, GetFileModal } from '../components';
-import { getFileAsksAmount, saveGetFile } from '../utils/getFileSave';
+import { getFileAsksAmount, saveGetFile, type CourierStatus } from '../utils/getFileSave';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
-import { statusChangeRefusal, paymentChangeRefusal, paymentBadgeReadOnlyForNonAdmin, paymentBadgeDisabledForNonAdmin, isBookedGetFile, settleDateChangeRefusal } from '../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, paymentBadgeReadOnlyForNonAdmin, paymentBadgeDisabledForNonAdmin, isCourierBooked, settleDateChangeRefusal } from '../utils/orderStatusRules';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { getShippingCoColor, generateOrderCopyText } from '../utils/orderUtils';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -128,7 +128,7 @@ const PaymentTracking: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [settleDateRange, setSettleDateRange] = useState({ start: '', end: '' });
     const [orderDateRange, setOrderDateRange] = useState({ start: '', end: '' });
-    const [statusFilter, setStatusFilter] = useState<'All' | 'Unpaid' | 'Paid' | 'Get File' | 'Cancel'>(() => {
+    const [statusFilter, setStatusFilter] = useState<'All' | 'Unpaid' | 'Paid' | 'Get File' | 'Collected' | 'Cancel'>(() => {
         return (localStorage.getItem('payment_statusFilter') as any) || 'All';
     });
     const [salesmanFilter, setSalesmanFilter] = useState<string>(() => {
@@ -296,7 +296,7 @@ const PaymentTracking: React.FC = () => {
                         // Courier-collected money (the Settle box's default)
                         // debits 1210 COD receivable, not the bank.
                         individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods);
-                    } else if (value === 'Get File') {
+                    } else if (value === 'Get File' || value === 'Collected') {
                         // File collected, money not settled yet — no settle date. Keep a
                         // deposit visible in Received when one was taken.
                         individualUpdates.amountReceived = order.depositAmount || 0;
@@ -313,7 +313,7 @@ const PaymentTracking: React.FC = () => {
                 // in parallel, two orders with the same product would overwrite each other.
                 // false: not saved (updateOrder has said why).
                 const results: boolean[] = [];
-                if (value === 'Get File') { for (const id of ids) results.push(await saveOne(id)); } else { results.push(...await Promise.all(ids.map(saveOne))); }
+                if (value === 'Get File' || value === 'Collected') { for (const id of ids) results.push(await saveOne(id)); } else { results.push(...await Promise.all(ids.map(saveOne))); }
                 notSaved = results.filter(ok => !ok).length;
             }
 
@@ -558,7 +558,7 @@ const PaymentTracking: React.FC = () => {
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
     const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
     const [deliveryFeeTargetOrder, setDeliveryFeeTargetOrder] = useState<Sale | null>(null);
-    const [getFileTarget, setGetFileTarget] = useState<Sale | null>(null);
+    const [getFileTarget, setGetFileTarget] = useState<{ order: Sale; status: CourierStatus } | null>(null);
 
     // Server-side fetching (same pattern as Orders Management)
     const [currentPage, setCurrentPage] = useState(1);
@@ -1073,6 +1073,7 @@ const PaymentTracking: React.FC = () => {
                         <option value="All">{tx('payTrack.allPaymentStatus', 'All Payment Status')}</option>
                         <option value="Paid" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>{payLabel('Paid')}</option>
                         <option value="Get File" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{payLabel('Get File')}</option>
+                        <option value="Collected" style={{ backgroundColor: '#ECFCCB', color: '#4D7C0F' }}>{payLabel('Collected')}</option>
                         <option value="Unpaid" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>{payLabel('Unpaid')}</option>
                         <option value="Cancel" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>{payLabel('Cancel')}</option>
                     </select>
@@ -1366,9 +1367,9 @@ const PaymentTracking: React.FC = () => {
                                     <PaymentStatusBadge
                                         status={order.paymentStatus || 'Paid'}
                                         onChange={(newStatus) => {
-                                            if (newStatus === 'Paid' && isBookedGetFile(order)) {
-                                                // Booked Get File: the receipt is already on the
-                                                // books — just mark it Paid, no Settle form.
+                                            if (newStatus === 'Paid' && isCourierBooked(order)) {
+                                                // Booked Get File / Collected: the receipt is already
+                                                // on the books — just mark it Paid, no Settle form.
                                                 updateOrder(order.id, { paymentStatus: 'Paid', expectedPaymentStatus: order.paymentStatus });
                                                 return;
                                             }
@@ -1385,12 +1386,12 @@ const PaymentTracking: React.FC = () => {
                                                 setDeliveryFeeTargetOrder(order);
                                                 return;
                                             }
-                                            if (newStatus === 'Get File') {
-                                                if (getFileAsksAmount(order)) setGetFileTarget(order);
-                                                else void saveGetFile(updateOrder, order);
+                                            if (newStatus === 'Get File' || newStatus === 'Collected') {
+                                                if (getFileAsksAmount(order, newStatus)) setGetFileTarget({ order, status: newStatus });
+                                                else void saveGetFile(updateOrder, order, undefined, newStatus);
                                                 return;
                                             }
-                                            updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel', expectedPaymentStatus: order.paymentStatus })
+                                            updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Collected' | 'Cancel', expectedPaymentStatus: order.paymentStatus })
                                         }}
                                         // Admins bypass the lock so they can correct mistakes (e.g.
                                         // un-mark a wrong Paid); the store cleans up the logged
@@ -1674,12 +1675,13 @@ const PaymentTracking: React.FC = () => {
 
             {/* Get File: the amount the courier collects */}
             <GetFileModal
-                order={getFileTarget}
+                order={getFileTarget?.order ?? null}
+                status={getFileTarget?.status}
                 onClose={() => setGetFileTarget(null)}
                 onConfirm={({ collectUsd, money }) => {
-                    const order = getFileTarget;
+                    const target = getFileTarget;
                     setGetFileTarget(null);
-                    if (order) void saveGetFile(updateOrder, order, { collectUsd, money });
+                    if (target) void saveGetFile(updateOrder, target.order, { collectUsd, money }, target.status);
                 }}
             />
 

@@ -65,7 +65,7 @@ export const ORDER_STATUS_TONE: Record<string, PillTone> = {
     Drafted: 'neutral', Cancelled: 'neutral', Returned: 'red', ReStock: 'blue',
 };
 export const PAY_STATUS_TONE: Record<string, PillTone> = {
-    Unpaid: 'amber', Deposit: 'violet', Paid: 'green', Cancel: 'neutral', 'Get File': 'blue',
+    Unpaid: 'amber', Deposit: 'violet', Paid: 'green', Cancel: 'neutral', 'Get File': 'blue', Collected: 'green',
 };
 
 // ─── Filters <-> URL (react-router binding for ../urlFilters) ─────────────

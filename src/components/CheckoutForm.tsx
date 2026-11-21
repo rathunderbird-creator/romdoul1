@@ -145,7 +145,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         discount: number | string;
         enableDiscount: boolean;
         shippingStatus: NonNullable<Sale['shipping']>['status'];
-        paymentStatus: 'Unpaid' | 'Deposit' | 'Paid' | 'PdFee' | 'Get File' | 'Cancel';
+        paymentStatus: 'Unpaid' | 'Deposit' | 'Paid' | 'PdFee' | 'Get File' | 'Collected' | 'Cancel';
         date: string;
         // "អ្នកដឹកប្រមូល (COD)" on a Paid save: the courier collected the
         // money (the receipt debits 1210 COD receivable). Off for a new order
@@ -414,7 +414,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 discount: orderToEdit.discount || 0,
                 enableDiscount: (orderToEdit.discount || 0) > 0,
                 shippingStatus: orderToEdit.shipping?.status || 'Drafted',
-                paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Deposit' | 'Paid' | 'PdFee' | 'Get File' | 'Cancel') || 'Unpaid',
+                paymentStatus: (orderToEdit.paymentStatus as any) === 'Pending' ? 'Unpaid' : (orderToEdit.paymentStatus as 'Unpaid' | 'Deposit' | 'Paid' | 'PdFee' | 'Get File' | 'Collected' | 'Cancel') || 'Unpaid',
                 date: orderToEdit.date || '',
                 codCollected: defaultCodCollected(orderToEdit, codPaymentMethods),
             });
@@ -658,7 +658,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             const isPartialDeposit = !formData.paymentAfterDelivery
                 && amountReceivedVal > 0
                 && amountReceivedVal < total
-                && !['Get File', 'Cancel'].includes(formData.paymentStatus);
+                && !['Get File', 'Collected', 'Cancel'].includes(formData.paymentStatus);
             // Symmetric guard: a stale 'Deposit' with the full amount received is
             // really Paid — never save Deposit with depositAmount 0.
             const effectivePaymentStatus = isPartialDeposit
@@ -676,7 +676,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             // of it is Paid, part of it a Deposit.
             const isSalesman = currentUser?.roleId === 'salesman';
             const claimStatus: 'Deposit' | 'Paid' | null = isSalesman
-                ? (!formData.paymentAfterDelivery && amountReceivedVal > 0 && !['Get File', 'Cancel'].includes(formData.paymentStatus)
+                ? (!formData.paymentAfterDelivery && amountReceivedVal > 0 && !['Get File', 'Collected', 'Cancel'].includes(formData.paymentStatus)
                     ? (total > 0 && amountReceivedVal >= total ? 'Paid' : 'Deposit')
                     : null)
                 : (effectivePaymentStatus === 'Deposit' || effectivePaymentStatus === 'Paid' ? effectivePaymentStatus : null);
@@ -1463,7 +1463,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                 {(() => {
                                     // A Paid save books a receipt: say who holds the money.
                                     const num = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
-                                    const paidNow = !formData.paymentAfterDelivery && total > 0 && num >= total && !['Get File', 'Cancel'].includes(formData.paymentStatus);
+                                    const paidNow = !formData.paymentAfterDelivery && total > 0 && num >= total && !['Get File', 'Collected', 'Cancel'].includes(formData.paymentStatus);
                                     return paidNow ? (
                                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer', margin: '8px 0 0 0' }} title={tx('ui.components.settle.codCheckoutHint', 'Tick when the courier collected this money: the receipt is booked to COD receivable until the courier remits it.')}>
                                             <input type="checkbox" checked={formData.codCollected} onChange={e => setFormData({ ...formData, codCollected: e.target.checked })} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />

@@ -232,7 +232,7 @@ const DeliveryTracking: React.FC = () => {
         return saved ? JSON.parse(saved) : [];
     });
     useEffect(() => { localStorage.setItem('delivery_statusFilter', JSON.stringify(statusFilter)); }, [statusFilter]);
-    const [paymentStatusFilter, setPaymentStatusFilter] = useState<'All' | 'Paid' | 'Get File' | 'Unpaid' | 'Cancel'>('All');
+    const [paymentStatusFilter, setPaymentStatusFilter] = useState<'All' | 'Paid' | 'Get File' | 'Collected' | 'Unpaid' | 'Cancel'>('All');
 
     const [salesmanFilter, setSalesmanFilter] = useState<string>(() => {
         return localStorage.getItem('delivery_salesmanFilter') || 'All';
@@ -1242,6 +1242,7 @@ const DeliveryTracking: React.FC = () => {
                         <option value="All">{tx('delivery.allPayment', 'All Payment')}</option>
                         <option value="Paid" style={{ backgroundColor: '#D1FAE5', color: '#059669' }}>{payLabel('Paid')}</option>
                         <option value="Get File" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{payLabel('Get File')}</option>
+                        <option value="Collected" style={{ backgroundColor: '#ECFCCB', color: '#4D7C0F' }}>{payLabel('Collected')}</option>
                         <option value="Unpaid" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>{payLabel('Unpaid')}</option>
                         <option value="Cancel" style={{ backgroundColor: '#FEF2F2', color: '#991B1B' }}>{payLabel('Cancel')}</option>
                     </select>
@@ -1662,11 +1663,12 @@ const DeliveryTracking: React.FC = () => {
                                 <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border)' }} />
                                 <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center' }}>
                                     {(() => {
-                                        const payStatuses = ['Unpaid', 'Get File', 'Paid', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
+                                        const payStatuses = ['Unpaid', 'Get File', 'Collected', 'Paid', 'Cancel', 'Settled', 'Not Settle', 'Pending'];
                                         const getPayStatusColors = (s: string) => {
                                             switch (s) {
                                                 case 'Paid': return { bg: '#D1FAE5', color: '#059669' };
                                                 case 'Get File': return { bg: '#DBEAFE', color: '#1D4ED8' };
+                                                case 'Collected': return { bg: '#ECFCCB', color: '#4D7C0F' };
                                                 case 'Unpaid': return { bg: '#FEE2E2', color: '#DC2626' };
                                                 case 'Settled': return { bg: '#E0E7FF', color: '#4F46E5' };
                                                 case 'Not Settle': return { bg: '#FEE2E2', color: '#DC2626' };
