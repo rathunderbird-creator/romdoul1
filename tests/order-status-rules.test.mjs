@@ -75,6 +75,18 @@ check('staff refused a same-status re-save on a booked Get File', p(gfb, 'Get Fi
 check('staff refused settle date on a booked Get File', d(gfb, staff) !== null);
 check('admin allowed un-paying a booked Get File', p(gfb, 'Unpaid', admin) === null);
 check('staff allowed to change an unbooked Get File', p(gfu, 'Unpaid', staff) === null && d(gfu, staff) === null);
+// ...but staff may move a booked Get File FORWARD to Paid (courier remitted):
+// the database books nothing more for it.
+check('staff allowed booked Get File->Paid', p(gfb, 'Paid', staff) === null);
+check('staff allowed booked Get File->Settled / Paid/Settled', p(gfb, 'Settled', staff) === null && p(gfb, 'Paid/Settled', staff) === null);
+check('staff refused booked Get File->Deposit / PdFee / Cancel', p(gfb, 'Deposit', staff) !== null && p(gfb, 'PdFee', staff) !== null && p(gfb, 'Cancel', staff) !== null);
+check('staff refused booked Get File->Paid on a Returned row', p({ ...gfb, shippingStatus: 'Returned' }, 'Paid', staff) !== null);
+check('staff still refused Paid->Paid rewrite (forward rule is Get File only)', p({ shippingStatus: 'Delivered', paymentStatus: 'Paid' }, 'Paid', staff) !== null);
+check('badge: booked Get File is open for staff with only Paid enabled',
+    !m.paymentBadgeReadOnlyForNonAdmin(gfb)
+    && JSON.stringify(m.paymentBadgeDisabledForNonAdmin(gfb)) === JSON.stringify(['Unpaid', 'Deposit', 'Get File', 'PdFee', 'Cancel']));
+check('badge: Paid / PdFee / Cancel stay read-only for staff', m.paymentBadgeReadOnlyForNonAdmin({ paymentStatus: 'Paid' }) && m.paymentBadgeReadOnlyForNonAdmin({ paymentStatus: 'PdFee' }) && m.paymentBadgeReadOnlyForNonAdmin({ paymentStatus: 'Cancel' }));
+check('badge: unbooked Get File / Unpaid open, only Cancel disabled', !m.paymentBadgeReadOnlyForNonAdmin(gfu) && JSON.stringify(m.paymentBadgeDisabledForNonAdmin(gfu)) === '["Cancel"]' && JSON.stringify(m.paymentBadgeDisabledForNonAdmin({ paymentStatus: 'Unpaid' })) === '["Cancel"]');
 check('paymentLockedForNonAdmin: Paid / booked Get File yes, unbooked Get File / Unpaid no', m.paymentLockedForNonAdmin({ paymentStatus: 'Paid' }) && m.paymentLockedForNonAdmin(gfb) && !m.paymentLockedForNonAdmin(gfu) && !m.paymentLockedForNonAdmin({ paymentStatus: 'Unpaid' }));
 
 console.log(`\n${pass} passed, ${fail} failed`);

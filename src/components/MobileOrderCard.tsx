@@ -4,7 +4,7 @@ import type { Sale } from '../types';
 import StatusBadge from './StatusBadge';
 import PaymentStatusBadge from './PaymentStatusBadge';
 import { getOperatorForPhone } from '../utils/telecom';
-import { paymentLockedForNonAdmin } from '../utils/orderStatusRules';
+import { paymentBadgeReadOnlyForNonAdmin, paymentBadgeDisabledForNonAdmin } from '../utils/orderStatusRules';
 import { useTx, orderStatusDisplay } from './useTx';
 import './MobileOrderCard.css';
 
@@ -339,8 +339,8 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                         // logged income when leaving Paid.
                                         readOnly={claimTitle
                                             ? !canConfirmPayments
-                                            : (!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || paymentLockedForNonAdmin(order))))}
-                                        disabledOptions={claimTitle ? claimDisabledOptions : [...(isAdmin ? [] : ['Cancel']), ...(salesmanDisabledOptions ?? (isSalesman ? ['Deposit', 'Paid', 'PdFee'] : []))]}
+                                            : (!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || paymentBadgeReadOnlyForNonAdmin(order))))}
+                                        disabledOptions={claimTitle ? claimDisabledOptions : [...(isAdmin ? [] : paymentBadgeDisabledForNonAdmin(order)), ...(salesmanDisabledOptions ?? (isSalesman ? ['Deposit', 'Paid', 'PdFee'] : []))]}
                                     />
                                 </div>
                             </div>
