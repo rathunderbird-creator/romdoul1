@@ -28,6 +28,8 @@ import { useAccounting } from '../hooks/useAccounting';
 import type { SalesSettings } from '../types';
 import { discountPresetProblem, discountPresetValueLabel } from '../utils/discountPresets';
 import { courierDeliveryType } from '../utils/deliveryTypes';
+import { phonesInGroup } from '../utils/customerGroups';
+import { formatPhoneDisplay } from '../utils/telecom';
 import { MAX_QUOTATION_VALIDITY_DAYS, quotationValidityDays, quotationValidityInput } from '../utils/quotationValidity';
 import {
     DEFAULT_PAYMENT_REQUEST_MESSAGE, MAX_PAYMENT_REQUEST_LENGTH, PAYMENT_REQUEST_FIELDS, fillPaymentRequest,
@@ -58,7 +60,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
 ];
 
 // Sections not in this set fall through to the "reserved" placeholder below.
-const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces', 'rejectionReasons', 'discounts', 'deliveryTypes']);
+const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces', 'rejectionReasons', 'discounts', 'deliveryTypes', 'customerGroups']);
 
 // Add/remove UI for a flat string list backed by the store's config blob
 // (same data CheckoutForm's gear-icon ConfigModal edits — this just gives it
@@ -498,6 +500,74 @@ const CourierDeliveryTypes: React.FC = () => {
     );
 };
 
+// Customer Groups: the list, and who is in each group (tagged from the
+// Orders "Customer group" column; a customer is their phone). Removing a
+// group with customers in it asks first: they all go back to no group.
+const CustomerGroupsSection: React.FC = () => {
+    const { t } = useLanguage();
+    const { showToast } = useToast();
+    const { customerGroups, customerGroupMembers, addCustomerGroup, removeCustomerGroup, setCustomerGroup } = useStore();
+    const [busy, setBusy] = useState<string | null>(null);
+    const removeGroup = async (name: string) => {
+        const n = phonesInGroup(customerGroupMembers, name).length;
+        if (n > 0 && !window.confirm(fill(t('ui.admin.salesSetup.customerGroup.confirmRemove'), { name, n }))) return;
+        await removeCustomerGroup(name);
+    };
+    const untag = (phone: string) => {
+        if (busy) return;
+        setBusy(phone);
+        setCustomerGroup(phone, '')
+            .catch((err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error'))
+            .finally(() => setBusy(null));
+    };
+    // Groups in list order, then any group still on a member but no longer listed.
+    const groupsShown = [...customerGroups];
+    for (const m of Object.values(customerGroupMembers)) {
+        if (!groupsShown.some(g => g.trim().toLowerCase() === m.group.toLowerCase())) groupsShown.push(m.group);
+    }
+    const total = Object.keys(customerGroupMembers).length;
+    return (
+        <div style={{ flex: '1 1 560px', maxWidth: '680px', display: 'grid', gap: '20px' }}>
+            <SetupListSection title={t('ui.admin.salesSetup.sections.customerGroups')} placeholder={t('ui.admin.salesSetup.customerGroup.add')} items={customerGroups}
+                onAdd={addCustomerGroup} onRemove={removeGroup} help={t('ui.admin.salesSetup.customerGroup.help')} />
+            <div style={{ ...cardStyle, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{fill(t('ui.admin.salesSetup.customerGroup.members'), { n: total })}</div>
+                    <div style={helpStyle}>{t('ui.admin.salesSetup.customerGroup.membersHelp')}</div>
+                </div>
+                {total === 0 ? (
+                    <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', borderRadius: '10px' }}>{t('ui.admin.salesSetup.customerGroup.noMembers')}</div>
+                ) : groupsShown.map(group => {
+                    const phones = phonesInGroup(customerGroupMembers, group)
+                        .sort((a, b) => (customerGroupMembers[a].name || a).localeCompare(customerGroupMembers[b].name || b));
+                    if (phones.length === 0) return null;
+                    return (
+                        <section key={group} aria-label={group} style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
+                            <div style={{ padding: '8px 14px', background: 'var(--color-bg)', fontSize: '12.5px', fontWeight: 700, color: 'var(--color-text-main)' }}>{group} · {phones.length}</div>
+                            <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                                {phones.map(phone => {
+                                    const name = customerGroupMembers[phone].name;
+                                    const label = fill(t('ui.admin.salesSetup.customerGroup.removeMember'), { name: name || formatPhoneDisplay(phone) || phone, group });
+                                    return (
+                                        <div key={phone} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 14px', borderTop: '1px solid var(--color-border)', fontSize: '13px' }}>
+                                            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-main)' }}>{name || '—'}</span>
+                                            <span style={{ color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{formatPhoneDisplay(phone) || phone}</span>
+                                            <button type="button" onClick={() => untag(phone)} disabled={!!busy} title={label} aria-label={label}
+                                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: busy ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', opacity: busy === phone ? 0.4 : 1 }}>
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
 // Discounts: presets offered as quick picks next to Checkout's discount
 // field (app_config discountPresets). A pick fills the USD discount — a
 // percent of the items' price, or a fixed amount — and stays editable.
@@ -611,7 +681,7 @@ const NotUsedYet: React.FC = () => {
 
 // Sections with nothing in retail to connect to: a note, and a link where
 // the wholesale side already has it (Wholesale Setup, opened on that tab).
-const POINTER_SECTIONS = new Set<SectionKey>(['paymentTerms', 'openingBalances', 'priceLevels', 'customerGroups']);
+const POINTER_SECTIONS = new Set<SectionKey>(['paymentTerms', 'openingBalances', 'priceLevels']);
 const POINTER_LINKS: Partial<Record<SectionKey, string>> = {
     paymentTerms: '/wholesale/setup?tab=terms',
     openingBalances: '/wholesale/setup?tab=opening',
@@ -772,6 +842,9 @@ const SalesSetupPage: React.FC = () => {
                     <CourierDeliveryTypes />
                 </div>
             )}
+
+            {/* ── Customer Groups: the list, and who is in each. ── */}
+            {section === 'customerGroups' && <CustomerGroupsSection />}
 
             {/* ── Discounts: Checkout's quick-pick presets. ── */}
             {section === 'discounts' && <DiscountsSection />}

@@ -16,6 +16,7 @@ import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../
 import { rejectionReasonList, rejectionReasonOp } from '../utils/rejectionReasons';
 import { discountPresetList, withDiscountPreset, withoutDiscountPreset, type DiscountPreset } from '../utils/discountPresets';
 import { courierTypeMap, courierTypeOp, deliveryTypeList, deliveryTypeOp, freeCouriersOfTypeOp } from '../utils/deliveryTypes';
+import { customerGroupList, customerGroupMemberMap, customerGroupMemberOp, customerGroupOp, freeMembersOfGroupOp, type CustomerGroupMembers } from '../utils/customerGroups';
 import { BACKUP_TABLES, buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
 import { ALL_PERMISSIONS } from '../types';
 import { orderStatusText } from '../utils/orderStatusRules';
@@ -75,6 +76,9 @@ interface ConfigState {
     // Sales Setup › Delivery Types: the list, and courier -> type.
     deliveryTypes?: string[];
     courierDeliveryTypes?: Record<string, string>;
+    // Sales Setup › Customer Groups (customerGroups.ts).
+    customerGroups?: string[];
+    customerGroupMembers?: Record<string, unknown>;
     trackingUrlTemplates?: Record<string, string>; // Company -> tracking page URL with {tracking}
     users?: User[];
     roles?: Role[];
@@ -2107,6 +2111,33 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const op = courierTypeOp(map, company, type);
         if (!op) { setConfig(prev => ({ ...prev, courierDeliveryTypes: map })); return; }
         await updateConfigOps(() => ({ courierDeliveryTypes: op }));
+    };
+    // Sales Setup › Customer Groups, written like Delivery Types: from the row
+    // read fresh, each tagging scoped to its phone, and removing a group
+    // takes its customers out of it in the same write.
+    const customerGroups = useMemo(() => customerGroupList(config.customerGroups), [config.customerGroups]);
+    // Same object until the map's contents change: Orders refetches on it.
+    const memberMapKey = JSON.stringify(customerGroupMemberMap(config.customerGroupMembers));
+    const customerGroupMembers = useMemo<CustomerGroupMembers>(() => JSON.parse(memberMapKey), [memberMapKey]);
+    const addCustomerGroup = async (name: string) => {
+        const row = await readConfigRow();
+        const op = customerGroupOp(row.customerGroups, 'add', name);
+        if (op) await updateConfigOps(() => ({ customerGroups: op }));
+        else setConfig(prev => ({ ...prev, customerGroups: row.customerGroups as string[] | undefined }));
+    };
+    const removeCustomerGroup = async (name: string) => {
+        const row = await readConfigRow();
+        const op = customerGroupOp(row.customerGroups, 'remove', name);
+        if (!op) { setConfig(prev => ({ ...prev, customerGroups: row.customerGroups as string[] | undefined })); return; }
+        const free = freeMembersOfGroupOp(customerGroupMemberMap(row.customerGroupMembers), name);
+        await updateConfigOps(() => ({ customerGroups: op, ...(free ? { customerGroupMembers: free } : {}) }));
+    };
+    const setCustomerGroup = async (phone: string, group: string, name?: string) => {
+        const row = await readConfigRow();
+        const map = customerGroupMemberMap(row.customerGroupMembers);
+        const op = customerGroupMemberOp(map, phone, group, name);
+        if (!op) { setConfig(prev => ({ ...prev, customerGroupMembers: map })); return; }
+        await updateConfigOps(() => ({ customerGroupMembers: op }));
     };
 
     const addDiscountPreset = async (p: DiscountPreset) => {
@@ -5113,6 +5144,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             addDeliveryType,
             removeDeliveryType,
             setCourierDeliveryType,
+            customerGroups,
+            customerGroupMembers,
+            addCustomerGroup,
+            removeCustomerGroup,
+            setCustomerGroup,
             cities: config.cities || [],
             addCity,
             removeCity,

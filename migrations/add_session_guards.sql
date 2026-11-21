@@ -149,6 +149,9 @@
 --     deliveryTypes, courierDeliveryTypes
 --                      manage_settings / manage_orders (Sales Setup ›
 --                      Delivery Types; an order's type follows its courier)
+--     customerGroups, customerGroupMembers
+--                      manage_settings / manage_orders (Sales Setup ›
+--                      Customer Groups; tagged from the Orders column)
 --     discountPresets  manage_settings / manage_orders (Sales Setup ›
 --                      Discounts; Checkout only reads it)
 --     rejectionReasons manage_settings / manage_orders (Sales Setup ›
@@ -1003,6 +1006,9 @@ BEGIN
         -- Sales Setup › Delivery Types (the list, and courier -> type).
         WHEN 'deliveryTypes'        THEN ARRAY['manage_settings', 'manage_orders']
         WHEN 'courierDeliveryTypes' THEN ARRAY['manage_settings', 'manage_orders']
+        -- Sales Setup › Customer Groups (the list, and phone digits -> group).
+        WHEN 'customerGroups'       THEN ARRAY['manage_settings', 'manage_orders']
+        WHEN 'customerGroupMembers' THEN ARRAY['manage_settings', 'manage_orders']
         ELSE ARRAY['manage_settings']
     END;
     IF NOT EXISTS (
