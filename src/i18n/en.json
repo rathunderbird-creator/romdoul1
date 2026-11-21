@@ -470,6 +470,7 @@
     "title": "Inventory",
     "subtitle": "Manage your product catalog and stock levels",
     "addProduct": "Add Product",
+    "showStockMovements": "Show Stock Movements",
     "productName": "Product Name",
     "category": "Category",
     "price": "Price",
