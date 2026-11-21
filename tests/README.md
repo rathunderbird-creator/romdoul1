@@ -460,3 +460,13 @@ product) changes nothing. Same PGlite setup as auth-guards:
 
     npm i --no-save @electric-sql/pglite
     node tests/stock-transfers.test.mjs
+
+## backfill-collected-cod.test.mjs
+
+Runs `migrations/backfill_collected_cod.sql` on the real stack against
+orders the old `set_order_payment` left at Collected with nothing booked:
+each gets one Draft RCP (Dr 1210 for the total, or the remainder after a
+deposit / Cr 4000, plus COGS), an order the new function already booked is
+left alone, and a second run books nothing.
+
+    node tests/backfill-collected-cod.test.mjs
