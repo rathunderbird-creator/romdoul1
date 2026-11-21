@@ -14,7 +14,7 @@ import { MobileSearchBar, MobileFilterDrawer, MobileChipGroup } from '../../../c
 import { getOperatorForPhone } from '../../../utils/telecom';
 
 const ORDER_STATUSES = ['Drafted', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled', 'Returned', 'ReStock'];
-const PAY_STATUSES = ['Unpaid', 'Deposit', 'Paid', 'Get File', 'Cancel'];
+const PAY_STATUSES = ['Unpaid', 'Deposit', 'Paid', 'Get File', 'Collected', 'Cancel'];
 const SEARCH_DEBOUNCE_MS = 250;
 
 interface MobileOrderList2Props {

@@ -331,7 +331,7 @@ const OrdersManagement2Page: React.FC = () => {
                         // Courier-collected money (the Settle box's default)
                         // debits 1210 COD receivable, not the bank.
                         individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods);
-                    } else if (value === 'Get File') {
+                    } else if (value === 'Get File' || value === 'Collected') {
                         individualUpdates.amountReceived = order.depositAmount || 0;
                         individualUpdates.settleDate = null;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
@@ -346,7 +346,7 @@ const OrdersManagement2Page: React.FC = () => {
                 // in parallel, two orders with the same product would overwrite each other.
                 // false: not saved (updateOrder has said why).
                 const results: boolean[] = [];
-                if (value === 'Get File') { for (const id of orderIds) results.push(await saveOne(id)); } else { results.push(...await Promise.all(orderIds.map(saveOne))); }
+                if (value === 'Get File' || value === 'Collected') { for (const id of orderIds) results.push(await saveOne(id)); } else { results.push(...await Promise.all(orderIds.map(saveOne))); }
                 notSaved = results.filter(ok => !ok).length;
             }
             const savedCount = orderIds.length - notSaved;

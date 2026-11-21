@@ -3044,7 +3044,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // as a claim for Admin, Customer Care or an Accountant to confirm.
     const SALESMAN_NO_BOOKING_MESSAGE = () => tNow('ui.store.order.salesmanNoBooking');
     // PdFee books the delivery fee as income, so it counts too.
-    const BOOKING_STATUSES = ['Deposit', 'Paid', 'Settled', 'Paid/Settled', 'PdFee'];
+    const BOOKING_STATUSES = ['Deposit', 'Paid', 'Settled', 'Paid/Settled', 'Collected', 'PdFee'];
     const salesmanBooksMoney = (u: Partial<Sale>, ex?: Sale): boolean => {
         const status = (u.paymentStatus as string | undefined) ?? (ex?.paymentStatus as string | undefined);
         if (u.paymentStatus && BOOKING_STATUSES.includes(u.paymentStatus) && u.paymentStatus !== ex?.paymentStatus) return true;
@@ -3426,9 +3426,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         //
         // Also read when the items change (stock follows them on a shipped order)
         // and for the payment statuses that move shipping (Cancel/PdFee -> Pending,
-        // Get File -> Delivered): those decisions need the real status too.
+        // Get File / Collected -> Delivered): those decisions need the real status too.
         let shippingStatusBeforeUpdate = existingOrder?.shipping?.status;
-        const movesShipping = updates.paymentStatus === 'Cancel' || updates.paymentStatus === 'PdFee' || updates.paymentStatus === 'Get File';
+        const movesShipping = updates.paymentStatus === 'Cancel' || updates.paymentStatus === 'PdFee' || updates.paymentStatus === 'Get File' || updates.paymentStatus === 'Collected';
         if (updates.shipping?.status || (updates.items && updates.items.length > 0) || movesShipping) {
             const { data: freshStatusRow, error: freshStatusErr } = await supabase.from('sales').select('shipping_status').eq('id', id).single();
             if (freshStatusErr || !freshStatusRow) {
@@ -3464,7 +3464,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // and this tab's copy can be out of date (no realtime sync) — deciding from
         // it booked sales twice. Use the real state, then claim the change with a
         // compare-and-set so of two racing saves only one can book.
-        const PAID_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
+        // Collected is booked as the courier's COD, like Paid (set_order_payment).
+        const PAID_STATUSES = ['Paid', 'Settled', 'Paid/Settled', 'Collected'];
         let freshPayment: Partial<Sale> | null = null;
         const expectedPaymentStatus = updates.expectedPaymentStatus;
         delete updates.expectedPaymentStatus;
@@ -3577,7 +3578,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         forced = true;
                     }
                 }
-            } else if (updates.paymentStatus === 'Get File' && !['ReStock', 'Cancelled'].includes(shippingStatusBeforeUpdate || '')) {
+            } else if ((updates.paymentStatus === 'Get File' || updates.paymentStatus === 'Collected') && !['ReStock', 'Cancelled'].includes(shippingStatusBeforeUpdate || '')) {
                 shipping = { ...(existingOrder?.shipping || {}), ...(updates.shipping || {}), status: 'Delivered' } as Sale['shipping'];
                 forced = true;
             }

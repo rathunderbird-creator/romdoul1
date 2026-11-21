@@ -338,6 +338,51 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
         (rs.paid_reset || []).includes('G8') && (await nIncome('G8')) === 0 && g.payment_status === 'Cancel' && g.cod_collected === false, [rs, g]);
     check('G8 restocked: get_file_booked false', (await one(`SELECT get_file_booked FROM sales WHERE id = 'G8'`)).get_file_booked === false);
 
+    // ---- Collected: always booked as COD, whatever the courier's tick ----
+    const collected = (id, from, dep = 0) => pay(id, from, { payment_status: 'Collected', amount_received: dep, settle_date: null });
+    await tick([]);
+    await order('CL1', 17);
+    const rk1 = await collected('CL1', 'Unpaid');
+    const ek1 = await entry('TX-' + (await tx('CL1')).id);
+    g = await row('CL1');
+    check('CL1 unticked courier: Collected books one receipt, Dr 1210 17 / Cr 4000 17, COGS booked',
+        (await nIncome('CL1')) === 1 && near(ek1.cod_dr, 17) && near(ek1.bank_dr, 0) && near(ek1.rev_cr, 17) && num(ek1.cogs) > 0, [rk1, ek1]);
+    check('CL1: settle date stamped, Received = total, flag true, status Collected',
+        g.settle_date !== null && near(g.amount_received, 17) && g.cod_collected === true && g.payment_status === 'Collected', g);
+    await checkBalanced('CL1 Collected');
+    const k1before = { date: ek1.date, settle: String(g.settle_date) };
+    await pay('CL1', 'Collected', { payment_status: 'Paid', amount_received: 17, settle_date: LATER, post_to_ledger: true, cod_collected: true }, LATER);
+    const ek1b = await entry('TX-' + (await tx('CL1')).id);
+    g = await row('CL1');
+    check('CL1 Collected -> Paid: still one receipt, same entry date and settle date',
+        (await nIncome('CL1')) === 1 && ek1b.date === k1before.date && String(g.settle_date) === k1before.settle && g.payment_status === 'Paid' && near(ek1b.cod_dr, 17), [ek1b, g]);
+    await checkBalanced('CL1 Paid');
+
+    await order('CL2', 17);
+    await collected('CL2', 'Unpaid');
+    await pay('CL2', 'Collected', { payment_status: 'Unpaid', amount_received: 0, settle_date: null });
+    g = await row('CL2');
+    check('CL2 Collected -> Unpaid: receipt removed, flag false, no settle date',
+        (await nIncome('CL2')) === 0 && g.cod_collected === false && g.settle_date === null && near(g.amount_received, 0), g);
+    await checkBalanced('CL2');
+
+    await order('CL3', 17);
+    await pay('CL3', 'Unpaid', { payment_status: 'Deposit', deposit_amount: 5, deposit_date: DAY, post_to_ledger: true });
+    await collected('CL3', 'Deposit', 5);
+    const ek3 = await entry('TX-' + (await tx('CL3')).id);
+    check('CL3 deposit 5 then Collected: Dr 1210 12 (the remainder)', near(ek3.cod_dr, 12) && near(ek3.bank_dr, 0), ek3);
+    await checkBalanced('CL3');
+
+    await tick(['J&T']);
+    await order('CL4', 17);
+    await getFile('CL4', 'Unpaid');
+    await collected('CL4', 'Get File');
+    g = await row('CL4');
+    check('CL4 booked Get File -> Collected: still one receipt, flag true',
+        (await nIncome('CL4')) === 1 && g.payment_status === 'Collected' && g.cod_collected === true, g);
+    check('CL4: get_file_booked false once Collected', (await one(`SELECT get_file_booked FROM sales WHERE id = 'CL4'`)).get_file_booked === false);
+    await checkBalanced('CL4');
+
     // ---- The review's cases: the booked marker is get_file_booked, not a date ----
     const booked = async id => (await one(`SELECT get_file_booked FROM sales WHERE id = $1`, [id])).get_file_booked;
     check('G2 (booked at Get File, now Paid): get_file_booked false — Paid says settled', (await booked('G2')) === false);

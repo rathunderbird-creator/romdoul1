@@ -77,7 +77,7 @@ const byCode = <T extends CashBankCandidate>(a: T, b: T) => (a.account_code || '
 // Method says the courier collects. The SQL twin, set_order_payment's
 // wp_internal.op_cod_method, applies the same list when a save says
 // nothing about the flag.
-const SETTLED_STATUSES = ['Paid', 'Settled', 'Paid/Settled'];
+const SETTLED_STATUSES = ['Paid', 'Settled', 'Paid/Settled', 'Collected'];
 export function defaultCodCollected(order: {
     codCollected?: boolean | null;
     paymentStatus?: string | null;
@@ -90,7 +90,7 @@ export function defaultCodCollected(order: {
     // Get File: the courier collected the money and sent its settlement file
     // (add_cod_get_file.sql stores true on entering it), so it counts even
     // when the courier's name was never filled in.
-    if (order.paymentStatus === 'Get File') return true;
+    if (order.paymentStatus === 'Get File' || order.paymentStatus === 'Collected') return true;
     if (!order.shipping?.company) return false;
     return order.shipping.status === 'Shipped' || order.shipping.status === 'Delivered';
 }

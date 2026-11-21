@@ -16,7 +16,7 @@ import { defaultCodCollected } from '../../../utils/cashBankAccounts';
 import { useStore } from '../../../context/StoreContext';
 
 type PayStatus = NonNullable<Order['paymentStatus']>;
-const PAYMENT_STATUS_OPTIONS: PayStatus[] = ['Unpaid', 'Deposit', 'Paid', 'Cancel', 'Get File'];
+const PAYMENT_STATUS_OPTIONS: PayStatus[] = ['Unpaid', 'Deposit', 'Paid', 'Cancel', 'Get File', 'Collected'];
 
 type ShipStatus = NonNullable<Order['shipping']>['status'];
 // Every status the app models. Not every transition between them is

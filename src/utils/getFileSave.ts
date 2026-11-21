@@ -1,19 +1,27 @@
-// Moving an order to Get File from the Pay Status badge (Orders desktop +
-// mobile, Payment Tracking). GetFileModal asks for the amount the courier
-// collects first; saveGetFile saves it.
+// Moving an order to Get File or Collected from the Pay Status badge (Orders
+// desktop + mobile, Payment Tracking). GetFileModal asks for the amount the
+// courier collects first; saveGetFile saves it.
 import type { Sale } from '../types';
 import type { MoneyMeta } from './currency';
 import type { OrderMoneyOpts } from '../context/StoreContext';
 
 type UpdateOrder = (id: string, updates: Partial<Sale>, opts?: OrderMoneyOpts) => Promise<boolean>;
 
+/** The two courier statuses the amount popup serves. */
+export type CourierStatus = 'Get File' | 'Collected';
+
 /**
- * Whether Get File opens the amount popup. Not for an order already settled
- * (its receipt stands as booked: the database keeps it on a move to Get File)
- * nor one already in Get File; those save straight away.
+ * Whether moving to Get File / Collected opens the amount popup. Not for an
+ * order already settled (Paid, Collected, a booked Get File: its receipt
+ * stands as booked, the database keeps it) nor one already at the target;
+ * those save straight away.
  */
-export const getFileAsksAmount = (order: Pick<Sale, 'paymentStatus'>): boolean =>
-    !['Paid', 'Settled', 'Paid/Settled', 'Get File'].includes(String(order.paymentStatus || ''));
+export const getFileAsksAmount = (order: Pick<Sale, 'paymentStatus' | 'getFileBooked'>, target: CourierStatus = 'Get File'): boolean => {
+    const current = String(order.paymentStatus || '');
+    if (current === target) return false;
+    if (['Paid', 'Settled', 'Paid/Settled', 'Collected'].includes(current)) return false;
+    return !(current === 'Get File' && order.getFileBooked);
+};
 
 /**
  * The order's money for an amount to collect other than what is due:
@@ -46,15 +54,17 @@ export function getFileMoneyUpdates(
 }
 
 /**
- * Saves a move to Get File. A changed amount is its own save FIRST: the
- * database books a ticked courier's COD receipt from the stored total the
- * moment the order enters Get File, so the total must already be the new one.
- * Resolves false when either save was refused (updateOrder has said why).
+ * Saves a move to Get File (or Collected). A changed amount is its own save
+ * FIRST: the database books the COD receipt from the stored total the moment
+ * the order enters Get File (a ticked courier) or Collected (always), so the
+ * total must already be the new one. Resolves false when either save was
+ * refused (updateOrder has said why).
  */
 export async function saveGetFile(
     updateOrder: UpdateOrder,
     order: Sale,
     amount?: { collectUsd: number; money: MoneyMeta },
+    status: CourierStatus = 'Get File',
 ): Promise<boolean> {
     if (amount) {
         const moneyUpdates = getFileMoneyUpdates(order, amount.collectUsd, amount.money);
@@ -69,7 +79,7 @@ export async function saveGetFile(
     }
     // Keep a deposit visible in Received when one was taken (as bulk edit).
     return updateOrder(order.id, {
-        paymentStatus: 'Get File',
+        paymentStatus: status,
         amountReceived: order.depositAmount || 0,
         settleDate: null as unknown as string,
         expectedPaymentStatus: order.paymentStatus,

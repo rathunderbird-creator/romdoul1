@@ -154,6 +154,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => {
       case 'Paid': return '#10B981';
       case 'Unpaid': return '#F59E0B';
       case 'Get File': return '#3B82F6';
+      case 'Collected': return '#65A30D';
       case 'Cancel': return '#EF4444';
       default: return '#6B7280';
     }

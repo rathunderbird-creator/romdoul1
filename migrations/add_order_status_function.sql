@@ -593,11 +593,11 @@ BEGIN
         RAISE EXCEPTION 'The order needs at least one item.';
     END IF;
 
-    -- Paid, or a Get File booked as COD (add_order_payment_functions.sql's
+    -- Paid / Collected, or a Get File booked as COD (add_order_payment_functions.sql's
     -- sales.get_file_booked; the column is added here too so this pack runs
     -- on its own).
     SELECT COALESCE(NULLIF(shipping_status, ''), 'Pending'),
-           COALESCE(payment_status, '') IN ('Paid', 'Settled', 'Paid/Settled')
+           COALESCE(payment_status, '') IN ('Paid', 'Settled', 'Paid/Settled', 'Collected')
            OR (payment_status = 'Get File' AND COALESCE(get_file_booked, false))
       INTO v_status, v_paid FROM sales WHERE id = p_order_id FOR NO KEY UPDATE;
     IF NOT FOUND THEN
