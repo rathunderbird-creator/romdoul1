@@ -2,7 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
-import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Download, Truck, CheckCircle2, User, CreditCard, Eye, Archive, ArchiveRestore } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Package, AlertTriangle, DollarSign, Layers, ArrowUp, ArrowDown, ChevronsUpDown, X, ChevronLeft, ChevronRight, Boxes, GripVertical, Download, Truck, CheckCircle2, User, CreditCard, Eye, Archive, ArchiveRestore, ArrowRightLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
     DndContext,
     closestCenter,
@@ -167,6 +168,9 @@ const Inventory: React.FC = () => {
     // delete, or stock-adjust rights just because its id isn't on a list.
     // (hasPermission returns true for admins automatically.)
     const canManageInventory = hasPermission('manage_inventory');
+    // Same gate as the /inventory/stock-movements route (either permission opens it).
+    const canViewStockMovements = canManageInventory || hasPermission('view_inventory_stock');
+    const navigate = useNavigate();
     const canViewFinancials = hasPermission('manage_inventory') || hasPermission('view_reports');
 
     // Cost column: Last cost (products.purchase_cost, refreshed by each
@@ -929,6 +933,12 @@ const Inventory: React.FC = () => {
                         style={{ width: '100%', padding: '12px 16px 12px 44px', background: 'transparent', border: 'none', outline: 'none', fontSize: '14px', color: '#111827' }}
                     />
                 </div>
+                {canViewStockMovements && (
+                    <button onClick={() => navigate('/inventory/stock-movements')} style={{ background: 'var(--color-surface)', color: '#4F46E5', border: '1px solid #4F46E5', borderRadius: '8px', padding: '0 20px', height: '42px', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flexShrink: 0 }}>
+                        <ArrowRightLeft size={18} />
+                        {t('inventory.showStockMovements')}
+                    </button>
+                )}
                 {canManageInventory && (
                     <button onClick={openAddModalCallback} style={{ background: '#4F46E5', color: '#ffffff', border: 'none', borderRadius: '8px', padding: '0 20px', height: '42px', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flexShrink: 0 }}>
                         <Plus size={18} />
