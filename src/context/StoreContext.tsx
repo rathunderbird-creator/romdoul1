@@ -16,6 +16,7 @@ import { applyConfigOpsLocally, assertValidConfigOps, type ConfigOps } from '../
 import { rejectionReasonList, rejectionReasonOp } from '../utils/rejectionReasons';
 import { discountPresetList, withDiscountPreset, withoutDiscountPreset, type DiscountPreset } from '../utils/discountPresets';
 import { courierTypeMap, courierTypeOp, deliveryTypeList, deliveryTypeOp, freeCouriersOfTypeOp } from '../utils/deliveryTypes';
+import { priceLevelList, withLevelGroup, withPriceLevel, withoutGroupOnLevels, withoutPriceLevel, type PriceLevel } from '../utils/priceLevels';
 import { customerGroupList, customerGroupMemberMap, customerGroupMemberOp, customerGroupOp, freeMembersOfGroupOp, type CustomerGroupMembers } from '../utils/customerGroups';
 import { BACKUP_TABLES, buildAccountIdMap, remapAccountIds, missingColumnFromError, stripColumn, type BackupAccountRow } from '../utils/backupRestore';
 import { ALL_PERMISSIONS } from '../types';
@@ -79,6 +80,8 @@ interface ConfigState {
     // Sales Setup › Customer Groups (customerGroups.ts).
     customerGroups?: string[];
     customerGroupMembers?: Record<string, unknown>;
+    // Sales Setup › Price Levels (priceLevels.ts).
+    priceLevels?: unknown;
     trackingUrlTemplates?: Record<string, string>; // Company -> tracking page URL with {tracking}
     users?: User[];
     roles?: Role[];
@@ -2130,7 +2133,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const op = customerGroupOp(row.customerGroups, 'remove', name);
         if (!op) { setConfig(prev => ({ ...prev, customerGroups: row.customerGroups as string[] | undefined })); return; }
         const free = freeMembersOfGroupOp(customerGroupMemberMap(row.customerGroupMembers), name);
-        await updateConfigOps(() => ({ customerGroups: op, ...(free ? { customerGroupMembers: free } : {}) }));
+        // Off its Price Level too (Sales Setup › Price Levels), in the same write.
+        const levels = priceLevelList(row.priceLevels);
+        const levelsAfter = withoutGroupOnLevels(levels, name);
+        const unlink = JSON.stringify(levelsAfter) !== JSON.stringify(levels);
+        await updateConfigOps(() => ({
+            customerGroups: op,
+            ...(free ? { customerGroupMembers: free } : {}),
+            ...(unlink ? { priceLevels: { op: 'set' as const, value: levelsAfter } } : {}),
+        }));
     };
     const setCustomerGroup = async (phone: string, group: string, name?: string) => {
         const row = await readConfigRow();
@@ -2139,6 +2150,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (!op) { setConfig(prev => ({ ...prev, customerGroupMembers: map })); return; }
         await updateConfigOps(() => ({ customerGroupMembers: op }));
     };
+    // Sales Setup › Price Levels: a small list saved whole, like Discounts,
+    // built from the row read fresh (a builder: not refused when this copy's
+    // config never loaded).
+    const priceLevelsKey = JSON.stringify(priceLevelList(config.priceLevels));
+    const priceLevels = useMemo<PriceLevel[]>(() => JSON.parse(priceLevelsKey), [priceLevelsKey]);
+    const editPriceLevels = async (change: (list: PriceLevel[]) => PriceLevel[]) => {
+        const row = await readConfigRow();
+        const fresh = priceLevelList(row.priceLevels);
+        const next = change(fresh);
+        if (JSON.stringify(next) === JSON.stringify(fresh)) { setConfig(prev => ({ ...prev, priceLevels: fresh })); return; }
+        await updateConfigOps(() => ({ priceLevels: { op: 'set', value: next } }));
+    };
+    // A name saved meanwhile (another admin) is refused, not silently kept.
+    const addPriceLevel = (name: string, pct: number) => editPriceLevels(list => {
+        if (list.some(l => l.name.trim().toLowerCase() === name.trim().toLowerCase())) throw new Error(tNow('ui.admin.salesSetup.priceLevel.duplicate'));
+        return withPriceLevel(list, name, pct);
+    });
+    const removePriceLevel = (name: string) => editPriceLevels(list => withoutPriceLevel(list, name));
+    const setPriceLevelGroup = (level: string, group: string, on: boolean) => editPriceLevels(list => withLevelGroup(list, level, group, on));
 
     const addDiscountPreset = async (p: DiscountPreset) => {
         let taken = false;
@@ -5149,6 +5179,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             addCustomerGroup,
             removeCustomerGroup,
             setCustomerGroup,
+            priceLevels,
+            addPriceLevel,
+            removePriceLevel,
+            setPriceLevelGroup,
             cities: config.cities || [],
             addCity,
             removeCity,

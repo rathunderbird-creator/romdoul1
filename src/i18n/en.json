@@ -4432,8 +4432,7 @@
           "paymentTerms": "Retail orders are COD or paid up front, so they have no payment terms. Credit terms (net days, presets) are set for wholesale customers in Wholesale Setup.",
           "paymentTermsLink": "Open Wholesale Setup › Payment Terms",
           "openingBalances": "Retail customers don't carry a balance: what is owed sits on each order (unpaid, or COD with the courier). Customer opening balances are kept for wholesale customers in Wholesale Setup.",
-          "openingBalancesLink": "Open Wholesale Setup › Opening Balances",
-          "priceLevels": "Not used yet. Retail orders are priced from each product's price, and the checkout discount or selling price adjusts a single order. Price levels (for example dealer prices) are planned."
+          "openingBalancesLink": "Open Wholesale Setup › Opening Balances"
         },
         "deliveryType": {
           "add": "Add a delivery type…",
@@ -4459,6 +4458,23 @@
           "noMembers": "No customers yet. Pick a group in the Orders \"Customer group\" column.",
           "removeMember": "Take {name} out of {group}",
           "confirmRemove": "Remove the group \"{name}\"? Its {n} customer(s) go back to no group."
+        },
+        "priceLevel": {
+          "help": "A percent off for the customers of some Customer Groups (for example Dealer · 10% off for VIP and Reseller). When the phone typed in Checkout belongs to a customer in a linked group, a new order gets that discount by itself; staff see it and can change it. The order saves one discount as usual, so stock, accounts and the receipt work as before.",
+          "name": "Name",
+          "namePlaceholder": "Dealer",
+          "pct": "Percent off",
+          "add": "Add level",
+          "off": "{pct} off",
+          "noGroups": "Add Customer Groups first, then link them here.",
+          "groupsOf": "Customer groups on {name}",
+          "link": "Give this group this level",
+          "unlink": "Take this group off this level",
+          "moveFrom": "Move from {level} to this level",
+          "needName": "Type a name.",
+          "duplicate": "A level with this name already exists.",
+          "badValue": "Enter a percent above 0.",
+          "pctOver100": "At most 100%."
         }
       },
       "provinces": {
@@ -5165,7 +5181,10 @@
         "telegramError": "Telegram Error: {msg}",
         "updateOrder": "Update Order",
         "quickDiscounts": "Quick discounts",
-        "quickDiscountTitle": "{name}: -{amount} on this order"
+        "quickDiscountTitle": "{name}: -{amount} on this order",
+        "priceLevelNote": "{group} customer: {level} price, {pct} off",
+        "priceLevelApplied": "applied",
+        "priceLevelApply": "Apply {pct} off"
       },
       "common": {
         "bankOrCash": "Bank or cash account…",
