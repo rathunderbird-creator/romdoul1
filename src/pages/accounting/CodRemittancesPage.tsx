@@ -2,7 +2,9 @@
 // shop's bank account for the cash-on-delivery orders it collected. A
 // courier-collected receipt (Settle's "អ្នកដឹកប្រមូល (COD)" box) debits 1210
 // COD receivable (courier); this page books the money arriving — one Draft
-// entry per bank credit, Dr bank (1010 / 1011) / Cr 1210, reference
+// entry per bank credit, Dr bank (1010 / 1011) / Cr 1210 — plus Dr expense
+// for a fee the courier kept before transferring (Cr 1210 is then the
+// bank amount + the fee) — reference
 // COD-REMIT-<n> — and shows what the couriers still hold (the 1210
 // balance). Posting stays with the owner on Journal Entries, like every
 // other Draft. Modelled on RevenueExpenseEntryPage, cut down to one entry
@@ -23,7 +25,7 @@ import { isCashBankAccount, isCodReceivableAccount, sortCashBankForPicker } from
 import CashBankOptions from '../../components/CashBankOptions';
 import MoneyInput from '../../components/MoneyInput';
 import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
-import { CURRENCY_KEYS, formatMoneyLine, isKhrAccountName, isMissingCurrencyColumnError } from '../../utils/currency';
+import { CURRENCY_KEYS, formatMoneyLine, isKhrAccountName, isMissingCurrencyColumnError, khrToUsd, parseAmount, usdToKhr } from '../../utils/currency';
 import type { ChartOfAccount, JournalEntry } from '../../types';
 
 const BLUE = '#2563EB';
@@ -38,11 +40,16 @@ const fmt = (n: number): string => n.toLocaleString(undefined, { minimumFraction
 
 // The entry's description carries the courier and the bank REF#, in one
 // fixed shape so the list can read them back: "COD remittance — J&T · REF 123".
-const describe = (courier: string, ref: string): string => `COD remittance — ${courier}${ref ? ` · REF ${ref}` : ''}`;
+// A fee the courier kept is added at the end ("· fee USD 1.50") for the
+// Journal Entries reader only; the page reads the fee off the lines.
+const describe = (courier: string, ref: string, feeUsd = 0): string =>
+    `COD remittance — ${courier}${ref ? ` · REF ${ref}` : ''}${feeUsd > 0 ? ` · fee USD ${feeUsd.toFixed(2)}` : ''}`;
 const parseDescription = (d: string): { courier: string; ref: string } => {
-    const m = /^COD remittance — (.*?)(?: · REF (.*))?$/.exec(d || '');
+    const m = /^COD remittance — (.*?)(?: · REF (.*?))?(?: · fee USD [\d.,]+)?$/.exec(d || '');
     return m ? { courier: m[1] || '', ref: m[2] || '' } : { courier: d || '', ref: '' };
 };
+// The expense a courier's deducted fee goes to, by name, else the first expense.
+const DELIVERY_EXPENSE_RE = /deliver|shipping|courier|freight|transport|ដឹក/i;
 // The income row behind a receipt entry: reference TX-<tx id>, and
 // TX-<tx id>-ADJ for its LED-6 correction (add_order_payment_functions.sql).
 const txIdOf = (ref: string): string | null => {
@@ -62,7 +69,9 @@ interface RemitRow {
     bankRef: string;
     bankId: string;
     bankName: string;
-    amount: number;      // USD, the bank debit
+    amount: number;      // USD, the bank debit (what landed in the bank)
+    fee: number;         // USD the courier kept as its fee (the expense debit), 0 for none
+    feeAccountId: string;
     currency: string | null;
     original_amount: number | null;
     exchange_rate: number | null;
@@ -190,7 +199,12 @@ const CodRemittancesPage: React.FC = () => {
                 type RemitRaw = { id: unknown; date: unknown; description: unknown; reference_id: unknown; entry_number?: unknown; status?: unknown; currency?: unknown; original_amount?: unknown; exchange_rate?: unknown; lines: { account_id: unknown; debit: unknown; credit: unknown }[] | null };
                 const parsed: RemitRow[] = ((remits.data || []) as unknown as RemitRaw[]).map(e => {
                     const lines = e.lines || [];
-                    const bank = lines.find(l => (Number(l.debit) || 0) > 0 && !isCodReceivableAccount(byId.get(String(l.account_id)) || { account_name: '' }));
+                    // Debits: the bank line (a cash/bank account), and the
+                    // fee line (anything else) when the courier kept its fee.
+                    const debits = lines.filter(l => (Number(l.debit) || 0) > 0 && !isCodReceivableAccount(byId.get(String(l.account_id)) || { account_name: '' }));
+                    const isBank = (l: { account_id: unknown }) => { const a = byId.get(String(l.account_id)); return !!a && isCashBankAccount(a); };
+                    const bank = debits.find(isBank) || debits[0];
+                    const feeLines = debits.filter(l => l !== bank);
                     const { courier, ref } = parseDescription(String(e.description || ''));
                     return {
                         entryId: String(e.id),
@@ -200,7 +214,9 @@ const CodRemittancesPage: React.FC = () => {
                         courier, bankRef: ref,
                         bankId: bank ? String(bank.account_id) : '',
                         bankName: bank ? (byId.get(String(bank.account_id))?.account_name || '?') : '—',
-                        amount: lines.reduce((s, l) => s + (Number(l.debit) || 0), 0),
+                        amount: bank ? Number(bank.debit) || 0 : 0,
+                        fee: feeLines.reduce((s, l) => s + (Number(l.debit) || 0), 0),
+                        feeAccountId: feeLines[0] ? String(feeLines[0].account_id) : '',
                         currency: e.currency ? String(e.currency) : null,
                         original_amount: e.original_amount === null || e.original_amount === undefined ? null : Number(e.original_amount),
                         exchange_rate: e.exchange_rate === null || e.exchange_rate === undefined ? null : Number(e.exchange_rate),
@@ -228,6 +244,11 @@ const CodRemittancesPage: React.FC = () => {
     // (a courier pays into the bank). Riel accounts under their own group.
     const bankAccounts = useMemo(
         () => sortCashBankForPicker(accounts.filter(a => a.is_active && isCashBankAccount(a) && !/petty/i.test(a.account_name))),
+        [accounts]
+    );
+    const expenseAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Expense')
+            .sort((a, b) => Number(!DELIVERY_EXPENSE_RE.test(a.account_name)) - Number(!DELIVERY_EXPENSE_RE.test(b.account_name)) || (a.account_code || '').localeCompare(b.account_code || '')),
         [accounts]
     );
 
@@ -268,6 +289,13 @@ const CodRemittancesPage: React.FC = () => {
     const field = useMoneyField({ shopRate: khrExchangeRate });
     const coupling = useAccountCurrency(field, bankAccounts, bankId, setBankId);
     const [editing, setEditing] = useState<RemitRow | null>(null);
+    // The fee the courier kept, typed in the amount's currency (riel at the
+    // amount's rate), and the expense it goes to.
+    const [fee, setFee] = useState('');
+    const [feeAccountId, setFeeAccountId] = useState('');
+    useEffect(() => {
+        setFeeAccountId(prev => (prev && expenseAccounts.some(a => a.id === prev)) ? prev : (expenseAccounts[0]?.id || ''));
+    }, [expenseAccounts]);
 
     useEffect(() => {
         if (!courier && shippingCompanies.length > 0) setCourier(shippingCompanies[0]);
@@ -291,25 +319,35 @@ const CodRemittancesPage: React.FC = () => {
     const courierName = (courier === '__other__' ? courierOther : courier).trim();
     const chosenHolds = useMemo(() => byCourier.find(g => g.name !== '' && courierKey(g.name) === courierKey(courierName)), [byCourier, courierName]);
     const amountUsd = field.usd;
-    const canSave = !isSaving && amountUsd > 0 && !field.rateInvalid && !!bankId && !!codAccount && !!date && !!courierName;
+    const feeTyped = parseAmount(fee);
+    const feeUsd = !(feeTyped > 0) ? 0
+        : field.currency === 'KHR' ? khrToUsd(feeTyped, Number(field.rate)) : Math.round(feeTyped * 100) / 100;
+    const grossUsd = Math.round((amountUsd + feeUsd) * 100) / 100;
+    const feeInvalid = fee.trim() !== '' && !(feeTyped >= 0);
+    const canSave = !isSaving && amountUsd > 0 && !field.rateInvalid && !feeInvalid && (feeUsd === 0 || !!feeAccountId)
+        && !!bankId && !!codAccount && !!date && !!courierName;
 
     const resetForm = () => {
         setEditing(null);
         field.setAmount('');
+        setFee('');
         setBankRef('');
         setDate(todayYmd());
     };
 
     const header = (entryNumber: string | null): Partial<JournalEntry> => ({
         date,
-        description: describe(courierName, bankRef.trim()),
+        description: describe(courierName, bankRef.trim(), feeUsd),
         status: 'Draft',
         ...(entryNumber ? { entry_number: entryNumber } : {}),
         ...field.meta,
     });
+    // Dr bank (what landed) + Dr expense (the fee the courier kept) / Cr 1210
+    // (both: the courier no longer holds either).
     const entryLines = () => [
         { account_id: bankId, debit: amountUsd, credit: 0, description: `Remittance from ${courierName}` },
-        { account_id: codAccount!.id, debit: 0, credit: amountUsd, description: `COD remitted — ${courierName}` },
+        ...(feeUsd > 0 ? [{ account_id: feeAccountId, debit: feeUsd, credit: 0, description: `Delivery fee kept by ${courierName}` }] : []),
+        { account_id: codAccount!.id, debit: 0, credit: grossUsd, description: `COD remitted — ${courierName}` },
     ];
 
     const handleSave = async () => {
@@ -368,9 +406,12 @@ const CodRemittancesPage: React.FC = () => {
         if (!known) setCourierOther(r.courier);
         setBankRef(r.bankRef);
         if (r.bankId) setBankId(r.bankId);
-        field.reset(r.currency === 'KHR' && r.original_amount
-            ? { amount: r.original_amount, currency: 'KHR', rate: r.exchange_rate || undefined }
+        const khr = r.currency === 'KHR' && !!r.original_amount;
+        field.reset(khr
+            ? { amount: r.original_amount!, currency: 'KHR', rate: r.exchange_rate || undefined }
             : { amount: r.amount, currency: 'USD' });
+        setFee(r.fee > 0 ? String(khr && r.exchange_rate ? usdToKhr(r.fee, r.exchange_rate, 1) : r.fee) : '');
+        if (r.feeAccountId) setFeeAccountId(r.feeAccountId);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -537,6 +578,28 @@ const CodRemittancesPage: React.FC = () => {
                             <label style={labelStyle}>{tc('creditedTo')}</label>
                             <input type="text" value={codAccount ? `${codAccount.account_code} · ${codAccount.account_name}` : ''} disabled style={{ ...inputStyle, opacity: 0.7 }} />
                         </div>
+                        <div>
+                            <label style={labelStyle}>{fill(tc('fee'), { currency: field.currency })}</label>
+                            <input
+                                type="text" inputMode="decimal" value={fee}
+                                onChange={e => setFee(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+                                placeholder={tc('feePh')}
+                                style={{ ...inputStyle, ...(feeInvalid ? { borderColor: '#DC2626' } : {}) }}
+                            />
+                            {feeUsd > 0 && field.currency === 'KHR' && (
+                                <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--color-text-muted)' }}>= USD {fmt(feeUsd)}</div>
+                            )}
+                        </div>
+                        {feeUsd > 0 && (
+                            <div>
+                                <label style={labelStyle}>{tc('feeAccount')}</label>
+                                <select value={feeAccountId} onChange={e => setFeeAccountId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                                    {expenseAccounts.length === 0 && <option value="">{tc('feeNoAccount')}</option>}
+                                    {expenseAccounts.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                </select>
+                            </div>
+                        )}
                         {amountUsd > 0 && bankId && codAccount && (
                             <div style={{ gridColumn: '1 / -1', borderRadius: '10px', border: `1px solid color-mix(in srgb, ${BLUE} 30%, var(--color-border))`, background: `color-mix(in srgb, ${BLUE} 4%, var(--color-surface))`, padding: '10px 14px' }}>
                                 <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: BLUE, marginBottom: '4px' }}>{t('ui.accounting.re.preview')}</div>
@@ -544,9 +607,15 @@ const CodRemittancesPage: React.FC = () => {
                                     <span>{fill(t('ui.accounting.re.drDot'), { name: accounts.find(a => a.id === bankId)?.account_name || '?' })}</span>
                                     <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(amountUsd)}{field.currency === 'KHR' && <span style={{ fontWeight: 500, color: 'var(--color-text-secondary)' }}> ({formatMoneyLine({ amount: amountUsd, ...field.meta })})</span>}</span>
                                 </div>
+                                {feeUsd > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-main)' }}>
+                                        <span>{fill(t('ui.accounting.re.drDot'), { name: accounts.find(a => a.id === feeAccountId)?.account_name || '?' })}</span>
+                                        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(feeUsd)}</span>
+                                    </div>
+                                )}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0 2px', fontSize: '13px', color: 'var(--color-text-main)' }}>
                                     <span style={{ paddingLeft: '18px' }}>{fill(t('ui.accounting.re.crDot'), { name: codAccount.account_name })}</span>
-                                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(amountUsd)}</span>
+                                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(grossUsd)}</span>
                                 </div>
                             </div>
                         )}
@@ -597,7 +666,7 @@ const CodRemittancesPage: React.FC = () => {
                                     <span style={{ fontWeight: 700, color: 'var(--color-text-main)' }}>{r.courier}</span>
                                     <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{money(r)}</span>
                                 </div>
-                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.date} · {r.bankName}{r.bankRef ? ` · REF ${r.bankRef}` : ''}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.date} · {r.bankName}{r.bankRef ? ` · REF ${r.bankRef}` : ''}{r.fee > 0 ? ` · ${fill(tc('feeShort'), { amount: fmt(r.fee) })}` : ''}</div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                                     <span style={{ fontFamily: 'monospace', fontSize: '11px', color: 'var(--color-text-muted)' }}>{r.number}</span>
                                     <span style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -622,6 +691,7 @@ const CodRemittancesPage: React.FC = () => {
                                     <th style={th}>{tc('receivedInto')}</th>
                                     <th style={th}>{tc('bankRef')}</th>
                                     <th style={{ ...th, textAlign: 'right' }}>{t('common.amount')}</th>
+                                    <th style={{ ...th, textAlign: 'right' }}>{tc('feeCol')}</th>
                                     <th style={th}>{t('ui.accounting.common.statusLabel')}</th>
                                     <th style={th}></th>
                                 </tr>
@@ -635,6 +705,7 @@ const CodRemittancesPage: React.FC = () => {
                                         <td style={td}>{r.bankName}</td>
                                         <td style={{ ...td, fontFamily: 'monospace', fontSize: '12px' }}>{r.bankRef || '—'}</td>
                                         <td style={{ ...td, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{money(r)}</td>
+                                        <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: r.fee > 0 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{r.fee > 0 ? `USD ${fmt(r.fee)}` : '—'}</td>
                                         <td style={td}><StatusChip status={r.status} /></td>
                                         <td style={{ ...td, whiteSpace: 'nowrap' }}>
                                             {r.status === 'Draft' ? (

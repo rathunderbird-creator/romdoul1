@@ -54,7 +54,19 @@ const FX = params.get('fx') ? [
     { ...acct('00000000-0000-0000-0000-000000004910', '4910', 'Foreign Exchange Gain', 'Revenue'), sub_type: 'Other Revenue' },
     { ...acct('00000000-0000-0000-0000-000000006910', '6910', 'Foreign Exchange Loss', 'Expense'), sub_type: 'Other Expense' },
 ] : [];
-const chartRows = [...(chart.startsWith('r1') ? R1 : R2), ...(chart.endsWith('khr') ? KHR : []), ...OTHER, ...FX]
+// ?form=cod: two expense accounts for a fee the courier kept (the delivery
+// one is the default), and two saved remittances — J&T ៛82,000 @ 4,100 = $20
+// into ABA riel with a $1.50 fee kept, and VET $30 into ABA (USD) with none.
+const COD_EXP = form === 'cod' ? [acct('00000000-0000-0000-0000-000000006100', '6100', 'Office Supplies', 'Expense'), acct('00000000-0000-0000-0000-000000006200', '6200', 'Delivery Expense', 'Expense')] : [];
+const COD_1210 = '00000000-0000-0000-0000-000000001210';
+const codRemits = [
+    { id: 'r1', date: '2026-11-20', description: 'COD remittance — J&T · REF 555 · fee USD 1.50', reference_id: 'COD-REMIT-1', entry_number: 'JE-2-COD-20261120-001', status: 'Draft', currency: 'KHR', original_amount: 82000, exchange_rate: 4100,
+        lines: [{ id: 'a', account_id: '00000000-0000-0000-0000-000000001011', debit: 20, credit: 0 }, { id: 'b', account_id: '00000000-0000-0000-0000-000000006200', debit: 1.5, credit: 0 }, { id: 'c', account_id: COD_1210, debit: 0, credit: 21.5 }] },
+    { id: 'r2', date: '2026-11-19', description: 'COD remittance — VET · REF 444', reference_id: 'COD-REMIT-2', entry_number: 'JE-1-COD-20261119-001', status: 'Posted', currency: null, original_amount: null, exchange_rate: null,
+        lines: [{ id: 'd', account_id: '00000000-0000-0000-0000-000000001010', debit: 30, credit: 0 }, { id: 'e', account_id: COD_1210, debit: 0, credit: 30 }] },
+];
+const codLines = codRemits.map(r => ({ id: `${r.id}-cod`, journal_entry_id: r.id, account_id: COD_1210, debit: 0, credit: r.lines[r.lines.length - 1].credit, entry: { id: r.id, date: r.date, status: r.status, reference_id: r.reference_id, description: r.description } }));
+const chartRows = [...(chart.startsWith('r1') ? R1 : R2), ...(chart.endsWith('khr') ? KHR : []), ...OTHER, ...FX, ...COD_EXP]
     .sort((a, b) => a.account_code.localeCompare(b.account_code));
 
 // ?form=fx: the riel accounts' journal lines (each with its entry, as the
@@ -87,6 +99,12 @@ window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     }
     if (form === 'fx' && url.includes('/rest/v1/journal_entry_lines')) {
         return Promise.resolve(new Response(JSON.stringify(fxLines), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    if (form === 'cod' && url.includes('/rest/v1/journal_entries')) {
+        return Promise.resolve(new Response(JSON.stringify(codRemits), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    if (form === 'cod' && url.includes('/rest/v1/journal_entry_lines')) {
+        return Promise.resolve(new Response(JSON.stringify(codLines), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (supabaseUrl && url.startsWith(supabaseUrl)) {
         // Anything else is answered empty: the forms here need nothing more.
