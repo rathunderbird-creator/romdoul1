@@ -13,6 +13,7 @@ export interface OrderListFilters {
     shippingCos?: string[];   // courier names
     dateRange?: { start: string; end: string }; // YYYY-MM-DD, '' = open
     search?: string;
+    customerGroup?: string;   // Sales Setup › Customer Groups name (the Orders column filter)
 }
 
 // The Orders page's sentinel for "no page recorded" in its page filter (its

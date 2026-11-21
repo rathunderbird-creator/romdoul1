@@ -24,7 +24,7 @@ import InventoryDetail from './components/InventoryDetail';
 
 const CLASSIC_BODY_ID = 'd2-classic-cards-body';
 
-const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshing, salesError, inventoryError, actions, t, isMobile }) => {
+const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshing, salesError, inventoryError, actions, t, isMobile, customerGroupMembers }) => {
     const { range, previous, orders, previousOrders, products, getFile, stockIn, stockOut, now } = data;
     // The classic dashboard's card sections, kept in full below Dashboard 2's
     // own. Collapsible; collapsed by default (a stored choice still wins).
@@ -235,6 +235,7 @@ const Dashboard2View: React.FC<Dashboard2ViewProps> = ({ data, loading, refreshi
                                 isMobile={isMobile}
                                 groupOrders={groupOrders}
                                 productRows={productRows}
+                                customerGroupMembers={customerGroupMembers}
                             />
                         </div>
                     </>

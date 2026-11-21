@@ -1817,7 +1817,7 @@ const Orders: React.FC = () => {
         setShippingCoFilter(filters.shippingCos ?? []);
         setDateRange(filters.dateRange ?? { start: '', end: '' });
         setSearchTerm(filters.search ?? '');
-        setColumnFilters({});
+        setColumnFilters(filters.customerGroup ? { customerGroup: filters.customerGroup } : {});
         setActiveTab('list');
         navigate(location.pathname, { replace: true, state: {} });
     }, [location.state, location.pathname, navigate]);
@@ -1829,7 +1829,10 @@ const Orders: React.FC = () => {
         (salesmanFilter !== 'All' ? 1 : 0) +
         (shippingCoFilter.length > 0 ? 1 : 0) +
         (pageFilter.length > 0 ? 1 : 0) +
-        ((dateRange.start || dateRange.end) ? 1 : 0);
+        ((dateRange.start || dateRange.end) ? 1 : 0) +
+        // Column filters (e.g. a Dashboard Customer-group click-through) have
+        // no control on a phone: counted here so the filter button shows them.
+        (Object.values(columnFilters).some(v => String(v ?? '').trim()) ? 1 : 0);
     const pageFilterRef = useClickOutside<HTMLDivElement>(() => setIsPageOpen(false));
     const shippingCoFilterRef = useClickOutside<HTMLDivElement>(() => setIsShippingCoOpen(false));
     const columnMenuRef = useClickOutside<HTMLDivElement>(() => setShowColumnMenu(false));
@@ -4101,6 +4104,7 @@ const Orders: React.FC = () => {
                                         setPageFilter([]);
                                         setDateRange({ start: '', end: '' });
                                         setSearchTerm('');
+                                        setColumnFilters({});
                                     }}
                                     style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}
                                 >
@@ -4151,6 +4155,7 @@ const Orders: React.FC = () => {
                                         onPrint={(o) => setReceiptSale(o)}
                                         onCopy={(o) => handleCopyOrder(o)}
                                         onCopyPaymentRequest={paymentRequest.canRequest(order) ? (o) => { void paymentRequest.copy(o); } : undefined}
+                                        customerGroup={customerGroupOf(customerGroupMembers, order.customer?.phone)}
                                         trackingUrl={buildTrackingUrl(order.shipping?.company, order.shipping?.trackingNumber, trackingUrlTemplates)}
                                         carrierStatus={(() => {
                                             const row = trackingMap[order.shipping?.trackingNumber || ''];

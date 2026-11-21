@@ -8,11 +8,12 @@ import { useLanguage } from '../context/LanguageContext';
 
 import OrderDetailsContent from '../components/OrderDetailsContent';
 import CopyPaymentRequestButton from '../components/CopyPaymentRequestButton';
+import { customerGroupOf } from '../utils/customerGroups';
 
 const OrderDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { sales, hasPermission } = useStore();
+    const { sales, hasPermission, customerGroupMembers } = useStore();
     const { showToast } = useToast();
     const { t } = useLanguage();
 
@@ -64,7 +65,7 @@ const OrderDetailPage: React.FC = () => {
                 <CopyPaymentRequestButton order={order} sales={sales} />
             </div>
 
-            <OrderDetailsContent order={order} />
+            <OrderDetailsContent order={order} customerGroup={customerGroupOf(customerGroupMembers, order.customer?.phone)} />
         </div>
     );
 };

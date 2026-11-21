@@ -13,7 +13,7 @@ import Dashboard2View from './Dashboard2View';
 import type { Dashboard2Actions } from './types';
 
 const Dashboard2Page: React.FC = () => {
-    const { products, refreshData } = useStore();
+    const { products, refreshData, customerGroupMembers } = useStore();
     const { setHeaderContent } = useHeader();
     const { t, language } = useLanguage();
     const isMobile = useMobile();
@@ -68,6 +68,7 @@ const Dashboard2Page: React.FC = () => {
             t={t}
             language={language}
             isMobile={isMobile}
+            customerGroupMembers={customerGroupMembers}
         />
     );
 };

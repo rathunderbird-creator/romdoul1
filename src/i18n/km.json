@@ -433,7 +433,9 @@
     "allTime": "គ្រប់ពេល",
     "openOrderList": "បើកក្នុងបញ្ជីការបញ្ជាទិញ",
     "showChart": "បង្ហាញក្រាហ្វ",
-    "hideChart": "លាក់ក្រាហ្វ"
+    "hideChart": "លាក់ក្រាហ្វ",
+    "customerGroups": "ក្រុមអតិថិជន",
+    "customerGroup": "ក្រុមអតិថិជន"
   },
   "orders": {
     "title": "គ្រប់គ្រងការបញ្ជាទិញ",

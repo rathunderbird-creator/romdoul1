@@ -20,6 +20,8 @@ interface MobileOrderCardProps {
     onCopy: (order: Sale) => void;
     /** Copy payment request; absent when the order has nothing left to pay. */
     onCopyPaymentRequest?: (order: Sale) => void;
+    /** Sales Setup › Customer Groups: this customer's group ('' = none). */
+    customerGroup?: string;
     onUpdateStatus: (id: string, status: any) => void;
     onUpdatePaymentStatus: (id: string, status: any) => void;
     canEdit: boolean;
@@ -48,6 +50,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
     onPrint,
     onCopy,
     onCopyPaymentRequest,
+    customerGroup,
     onUpdateStatus,
     onUpdatePaymentStatus,
     canEdit,
@@ -205,6 +208,12 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                         <span className="moc-customer-name">
                             {order.customer?.name || tx('ui.components.common.unknown', 'Unknown')}
                         </span>
+                        {customerGroup && (
+                            <span title={tx('ui.orders.customerGroup.column', 'Customer group')}
+                                style={{ flexShrink: 0, marginLeft: '6px', marginRight: 'auto', maxWidth: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10.5px', fontWeight: 700, padding: '1px 7px', borderRadius: '999px', background: '#EEF2FF', color: '#4338CA' }}>
+                                {customerGroup}
+                            </span>
+                        )}
                         <span className="moc-time">{formatOrderTime(order.date)}</span>
                     </div>
                     <div className="moc-products-summary">

@@ -15,12 +15,14 @@ import type { Column, SortState } from '../ui';
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
-const TABS: PerformanceTab[] = ['salesmen', 'pages', 'shipping', 'products'];
+// 'groups' (Customer groups) only when the store has tagged customers.
+const ALL_TABS: PerformanceTab[] = ['salesmen', 'pages', 'shipping', 'groups', 'products'];
 
 const TAB_LABEL_KEY: Record<PerformanceTab, string> = {
     salesmen: 'dashboard2.salesmen',
     pages: 'dashboard2.pages',
     shipping: 'dashboard2.shipping',
+    groups: 'dashboard2.customerGroups',
     products: 'dashboard2.products',
 };
 
@@ -100,8 +102,11 @@ const StockCell: React.FC<{ row: ProductRow; t: Translate }> = ({ row, t }) => {
 // ─── Component ────────────────────────────────────────────────────────────
 
 const PerformancePanel: React.FC<PerformancePanelProps> = ({
-    orders, products, range, onOpenOrders, onOpenInventory, t, isMobile, groupOrders, productRows,
+    orders, products, range, onOpenOrders, onOpenInventory, t, isMobile, groupOrders, productRows, customerGroupMembers,
 }) => {
+    const members = useMemo(() => customerGroupMembers || {}, [customerGroupMembers]);
+    const hasGroups = Object.keys(members).length > 0;
+    const TABS = useMemo(() => (hasGroups ? ALL_TABS : ALL_TABS.filter(x => x !== 'groups')), [hasGroups]);
     // Active tab is remembered per browser; guard against a stale stored value.
     const [storedTab, setTab] = useLocalStorageState<PerformanceTab>('d2_perf_tab', 'salesmen');
     const activeTab: PerformanceTab = TABS.includes(storedTab) ? storedTab : 'salesmen';
@@ -129,12 +134,14 @@ const PerformancePanel: React.FC<PerformancePanelProps> = ({
     const salesmen = useMemo(() => groupOrders(orders, 'salesman', activeFilter), [groupOrders, orders, activeFilter]);
     const pages = useMemo(() => groupOrders(orders, 'page', activeFilter), [groupOrders, orders, activeFilter]);
     const shipping = useMemo(() => groupOrders(orders, 'shippingCo', activeFilter), [groupOrders, orders, activeFilter]);
+    const groups = useMemo(() => (hasGroups ? groupOrders(orders, 'customerGroup', activeFilter, members) : []), [groupOrders, orders, activeFilter, members, hasGroups]);
     const prod = useMemo(() => productRows(orders, products, activeFilter), [productRows, orders, products, activeFilter]);
 
     const counts: Record<PerformanceTab, number> = {
         salesmen: salesmen.length,
         pages: pages.length,
         shipping: shipping.length,
+        groups: groups.length,
         products: prod.length,
     };
 
@@ -142,6 +149,7 @@ const PerformancePanel: React.FC<PerformancePanelProps> = ({
     const [salesmenSort, setSalesmenSort] = useState<SortState | null>(null);
     const [pagesSort, setPagesSort] = useState<SortState | null>(null);
     const [shippingSort, setShippingSort] = useState<SortState | null>(null);
+    const [groupsSort, setGroupsSort] = useState<SortState | null>(null);
     const [productsSort, setProductsSort] = useState<SortState | null>(null);
 
     // Every click-through carries the status filter and the range so the
@@ -214,6 +222,17 @@ const PerformancePanel: React.FC<PerformancePanelProps> = ({
 
     const pagesColumns = useMemo<Column<GroupRow>[]>(() => [
         ...groupColumns(t('dashboard2.page')),
+        {
+            key: 'aov',
+            header: t('dashboard2.avgOrder'),
+            align: 'right',
+            sortValue: row => row.aov,
+            render: row => <Money value={row.aov} />,
+        },
+    ], [groupColumns, t]);
+
+    const groupsColumns = useMemo<Column<GroupRow>[]>(() => [
+        ...groupColumns(t('dashboard2.customerGroup')),
         {
             key: 'aov',
             header: t('dashboard2.avgOrder'),
@@ -451,6 +470,23 @@ const PerformancePanel: React.FC<PerformancePanelProps> = ({
                         rowLabel={row => `${openLabel}: ${groupName(row)}`}
                         emptyText={t('dashboard2.noRows')}
                         caption={captionFor('shipping')}
+                        maxHeight={380}
+                    />
+                )}
+                {activeTab === 'groups' && (
+                    <SortableTable<GroupRow>
+                        columns={groupsColumns}
+                        rows={groups}
+                        rowKey={row => row.key || '__unassigned'}
+                        sort={groupsSort}
+                        onSort={setGroupsSort}
+                        // Customers in no group can't be filtered for: that row
+                        // only counts (a plain row, not a link).
+                        onRowClick={row => openWith({ customerGroup: row.key })}
+                        isRowClickable={row => !!row.key}
+                        rowLabel={row => `${openLabel}: ${groupName(row)}`}
+                        emptyText={t('dashboard2.noRows')}
+                        caption={captionFor('groups')}
                         maxHeight={380}
                     />
                 )}

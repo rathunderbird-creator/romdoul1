@@ -187,6 +187,9 @@ export interface SortableTableProps<T> {
     sort: SortState | null;
     onSort: (next: SortState | null) => void;
     onRowClick?: (row: T) => void;
+    // Optional: rows this returns false for are plain rows (no link style,
+    // focus or click), e.g. a "no group" row nothing can filter for.
+    isRowClickable?: (row: T) => boolean;
     rowLabel?: (row: T) => string;   // aria-label for clickable rows
     emptyText: string;
     caption?: string;                // visually hidden table caption
@@ -209,7 +212,7 @@ export function sortRows<T>(rows: T[], columns: Column<T>[], sort: SortState | n
     });
 }
 
-export function SortableTable<T>({ columns, rows, rowKey, sort, onSort, onRowClick, rowLabel, emptyText, caption, maxHeight }: SortableTableProps<T>) {
+export function SortableTable<T>({ columns, rows, rowKey, sort, onSort, onRowClick, isRowClickable, rowLabel, emptyText, caption, maxHeight }: SortableTableProps<T>) {
     const sorted = sortRows(rows, columns, sort);
     const lang = useOptionalLanguage();
     const sortTitle = (() => { const v = lang?.t('common2.sort'); return v && v !== 'common2.sort' ? v : 'Sort'; })();
@@ -244,7 +247,7 @@ export function SortableTable<T>({ columns, rows, rowKey, sort, onSort, onRowCli
                     {sorted.length === 0 ? (
                         <tr><td colSpan={columns.length} style={{ textAlign: 'center', color: D2.muted, padding: '20px 10px' }}>{emptyText}</td></tr>
                     ) : sorted.map(row => {
-                        const clickable = !!onRowClick;
+                        const clickable = !!onRowClick && (!isRowClickable || isRowClickable(row));
                         // Plain <tr>, not role="button": a button role demotes the <td>s
                         // out of the accessibility tree's row/cell structure, and an
                         // aria-label on the row would replace every cell's announced

@@ -11,6 +11,7 @@ import { mapSaleEntity } from '../utils/mapper';
 import type { Sale } from '../types';
 import { useTx } from './useTx';
 import CopyPaymentRequestButton from './CopyPaymentRequestButton';
+import { customerGroupOf } from '../utils/customerGroups';
 
 interface OrderDetailsModalProps {
     isOpen: boolean;
@@ -22,7 +23,7 @@ interface OrderDetailsModalProps {
 // OrderDetailsContent), opened as a popup instead of navigating away — used
 // by Customer Payment's "View" action so the list stays put underneath.
 const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, orderId }) => {
-    const { sales, hasPermission } = useStore();
+    const { sales, hasPermission, customerGroupMembers } = useStore();
     const { showToast } = useToast();
     const navigate = useNavigate();
     const tx = useTx();
@@ -114,7 +115,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
                         <CopyPaymentRequestButton order={order} sales={sales} />
                     </div>
 
-                    <OrderDetailsContent order={order} showHeading={false} showPermalink={false} />
+                    <OrderDetailsContent order={order} showHeading={false} showPermalink={false} customerGroup={customerGroupOf(customerGroupMembers, order.customer?.phone)} />
                 </>
             )}
         </Modal>
