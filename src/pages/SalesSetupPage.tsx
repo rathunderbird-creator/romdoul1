@@ -29,6 +29,7 @@ import type { SalesSettings } from '../types';
 import { discountPresetProblem, discountPresetValueLabel } from '../utils/discountPresets';
 import { courierDeliveryType } from '../utils/deliveryTypes';
 import { phonesInGroup } from '../utils/customerGroups';
+import { priceLevelPctLabel, priceLevelProblem } from '../utils/priceLevels';
 import { formatPhoneDisplay } from '../utils/telecom';
 import { MAX_QUOTATION_VALIDITY_DAYS, quotationValidityDays, quotationValidityInput } from '../utils/quotationValidity';
 import {
@@ -60,7 +61,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
 ];
 
 // Sections not in this set fall through to the "reserved" placeholder below.
-const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces', 'rejectionReasons', 'discounts', 'deliveryTypes', 'customerGroups']);
+const LIST_SECTIONS = new Set<SectionKey>(['pageNames', 'shippingCompanies', 'payBy', 'salesmen', 'customerCare', 'provinces', 'rejectionReasons', 'discounts', 'deliveryTypes', 'customerGroups', 'priceLevels']);
 
 // Add/remove UI for a flat string list backed by the store's config blob
 // (same data CheckoutForm's gear-icon ConfigModal edits — this just gives it
@@ -568,6 +569,102 @@ const CustomerGroupsSection: React.FC = () => {
     );
 };
 
+// Price Levels: a percent off for the customers of some Customer Groups.
+// Checkout fills it into the discount when the phone belongs to a customer
+// in a linked group (a group is in one level at most).
+const PriceLevelsSection: React.FC = () => {
+    const { t } = useLanguage();
+    const { showToast } = useToast();
+    const { priceLevels, addPriceLevel, removePriceLevel, setPriceLevelGroup, customerGroups } = useStore();
+    const idBase = useId();
+    const [name, setName] = useState('');
+    const [pct, setPct] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [tried, setTried] = useState(false);
+    const fail = (err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'), { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error');
+    const problem = priceLevelProblem(priceLevels, name, pct);
+    const shownProblem = problem && (tried || (problem !== 'needName' && !(problem === 'badValue' && pct.trim() === ''))) ? problem : null;
+    const nameBad = shownProblem === 'needName' || shownProblem === 'duplicate';
+    const valueBad = shownProblem === 'badValue' || shownProblem === 'pctOver100';
+    const run = async (work: () => Promise<void>) => {
+        if (busy) return;
+        setBusy(true);
+        try { await work(); } catch (err) { fail(err); } finally { setBusy(false); }
+    };
+    const add = () => {
+        if (problem) { setTried(true); return; }
+        void run(async () => { await addPriceLevel(name.trim(), Number(pct)); setName(''); setPct(''); setTried(false); });
+    };
+    const enterAdds = (e: React.KeyboardEvent) => { if (e.key === 'Enter') add(); };
+    // Which level each group is on now (a group is on one level at most).
+    const levelOfGroup = (g: string) => priceLevels.find(l => l.groups.some(x => x.trim().toLowerCase() === g.trim().toLowerCase()))?.name;
+    return (
+        <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{t('ui.admin.salesSetup.sections.priceLevels')}</div>
+                <div style={helpStyle}>{t('ui.admin.salesSetup.priceLevel.help')}</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', alignItems: 'end' }}>
+                <div>
+                    <label htmlFor={idBase + '-name'} style={labelStyle}>{t('ui.admin.salesSetup.priceLevel.name')}</label>
+                    <input id={idBase + '-name'} className="setup-field" value={name} maxLength={40} placeholder={t('ui.admin.salesSetup.priceLevel.namePlaceholder')}
+                        onChange={e => setName(e.target.value)} onKeyDown={enterAdds} aria-invalid={nameBad} aria-describedby={nameBad ? idBase + '-err' : undefined} style={inputStyle} />
+                </div>
+                <div>
+                    <label htmlFor={idBase + '-pct'} style={labelStyle}>{t('ui.admin.salesSetup.priceLevel.pct')}</label>
+                    <input id={idBase + '-pct'} className="setup-field" type="number" min="0" max="100" step="0.01" inputMode="decimal" value={pct} placeholder="10"
+                        onChange={e => setPct(e.target.value)} onKeyDown={enterAdds} aria-invalid={valueBad} aria-describedby={valueBad ? idBase + '-err' : undefined} style={inputStyle} />
+                </div>
+                <button onClick={add} disabled={busy} aria-disabled={!!problem} className="primary-button"
+                    style={{ padding: '9px 14px', borderRadius: '9px', border: 'none', background: 'var(--color-primary)', color: 'white', fontSize: '13px', fontWeight: 700, cursor: problem || busy ? 'not-allowed' : 'pointer', opacity: problem || busy ? 0.6 : 1 }}>
+                    {t('ui.admin.salesSetup.priceLevel.add')}
+                </button>
+            </div>
+            {shownProblem && <div id={idBase + '-err'} role="alert" style={{ fontSize: '12px', color: '#DC2626' }}>{t(`ui.admin.salesSetup.priceLevel.${shownProblem}`)}</div>}
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
+                {priceLevels.length === 0 ? (
+                    <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.admin.salesSetup.noneYet')}</div>
+                ) : priceLevels.map((l, i) => (
+                    <div key={l.name} style={{ padding: '10px 14px', borderTop: i ? '1px solid var(--color-border)' : 'none', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                            <span style={{ fontSize: '13px', color: 'var(--color-text-main)' }}>
+                                <b>{l.name}</b> <span style={{ color: 'var(--color-text-secondary)' }}>· {fill(t('ui.admin.salesSetup.priceLevel.off'), { pct: priceLevelPctLabel(l) })}</span>
+                            </span>
+                            <button onClick={() => void run(() => removePriceLevel(l.name))} disabled={busy} title={fill(t('ui.admin.salesSetup.removeItem'), { name: l.name })} aria-label={fill(t('ui.admin.salesSetup.removeItem'), { name: l.name })}
+                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                <Trash2 size={15} />
+                            </button>
+                        </div>
+                        {customerGroups.length === 0 ? (
+                            <div style={{ ...helpStyle, marginTop: 0 }}>{t('ui.admin.salesSetup.priceLevel.noGroups')}</div>
+                        ) : (
+                            <div role="group" aria-label={fill(t('ui.admin.salesSetup.priceLevel.groupsOf'), { name: l.name })} style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {customerGroups.map(g => {
+                                    const owner = levelOfGroup(g);
+                                    const on = owner === l.name;
+                                    const title = on ? t('ui.admin.salesSetup.priceLevel.unlink') : owner ? fill(t('ui.admin.salesSetup.priceLevel.moveFrom'), { level: owner }) : t('ui.admin.salesSetup.priceLevel.link');
+                                    return (
+                                        <button key={g} type="button" aria-pressed={on} disabled={busy} title={title}
+                                            onClick={() => void run(() => setPriceLevelGroup(l.name, g, !on))}
+                                            style={{
+                                                padding: '4px 10px', borderRadius: '999px', fontSize: '12px', cursor: busy ? 'not-allowed' : 'pointer',
+                                                border: `1px solid ${on ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                                background: on ? 'var(--color-primary)' : 'var(--color-surface)',
+                                                color: on ? 'white' : owner ? 'var(--color-text-secondary)' : 'var(--color-text-main)', fontWeight: on ? 600 : 500,
+                                            }}>
+                                            {g}{owner && !on ? ` (${owner})` : ''}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 // Discounts: presets offered as quick picks next to Checkout's discount
 // field (app_config discountPresets). A pick fills the USD discount — a
 // percent of the items' price, or a fixed amount — and stays editable.
@@ -681,7 +778,7 @@ const NotUsedYet: React.FC = () => {
 
 // Sections with nothing in retail to connect to: a note, and a link where
 // the wholesale side already has it (Wholesale Setup, opened on that tab).
-const POINTER_SECTIONS = new Set<SectionKey>(['paymentTerms', 'openingBalances', 'priceLevels']);
+const POINTER_SECTIONS = new Set<SectionKey>(['paymentTerms', 'openingBalances']);
 const POINTER_LINKS: Partial<Record<SectionKey, string>> = {
     paymentTerms: '/wholesale/setup?tab=terms',
     openingBalances: '/wholesale/setup?tab=opening',
@@ -842,6 +939,9 @@ const SalesSetupPage: React.FC = () => {
                     <CourierDeliveryTypes />
                 </div>
             )}
+
+            {/* ── Price Levels: a percent off for some Customer Groups. ── */}
+            {section === 'priceLevels' && <PriceLevelsSection />}
 
             {/* ── Customer Groups: the list, and who is in each. ── */}
             {section === 'customerGroups' && <CustomerGroupsSection />}

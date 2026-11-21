@@ -15,6 +15,8 @@ import { useTx, orderStatusDisplay } from './useTx';
 import { amountWarningLine, amountWarningText, checkKhrAmount, checkUsdAmount, formatKhr, formatRate, formatUsd, khrMeta, khrToUsd, resolveMoney, shopRate, usdToKhr } from '../utils/currency';
 import { roundCents } from '../utils/money';
 import { discountPresetAmount, discountPresetValueLabel } from '../utils/discountPresets';
+import { priceLevelAmount, priceLevelForPhone, priceLevelPctLabel } from '../utils/priceLevels';
+import { phoneDigits } from '../utils/customerGroups';
 import { defaultCodCollected, isCodPaymentMethod } from '../utils/cashBankAccounts';
 
 interface CheckoutFormProps {
@@ -54,7 +56,7 @@ export const PROVINCE_TRANSLATIONS: Record<string, string> = {
 };
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onCancel, onSuccess, onUpdateCart }) => {
-    const { discountPresets, products, pages, shippingCompanies, paymentMethods, codPaymentMethods, cities, addOnlineOrder, updateOrder, paymentClaimsReady, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
+    const { discountPresets, priceLevels, customerGroupMembers, products, pages, shippingCompanies, paymentMethods, codPaymentMethods, cities, addOnlineOrder, updateOrder, paymentClaimsReady, currentUser, users, telegramBotToken, telegramChatId, telegramConfigs, sales, khrExchangeRate, blockedCustomers } = useStore();
     const { showToast } = useToast();
     const tx = useTx();
     const rate = shopRate(khrExchangeRate);
@@ -82,6 +84,18 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
     // the items until the amount is typed over (a percent of the new price; a
     // fixed amount capped at a small cart grows back); null = typed by hand.
     const [discountPresetPick, setDiscountPresetPick] = useState<string | null>(null);
+    // The Sales Setup › Price Level filled into the discount for this
+    // customer (by name), following the items like a preset; null = none or
+    // changed by hand. levelDeclinedFor: the phone whose level staff took
+    // off, so it isn't put back while that phone stays.
+    const [levelPick, setLevelPick] = useState<string | null>(null);
+    const levelDeclinedFor = useRef<string | null>(null);
+    // Staff changed the discount by hand: a level filled in stops following
+    // the items and isn't put back for this phone.
+    const discountTouchedByHand = () => {
+        if (levelPick) levelDeclinedFor.current = phoneDigits(formData.customerPhone);
+        setLevelPick(null);
+    };
 
     const isMobile = useMobile();
 
@@ -428,6 +442,8 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             salePriceAuto.current = sold
                 ? { discount: savedDiscount, subtotal: roundCents(savedTotal + savedDiscount), typed: String(rielIsTotal ? Math.round(savedRiel) : savedTotal) }
                 : null;
+            setLevelPick(null);
+            levelDeclinedFor.current = null;
             if (sold) setFormData(prev => ({ ...prev, enableDiscount: false, discount: '' }));
         } else {
             // Reset to defaults when not editing
@@ -442,13 +458,65 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
             salePriceTouched.current = false;
             salePriceAuto.current = null;
             setDiscountPresetPick(null);
+            setLevelPick(null);
+            levelDeclinedFor.current = null;
         }
     }, [orderToEdit, currentUser]); // Added currentUser dependency
 
     // (Removed useEffect that was overwriting paymentStatus on load)
 
     const subtotal = React.useMemo(() => cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0), [cartItems]);
+    // The customer's Price Level (Sales Setup), from the phone's Customer Group.
+    const phoneLevel = React.useMemo(() => priceLevelForPhone(priceLevels, customerGroupMembers, formData.customerPhone),
+        [priceLevels, customerGroupMembers, formData.customerPhone]);
+    const phoneKey = phoneDigits(formData.customerPhone);
+    // A new order fills the level's discount by itself: when the phone is a
+    // customer with a level, unless the discount was set by hand (or a
+    // Discounts preset picked), the selling price is used, or staff took it
+    // off for this phone. A reopened order is never changed by itself (Apply
+    // below). Another customer's phone takes a level filled in off again.
     useEffect(() => {
+        if (orderToEdit) return;
+        // The selling price replaces the discount: a level filled in is
+        // dropped (it may fill in again once the selling price is unticked).
+        if (salePriceOn) { if (levelPick) setLevelPick(null); return; }
+        if (!phoneLevel) {
+            if (levelPick) {
+                setLevelPick(null);
+                setFormData(prev => ({ ...prev, enableDiscount: false, discount: 0 }));
+            }
+            return;
+        }
+        const { level } = phoneLevel;
+        if (levelPick === level.name) {
+            if (!formData.enableDiscount) return;
+            const amount = priceLevelAmount(level, subtotal);
+            setFormData(prev => (Number(prev.discount) === amount ? prev : { ...prev, discount: amount }));
+            return;
+        }
+        if (discountPresetPick) return;
+        if (levelDeclinedFor.current === phoneKey) return;
+        if (!levelPick && formData.enableDiscount && Number(formData.discount) > 0) return;
+        setLevelPick(level.name);
+        setFormData(prev => ({ ...prev, enableDiscount: true, discount: priceLevelAmount(level, subtotal) }));
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the customer (phone), their level or its percent changes
+    }, [phoneKey, phoneLevel?.level.name, phoneLevel?.level.pct, orderToEdit, salePriceOn]);
+    const applyLevel = () => {
+        if (!phoneLevel) return;
+        levelDeclinedFor.current = null;
+        setDiscountPresetPick(null);
+        setLevelPick(phoneLevel.level.name);
+        setFormData(prev => ({ ...prev, enableDiscount: true, discount: priceLevelAmount(phoneLevel.level, subtotal) }));
+    };
+    useEffect(() => {
+        if (levelPick && formData.enableDiscount) {
+            const l = priceLevels.find(x => x.name === levelPick);
+            if (l) {
+                const amount = priceLevelAmount(l, subtotal);
+                setFormData(prev => (Number(prev.discount) === amount ? prev : { ...prev, discount: amount }));
+            }
+            return;
+        }
         if (!discountPresetPick || !formData.enableDiscount) return;
         const p = discountPresets.find(x => x.name === discountPresetPick);
         if (!p) return;
@@ -1542,6 +1610,21 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                         </div>
                         {/* Discount Section - Same as before */}
                         <div style={{ marginBottom: '16px', opacity: salePriceOn ? 0.5 : 1 }}>
+                            {phoneLevel && (
+                                // Sales Setup › Price Levels: this customer's group has a level.
+                                <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px', padding: '6px 10px', borderRadius: '8px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-main)' }}>
+                                    <span style={{ flex: 1, minWidth: 0 }}>
+                                        {tx('ui.components.checkout.priceLevelNote', '{group} customer: {level} price, {pct} off', { group: phoneLevel.group, level: phoneLevel.level.name, pct: priceLevelPctLabel(phoneLevel.level) })}
+                                        {levelPick === phoneLevel.level.name && formData.enableDiscount ? ` · ${tx('ui.components.checkout.priceLevelApplied', 'applied')}` : ''}
+                                    </span>
+                                    {!(levelPick === phoneLevel.level.name && formData.enableDiscount) && !salePriceOn && (
+                                        <button type="button" onClick={applyLevel}
+                                            style={{ padding: '3px 10px', borderRadius: '999px', fontSize: '12px', cursor: 'pointer', border: '1px solid var(--color-primary)', background: 'var(--color-surface)', color: 'var(--color-primary)', fontWeight: 600 }}>
+                                            {tx('ui.components.checkout.priceLevelApply', 'Apply {pct} off', { pct: priceLevelPctLabel(phoneLevel.level) })}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', cursor: salePriceOn ? 'not-allowed' : 'pointer', marginBottom: '8px' }}>
                                 <input
                                     type="checkbox"
@@ -1549,6 +1632,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     checked={formData.enableDiscount}
                                     onChange={e => {
                                         setDiscountPresetPick(null);
+                                        discountTouchedByHand();
                                         setFormData({
                                             ...formData,
                                             enableDiscount: e.target.checked,
@@ -1573,6 +1657,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             // INCREASED the total past the sum of items and
                                             // mis-flagged full payments as deposits.
                                             setDiscountPresetPick(null);
+                                            discountTouchedByHand();
                                             setFormData({ ...formData, discount: val === '' ? '' : Math.max(0, Number(val) || 0) });
                                         }}
                                         placeholder="0.00"
@@ -1589,6 +1674,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             <button key={p.name} type="button" aria-pressed={on}
                                                 title={tx('ui.components.checkout.quickDiscountTitle', '{name}: -{amount} on this order', { name: p.name, amount: '$' + discountPresetAmount(p, subtotal).toFixed(2) })}
                                                 onClick={() => {
+                                                    discountTouchedByHand();
                                                     setDiscountPresetPick(p.name);
                                                     setFormData({ ...formData, discount: discountPresetAmount(p, subtotal) });
                                                 }}

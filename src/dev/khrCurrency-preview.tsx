@@ -125,6 +125,7 @@ const base: Record<string, unknown> = {
     addDeliveryType: logWrite('addDeliveryType'), removeDeliveryType: logWrite('removeDeliveryType'), setCourierDeliveryType: logWrite('setCourierDeliveryType'),
     customerGroups: ['VIP', 'Reseller'], customerGroupMembers: { '012345678': { group: 'VIP', name: 'Dev Customer' }, '098765432': { group: 'Reseller' } },
     addCustomerGroup: logWrite('addCustomerGroup'), removeCustomerGroup: logWrite('removeCustomerGroup'), setCustomerGroup: logWrite('setCustomerGroup'),
+    priceLevels: [{ name: 'Dealer', pct: 10, groups: ['VIP'] }], addPriceLevel: logWrite('addPriceLevel'), removePriceLevel: logWrite('removePriceLevel'), setPriceLevelGroup: logWrite('setPriceLevelGroup'),
     rejectionReasons: ['Customer refused', 'Wrong address'], addRejectionReason: logWrite('addRejectionReason'), removeRejectionReason: logWrite('removeRejectionReason'),
     shippingRates: { 'J&T': 1.25 }, updateShippingRate: logWrite('updateShippingRate'), trackingUrlTemplates: {}, updateTrackingUrlTemplate: logWrite('updateTrackingUrlTemplate'),
     addPaymentMethod: logWrite('addPaymentMethod'), removePaymentMethod: logWrite('removePaymentMethod'),

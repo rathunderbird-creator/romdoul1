@@ -152,6 +152,8 @@
 --     customerGroups, customerGroupMembers
 --                      manage_settings / manage_orders (Sales Setup ›
 --                      Customer Groups; tagged from the Orders column)
+--     priceLevels      manage_settings / manage_orders (Sales Setup ›
+--                      Price Levels; filled into Checkout's discount)
 --     discountPresets  manage_settings / manage_orders (Sales Setup ›
 --                      Discounts; Checkout only reads it)
 --     rejectionReasons manage_settings / manage_orders (Sales Setup ›
@@ -1009,6 +1011,8 @@ BEGIN
         -- Sales Setup › Customer Groups (the list, and phone digits -> group).
         WHEN 'customerGroups'       THEN ARRAY['manage_settings', 'manage_orders']
         WHEN 'customerGroupMembers' THEN ARRAY['manage_settings', 'manage_orders']
+        -- Sales Setup › Price Levels (percent off for some Customer Groups).
+        WHEN 'priceLevels'          THEN ARRAY['manage_settings', 'manage_orders']
         ELSE ARRAY['manage_settings']
     END;
     IF NOT EXISTS (

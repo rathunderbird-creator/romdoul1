@@ -317,6 +317,12 @@ export interface StoreContextType {
     removeCustomerGroup: (name: string) => Promise<void>;
     // group '' takes the phone out of its group; name = the customer's, shown in Sales Setup.
     setCustomerGroup: (phone: string, group: string, name?: string) => Promise<void>;
+    // Sales Setup › Price Levels: a percent off for some Customer Groups,
+    // filled into Checkout's discount (priceLevels.ts).
+    priceLevels: { name: string; pct: number; groups: string[] }[];
+    addPriceLevel: (name: string, pct: number) => Promise<void>;
+    removePriceLevel: (name: string) => Promise<void>;
+    setPriceLevelGroup: (level: string, group: string, on: boolean) => Promise<void>;
     // Sales Setup › Discounts: Checkout's quick-pick presets.
     discountPresets: DiscountPreset[];
     addDiscountPreset: (preset: DiscountPreset) => Promise<void>;
