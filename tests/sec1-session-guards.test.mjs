@@ -332,6 +332,8 @@ check('config: paymentMethods removal bundled with a COD untick refused for sale
     noPerm(await cfg({ paymentMethods: { op: 'removeItems', values: ['Gone Pay'] }, codPaymentMethods: { op: 'removeItems', values: ['Gone Pay'] } }, S.sal)));
 check('config: deliveryTypes + courierDeliveryTypes ok for manage_orders (Sales Setup › Delivery Types)', await cfg({ deliveryTypes: { op: 'set', value: ['Province courier'] }, courierDeliveryTypes: { op: 'set', value: { 'J&T': 'Province courier' } } }, S.ord) === '');
 check('config: courierDeliveryTypes refused for salesman', noPerm(await cfg({ courierDeliveryTypes: { op: 'set', value: {} } }, S.sal)));
+check('config: customerGroups + customerGroupMembers ok for manage_orders (Sales Setup › Customer Groups)', await cfg({ customerGroups: { op: 'set', value: ['VIP'] }, customerGroupMembers: { op: 'merge', value: { '012345678': { group: 'VIP' } } } }, S.ord) === '');
+check('config: customerGroupMembers refused for salesman', noPerm(await cfg({ customerGroupMembers: { op: 'unsetKeys', keys: ['012345678'] } }, S.sal)));
 check('config: discountPresets ok for manage_orders (Sales Setup › Discounts)', await cfg({ discountPresets: { op: 'set', value: [{ name: 'VIP', type: 'pct', value: 10 }] } }, S.ord) === '');
 check('config: discountPresets refused for salesman', noPerm(await cfg({ discountPresets: { op: 'set', value: [] } }, S.sal)));
 check('config: rejectionReasons ok for manage_orders (Sales Setup › Rejection Reasons)', await cfg({ rejectionReasons: { op: 'append', items: ['Wrong address'] } }, S.ord) === '');

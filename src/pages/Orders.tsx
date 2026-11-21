@@ -35,6 +35,9 @@ import { copyText } from '../utils/clipboard';
 // has no text for auto-fit to measure; a narrower saved width is widened on load.
 const COLUMN_MIN_WIDTH: Record<string, number> = { actions: 140 };
 const columnMinWidth = (colId: string, fallback: number) => Math.max(COLUMN_MIN_WIDTH[colId] ?? 0, fallback);
+// Columns the server can't order by: Customer group is looked up from the
+// phone in Sales Setup, not stored on the order.
+const UNSORTABLE_COLUMNS = new Set(['customerGroup']);
 import { getPaymentIcon, getPaymentColor } from '../utils/payment';
 import { getShippingLogo } from '../utils/shipping';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -45,6 +48,7 @@ import { accountCurrency, formatKhr, formatMoneyLine, formatUsd, isKhrRow, khrMe
 import { roundCents } from '../utils/money';
 import { reasonApplies, reasonOptions } from '../utils/rejectionReasons';
 import { courierDeliveryType, couriersMatchingTypeText } from '../utils/deliveryTypes';
+import { customerGroupOf, customerGroupOptions, phoneDigits, phonesMatchingGroupText } from '../utils/customerGroups';
 
 // The "Other…" pick in the reason pop-up and Reason column (never saved).
 const OTHER_REASON = '__other__';
@@ -1014,7 +1018,7 @@ async function paidMoneyOf(orderId: string, kind: PaymentKind, bookedUsd: number
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods, rejectionReasons, courierDeliveryTypes } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods, rejectionReasons, courierDeliveryTypes, customerGroups, customerGroupMembers, setCustomerGroup } = useStore();
     const { t } = useLanguage();
     // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
     const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
@@ -1450,6 +1454,7 @@ const Orders: React.FC = () => {
         { id: 'date', label: t('orders.date') },
         { id: 'customer', label: t('orders.customer') },
         { id: 'phone', label: t('orders.phone') },
+        { id: 'customerGroup', label: t('ui.orders.customerGroup.column') },
         { id: 'address', label: t('orders.address') },
         { id: 'page', label: t('orders.pageName') },
         { id: 'salesman', label: t('orders.salesman') },
@@ -1516,6 +1521,24 @@ const Orders: React.FC = () => {
     useEffect(() => {
         localStorage.setItem('orders_visibleColumns', JSON.stringify(visibleColumns));
     }, [visibleColumns]);
+
+    // Customer group: shown once (after Phone) when the store has groups —
+    // not before, so a store that doesn't use them gets no empty column.
+    // Hiding it afterwards sticks.
+    useEffect(() => {
+        if (customerGroups.length === 0) return;
+        try {
+            if (localStorage.getItem('orders_customerGroupColAdded')) return;
+            localStorage.setItem('orders_customerGroupColAdded', '1');
+        } catch { return; }
+        setVisibleColumns(cols => {
+            if (cols.includes('customerGroup')) return cols;
+            const next = [...cols];
+            const at = next.indexOf('phone');
+            next.splice(at >= 0 ? at + 1 : next.length, 0, 'customerGroup');
+            return next;
+        });
+    }, [customerGroups.length]);
 
     // Derived Columns with Pinning Logic
     const allColumns = useMemo(() => {
@@ -1907,6 +1930,13 @@ const Orders: React.FC = () => {
     // The search term whose "showing the newest N" notice was already shown —
     // every page change re-runs applyOrderFilters, and one notice is enough.
     const truncationNoticeRef = useRef<string | null>(null);
+    // Customer group column filter: the matching phones, as a key that only
+    // changes when the filter's result does (tagging a customer with no
+    // group filter on must not refetch the page).
+    const customerGroupFilterText = (columnFilters.customerGroup || '').trim();
+    const customerGroupFilterKey = useMemo(() => customerGroupFilterText
+        ? JSON.stringify(phonesMatchingGroupText(customerGroupMembers, customerGroupFilterText)) : '',
+    [customerGroupMembers, customerGroupFilterText]);
 
     // Applies every active filter (status, salesman, pay status, shipping co,
     // page, date range, search, column filters) to a sales query. Takes a
@@ -2147,6 +2177,22 @@ const Orders: React.FC = () => {
                         query = query.or(couriers.map(c => `shipping_company.ilike."${pat(c)}"`).join(','));
                         break;
                     }
+                    case 'customerGroup': {
+                        // A customer is their phone (Sales Setup › Customer
+                        // Groups): the phones whose group contains the text,
+                        // compared as digits through customer_phone_digits()
+                        // (migrations/add_customer_groups.sql).
+                        const phones: string[] = customerGroupFilterKey ? JSON.parse(customerGroupFilterKey) : [];
+                        if (!phones.length) { query = query.in('id', ['__no_customer_in_this_group__']); break; }
+                        const PHONE_CAP = 400; // ~10 digits each keeps the URL under the gateway limit
+                        // Said once per filter (this runs for the page and each footer chunk).
+                        if (phones.length > PHONE_CAP && truncationNoticeRef.current !== `customer-group:${v}:${phones.length}`) {
+                            truncationNoticeRef.current = `customer-group:${v}:${phones.length}`;
+                            showToast(tNow('ui.orders.customerGroup.filterTruncated', { n: phones.length, cap: PHONE_CAP }), 'info');
+                        }
+                        query = query.in('customer_phone_digits', phones.slice(0, PHONE_CAP));
+                        break;
+                    }
                     case 'remark':
                         query = query.ilike('remark', `%${esc}%`);
                         break;
@@ -2292,7 +2338,7 @@ const Orders: React.FC = () => {
         // async function makes `await` EXECUTE the query and hand back its result
         // instead of the builder. Wrap it so the caller gets the builder intact.
         return { query };
-    }, [applyScopeFilters, statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, currentUser, columnFilters, showToast, salesUpdatedAt, courierDeliveryTypes]);
+    }, [applyScopeFilters, statusFilter, salesmanFilter, payStatusFilter, shippingCoFilter, pageFilter, dateRange, searchTerm, currentUser, columnFilters, showToast, salesUpdatedAt, courierDeliveryTypes, customerGroupFilterKey]);
 
     // Stale-response guard: a click-through's filtered refetch races the
     // unfiltered mount fetch (and any other superseded fetch); without this,
@@ -2493,6 +2539,8 @@ const Orders: React.FC = () => {
             // A Reason filter or sort on a store without the column.
             const e = err as { code?: string; message?: string } | null;
             if (!isStale() && /return_reason/.test(e?.message || '')) showToastRef.current(tNow('ui.store.order.returnReasonMissing'), 'error');
+            // A Customer group filter on a store without add_customer_groups.sql.
+            if (!isStale() && /customer_phone_digits/.test(e?.message || '')) showToastRef.current(tNow('ui.orders.customerGroup.sqlMissing'), 'error');
         } finally {
             // Only the newest fetch may clear the spinner — a stale one
             // finishing late must not hide that a newer fetch is in flight.
@@ -2752,6 +2800,7 @@ const Orders: React.FC = () => {
             'Date': new Date(order.date).toLocaleDateString(),
             'Customer': order.customer?.name || 'N/A',
             'Phone': order.customer?.phone || 'N/A',
+            'Customer Group': customerGroupOf(customerGroupMembers, order.customer?.phone) || '',
             'Address': order.customer?.address || 'N/A',
             'City': order.customer?.city || 'N/A',
             'Page': order.customer?.page || 'N/A',
@@ -3004,6 +3053,7 @@ const Orders: React.FC = () => {
 
     // Render Helpers
     const handleSort = (key: string) => {
+        if (UNSORTABLE_COLUMNS.has(key)) return;
         let direction: 'asc' | 'desc' = 'asc';
         if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
             direction = 'desc';
@@ -3012,6 +3062,7 @@ const Orders: React.FC = () => {
     };
 
     const SortIcon = ({ columnKey }: { columnKey: string }) => {
+        if (UNSORTABLE_COLUMNS.has(columnKey)) return null;
         if (sortConfig?.key !== columnKey) return <ChevronsUpDown size={14} style={{ opacity: 0.3 }} />;
         return sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />;
     };
@@ -4344,7 +4395,7 @@ const Orders: React.FC = () => {
                                                                 padding: 'var(--table-padding, 8px 12px)',
                                                                 overflow: 'visible',
                                                                 width: '100%',
-                                                                cursor: 'pointer',
+                                                                cursor: UNSORTABLE_COLUMNS.has(colId) ? 'default' : 'pointer',
                                                                 userSelect: 'none'
                                                             }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'visible', color: 'var(--color-text-main)' }}>
@@ -4506,6 +4557,37 @@ const Orders: React.FC = () => {
                                                                             {operator && <img src={operator.logo} alt={operator.name} style={{ width: '16px', height: '16px', objectFit: 'contain', borderRadius: '2px' }} title={operator.name} />}
                                                                             <span>{formatPhoneDisplay(order.customer?.phone) || '-'}</span>
                                                                         </div>
+                                                                    </td>
+                                                                );
+                                                            }
+                                                            case 'customerGroup': {
+                                                                // The customer's group (by phone, so every order of
+                                                                // theirs shows it); picked here to tag the customer.
+                                                                const phone = order.customer?.phone;
+                                                                const group = customerGroupOf(customerGroupMembers, phone);
+                                                                if (!phoneDigits(phone) || !canEdit || (customerGroups.length === 0 && !group)) {
+                                                                    return <td key={colId} style={{ ...cellStyle, color: group ? 'inherit' : 'var(--color-text-muted)' }} title={group}>{group || '-'}</td>;
+                                                                }
+                                                                return (
+                                                                    <td key={colId} style={{ ...cellStyle, padding: '4px' }}>
+                                                                        <select
+                                                                            value={group}
+                                                                            aria-label={t('ui.orders.customerGroup.column')}
+                                                                            title={t('ui.orders.customerGroup.hint')}
+                                                                            className="search-input"
+                                                                            style={{ width: '100%', padding: '4px 6px', fontSize: 'inherit', color: group ? 'inherit' : 'var(--color-text-muted)', border: '1px solid transparent', background: 'transparent', cursor: 'pointer' }}
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            onMouseDown={(e) => e.stopPropagation()}
+                                                                            onPointerDown={(e) => e.stopPropagation()}
+                                                                            onKeyDown={(e) => { if (e.key === ' ') e.stopPropagation(); }}
+                                                                            onChange={(e) => {
+                                                                                setCustomerGroup(String(phone), e.target.value, order.customer?.name)
+                                                                                    .catch((err: unknown) => showToast(tNow('ui.orders.customerGroup.saveFailed', { error: (err as Error)?.message || '' }), 'error'));
+                                                                            }}
+                                                                        >
+                                                                            <option value="">{t('ui.orders.customerGroup.none')}</option>
+                                                                            {customerGroupOptions(customerGroups, group).map(g => <option key={g} value={g}>{g}</option>)}
+                                                                        </select>
                                                                     </td>
                                                                 );
                                                             }

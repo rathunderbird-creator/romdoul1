@@ -309,6 +309,14 @@ export interface StoreContextType {
     addDeliveryType: (name: string) => Promise<void>;
     removeDeliveryType: (name: string) => Promise<void>;
     setCourierDeliveryType: (company: string, type: string) => Promise<void>;
+    // Sales Setup › Customer Groups: the list, and each customer's group by
+    // phone digits (customerGroups.ts); an order shows its phone's group.
+    customerGroups: string[];
+    customerGroupMembers: Record<string, { group: string; name?: string }>;
+    addCustomerGroup: (name: string) => Promise<void>;
+    removeCustomerGroup: (name: string) => Promise<void>;
+    // group '' takes the phone out of its group; name = the customer's, shown in Sales Setup.
+    setCustomerGroup: (phone: string, group: string, name?: string) => Promise<void>;
     // Sales Setup › Discounts: Checkout's quick-pick presets.
     discountPresets: DiscountPreset[];
     addDiscountPreset: (preset: DiscountPreset) => Promise<void>;
