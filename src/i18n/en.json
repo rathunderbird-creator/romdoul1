@@ -5254,6 +5254,12 @@
         "note": "The order is treated as cancelled — only this delivery fee is posted straight to Revenue (account 4005 · Delivery Fee Revenue), not the order total.",
         "orderTotal": "Order total"
       },
+      "getFile": {
+        "amount": "Amount the courier collects",
+        "deposit": "Deposit",
+        "note": "A different amount changes the order total (the difference goes into the discount). Cash or bank, riel or dollar, is chosen when the courier remits, in Accounting › COD Remittances.",
+        "title": "Get File"
+      },
       "deposit": {
         "amount": "Deposit Amount",
         "confirming": "Confirming the deposit entered. Check it arrived, correct anything that differs, then save: that books it.",

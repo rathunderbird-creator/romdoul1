@@ -5,7 +5,8 @@ import { useHeader } from '../context/HeaderContext';
 import { useNavigate } from 'react-router-dom';
 import { Search, X, Settings, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, FileText, Wallet, Copy, Edit, Trash2 } from 'lucide-react';
 import type { Sale } from '../types';
-import { PaymentStatusBadge, DateRangePicker, StatusBadge, RecordReceiptModal, POSInterface, BulkEditModal, DepositModal, DeliveryFeeModal } from '../components';
+import { PaymentStatusBadge, DateRangePicker, StatusBadge, RecordReceiptModal, POSInterface, BulkEditModal, DepositModal, DeliveryFeeModal, GetFileModal } from '../components';
+import { getFileAsksAmount, saveGetFile } from '../utils/getFileSave';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { statusChangeRefusal, paymentChangeRefusal, paymentBadgeReadOnlyForNonAdmin, paymentBadgeDisabledForNonAdmin, isBookedGetFile, settleDateChangeRefusal } from '../utils/orderStatusRules';
@@ -557,6 +558,7 @@ const PaymentTracking: React.FC = () => {
     const [paymentMethodTargetOrder, setPaymentMethodTargetOrder] = useState<Sale | null>(null);
     const [depositTargetOrder, setDepositTargetOrder] = useState<Sale | null>(null);
     const [deliveryFeeTargetOrder, setDeliveryFeeTargetOrder] = useState<Sale | null>(null);
+    const [getFileTarget, setGetFileTarget] = useState<Sale | null>(null);
 
     // Server-side fetching (same pattern as Orders Management)
     const [currentPage, setCurrentPage] = useState(1);
@@ -1383,6 +1385,11 @@ const PaymentTracking: React.FC = () => {
                                                 setDeliveryFeeTargetOrder(order);
                                                 return;
                                             }
+                                            if (newStatus === 'Get File') {
+                                                if (getFileAsksAmount(order)) setGetFileTarget(order);
+                                                else void saveGetFile(updateOrder, order);
+                                                return;
+                                            }
                                             updateOrder(order.id, { paymentStatus: newStatus as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel', expectedPaymentStatus: order.paymentStatus })
                                         }}
                                         // Admins bypass the lock so they can correct mistakes (e.g.
@@ -1662,6 +1669,17 @@ const PaymentTracking: React.FC = () => {
                         depositAccountName
                     }, { money: { ...money, category: 'កក់ប្រាក់' } });
                     setDepositTargetOrder(null);
+                }}
+            />
+
+            {/* Get File: the amount the courier collects */}
+            <GetFileModal
+                order={getFileTarget}
+                onClose={() => setGetFileTarget(null)}
+                onConfirm={({ collectUsd, money }) => {
+                    const order = getFileTarget;
+                    setGetFileTarget(null);
+                    if (order) void saveGetFile(updateOrder, order, { collectUsd, money });
                 }}
             />
 
