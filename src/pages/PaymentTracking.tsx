@@ -550,7 +550,7 @@ const PaymentTracking: React.FC = () => {
     const [formData, setFormData] = useState({
         amountReceived: 0,
         settleDate: '',
-        paymentStatus: 'Paid' as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel'
+        paymentStatus: 'Paid' as 'Unpaid' | 'Paid' | 'Get File' | 'Collected' | 'Cancel'
     });
 
     // Select Payment Method Modal State
@@ -1543,10 +1543,11 @@ const PaymentTracking: React.FC = () => {
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{tx('delivery.status', 'Status')}</label>
-                                    <select className="search-input" style={{ width: '100%' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as 'Unpaid' | 'Paid' | 'Get File' | 'Cancel' })} disabled={selectedOrder?.paymentStatus === 'Paid' || selectedOrder?.paymentStatus === 'Cancel'}>
+                                    <select className="search-input" style={{ width: '100%' }} value={formData.paymentStatus} onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as 'Unpaid' | 'Paid' | 'Get File' | 'Collected' | 'Cancel' })} disabled={selectedOrder?.paymentStatus === 'Paid' || selectedOrder?.paymentStatus === 'Cancel'}>
                                         <option value="Unpaid">{payLabel('Unpaid')}</option>
                                         <option value="Paid">{payLabel('Paid')}</option>
                                         <option value="Get File">{payLabel('Get File')}</option>
+                                        <option value="Collected">{payLabel('Collected')}</option>
                                         <option value="Cancel">{payLabel('Cancel')}</option>
                                     </select>
                                 </div>

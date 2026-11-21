@@ -1317,7 +1317,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                     onChange={e => setFormData({ ...formData, paymentStatus: e.target.value as any })}
                                     disabled={currentUser?.roleId === 'salesman'}
                                 >
-                                    {[{id: 'Unpaid', name: 'Unpaid'}, {id: 'Deposit', name: 'Deposit'}, {id: 'Paid', name: 'Paid'}, {id: 'Get File', name: 'Get File'}, {id: 'Cancel', name: 'Cancel'}].map(s => <option key={s.id} value={s.id}>{tx(`dashboard2.pay.${s.id}`, s.name)}</option>)}
+                                    {[{id: 'Unpaid', name: 'Unpaid'}, {id: 'Deposit', name: 'Deposit'}, {id: 'Paid', name: 'Paid'}, {id: 'Get File', name: 'Get File'}, {id: 'Collected', name: 'Collected'}, {id: 'Cancel', name: 'Cancel'}].map(s => <option key={s.id} value={s.id}>{tx(`dashboard2.pay.${s.id}`, s.name)}</option>)}
                                 </select>
                             </div>
                         </div>

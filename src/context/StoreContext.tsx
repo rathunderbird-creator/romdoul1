@@ -2850,7 +2850,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             date: order.date || new Date().toISOString()
         };
         pendingOrderIds.set(signature, { id: newSale.id, at: nowMs });
-        const bookGetFileAfter = newSale.paymentStatus === 'Get File' && getFileBooksCod(config.codGetFileCompanies, newSale.shipping?.company);
+        // Get File for a ticked courier, and Collected always, book the COD
+        // receipt: the order is created Unpaid, then moved there by
+        // set_order_payment (create_retail_order books neither).
+        const bookGetFileAfter = newSale.paymentStatus === 'Collected'
+            || (newSale.paymentStatus === 'Get File' && getFileBooksCod(config.codGetFileCompanies, newSale.shipping?.company));
         // Safety net (the order form already does this): a Salesman's order is
         // created with nothing booked; a deposit/payment rides as a claim.
         if (currentUser?.roleId === 'salesman' && !newSale.paymentClaim
@@ -2963,7 +2967,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const created: Sale = { ...newSale, paymentStatus: 'Unpaid', amountReceived: 0, settleDate: undefined };
             setSales(prev => [created, ...prev.filter(sale => sale.id !== newSale.id)]);
             const ok = await updateOrder(newSale.id, {
-                paymentStatus: 'Get File', amountReceived: newSale.depositAmount || 0, settleDate: null as unknown as string,
+                paymentStatus: newSale.paymentStatus, amountReceived: newSale.depositAmount || 0, settleDate: null as unknown as string,
                 expectedPaymentStatus: 'Unpaid',
             } as Partial<Sale>);
             if (!ok) newSale.paymentStatus = 'Unpaid';
