@@ -8,6 +8,7 @@
 // Note the spec's "23 orders" counts EVERY order in range (cancelled included)
 // while revenue / cash / outstanding / pieces cover the active set only.
 import type { Sale, Product } from '../../types';
+import { customerGroupOf, type CustomerGroupMembers } from '../../utils/customerGroups';
 import { isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance as sharedOrderBalance } from '../../utils/orderMoney';
 
 export type Order = Sale;
@@ -247,9 +248,11 @@ export const dailySeries = (orders: Order[], range: DateRange): DayPoint[] => {
     return Array.from(byDay.values()).sort((a, b) => a.day.localeCompare(b.day));
 };
 
-// ─── Grouped performance rows (Salesmen / Pages / Shipping) ───────────────
+// ─── Grouped performance rows (Salesmen / Pages / Shipping / Customer groups)
 
-export type GroupKind = 'salesman' | 'page' | 'shippingCo';
+// customerGroup: Sales Setup › Customer Groups, looked up from the order's
+// phone in the members map (passed in; '' = no group).
+export type GroupKind = 'salesman' | 'page' | 'shippingCo' | 'customerGroup';
 
 export interface GroupRow {
     key: string;              // raw value ('' for unassigned)
@@ -267,7 +270,8 @@ export interface GroupRow {
     tracked: number;          // …of which have a tracking id
 }
 
-export const groupKeyOf = (o: Order, kind: GroupKind): string => {
+export const groupKeyOf = (o: Order, kind: GroupKind, members: CustomerGroupMembers = {}): string => {
+    if (kind === 'customerGroup') return customerGroupOf(members, o.customer?.phone);
     if (kind === 'salesman') return String(o.salesman || '').trim();
     if (kind === 'page') return String(o.pageSource || o.customer?.page || '').trim();
     return String(o.shipping?.company || '').trim();
@@ -275,11 +279,11 @@ export const groupKeyOf = (o: Order, kind: GroupKind): string => {
 
 export const UNASSIGNED_LABEL = '(unassigned)';
 
-export const groupOrders = (orders: Order[], kind: GroupKind, statusFilter = 'All'): GroupRow[] => {
+export const groupOrders = (orders: Order[], kind: GroupKind, statusFilter = 'All', members: CustomerGroupMembers = {}): GroupRow[] => {
     const scoped = statusFilter === 'All' ? orders : orders.filter(o => orderStatusOf(o) === statusFilter);
     const map = new Map<string, GroupRow & { revenueOrders: number }>();
     for (const o of scoped) {
-        const key = groupKeyOf(o, kind);
+        const key = groupKeyOf(o, kind, members);
         let row = map.get(key);
         if (!row) {
             row = { key, label: key || UNASSIGNED_LABEL, orders: 0, pieces: 0, revenue: 0, cashCollected: 0, outstanding: 0, share: null, aov: null, statusCounts: {}, shippingCost: 0, trackable: 0, tracked: 0, revenueOrders: 0 };

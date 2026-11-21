@@ -157,6 +157,7 @@ const Preview = () => {
                     t={t}
                     language={language}
                     isMobile={isMobile}
+                    customerGroupMembers={{ '012888168': { group: 'VIP' }, '0962345678': { group: 'VIP' }, '011456789': { group: 'Reseller' } }}
                 />
             </div>
         </>

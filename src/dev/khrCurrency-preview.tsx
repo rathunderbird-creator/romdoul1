@@ -204,7 +204,7 @@ const Forms = () => {
             <div style={{ width: 360, marginTop: 16, border: '1px dashed #ccc' }}>
                 <MobileOrderCard order={{ ...editBase, total: 40 } as unknown as Sale} isSelected={false} onToggleSelect={() => {}}
                     isExpanded onToggleExpand={() => {}} onEdit={() => {}} onView={() => {}} onPrint={() => {}} onCopy={() => {}}
-                    onCopyPaymentRequest={() => console.info('[preview] copy payment request')}
+                    onCopyPaymentRequest={() => console.info('[preview] copy payment request')} customerGroup="VIP"
                     onUpdateStatus={() => {}} onUpdatePaymentStatus={() => {}} canEdit />
             </div>
             </div>

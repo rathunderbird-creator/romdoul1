@@ -78,11 +78,15 @@ export const freeMembersOfGroupOp = (map: CustomerGroupMembers, group: string): 
     return keys.length ? { op: 'unsetKeys', keys } : null;
 };
 
-// Orders column filter: the phones whose group contains the typed text.
+// Orders column filter: the phones whose group contains the typed text —
+// or, when the text is a group's whole name (a Dashboard click-through on
+// "VIP"), exactly that group, so "VIP 2" isn't counted in.
 export const phonesMatchingGroupText = (map: CustomerGroupMembers, text: string): string[] => {
     const q = text.trim().toLowerCase();
     if (!q) return [];
-    return Object.keys(map).filter(k => map[k].group.toLowerCase().includes(q));
+    const keys = Object.keys(map);
+    const exact = keys.filter(k => map[k].group.toLowerCase() === q);
+    return exact.length ? exact : keys.filter(k => map[k].group.toLowerCase().includes(q));
 };
 
 // The groups a picker offers: the list, plus a member's group that was

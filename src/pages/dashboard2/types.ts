@@ -57,6 +57,9 @@ export interface Dashboard2ViewProps {
     t: Translate;
     language: 'en' | 'km';
     isMobile: boolean;
+    // Sales Setup › Customer Groups (phone digits -> group), for the
+    // Performance panel's Customer groups tab.
+    customerGroupMembers?: Record<string, { group: string; name?: string }>;
 }
 
 // Section components -------------------------------------------------------
@@ -96,7 +99,7 @@ export interface CollectionChartProps {
     t: Translate;
 }
 
-export type PerformanceTab = 'salesmen' | 'pages' | 'shipping' | 'products';
+export type PerformanceTab = 'salesmen' | 'pages' | 'shipping' | 'groups' | 'products';
 
 export interface PerformancePanelProps {
     orders: Order[];
@@ -107,7 +110,10 @@ export interface PerformancePanelProps {
     t: Translate;
     isMobile: boolean;
     // Pure helpers are injected so the panel stays testable with fixtures.
-    groupOrders: (orders: Order[], kind: 'salesman' | 'page' | 'shippingCo', statusFilter: string) => GroupRow[];
+    groupOrders: (orders: Order[], kind: 'salesman' | 'page' | 'shippingCo' | 'customerGroup', statusFilter: string, members?: Record<string, { group: string; name?: string }>) => GroupRow[];
+    // Sales Setup › Customer Groups (phone digits -> group): the Customer
+    // groups tab shows only when a store has tagged customers.
+    customerGroupMembers?: Record<string, { group: string; name?: string }>;
     productRows: (orders: Order[], products: Product[], statusFilter: string) => ProductRow[];
 }
 

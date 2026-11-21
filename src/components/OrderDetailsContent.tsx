@@ -14,12 +14,14 @@ interface OrderDetailsContentProps {
     // shareable /orders/:id link under the order number — useful on the full
     // page, redundant inside a modal that's already scoped to this order.
     showPermalink?: boolean;
+    // Sales Setup › Customer Groups: the customer's group ('' / absent = none).
+    customerGroup?: string;
 }
 
 // Purely presentational: customer info, payment/shipping info, line items
 // with totals, and an optional remark section. Shared by the full-page
 // OrderDetailPage and OrderDetailsModal so both stay visually identical.
-const OrderDetailsContent: React.FC<OrderDetailsContentProps> = ({ order, showHeading = true, showPermalink = true }) => {
+const OrderDetailsContent: React.FC<OrderDetailsContentProps> = ({ order, showHeading = true, showPermalink = true, customerGroup }) => {
     const tx = useTx();
     return (
         <>
@@ -53,6 +55,11 @@ const OrderDetailsContent: React.FC<OrderDetailsContentProps> = ({ order, showHe
                         </h3>
                         <div style={{ fontSize: '15px', display: 'flex', flexDirection: 'column', gap: '8px', wordBreak: 'break-word' }}>
                             <div style={{ fontWeight: 600 }}>{order.customer?.name}</div>
+                            {customerGroup && (
+                                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                    {tx('ui.orders.customerGroup.column', 'Customer group')}: <b style={{ color: 'var(--color-text-main)' }}>{customerGroup}</b>
+                                </div>
+                            )}
                             <div>{order.customer?.phone || tx('ui.components.orderDetails.noPhone', 'No phone')}</div>
                             <div>{order.customer?.address || tx('ui.components.orderDetails.noAddress', 'No address')}</div>
                             {order.customer?.city && <div>{order.customer?.city}</div>}

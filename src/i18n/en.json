@@ -433,7 +433,9 @@
     "allTime": "all-time",
     "openOrderList": "Open in order list",
     "showChart": "Show chart",
-    "hideChart": "Hide chart"
+    "hideChart": "Hide chart",
+    "customerGroups": "Customer groups",
+    "customerGroup": "Customer group"
   },
   "orders": {
     "title": "Orders Management",

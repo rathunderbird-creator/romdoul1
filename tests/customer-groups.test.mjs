@@ -67,6 +67,8 @@ check('removing an empty group → no op', m.freeMembersOfGroupOp(MAP, 'Wholesal
 
 // Orders column filter / picker
 check('filter: phones whose group contains the text', eq(m.phonesMatchingGroupText(MAP, 'vi').sort(), ['010111222', '012345678']) && eq(m.phonesMatchingGroupText(MAP, 'sell'), ['098765432']));
+check('filter: a whole group name matches that group only', eq(m.phonesMatchingGroupText({ '1': { group: 'VIP' }, '2': { group: 'VIP 2' } }, 'vip'), ['1'])
+    && eq(m.phonesMatchingGroupText({ '1': { group: 'VIP' }, '2': { group: 'VIP 2' } }, 'vi').sort(), ['1', '2']));
 check('filter: blank text → none', eq(m.phonesMatchingGroupText(MAP, '  '), []));
 check('picker keeps a removed group on screen', eq(m.customerGroupOptions(['VIP'], 'Old'), ['VIP', 'Old']) && eq(m.customerGroupOptions(['VIP'], 'VIP'), ['VIP']) && eq(m.customerGroupOptions(['VIP'], ''), ['VIP']));
 check('picker keeps a spelling that differs only in case (not shown as "No group")', eq(m.customerGroupOptions(['VIP'], 'vip'), ['VIP', 'vip']));
