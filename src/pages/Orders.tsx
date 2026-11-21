@@ -13,11 +13,12 @@ import { useToast } from '../context/ToastContext';
 import { getOperatorForPhone, formatPhoneDisplay } from '../utils/telecom';
 import { useHeader } from '../context/HeaderContext';
 import { useMobile } from '../hooks/useMobile';
-import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal, DepositModal, DeliveryFeeModal } from '../components';
+import { StatusBadge, ReceiptModal, DateRangePicker, MobileOrderCard, BulkEditModal, Modal, SettlePaymentModal, DepositModal, DeliveryFeeModal, GetFileModal } from '../components';
 import ShippingPointSelector from '../components/ShippingPointSelector';
 import StockMovementSummaryModal from '../components/StockMovementSummaryModal';
 import CheckStockModal from '../components/CheckStockModal';
 import PaymentStatusBadge from '../components/PaymentStatusBadge';
+import { getFileAsksAmount, saveGetFile } from '../utils/getFileSave';
 import DataImportModal from '../components/DataImportModal';
 
 const POSInterface = lazy(() => import('../components/POSInterface'));
@@ -1713,6 +1714,10 @@ const Orders: React.FC = () => {
             setDeliveryFeeTargetOrder(order);
         }
     };
+
+    // Get File asks for the amount the courier collects first (GetFileModal).
+    const [getFileTarget, setGetFileTarget] = useState<Sale | null>(null);
+    const moveToGetFile = (order: Sale) => { void saveGetFile(updateOrder, order); };
 
     // Mobile: the filter bar is replaced by a right-side slide-in drawer.
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
@@ -4202,10 +4207,9 @@ const Orders: React.FC = () => {
                                                 void openPaymentForm(order, 'Paid');
                                                 return;
                                             } else if (status === 'Get File') {
-                                                // Same as bulk edit: keep a deposit visible
-                                                // in Received when one was taken.
-                                                updates.amountReceived = order.depositAmount || 0;
-                                                updates.settleDate = null;
+                                                if (getFileAsksAmount(order)) setGetFileTarget(order);
+                                                else moveToGetFile(order);
+                                                return;
                                             } else {
                                                 updates.amountReceived = 0;
                                                 updates.settleDate = null;
@@ -4595,10 +4599,9 @@ const Orders: React.FC = () => {
                                                                                     void openPaymentForm(order, 'PdFee');
                                                                                     return;
                                                                                 } else if (newStatus === 'Get File') {
-                                                                                    // Same as bulk edit: keep a deposit visible
-                                                                                    // in Received when one was taken.
-                                                                                    updates.amountReceived = order.depositAmount || 0;
-                                                                                    updates.settleDate = null;
+                                                                                    if (getFileAsksAmount(order)) setGetFileTarget(order);
+                                                                                    else moveToGetFile(order);
+                                                                                    return;
                                                                                 } else if (newStatus === 'Cancel') {
                                                                                     updates.amountReceived = 0;
                                                                                     updates.settleDate = null;
@@ -5378,6 +5381,16 @@ const Orders: React.FC = () => {
                 isOpen={isPendingRemarkModalOpen}
                 onClose={() => { setIsPendingRemarkModalOpen(false); setPendingOrderToUpdate(null); }}
                 order={pendingOrderToUpdate}
+            />
+            {/* Get File: the amount the courier collects */}
+            <GetFileModal
+                order={getFileTarget}
+                onClose={() => setGetFileTarget(null)}
+                onConfirm={({ collectUsd, money }) => {
+                    const order = getFileTarget;
+                    setGetFileTarget(null);
+                    if (order) void saveGetFile(updateOrder, order, { collectUsd, money });
+                }}
             />
             {/* Settle Payment Modal */}
             {paymentMethodTargetOrder && (
