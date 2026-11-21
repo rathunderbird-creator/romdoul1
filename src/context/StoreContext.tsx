@@ -3466,6 +3466,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 delete updates.depositMethod;
             }
 
+            // Moving an order back to Unpaid clears its Pay By: no money was
+            // taken, so the method it showed no longer applies. Only on a real
+            // change — Pay By set on an order that is already Unpaid is kept.
+            if (updates.paymentStatus === 'Unpaid' && currentStatus !== 'Unpaid') {
+                updates.paymentMethod = '' as Sale['paymentMethod'];
+            }
+
         }
 
         // What this save does to the shipping status. Only a real payment change
