@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
 import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
-import { statusChangeRefusal, paymentChangeRefusal, paymentLockedForNonAdmin, settleDateChangeRefusal, orderStatusLabel, orderStatusesMatchingLabel } from '../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, paymentBadgeReadOnlyForNonAdmin, paymentBadgeDisabledForNonAdmin, isBookedGetFile, settleDateChangeRefusal, orderStatusLabel, orderStatusesMatchingLabel } from '../utils/orderStatusRules';
 import { bodyZoom } from '../utils/bodyZoom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone, Boxes } from 'lucide-react';
 import { useStore, normalizePhone } from '../context/StoreContext';
@@ -4192,6 +4192,10 @@ const Orders: React.FC = () => {
                                                 void openPaymentForm(order, 'PdFee');
                                                 return;
                                             }
+                                            if ((status === 'Paid' || status === 'Settled') && isBookedGetFile(order)) {
+                                                updateOrder(id, { paymentStatus: status, expectedPaymentStatus: order.paymentStatus });
+                                                return;
+                                            }
                                             if (status === 'Paid' || status === 'Settled') {
                                                 // Same flow as desktop: capture Pay By + settle date
                                                 // in the settle modal instead of silently defaulting.
@@ -4571,12 +4575,17 @@ const Orders: React.FC = () => {
                                                                         <PaymentStatusBadge
                                                                             status={claimOpen(order) ? order.paymentClaim!.status : (order.paymentStatus || 'Unpaid')}
                                                                             unconfirmed={claimOpen(order) ? claimTooltip(order.paymentClaim!) : undefined}
-                                                                            disabledOptions={claimOpen(order) ? claimDisabledOptions(order) : [...(isAdmin ? [] : ['Cancel']), ...salesmanDisabled]}
+                                                                            disabledOptions={claimOpen(order) ? claimDisabledOptions(order) : [...(isAdmin ? [] : paymentBadgeDisabledForNonAdmin(order)), ...salesmanDisabled]}
                                                                             bold={false}
                                                                             onChange={(newStatus) => {
                                                                                 if (rejectClaimIfUnpaid(order, newStatus)) return;
                                                                                 const updates: any = { paymentStatus: newStatus };
-                                                                                if (newStatus === 'Paid') {
+                                                                                if (newStatus === 'Paid' && isBookedGetFile(order)) {
+                                                                                    // Booked Get File: the receipt is already on the
+                                                                                    // books — just mark it Paid, no Settle form.
+                                                                                    updateOrder(order.id, { paymentStatus: 'Paid', expectedPaymentStatus: order.paymentStatus });
+                                                                                    return;
+                                                                                } else if (newStatus === 'Paid') {
                                                                                     void openPaymentForm(order, 'Paid');
                                                                                     return;
                                                                                 } else if (newStatus === 'Deposit') {
@@ -4604,7 +4613,7 @@ const Orders: React.FC = () => {
                                                                             // logged income when leaving Paid.
                                                                             readOnly={claimOpen(order)
                                                                                 ? !canConfirmPayments
-                                                                                : (!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || paymentLockedForNonAdmin(order))))}
+                                                                                : (!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || paymentBadgeReadOnlyForNonAdmin(order))))}
                                                                         />
                                                                     </td>
                                                                 );

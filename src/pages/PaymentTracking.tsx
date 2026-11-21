@@ -8,7 +8,7 @@ import type { Sale } from '../types';
 import { PaymentStatusBadge, DateRangePicker, StatusBadge, RecordReceiptModal, POSInterface, BulkEditModal, DepositModal, DeliveryFeeModal } from '../components';
 import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
-import { statusChangeRefusal, paymentChangeRefusal, paymentLockedForNonAdmin, settleDateChangeRefusal } from '../utils/orderStatusRules';
+import { statusChangeRefusal, paymentChangeRefusal, paymentBadgeReadOnlyForNonAdmin, paymentBadgeDisabledForNonAdmin, isBookedGetFile, settleDateChangeRefusal } from '../utils/orderStatusRules';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { getShippingCoColor, generateOrderCopyText } from '../utils/orderUtils';
 import { getOperatorForPhone } from '../utils/telecom';
@@ -1364,6 +1364,12 @@ const PaymentTracking: React.FC = () => {
                                     <PaymentStatusBadge
                                         status={order.paymentStatus || 'Paid'}
                                         onChange={(newStatus) => {
+                                            if (newStatus === 'Paid' && isBookedGetFile(order)) {
+                                                // Booked Get File: the receipt is already on the
+                                                // books — just mark it Paid, no Settle form.
+                                                updateOrder(order.id, { paymentStatus: 'Paid', expectedPaymentStatus: order.paymentStatus });
+                                                return;
+                                            }
                                             if (newStatus === 'Paid') {
                                                 setPaymentMethodTargetOrder(order);
                                                 setIsPaymentMethodModalOpen(true);
@@ -1382,7 +1388,8 @@ const PaymentTracking: React.FC = () => {
                                         // Admins bypass the lock so they can correct mistakes (e.g.
                                         // un-mark a wrong Paid); the store cleans up the logged
                                         // income when leaving Paid.
-                                        readOnly={!isAdmin && paymentLockedForNonAdmin(order)}
+                                        readOnly={!isAdmin && paymentBadgeReadOnlyForNonAdmin(order)}
+                                        disabledOptions={isAdmin ? [] : paymentBadgeDisabledForNonAdmin(order)}
                                     />
                                 </td>}
                                 {visibleColumns.includes('remark') && <td style={{ width: `var(--col-payment-remark-width, ${columnWidths.remark}px)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={order.remark || ''}>{order.remark || '-'}</td>}
