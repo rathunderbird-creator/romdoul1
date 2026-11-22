@@ -4239,7 +4239,11 @@ const Orders: React.FC = () => {
                                                 return;
                                             }
                                             if ((status === 'Paid' || status === 'Settled') && isCourierBooked(order)) {
-                                                updateOrder(id, { paymentStatus: status, expectedPaymentStatus: order.paymentStatus });
+                                                // A Collected order marked Paid: the courier's money
+                                                // arrived — the flag moves the Draft receipt's debit
+                                                // from 1210 to the bank. A booked Get File stays COD.
+                                                updateOrder(id, { paymentStatus: status, expectedPaymentStatus: order.paymentStatus,
+                                                    codCollected: defaultCodCollected(order, codPaymentMethods, status) });
                                                 return;
                                             }
                                             if (status === 'Paid' || status === 'Settled') {
@@ -4670,8 +4674,10 @@ const Orders: React.FC = () => {
                                                                                 const updates: any = { paymentStatus: newStatus };
                                                                                 if (newStatus === 'Paid' && isCourierBooked(order)) {
                                                                                     // Booked Get File / Collected: the receipt is already
-                                                                                    // on the books — just mark it Paid, no Settle form.
-                                                                                    updateOrder(order.id, { paymentStatus: 'Paid', expectedPaymentStatus: order.paymentStatus });
+                                                                                    // on the books — no Settle form. A Collected order's
+                                                                                    // flag goes false: its receipt moves 1210 -> bank.
+                                                                                    updateOrder(order.id, { paymentStatus: 'Paid', expectedPaymentStatus: order.paymentStatus,
+                                                                                        codCollected: defaultCodCollected(order, codPaymentMethods, 'Paid') });
                                                                                     return;
                                                                                 } else if (newStatus === 'Paid') {
                                                                                     void openPaymentForm(order, 'Paid');
