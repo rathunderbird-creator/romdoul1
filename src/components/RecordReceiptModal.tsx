@@ -8,7 +8,7 @@ import { dayKeyFromDate } from '../utils/dateRange';
 import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
-import { defaultCashBankAccountId, depositDefaultFor, isCodPaymentMethod } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, depositDefaultFor } from '../utils/cashBankAccounts';
 import { accountCurrency, formatMoneyLine, isKhrRow, type MoneyMeta, type MoneyRow } from '../utils/currency';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
@@ -32,11 +32,12 @@ interface RecordReceiptModalProps {
         receiptNotes?: string;
         // The riel received (not in finalizeMode: that amount is fixed).
         money?: MoneyMeta;
-        // The "អ្នកដឹកប្រមូល (COD)" box (undefined when not shown): the courier
-        // collected the money, so the receipt debits 1210 COD receivable.
+        // What this save says about "the courier collected the money": the
+        // caller's codDefault handed back (see SettlePaymentModal — the COD
+        // box is gone); undefined when the caller passed no codDefault.
         codCollected?: boolean;
     }) => void;
-    // Shows the COD box, starting at this value (see SettlePaymentModal).
+    // The codCollected value this save sends (see SettlePaymentModal).
     codDefault?: boolean;
     // Single order this receipt is being recorded against — fixes the
     // customer and drives the amount-received default/remaining-balance math.
@@ -74,7 +75,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     codDefault,
 }) => {
     const tx = useTx();
-    const { paymentMethods, khrExchangeRate, codPaymentMethods, salesSettings } = useStore();
+    const { paymentMethods, khrExchangeRate, salesSettings } = useStore();
     // Sales Setup's default deposit accounts (USD / riel).
     const defUsd = depositDefaultFor(salesSettings, 'USD');
     const defKhr = depositDefaultFor(salesSettings, 'KHR');
@@ -86,10 +87,8 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     const [receiptReference, setReceiptReference] = useState<string>('');
     const [receiptNotes, setReceiptNotes] = useState<string>('');
     const showCod = codDefault !== undefined;
-    const [codCollected, setCodCollected] = useState<boolean>(false);
-    // Until the user clicks the COD box, it follows the Method (see
-    // SettlePaymentModal).
-    const [codTouched, setCodTouched] = useState(false);
+    // No COD box any more (see SettlePaymentModal): the caller's default.
+    const codCollected = codDefault === true;
     const [accountsLoaded, setAccountsLoaded] = useState(false);
     const initializedRef = useRef(false);
 
@@ -125,16 +124,9 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
         field.reset({ amount: finalizeMode ? order.total : due, currency: 'USD' });
         setReceiptReference('');
         setReceiptNotes('');
-        setCodCollected(codDefault === true);
-        setCodTouched(false);
         // field.reset follows the shop rate only; the rest are this open's inputs.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, initialMethod, initialDate, paymentMethods, finalizeMode, order.total, order.depositAmount, order.amountReceived, codDefault]);
-
-    useEffect(() => {
-        if (!isOpen || !showCod || codTouched) return;
-        setCodCollected(codDefault === true || isCodPaymentMethod(codPaymentMethods, selectedMethod));
-    }, [isOpen, showCod, codTouched, codDefault, codPaymentMethods, selectedMethod]);
+    }, [isOpen, initialMethod, initialDate, paymentMethods, finalizeMode, order.total, order.depositAmount, order.amountReceived]);
 
     // Default "Deposited into" until the user picks one: the preferred id, then
     // a name match on the hint (a cash method picks the cash account), then Bank.
@@ -313,19 +305,6 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                 {!finalizeMode && (
                     <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                         {tx('ui.components.receiptRecord.remainingBalance', 'Remaining balance:')} ${remainingBalance.toFixed(2)}
-                    </div>
-                )}
-                {showCod && (
-                    <div data-receipt-cod>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={codCollected} onChange={e => { setCodTouched(true); setCodCollected(e.target.checked); }} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
-                            {tx('ui.components.settle.codCollected', 'អ្នកដឹកប្រមូល (COD)')}
-                        </label>
-                        <p style={{ margin: '6px 0 0 24px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                            {codCollected
-                                ? tx('ui.components.settle.codOnHint', "The courier collected this money and still holds it. It is booked to COD receivable until the courier's remittance is recorded on Accounting › COD remittances.")
-                                : tx('ui.components.settle.codOffHint', "The customer paid the shop directly (ABA transfer, cash): the money is in the account above now.")}
-                        </p>
                     </div>
                 )}
                 <div>

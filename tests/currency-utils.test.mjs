@@ -23,39 +23,24 @@ rmSync(bundlePath);
 let pass = 0, fail = 0;
 const check = (l, c, extra) => { c ? pass++ : fail++; console.log(c ? 'PASS' : 'FAIL', l, c || extra === undefined ? '' : JSON.stringify(extra)); };
 
-// ── defaultCodCollected (the COD box's starting value) ──
-// Every order read from the database carries codCollected true/false
-// (mapper.ts: s.cod_collected === true), never undefined, and the column
-// defaults to false: a stored false on an order whose money is not yet
-// booked is no decision, so the shipping state decides.
+// ── defaultCodCollected (the codCollected value every Paid save sends) ──
+// The COD box is gone: a Paid save books the picked cash/bank account, and
+// courier-held money is Pay Status Collected. True only for a stored true
+// or an order at Collected, so a Paid save on those can never re-point
+// their booked COD receipt to a bank account.
 const cod = m.defaultCodCollected;
 const ship = (status, company = 'J&T') => ({ company, status });
-check('cod: unpaid Delivered courier order, stored false → on', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Delivered') }) === true);
-check('cod: unpaid Shipped courier order, stored false → on', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Shipped') }) === true);
-check('cod: Get File, stored false → on', cod({ codCollected: false, paymentStatus: 'Get File', shipping: ship('Confirmed') }) === true);
-check('cod: Get File without a courier named → on (the file comes from the courier)', cod({ codCollected: false, paymentStatus: 'Get File', shipping: ship('Confirmed', '') }) === true);
-check('cod: Get File with no shipping at all → on', cod({ codCollected: false, paymentStatus: 'Get File', shipping: null }) === true);
-check('cod: no courier, Unpaid → off', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Delivered', '') }) === false);
-check('cod: unpaid Confirmed (not out yet) → off', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Confirmed') }) === false);
-check('cod: unpaid Pending → off', cod({ codCollected: false, paymentStatus: 'Pending', shipping: ship('Pending') }) === false);
-check('cod: Delivered but no courier → off', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Delivered', null) }) === false);
-check('cod: no shipping at all → off', cod({ codCollected: false, paymentStatus: 'Unpaid' }) === false);
-check('cod: Paid with stored false → stays off (decided with the receipt)', cod({ codCollected: false, paymentStatus: 'Paid', shipping: ship('Delivered') }) === false);
-check('cod: Paid with stored true → on', cod({ codCollected: true, paymentStatus: 'Paid', shipping: ship('Confirmed') }) === true);
-check('cod: unpaid with stored true → on (someone ticked it)', cod({ codCollected: true, paymentStatus: 'Unpaid', shipping: ship('Confirmed') }) === true);
-check('cod: flag undefined, Delivered courier → on', cod({ paymentStatus: 'Unpaid', shipping: ship('Delivered') }) === true);
-check('cod: flag null, Paid, Delivered courier → on (nothing decided)', cod({ codCollected: null, paymentStatus: 'Paid', shipping: ship('Delivered') }) === true);
-check('cod: Deposit (partial) Shipped courier → on', cod({ codCollected: false, paymentStatus: 'Deposit', shipping: ship('Shipped') }) === true);
-check('cod: Settled with stored false → stays off (same paid set as set_order_payment)', cod({ codCollected: false, paymentStatus: 'Settled', shipping: ship('Delivered') }) === false);
-check('cod: Paid/Settled with stored false → stays off', cod({ codCollected: false, paymentStatus: 'Paid/Settled', shipping: ship('Delivered') }) === false);
-check('cod: Settled with stored true → on', cod({ codCollected: true, paymentStatus: 'Settled', shipping: ship('Confirmed') }) === true);
-check('cod: PdFee Delivered courier, stored false → on (fee only, money not booked)', cod({ codCollected: false, paymentStatus: 'PdFee', shipping: ship('Delivered') }) === true);
-check('cod: unpaid Returned courier order → off', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Returned') }) === false);
-check('cod: unpaid Drafted with a courier → off', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Drafted') }) === false);
-check('cod: Get File beats a Returned shipping status', cod({ codCollected: false, paymentStatus: 'Get File', shipping: ship('Returned') }) === true);
-check('cod: no paymentStatus, Shipped courier → on', cod({ codCollected: false, shipping: ship('Shipped') }) === true);
-check('cod: Paid, stored false, no shipping → off', cod({ codCollected: false, paymentStatus: 'Paid' }) === false);
-check('cod: stored true, no courier → on (someone ticked it)', cod({ codCollected: true, paymentStatus: 'Unpaid', shipping: ship('Delivered', '') }) === true);
+check('cod: stored true → on, whatever the state', cod({ codCollected: true, paymentStatus: 'Unpaid', shipping: ship('Confirmed') }) === true && cod({ codCollected: true, paymentStatus: 'Paid', shipping: ship('Confirmed') }) === true);
+check('cod: unbooked Get File → off (only Collected is courier money now)', cod({ codCollected: false, paymentStatus: 'Get File', shipping: null }) === false);
+check('cod: booked Get File → on through its stored flag', cod({ codCollected: true, paymentStatus: 'Get File', shipping: null }) === true);
+check('cod: Collected → on', cod({ codCollected: false, paymentStatus: 'Collected', shipping: ship('Delivered') }) === true);
+check('cod: unpaid Delivered courier order → off (courier money is Collected now)', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Delivered') }) === false);
+check('cod: unpaid Shipped courier order → off', cod({ codCollected: false, paymentStatus: 'Unpaid', shipping: ship('Shipped') }) === false);
+check('cod: a COD payment method no longer defaults it on', cod({ codCollected: false, paymentStatus: 'Unpaid', paymentMethod: 'COD', shipping: ship('Shipped') }, ['COD']) === false);
+check('cod: Paid with stored false → off', cod({ codCollected: false, paymentStatus: 'Paid', shipping: ship('Delivered') }) === false);
+check('cod: flag undefined, Delivered courier → off', cod({ paymentStatus: 'Unpaid', shipping: ship('Delivered') }) === false);
+check('cod: Deposit Shipped courier → off', cod({ codCollected: false, paymentStatus: 'Deposit', shipping: ship('Shipped') }) === false);
+check('cod: PdFee Delivered courier → off', cod({ codCollected: false, paymentStatus: 'PdFee', shipping: ship('Delivered') }) === false);
 
 // ── getFileBooksCod (Sales Setup: couriers whose Get File books the COD receipt) ──
 const gf = m.getFileBooksCod;
