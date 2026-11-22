@@ -298,13 +298,11 @@ const RowDrawer: React.FC<RowDrawerProps> = ({ order, isOpen, onClose, onSave, o
             // as classic Orders' DepositModal.
             const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
             const entering = (s: PayStatus) => paymentStatus === s && baseline.paymentStatus !== s;
-            // codCollected: the same default the Settle form's "អ្នកដឹកប្រមូល
-            // (COD)" box starts at — on for an order a courier has out / has
-            // delivered or one waiting for its payment proof (the receipt then
-            // debits 1210 COD receivable); this drawer has no box to flip it,
-            // the Orders page's Settle form does.
+            // codCollected: a stored flag keeps the receipt on 1210; a
+            // Collected order marked Paid moves its Draft receipt's debit to
+            // the bank (the courier's money arrived) — defaultCodCollected.
             const paidExtras = entering('Paid')
-                ? { amountReceived: order.total, settleDate: settleDateInput || nowIso, postToLedger: true, codCollected: defaultCodCollected({ ...order, paymentMethod: (paymentMethod || order.paymentMethod) as Order['paymentMethod'] }, codPaymentMethods) }
+                ? { amountReceived: order.total, settleDate: settleDateInput || nowIso, postToLedger: true, codCollected: defaultCodCollected({ ...order, paymentMethod: (paymentMethod || order.paymentMethod) as Order['paymentMethod'] }, codPaymentMethods, 'Paid') }
                 : {};
             const depositExtras = entering('Deposit') && amountReceived > 0
                 ? {

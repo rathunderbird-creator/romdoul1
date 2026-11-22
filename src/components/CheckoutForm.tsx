@@ -741,8 +741,12 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                 amountReceived: formData.paymentAfterDelivery ? 0 : amountReceivedVal,
                 settleDate: formData.settleDate,
                 paymentStatus: effectivePaymentStatus,
-                // Only a settlement is ever COD (deposits never are).
-                ...(effectivePaymentStatus === 'Paid' && !formData.paymentAfterDelivery ? { codCollected: formData.codCollected } : {}),
+                // Only a settlement is ever COD (deposits never are). A
+                // Collected order saved as Paid clears to the bank: the
+                // courier's money arrived (see defaultCodCollected).
+                ...(effectivePaymentStatus === 'Paid' && !formData.paymentAfterDelivery
+                    ? { codCollected: orderToEdit?.paymentStatus === 'Collected' ? false : formData.codCollected }
+                    : {}),
                 ...(isPartialDeposit ? {
                     depositAmount: amountReceivedVal,
                     // Editing an existing deposit keeps its original date/method.

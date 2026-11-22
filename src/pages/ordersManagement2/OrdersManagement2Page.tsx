@@ -328,12 +328,16 @@ const OrdersManagement2Page: React.FC = () => {
                         // classic Orders' bulk edit passes) — without it the
                         // orders were marked Paid with no ledger entry (OM2-2).
                         individualUpdates.postToLedger = true;
-                        // Courier-collected money (the Settle box's default)
-                        // debits 1210 COD receivable, not the bank.
-                        individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods);
+                        // A Collected order marked Paid: the courier's money
+                        // arrived, so the Draft receipt's debit moves from
+                        // 1210 to the bank; otherwise only a stored flag is COD.
+                        individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods, value);
                     } else if (value === 'Get File' || value === 'Collected') {
                         individualUpdates.amountReceived = order.depositAmount || 0;
                         individualUpdates.settleDate = null;
+                        // Paid taken back to Collected: the receipt's debit
+                        // moves back to 1210 (the courier holds it again).
+                        if (value === 'Collected') individualUpdates.codCollected = true;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
                         individualUpdates.amountReceived = 0;
                         individualUpdates.settleDate = null;

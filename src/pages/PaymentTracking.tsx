@@ -293,14 +293,18 @@ const PaymentTracking: React.FC = () => {
                         individualUpdates.amountReceived = order.total;
                         individualUpdates.settleDate = now;
                         if (payByInput) individualUpdates.paymentMethod = payByInput as any;
-                        // Courier-collected money (the Settle box's default)
-                        // debits 1210 COD receivable, not the bank.
-                        individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods);
+                        // A Collected order marked Paid: the courier's money
+                        // arrived, so the Draft receipt's debit moves from
+                        // 1210 to the bank; otherwise only a stored flag is COD.
+                        individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods, value);
                     } else if (value === 'Get File' || value === 'Collected') {
                         // File collected, money not settled yet — no settle date. Keep a
                         // deposit visible in Received when one was taken.
                         individualUpdates.amountReceived = order.depositAmount || 0;
                         individualUpdates.settleDate = null as any;
+                        // Paid taken back to Collected: the courier holds the
+                        // money again, so the receipt's debit moves back to 1210.
+                        if (value === 'Collected') individualUpdates.codCollected = true;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
                         individualUpdates.amountReceived = 0;
                         individualUpdates.settleDate = null as any;
@@ -795,9 +799,9 @@ const PaymentTracking: React.FC = () => {
             settleDate: formData.settleDate,
             paymentStatus: formData.paymentStatus,
             expectedPaymentStatus: selectedOrder.paymentStatus,
-            // A Paid save here has no COD box: the Settle box's default
-            // decides whether the receipt debits 1210 COD receivable.
-            ...(formData.paymentStatus === 'Paid' ? { codCollected: defaultCodCollected(selectedOrder, codPaymentMethods) } : {}),
+            // A Paid save has no COD box: a stored flag keeps 1210, and a
+            // Collected order marked Paid moves its receipt to the bank.
+            ...(formData.paymentStatus === 'Paid' ? { codCollected: defaultCodCollected(selectedOrder, codPaymentMethods, 'Paid') } : {}),
             ...(formData.paymentStatus === 'Paid' && selectedOrder.shipping?.status !== 'Delivered' ? { shipping: { ...(selectedOrder.shipping || {}), company: selectedOrder.shipping?.company || '', trackingNumber: selectedOrder.shipping?.trackingNumber || '', cost: selectedOrder.shipping?.cost || 0, status: 'Shipped' as 'Shipped' } } : {})
         });
         showToast(tx('payTrack.paymentUpdated', 'Payment details updated'), 'success');
@@ -1626,7 +1630,7 @@ const PaymentTracking: React.FC = () => {
                     order={paymentMethodTargetOrder}
                     initialMethod={paymentMethodTargetOrder.paymentMethod || undefined}
                     initialDate={paymentMethodTargetOrder.settleDate || undefined}
-                    codDefault={defaultCodCollected(paymentMethodTargetOrder, codPaymentMethods)}
+                    codDefault={defaultCodCollected(paymentMethodTargetOrder, codPaymentMethods, 'Paid')}
                     onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, amountReceived, receiptReference, receiptNotes, money, codCollected }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
