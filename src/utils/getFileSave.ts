@@ -63,7 +63,7 @@ export function getFileMoneyUpdates(
 export async function saveGetFile(
     updateOrder: UpdateOrder,
     order: Sale,
-    amount?: { collectUsd: number; money: MoneyMeta; method?: string },
+    amount?: { collectUsd: number; money: MoneyMeta; method?: string; accountId?: string; accountName?: string },
     status: CourierStatus = 'Get File',
 ): Promise<boolean> {
     if (amount) {
@@ -88,6 +88,14 @@ export async function saveGetFile(
         // row's Method and the order's Pay By. Unset says nothing, so a
         // method already on the order stands.
         ...(amount?.method ? { paymentMethod: amount.method as Sale['paymentMethod'] } : {}),
+        // Collected into Account: stored on the order (deposit_account_id).
+        // The receipt booked NOW still debits 1210 (the courier holds the
+        // money); the stored account is where the Collected→Paid flip moves
+        // the debit when the money arrives. Unset says nothing.
+        ...(amount?.accountId ? {
+            depositAccountId: amount.accountId,
+            ...(amount.accountName ? { depositAccountName: amount.accountName } : {}),
+        } : {}),
     },
         // An amount typed in riel rides along as the booked money's riel
         // details: updateOrder tags the income row this save books (and its

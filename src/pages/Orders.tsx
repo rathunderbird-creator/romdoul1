@@ -5480,10 +5480,10 @@ const Orders: React.FC = () => {
                 order={getFileTarget?.order ?? null}
                 status={getFileTarget?.status}
                 onClose={() => setGetFileTarget(null)}
-                onConfirm={({ collectUsd, money, method }) => {
+                onConfirm={({ collectUsd, money, method, accountId, accountName }) => {
                     const target = getFileTarget;
                     setGetFileTarget(null);
-                    if (target) void saveGetFile(updateOrder, target.order, { collectUsd, money, method }, target.status);
+                    if (target) void saveGetFile(updateOrder, target.order, { collectUsd, money, method, accountId, accountName }, target.status);
                 }}
             />
             {/* Settle Payment Modal */}

@@ -4,7 +4,7 @@ import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { codReceiptDebitId, codTicksFor, depositDefaultFor, defaultCodPaymentMethods, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
-import { isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
+import { isKhrAccountName, isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
 import { tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 import { insertJournalLines } from '../utils/journalEntryLines';
 import { callDbFunction, noticesOf, rpcWithSession, resetGuardedSignatureCache } from '../utils/dbFunctions';
@@ -3480,8 +3480,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         delete updates.expectedPaymentStatus;
         const expectedShippingStatus = updates.expectedShippingStatus;
         delete updates.expectedShippingStatus;
-        type PaymentRow = { payment_status: string | null; deposit_amount: number | null; amount_received: number | null; settle_date: string | null; payment_method: string | null };
-        const paymentColumns = 'payment_status, deposit_amount, amount_received, settle_date, payment_method, total';
+        // deposit_account_id is safe to read here: every payment save first
+        // checks paymentFunctionsReady(), and the same migration adds the
+        // column (custom_khr_amount is NOT listed — older stores lack it,
+        // and a missing column fails the whole read, refusing the save).
+        type PaymentRow = { payment_status: string | null; deposit_amount: number | null; amount_received: number | null; settle_date: string | null; payment_method: string | null; deposit_account_id: string | null };
+        const paymentColumns = 'payment_status, deposit_amount, amount_received, settle_date, payment_method, total, deposit_account_id';
         const toLocal = (row: PaymentRow): Partial<Sale> => ({
             paymentStatus: row.payment_status as Sale['paymentStatus'],
             depositAmount: Number(row.deposit_amount) || 0,
@@ -3715,6 +3719,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // second stale screen can't quietly lower the deposit under the
             // amounts already booked.
             if (updates.depositAmount !== undefined && paymentRow) pUpdates.expected_deposit_amount = Number(paymentRow.deposit_amount) || 0;
+            // A Collected order flipped to Paid/Settled: the Draft receipt's
+            // debit moves from 1210 to the account picked in the Collected
+            // popup (stored on the order as deposit_account_id) — sent along
+            // so op_repoint_receipt_debit prefers it over the Pay By guess.
+            // Only when this save names no account itself (the Settle form
+            // does), and only an active cash/bank account whose currency
+            // matches the receipt's (a riel deposit's account, stored before
+            // the popup existed, must never take a dollar receipt).
+            if (pUpdates.cod_collected === false && !pUpdates.deposit_account_id
+                && paymentRow?.payment_status === 'Collected' && paymentRow.deposit_account_id
+                && ['Paid', 'Settled', 'Paid/Settled'].includes((pUpdates.payment_status as string) || '')) {
+                try {
+                    const { data: acc } = await supabase.from('chart_of_accounts')
+                        .select('id, account_name, account_type, is_active')
+                        .eq('id', paymentRow.deposit_account_id).maybeSingle();
+                    const rielReceipt = Number(existingOrder?.customKhrAmount) > 0;
+                    if (acc && acc.is_active !== false && isCashBankAccount(acc)
+                        && isKhrAccountName(acc.account_name) === rielReceipt) {
+                        pUpdates.deposit_account_id = paymentRow.deposit_account_id;
+                    }
+                } catch { /* the database falls back to the Pay By pick */ }
+            }
             // Every save that books money names its cash/bank account. With
             // none, the database picks one by name (wp_cash_bank_account); the
             // same pick is made here instead, in the payment's currency, so a
