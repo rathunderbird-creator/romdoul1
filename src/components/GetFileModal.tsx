@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, FileCheck2, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import type { Sale } from '../types';
@@ -13,8 +13,10 @@ interface GetFileModalProps {
     status?: 'Get File' | 'Collected';
     onClose: () => void;
     // collectUsd: what the courier collects (total − deposit), in USD;
-    // money carries the riel amount and rate when it was typed in riel.
-    onConfirm: (data: { collectUsd: number; money: MoneyMeta }) => void;
+    // money carries the riel amount and rate when it was typed in riel;
+    // method (Collected only): the order's Pay By — how the courier will
+    // remit (Cash, Bank, …). Absent when left unset.
+    onConfirm: (data: { collectUsd: number; money: MoneyMeta; method?: string }) => void;
 }
 
 // Moving an order to Get File: the courier collects the order's money, so
@@ -23,9 +25,12 @@ interface GetFileModalProps {
 // A changed amount changes the order's total, the difference going into the
 // discount — the same rule as the Settle form's Received Amount.
 const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File', onClose, onConfirm }) => {
-    const { khrExchangeRate } = useStore();
+    const { khrExchangeRate, paymentMethods } = useStore();
     const tx = useTx();
     const field = useMoneyField({ shopRate: khrExchangeRate });
+    // Collected only: the order's Pay By (how the courier will remit).
+    // '' = left unset — the save then says nothing about the method.
+    const [method, setMethod] = useState('');
 
     useEffect(() => {
         if (!order) return;
@@ -34,6 +39,7 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
         field.reset(order.customKhrAmount
             ? { amount: Math.round(Number(order.customKhrAmount)), currency: 'KHR' }
             : { amount: due.toFixed(2), currency: 'USD' });
+        setMethod(order.paymentMethod && paymentMethods.includes(order.paymentMethod) ? order.paymentMethod : '');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [order]);
 
@@ -74,6 +80,15 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
                         labelStyle={labelStyle}
                         inputStyle={inputStyle}
                     />
+                    {status === 'Collected' && (
+                        <div>
+                            <label style={labelStyle}>{tx('ui.components.getFile.method', 'Method (Cash/Bank)')}</label>
+                            <select value={method} onChange={e => setMethod(e.target.value)} style={inputStyle}>
+                                <option value="">{tx('ui.components.getFile.methodNone', 'Not set — choose at remittance')}</option>
+                                {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                        </div>
+                    )}
                     <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '8px 10px' }}>
                         {tx('ui.components.getFile.note', 'A different amount changes the order total (the difference goes into the discount). Cash or bank, riel or dollar, is chosen when the courier remits, in Accounting › COD Remittances.')}
                     </div>
@@ -86,7 +101,7 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
                         disabled={!valid}
                         onClick={() => {
                             if (!field.confirmIfSuspicious()) return;
-                            onConfirm({ collectUsd: Math.round(amt * 100) / 100, money: field.meta });
+                            onConfirm({ collectUsd: Math.round(amt * 100) / 100, money: field.meta, ...(status === 'Collected' && method ? { method } : {}) });
                         }}
                         style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, background: '#1D4ED8', opacity: valid ? 1 : 0.5, cursor: valid ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}
                     >

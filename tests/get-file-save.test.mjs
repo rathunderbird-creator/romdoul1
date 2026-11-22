@@ -59,6 +59,15 @@ check('Get File no ask from Collected', !m.getFileAsksAmount({ paymentStatus: 'C
 calls.length = 0;
 await m.saveGetFile(upd, order, { collectUsd: 18, money: usd(18) }, 'Collected');
 check('Collected: money first, then Collected', calls.length === 2 && calls[0].updates.total === 23 && calls[1].updates.paymentStatus === 'Collected', calls);
+calls.length = 0;
+await m.saveGetFile(upd, order, { collectUsd: 20, money: usd(20), method: 'Bank' }, 'Collected');
+check('Collected with a Method: saved as the order\'s Pay By', calls.at(-1).updates.paymentStatus === 'Collected' && calls.at(-1).updates.paymentMethod === 'Bank', calls);
+calls.length = 0;
+await m.saveGetFile(upd, order, { collectUsd: 20, money: usd(20) }, 'Collected');
+check('Collected, Method left unset: the save says nothing about it', calls.at(-1).updates.paymentStatus === 'Collected' && !('paymentMethod' in calls.at(-1).updates), calls);
+calls.length = 0;
+await m.saveGetFile(upd, order, { collectUsd: 20, money: usd(20) });
+check('Get File saves no Method', calls[0].updates.paymentStatus === 'Get File' && !('paymentMethod' in calls[0].updates), calls[0]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

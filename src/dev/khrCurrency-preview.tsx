@@ -28,6 +28,7 @@ import SettlePaymentModal from '../components/SettlePaymentModal';
 import RecordReceiptModal from '../components/RecordReceiptModal';
 import RecordCustomerPaymentModal from '../components/RecordCustomerPaymentModal';
 import RecordSupplierPaymentModal from '../components/RecordSupplierPaymentModal';
+import GetFileModal from '../components/GetFileModal';
 import MoneyInput from '../components/MoneyInput';
 import GeneralSettings from '../pages/settings/GeneralSettings';
 import { useMoneyField } from '../hooks/useMoneyField';
@@ -205,6 +206,9 @@ const Forms = () => {
             finalizeRow={{ amount: 20, currency: 'KHR', original_amount: 82000, exchange_rate: 4100 }} depositAccountHint="Cash" onConfirm={d => show('finalize', d)} /> : null;
         case 'wholesale': return open ? <RecordCustomerPaymentModal isOpen onClose={close} remainingBalance={120} customerName="Dev Wholesale" onConfirm={d => show('wholesale', d)} /> : null;
         case 'supplier': return open ? <RecordSupplierPaymentModal isOpen onClose={close} remainingBalance={250} supplierName="Dev Supplier" onConfirm={d => show('supplier', d)} /> : null;
+        // ?form=getfile (&status=Get File for the other title): the courier
+        // amount popup; Collected also asks the Pay By method.
+        case 'getfile': return <GetFileModal order={open ? order : null} status={params.get('status') === 'Get File' ? 'Get File' : 'Collected'} onClose={close} onConfirm={d => show('getfile', d)} />;
         case 'settings': return <GeneralSettings />;
         case 'money': return <FreeMoney />;
         case 'checkout': return <Checkout />;
