@@ -574,4 +574,34 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
     check('M9 order names the courier the page falls back to', (await one(`SELECT shipping_company FROM sales WHERE id = 'M9'`)).shipping_company === 'VET');
 }
 
+// ---------------------------------------------------------------------------
+// 13. Collected into Account (the Collected popup's account pick): the
+//     Collected save stores deposit_account_id while the receipt still
+//     debits 1210, and the Collected -> Paid flip (cod_collected false +
+//     deposit_account_id, as the app sends it) re-points the debit to
+//     EXACTLY that account — p_account_id wins over the Pay By guess.
+// ---------------------------------------------------------------------------
+{
+    await q(`INSERT INTO chart_of_accounts (account_code, account_name, account_type)
+             SELECT '1000', 'Cash on Hand', 'Asset' WHERE NOT EXISTS (SELECT 1 FROM chart_of_accounts WHERE account_name ~* 'cash on hand')`);
+    const cashId = (await one(`SELECT id FROM chart_of_accounts WHERE account_name ~* 'cash on hand' AND account_type = 'Asset' ORDER BY account_code LIMIT 1`)).id;
+    await order('CA1', 17);
+    const r = await pay('CA1', 'Unpaid', { payment_status: 'Collected', amount_received: 0, settle_date: null,
+        payment_method: 'Bank', deposit_account_id: cashId });
+    const ref = 'TX-' + (await tx('CA1')).id;
+    const e = await entry(ref);
+    check('CA1 Collected with an account picked: the receipt still debits 1210',
+        r.applied === true && near(e.cod_dr, 17) && near(e.bank_dr, 0) && near(e.rev_cr, 17), e);
+    check('CA1: the pick is stored on the order',
+        (await one(`SELECT deposit_account_id FROM sales WHERE id = 'CA1'`)).deposit_account_id === cashId);
+    // The badge flip as the app sends it: status + flag + the stored pick.
+    await pay('CA1', 'Collected', { payment_status: 'Paid', cod_collected: false, deposit_account_id: cashId });
+    const dr = await one(`SELECT l.account_id FROM journal_entry_lines l JOIN journal_entries je ON je.id = l.journal_entry_id
+        WHERE je.reference_id = $1 AND l.debit > 0
+          AND l.account_id <> wp_internal.wp_account('5000', 'Expense', 'cost of goods|cogs')`, [ref]);
+    check('CA1 Collected -> Paid with the pick: Dr exactly Cash on Hand, though Pay By says Bank',
+        dr.account_id === cashId && near((await entry(ref)).cod_dr, 0), dr);
+    await checkBalanced('CA1');
+}
+
 done();

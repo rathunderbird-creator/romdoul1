@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, FileCheck2, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import type { Sale } from '../types';
 import MoneyInput from './MoneyInput';
+import CashBankOptions from './CashBankOptions';
 import { useMoneyField } from '../hooks/useMoneyField';
+import { useAccounting } from '../hooks/useAccounting';
 import { type MoneyMeta } from '../utils/currency';
+import { defaultCashBankAccountId, depositDefaultFor } from '../utils/cashBankAccounts';
 import { useTx } from './useTx';
 
 interface GetFileModalProps {
@@ -16,7 +19,10 @@ interface GetFileModalProps {
     // money carries the riel amount and rate when it was typed in riel;
     // method (Collected only): the order's Pay By — how the courier will
     // remit (Cash, Bank, …). Absent when left unset.
-    onConfirm: (data: { collectUsd: number; money: MoneyMeta; method?: string }) => void;
+    // accountId/accountName (Collected only): the cash/bank account the
+    // money lands in when it arrives — stored on the order, used when the
+    // order is later marked Paid. Absent when left unset.
+    onConfirm: (data: { collectUsd: number; money: MoneyMeta; method?: string; accountId?: string; accountName?: string }) => void;
 }
 
 // Moving an order to Get File: the courier collects the order's money, so
@@ -25,12 +31,27 @@ interface GetFileModalProps {
 // A changed amount changes the order's total, the difference going into the
 // discount — the same rule as the Settle form's Received Amount.
 const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File', onClose, onConfirm }) => {
-    const { khrExchangeRate, paymentMethods } = useStore();
+    const { khrExchangeRate, paymentMethods, salesSettings } = useStore();
     const tx = useTx();
     const field = useMoneyField({ shopRate: khrExchangeRate });
     // Collected only: the order's Pay By (how the courier will remit).
     // '' = left unset — the save then says nothing about the method.
     const [method, setMethod] = useState('');
+    // Collected only: the cash/bank account the money will land in when it
+    // arrives (Collected into Account). Prefilled from the Method and Sales
+    // Setup's defaults; '' = left unset — the Pay By decides at Paid time.
+    const [accountId, setAccountId] = useState('');
+    // A pick the user made stands; only the automatic prefill may move.
+    const [accountPicked, setAccountPicked] = useState(false);
+    const { accounts, fetchAccounts } = useAccounting();
+    const defUsd = depositDefaultFor(salesSettings, 'USD');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR');
+    // Same pool as the Settle form's "Deposited into": active cash/bank
+    // asset accounts, never the petty-cash float.
+    const paymentAccounts = useMemo(
+        () => accounts.filter(a => a.is_active && a.account_type === 'Asset' && /cash|bank/i.test(a.account_name) && !/petty/i.test(a.account_name)),
+        [accounts]
+    );
 
     useEffect(() => {
         if (!order) return;
@@ -40,8 +61,27 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
             ? { amount: Math.round(Number(order.customKhrAmount)), currency: 'KHR' }
             : { amount: due.toFixed(2), currency: 'USD' });
         setMethod(order.paymentMethod && paymentMethods.includes(order.paymentMethod) ? order.paymentMethod : '');
+        setAccountId('');
+        setAccountPicked(false);
+        if (status === 'Collected') void fetchAccounts();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [order]);
+
+    // Prefill the account from the typed currency, the Method and the
+    // defaults once the accounts arrive — and follow a Method or currency
+    // change while the user hasn't picked one themselves (riel typed moves
+    // the prefill to a riel account, exactly like the Settle form).
+    useEffect(() => {
+        if (!order || status !== 'Collected' || accountPicked || paymentAccounts.length === 0) return;
+        const cur = field.currency === 'KHR' ? 'KHR' : 'USD';
+        setAccountId(defaultCashBankAccountId(paymentAccounts, {
+            currency: cur,
+            preferredId: order.depositAccountId,
+            defaultId: cur === 'KHR' ? defKhr : defUsd,
+            method,
+        }) || '');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [order, status, accountPicked, paymentAccounts, field.currency, method]);
 
     if (!order) return null;
 
@@ -91,6 +131,15 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
                             </select>
                         </div>
                     )}
+                    {status === 'Collected' && paymentAccounts.length > 0 && (
+                        <div>
+                            <label style={labelStyle}>{tx('ui.components.getFile.account', 'Collected into Account')}</label>
+                            <select value={accountId} onChange={e => { setAccountId(e.target.value); setAccountPicked(true); }} style={inputStyle}>
+                                <option value="">{tx('ui.components.getFile.accountNone', 'Not set — picked when the money arrives')}</option>
+                                <CashBankOptions accounts={paymentAccounts} />
+                            </select>
+                        </div>
+                    )}
                     <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '8px 10px' }}>
                         {tx('ui.components.getFile.note', 'A different amount changes the order total (the difference goes into the discount). Cash or bank, riel or dollar, is chosen when the courier remits, in Accounting › COD Remittances.')}
                     </div>
@@ -103,7 +152,13 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
                         disabled={!valid}
                         onClick={() => {
                             if (!field.confirmIfSuspicious()) return;
-                            onConfirm({ collectUsd: Math.round(amt * 100) / 100, money: field.meta, ...(status === 'Collected' && method ? { method } : {}) });
+                            onConfirm({
+                                collectUsd: Math.round(amt * 100) / 100, money: field.meta,
+                                ...(status === 'Collected' && method ? { method } : {}),
+                                ...(status === 'Collected' && accountId
+                                    ? { accountId, accountName: paymentAccounts.find(a => a.id === accountId)?.account_name }
+                                    : {}),
+                            });
                         }}
                         style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, background: '#1D4ED8', opacity: valid ? 1 : 0.5, cursor: valid ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}
                     >

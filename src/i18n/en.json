@@ -5267,6 +5267,8 @@
       },
       "getFile": {
         "amount": "Amount the courier collects",
+        "account": "Collected into Account",
+        "accountNone": "Not set — picked when the money arrives",
         "deposit": "Deposit",
         "method": "Method (Cash/Bank)",
         "methodNone": "Not set — choose at remittance",
