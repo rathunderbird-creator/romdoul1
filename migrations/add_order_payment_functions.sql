@@ -520,6 +520,11 @@ BEGIN
      WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id
      ORDER BY created_at DESC, id DESC LIMIT 1;
     IF v_tx IS NULL THEN RETURN NULL; END IF;
+    IF (SELECT count(*) FROM transactions
+         WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id) > 1 THEN
+        -- A split settlement's two receipts stay where they were booked.
+        RETURN 'This order was settled as a split payment: its receipts stay on their accounts — un-pay and settle again to change the COD side.';
+    END IF;
     SELECT id, COALESCE(status, 'Posted') AS status, entry_number INTO v_main
       FROM journal_entries WHERE reference_id = 'TX-' || v_tx ORDER BY created_at, id LIMIT 1 FOR UPDATE;
     IF NOT FOUND THEN RETURN NULL; END IF;
@@ -830,24 +835,32 @@ DECLARE
     v_rem NUMERIC;
     v_base NUMERIC;
     v_gap NUMERIC;
+    -- Every linked retail income row: one for an ordinary settlement, two
+    -- for a split (dollar + riel) one. All of them are taken back together.
+    v_txs_all UUID[];
+    v_notice2 TEXT;
 BEGIN
-    SELECT id INTO v_tx FROM transactions
-     WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id
-     ORDER BY created_at DESC LIMIT 1;
+    SELECT array_agg(id ORDER BY created_at, id) INTO v_txs_all FROM transactions
+     WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id;
+    v_tx := CASE WHEN v_txs_all IS NOT NULL THEN v_txs_all[array_upper(v_txs_all, 1)] END;
     -- What the lines have booked less the COGS of the entries in view: the
     -- share held by a POSTED receipt whose income row an earlier un-pay
     -- removed. Taken before anything is removed, as delete_retail_orders does.
     v_base := COALESCE((SELECT sum(cogs_booked) FROM sale_items WHERE sale_id = p_order_id), 0)
               - wp_internal.os_order_cogs_net(p_order_id);
-    IF v_tx IS NOT NULL THEN
+    IF v_txs_all IS NOT NULL THEN
         -- An order edited down to no product line carries a Draft COGS-REV
         -- of what this receipt booked (edit_order_items): when the receipt
         -- is a Draft too, the REV goes first so the two cancel out.
         IF NOT EXISTS (SELECT 1 FROM sale_items WHERE sale_id = p_order_id AND product_id IS NOT NULL)
-           AND EXISTS (SELECT 1 FROM journal_entries WHERE reference_id = 'TX-' || v_tx AND status = 'Draft') THEN
+           AND EXISTS (SELECT 1 FROM journal_entries je WHERE je.status = 'Draft'
+                        AND je.reference_id IN (SELECT 'TX-' || t FROM unnest(v_txs_all) t)) THEN
             PERFORM wp_internal.op_drop_draft_cogs_entries(p_order_id, ARRAY['ORD-' || p_order_id || '-COGS-REV']);
         END IF;
-        v_notice := wp_internal.op_remove_tx_entry(v_tx);
+        FOREACH v_tx IN ARRAY v_txs_all LOOP
+            v_notice2 := wp_internal.op_remove_tx_entry(v_tx);
+            IF v_notice2 IS NOT NULL THEN v_notice := COALESCE(v_notice, v_notice2); END IF;
+        END LOOP;
         IF NOT EXISTS (SELECT 1 FROM journal_entries WHERE reference_id = 'ORD-' || p_order_id || '-COGS') THEN
             -- The ship-time adjustments to the receipt's COGS.
             v_posted := wp_internal.op_drop_draft_cogs_entries(p_order_id, ARRAY['ORD-' || p_order_id || '-COGS-ADJ']);
@@ -880,9 +893,11 @@ BEGIN
                                              p_order_id, p_order_id, to_char(round(v_gap, 2), 'FM999999999990.00'));
         END IF;
     END IF;
-    IF v_tx IS NOT NULL THEN
-        DELETE FROM transactions WHERE id = v_tx;
-        v_removed := v_removed || to_jsonb(v_tx);
+    IF v_txs_all IS NOT NULL THEN
+        FOREACH v_tx IN ARRAY v_txs_all LOOP
+            DELETE FROM transactions WHERE id = v_tx;
+            v_removed := v_removed || to_jsonb(v_tx);
+        END LOOP;
     END IF;
     RETURN jsonb_build_object('removed', v_removed, 'notices', to_jsonb(v_notices));
 END;
@@ -1170,6 +1185,18 @@ DECLARE
     -- stands, false for an order never marked).
     v_cod BOOLEAN := CASE WHEN u ? 'cod_collected' THEN COALESCE(NULLIF(u->>'cod_collected', '')::BOOLEAN, false) END;
     v_cut NUMERIC;
+    -- Split settlement (p_updates.split, sent by the Settle form only): the
+    -- receipt is taken part in dollars, part in riel. split.usd_amount is
+    -- the dollar part; the riel part is v_to_record - usd_amount, booked to
+    -- split.account_id (a riel cash/bank account, 1002/1011) with
+    -- split.money's riel details and its own retry id split.tx_id. Both
+    -- rows and both entries book in this one transaction, or neither.
+    v_split JSONB := CASE WHEN jsonb_typeof(u->'split') = 'object' THEN u->'split' END;
+    v_split_tx UUID;
+    v_split_acc UUID;
+    v_split_entry UUID;
+    v_usd_part NUMERIC;
+    v_khr_usd NUMERIC;
     v_entering_paid BOOLEAN;
     v_leaving_paid BOOLEAN;
     v_cur_settled BOOLEAN;
@@ -1206,8 +1233,12 @@ BEGIN
         END IF;
     END IF;
 
-    -- A retry whose income row is already saved must not book it again.
-    IF v_tx_id IS NOT NULL AND EXISTS (SELECT 1 FROM transactions WHERE id = v_tx_id) THEN
+    -- A retry whose income row is already saved must not book it again. A
+    -- split save books both rows atomically, so either id found means the
+    -- whole save landed.
+    v_split_tx := CASE WHEN v_split ? 'tx_id' THEN NULLIF(v_split->>'tx_id', '')::UUID END;
+    IF (v_tx_id IS NOT NULL AND EXISTS (SELECT 1 FROM transactions WHERE id = v_tx_id))
+       OR (v_split_tx IS NOT NULL AND EXISTS (SELECT 1 FROM transactions WHERE id = v_split_tx)) THEN
         RETURN jsonb_build_object('already_applied', true, 'payment', wp_internal.op_payment_of(s),
                                   'transactions_added', v_txs, 'transactions_removed', v_removed,
                                   'notices', to_jsonb(v_notices));
@@ -1324,7 +1355,63 @@ BEGIN
         -- fallback: the debit still comes from the COD flag, never from this.
         v_pay_by := COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name,
                              CASE WHEN COALESCE(v_cod, s.cod_collected, false) THEN 'COD' END);
-        IF v_to_record > 0 THEN
+        -- A split settlement is validated here, before anything is written,
+        -- so a refusal rolls the whole save back.
+        IF v_split IS NOT NULL THEN
+            IF v_to_record <= 0 THEN
+                RAISE EXCEPTION 'This order''s deposit already covers it — there is nothing left to split.';
+            END IF;
+            IF COALESCE(v_cod, s.cod_collected, false) THEN
+                RAISE EXCEPTION 'A courier-collected (COD) payment cannot be split: the courier hands the money over in one remittance.';
+            END IF;
+            v_usd_part := round(COALESCE(NULLIF(v_split->>'usd_amount', '')::NUMERIC, 0), 2);
+            v_khr_usd := round(v_to_record - v_usd_part, 2);
+            IF v_split_tx IS NULL OR v_usd_part <= 0 OR v_khr_usd <= 0 THEN
+                RAISE EXCEPTION 'A split payment needs a dollar part and a riel part that together make the amount received.';
+            END IF;
+            IF jsonb_typeof(v_split->'money') <> 'object' OR v_split->'money'->>'currency' <> 'KHR'
+               OR COALESCE(NULLIF(v_split->'money'->>'original_amount', '')::NUMERIC, 0) <= 0
+               OR COALESCE(NULLIF(v_split->'money'->>'exchange_rate', '')::NUMERIC, 0) <= 0 THEN
+                RAISE EXCEPTION 'The split''s riel part needs its riel amount and exchange rate.';
+            END IF;
+            IF abs(v_khr_usd - round((v_split->'money'->>'original_amount')::NUMERIC / (v_split->'money'->>'exchange_rate')::NUMERIC, 2)) > 0.05 THEN
+                RAISE EXCEPTION 'The riel part no longer matches the amount still owed (this order''s money changed since the screen was opened). The list has been refreshed. Please check the order and try again.';
+            END IF;
+            SELECT id INTO v_split_acc FROM chart_of_accounts
+             WHERE id = NULLIF(v_split->>'account_id', '')::UUID AND account_type = 'Asset' AND COALESCE(is_active, true);
+            IF v_split_acc IS NULL THEN
+                RAISE EXCEPTION 'The split''s riel account could not be found in the Chart of Accounts.';
+            END IF;
+        END IF;
+        IF v_to_record > 0 AND v_split IS NOT NULL THEN
+            -- The dollar part: the picked cash/bank account, and the FIFO
+            -- cost of goods rides on this first entry.
+            v_txs := v_txs || jsonb_build_array(wp_internal.op_insert_income(
+                v_tx_id, v_date, 'លក់រាយ', v_usd_part, v_name, v_added_by, v_shipping_co, v_pay_by,
+                NULLIF(u->>'reference', ''), NULLIF(u->>'notes', ''), p_order_id, v_phone));
+            IF v_post THEN
+                v_notice := wp_internal.op_post_receipt_entry('RCP', v_date::DATE, v_name,
+                    ((v_txs->-1)->>'id')::UUID, v_usd_part, v_account_id, v_pay_by, p_order_id, 'Draft', false);
+                IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
+            END IF;
+            -- The riel part: its own row and entry on the riel account, the
+            -- riel details written with the save (the app also tags them,
+            -- which is a no-op after this).
+            v_txs := v_txs || jsonb_build_array(wp_internal.op_insert_income(
+                v_split_tx, v_date, 'លក់រាយ', v_khr_usd, v_name, v_added_by, v_shipping_co, v_pay_by,
+                NULLIF(u->>'reference', ''), NULLIF(u->>'notes', ''), p_order_id, v_phone));
+            IF v_post THEN
+                v_notice := wp_internal.op_post_receipt_entry('RCP', v_date::DATE, v_name,
+                    v_split_tx, v_khr_usd, v_split_acc, v_pay_by, NULL, 'Draft', false);
+                IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
+            END IF;
+            PERFORM wp_internal.op_set_currency('transactions', v_split_tx, v_split->'money');
+            SELECT id INTO v_split_entry FROM journal_entries
+             WHERE reference_id = 'TX-' || v_split_tx ORDER BY created_at DESC, id DESC LIMIT 1;
+            IF v_split_entry IS NOT NULL THEN
+                PERFORM wp_internal.op_set_currency('journal_entries', v_split_entry, v_split->'money');
+            END IF;
+        ELSIF v_to_record > 0 THEN
             v_txs := v_txs || jsonb_build_array(wp_internal.op_insert_income(
                 v_tx_id, v_date, 'លក់រាយ', v_to_record, v_name, v_added_by, v_shipping_co, v_pay_by,
                 NULLIF(u->>'reference', ''), NULLIF(u->>'notes', ''), p_order_id, v_phone));
@@ -1445,7 +1532,17 @@ BEGIN
         v_method_changed := u ? 'payment_method' AND NULLIF(u->>'payment_method', '') IS DISTINCT FROM NULLIF(s.payment_method, '');
         -- The riel details sent for the sale's own row (not a deposit's).
         IF v_money IS NOT NULL AND COALESCE(v_money->>'category', 'លក់រាយ') <> 'លក់រាយ' THEN v_money := NULL; END IF;
-        IF v_settle_day_changed
+        IF (SELECT count(*) FROM transactions
+             WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id) > 1 THEN
+            -- A split settlement: two single-currency rows. The one-row
+            -- correction below cannot tell which part a change belongs to,
+            -- so nothing is corrected or re-pointed here.
+            IF v_settle_day_changed OR v_method_changed OR v_money IS NOT NULL
+               OR (u ? 'amount_received' AND COALESCE(v_amount_received, 0) > 0 AND v_amount_received IS DISTINCT FROM COALESCE(s.amount_received, 0))
+               OR (v_cod IS NOT NULL AND v_cod IS DISTINCT FROM COALESCE(s.cod_collected, false)) THEN
+                v_notices := v_notices || 'This order was settled as a split payment (dollars + riel). To change its amount, date, riel details or COD side, un-pay the order and settle it again.'::TEXT;
+            END IF;
+        ELSIF v_settle_day_changed
            OR (u ? 'amount_received' AND COALESCE(v_amount_received, 0) > 0 AND v_amount_received IS DISTINCT FROM COALESCE(s.amount_received, 0))
            OR v_method_changed
            OR v_money IS NOT NULL THEN
@@ -1502,8 +1599,11 @@ BEGIN
         END IF;
         -- "Collected by the courier" flipped on a paid order: the receipt's
         -- debit moves between 1210 COD receivable and cash/bank (a Draft is
-        -- re-pointed, a POSTED entry stays with a notice).
-        IF v_cod IS NOT NULL AND v_cod IS DISTINCT FROM COALESCE(s.cod_collected, false) THEN
+        -- re-pointed, a POSTED entry stays with a notice). Never for a split
+        -- settlement (guarded above and in op_repoint_receipt_debit itself).
+        IF v_cod IS NOT NULL AND v_cod IS DISTINCT FROM COALESCE(s.cod_collected, false)
+           AND (SELECT count(*) FROM transactions
+                 WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id) <= 1 THEN
             v_notice := wp_internal.op_repoint_receipt_debit(p_order_id, v_cod, v_account_id,
                 COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name));
             IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
