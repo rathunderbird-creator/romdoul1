@@ -470,3 +470,14 @@ deposit / Cr 4000, plus COGS), an order the new function already booked is
 left alone, and a second run books nothing.
 
     node tests/backfill-collected-cod.test.mjs
+
+## pay-status-matrix.test.mjs
+
+Sweeps every ordered pair of Pay Statuses (Unpaid, Deposit, Collected,
+Paid, PdFee, Cancel) on the real stack: a fresh order per pair goes
+a → b → a with the payloads the app sends, and after every hop the books
+are checked — one Draft receipt on the bank (Paid) or 1210 (Collected)
+with revenue and COGS, no receipt elsewhere, a deposit or fee booked
+exactly once for good, and the FIFO pool matching stock.
+
+    node tests/pay-status-matrix.test.mjs
