@@ -3962,6 +3962,7 @@
         "shippingSaveFailed": "Failed to save the shipping details: {error}",
         "stockNotUpdated": "The order was saved, but stock could not be updated for: {products}. Check these products' stock in Inventory.",
         "statusUnconfirmed": "Couldn't confirm this order's current status, so nothing was saved. Check your connection and try again.",
+        "splitPackOutdated": "This store's database doesn't know split payments yet, so the receipt was booked as one dollar amount. Run migrations/add_order_payment_functions.sql and migrations/add_session_guards.sql, then un-pay and settle this order again.",
         "paymentUnconfirmed": "Couldn't confirm this order's current payment status, so nothing was saved. Check your connection and try again.",
         "justMarked": "This order was just marked {status} by someone else, so your change wasn't saved. The list has been refreshed. Please check the order and try again.",
         "updateFailed": "Failed to update order: {error}",
@@ -5488,6 +5489,10 @@
         "bigDiffConfirm": "Received {rec} but {due} is due. Change the order total by {diff} and save it as a {kind}?",
         "discountWord": "discount",
         "extraChargeWord": "extra charge",
+        "splitKhrAccount": "Riel account",
+        "splitKhrPart": "Riel part",
+        "splitToggle": "Split payment (dollars + riel)",
+        "splitUsdPart": "Dollar part",
         "booksDraftCod": "Settling books the receipt to 1210 COD receivable (courier) as a Draft journal entry; this account is where the courier's remittance will land."
       },
       "shippingPoint": {

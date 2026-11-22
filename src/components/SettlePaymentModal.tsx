@@ -8,7 +8,7 @@ import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField, syncFieldToAccount } from '../hooks/useMoneyField';
 import { defaultCashBankAccountId, depositDefaultFor, followMethodAccount } from '../utils/cashBankAccounts';
-import { accountCurrency, formatUsd, khrToUsd, SNAP_TOLERANCE_USD, usdToKhr, type MoneyMeta } from '../utils/currency';
+import { accountCurrency, formatUsd, isKhrAccountName, khrToUsd, SNAP_TOLERANCE_USD, usdToKhr, type MoneyMeta } from '../utils/currency';
 import { roundCents } from '../utils/money';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
@@ -37,7 +37,12 @@ interface SettlePaymentModalProps {
     // money" — the caller's codDefault handed back (the box is gone:
     // courier-held money is Pay Status Collected now); undefined when the
     // caller passed no codDefault, so the save says nothing about COD.
-    onConfirm: (data: { paymentMethod: string; settleDate: string; depositAccountId?: string; depositAccountName?: string; money?: MoneyMeta; receivedUsd?: number; codCollected?: boolean }) => void;
+    // split: the settlement taken part in dollars, part in riel — usdAmount
+    // the dollar part (booked to depositAccountId), money the riel part's
+    // details, khrAccountId the riel account it books to. receivedUsd is
+    // then the SUM of both parts; money stays undefined.
+    onConfirm: (data: { paymentMethod: string; settleDate: string; depositAccountId?: string; depositAccountName?: string; money?: MoneyMeta; receivedUsd?: number; codCollected?: boolean;
+        split?: { usdAmount: number; khrAccountId: string; khrAccountName?: string; money: MoneyMeta } }) => void;
     // The codCollected value this save sends (utils/cashBankAccounts
     // defaultCodCollected: a stored flag, or an order at Collected).
     // Omitted: the save says nothing about COD.
@@ -96,6 +101,17 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     // the prefill (the due in dollars, the expected riel in riel) instead of
     // converting the dollar figure.
     const [receivedEdited, setReceivedEdited] = useState(false);
+    // Split payment: part in dollars (receivedField, held to USD) and part
+    // in riel (khrField on its own riel account). The riel part snaps to
+    // what the dollar part leaves of the amount due.
+    const [splitOn, setSplitOn] = useState(false);
+    const [khrEdited, setKhrEdited] = useState(false);
+    const [splitKhrAccountId, setSplitKhrAccountId] = useState<string>('');
+    // The split's riel part. Its snap target — what the dollar part leaves
+    // of the amount due — is recomputed every render, so riel within a few
+    // cents of the remainder books it exactly.
+    const khrRemainder = amountDue !== undefined ? Math.max(0, roundCents(amountDue - roundCents(receivedField.usd))) : null;
+    const khrField = useMoneyField({ shopRate: khrExchangeRate, snapToUsd: splitOn ? khrRemainder : null });
     const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');
@@ -133,6 +149,9 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
             setSelectedMethod(fromInitial || bankMethod || initialMethod || paymentMethods[0] || 'Cash');
             setSettleDate(initialDate ? (/^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : dayKeyFromDate(new Date(initialDate))) : localYMD());
             setDepositAccountId('');
+            setSplitOn(false);
+            setKhrEdited(false);
+            setSplitKhrAccountId('');
         }
         // paymentAccounts stays OUT of these deps: the accounts arrive after the
         // modal opens, and re-running this then would clobber whatever date or
@@ -202,11 +221,51 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [receivedField.currency]);
 
+    // Turning the split on: the dollar field becomes the dollar part (USD
+    // only, emptied for typing); the riel part starts at the whole due.
+    const toggleSplit = (on: boolean) => {
+        setSplitOn(on);
+        setKhrEdited(false);
+        if (on) {
+            receivedField.reset({ amount: '', currency: 'USD' });
+            setReceivedEdited(true);
+            khrField.reset({ amount: amountDue !== undefined ? usdToKhr(amountDue, khrField.shopRate) : '', currency: 'KHR' });
+            if (!splitKhrAccountId || !rielAccounts.some(a => a.id === splitKhrAccountId)) {
+                setSplitKhrAccountId((defKhr && rielAccounts.some(a => a.id === defKhr) ? defKhr : rielAccounts[0]?.id) || '');
+            }
+            // The dollar part books to a dollar account.
+            const acc = paymentAccounts.find(a => a.id === depositAccountId);
+            if (acc && isKhrAccountName(acc.account_name)) {
+                setDepositAccountId(defaultCashBankAccountId(paymentAccounts, { currency: 'USD', defaultId: defUsd, method: selectedMethod }) || '');
+            }
+        } else if (amountDue !== undefined) {
+            receivedField.reset({ amount: roundCents(amountDue), currency: 'USD' });
+            setReceivedEdited(false);
+        }
+    };
+    // Until the riel part is typed in, it follows what the dollar part
+    // leaves of the due, like the single field's prefill.
+    useEffect(() => {
+        if (!isOpen || !splitOn || khrEdited || khrRemainder === null) return;
+        const rate = Number(khrField.rate) > 0 ? Number(khrField.rate) : khrField.shopRate;
+        const want = String(usdToKhr(khrRemainder, rate));
+        if (khrField.amount !== want) khrField.setAmount(want);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [splitOn, khrRemainder]);
+    const khrInput = {
+        ...khrField,
+        setAmount: (v: string) => { setKhrEdited(true); khrField.setAmount(v); },
+        reinterpret: (c: 'USD' | 'KHR') => { setKhrEdited(true); khrField.reinterpret(c); },
+    };
+
     const showReceived = amountDue !== undefined;
-    const inRiel = showReceived && receivedField.currency === 'KHR';
+    const inRiel = !splitOn && showReceived && receivedField.currency === 'KHR';
+    // The riel accounts the split's riel part can book to.
+    const rielAccounts = useMemo(() => paymentAccounts.filter(a => isKhrAccountName(a.account_name)), [paymentAccounts]);
+    const canSplit = showReceived && !preferRiel && rielAccounts.length > 0 && !(showCod && codCollected);
     // The order's money moves only when the received amount really differs
     // from what is due (a riel figure within a few cents snaps to the due).
-    const receivedUsd = roundCents(receivedField.usd);
+    const receivedUsd = splitOn ? roundCents(roundCents(receivedField.usd) + roundCents(khrField.usd)) : roundCents(receivedField.usd);
     const receivedDiff = showReceived ? roundCents((amountDue as number) - receivedUsd) : 0;
     const moneyChanges = showReceived && Number.isFinite(receivedField.typed) && Math.abs(receivedDiff) > 0.005;
     const newTotal = orderTotal !== undefined ? roundCents(orderTotal - receivedDiff) : undefined;
@@ -296,7 +355,7 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                         }}
                     >
                         <option value="">{accountsLoaded ? tx('ui.components.common.bankOrCash', 'Bank or cash account…') : tx('ui.components.common.loadingAccounts', 'Loading accounts…')}</option>
-                        <CashBankOptions accounts={paymentAccounts} />
+                        <CashBankOptions accounts={splitOn ? paymentAccounts.filter(a => !isKhrAccountName(a.account_name)) : paymentAccounts} />
                     </select>
                     <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
                         {!accountsLoaded
@@ -308,16 +367,49 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                                 : tx('ui.components.settle.noAccounts', 'No cash or bank accounts in the Chart of Accounts yet — the settlement saves without a ledger entry account.')}
                     </p>
                 </div>
+                {showReceived && canSplit && (
+                    <label data-settle-split-toggle style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={splitOn} onChange={e => toggleSplit(e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                        {tx('ui.components.settle.splitToggle', 'Split payment (dollars + riel)')}
+                    </label>
+                )}
                 {showReceived && (
                     <div data-settle-received>
                         <MoneyInput
                             field={receivedInput}
-                            label={tx('ui.components.settle.receivedAmount', 'Received Amount')}
-                            allowKhr
+                            label={splitOn ? tx('ui.components.settle.splitUsdPart', 'Dollar part') : tx('ui.components.settle.receivedAmount', 'Received Amount')}
+                            allowKhr={!splitOn}
                             onToggleCurrency={coupling.onToggleCurrency}
                             khrUnavailableReason={accountsLoaded ? coupling.khrUnavailableReason : tx('ui.components.common.loadingAccounts', 'Loading accounts…')}
                             required
                         />
+                        {splitOn && (
+                            <div data-settle-split-khr style={{ marginTop: '12px' }}>
+                                <MoneyInput
+                                    field={khrInput}
+                                    label={tx('ui.components.settle.splitKhrPart', 'Riel part')}
+                                    allowKhr
+                                    required
+                                />
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, margin: '10px 0 6px', color: 'var(--color-text-main)' }}>
+                                    {tx('ui.components.settle.splitKhrAccount', 'Riel account')} <span style={{ color: 'red' }}>*</span>
+                                </label>
+                                <select
+                                    value={splitKhrAccountId}
+                                    onChange={e => setSplitKhrAccountId(e.target.value)}
+                                    data-testid="settle-split-khr-account"
+                                    style={{
+                                        width: '100%', padding: '10px', borderRadius: '8px',
+                                        border: '1px solid ' + (splitOn && !splitKhrAccountId ? '#DC2626' : 'var(--color-border)'),
+                                        background: 'var(--color-surface)', color: 'var(--color-text-main)', fontSize: '14px',
+                                        outline: 'none', boxSizing: 'border-box'
+                                    }}
+                                >
+                                    <option value="">{tx('ui.components.common.bankOrCash', 'Bank or cash account…')}</option>
+                                    <CashBankOptions accounts={rielAccounts} />
+                                </select>
+                            </div>
+                        )}
                         <p style={{ margin: '6px 0 0', fontSize: '12px', color: moneyChanges ? (receivedDiff > 0 ? '#059669' : '#B45309') : 'var(--color-text-muted)' }} data-settle-received-note>
                             {!moneyChanges
                                 ? tx('ui.components.settle.dueIs', 'Amount due {due}.', { due: formatUsd(amountDue as number) })
@@ -348,12 +440,16 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                         // A Received Amount is required (0 only when nothing is due).
                         const receivedOk = !showReceived || (Number.isFinite(receivedField.typed) && receivedField.typed >= 0
                             && (receivedField.typed > 0 || (amountDue as number) <= 0.005) && !receivedField.rateInvalid);
-                        const valid = accountsLoaded && !submitted && !(paymentAccounts.length > 0 && !depositAccountId) && receivedOk;
+                        // A split needs both parts and the riel account.
+                        const splitOk = !splitOn || (roundCents(receivedField.usd) > 0 && Number.isFinite(khrField.typed)
+                            && khrField.typed > 0 && roundCents(khrField.usd) > 0 && !khrField.rateInvalid && !!splitKhrAccountId);
+                        const valid = accountsLoaded && !submitted && !(paymentAccounts.length > 0 && !depositAccountId) && receivedOk && splitOk;
                         return (
                             <button
                                 onClick={() => {
                                     if (!valid) return;
                                     if (showReceived && !receivedField.confirmIfSuspicious()) return;
+                                    if (splitOn && !khrField.confirmIfSuspicious()) return;
                                     // A big difference is asked about once: not again after the
                                     // field's own wrong-amount warning, nor for riel against an
                                     // amount due (the field's check asks above 5%).
@@ -374,6 +470,12 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
                                         money: inRiel ? receivedField.meta : undefined,
                                         receivedUsd: showReceived ? receivedUsd : undefined,
                                         codCollected: showCod ? codCollected : undefined,
+                                        split: splitOn ? {
+                                            usdAmount: roundCents(receivedField.usd),
+                                            khrAccountId: splitKhrAccountId,
+                                            khrAccountName: rielAccounts.find(a => a.id === splitKhrAccountId)?.account_name,
+                                            money: khrField.meta,
+                                        } : undefined,
                                     });
                                     onClose();
                                 }}

@@ -162,7 +162,12 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: st
 // from (Settle's Received Amount); the save is refused if the order's
 // stored values have moved since, so income is never booked against a
 // deposit this screen didn't see.
-export type OrderMoneyOpts = { money?: MoneyMeta & { category?: string }; expectMoney?: { deposit: number; total: number } };
+// split: a Settle-form settlement taken part in dollars, part in riel —
+// usdAmount is the dollar part, money the riel part's details, and
+// khrAccountId the riel cash/bank account (resolved by currency when
+// absent). The database books two rows and two entries in one transaction.
+export type OrderMoneyOpts = { money?: MoneyMeta & { category?: string }; expectMoney?: { deposit: number; total: number };
+    split?: { usdAmount: number; khrAccountId?: string; money: MoneyMeta } };
 
 // Tags the income rows set_order_payment returned (new ones and a corrected
 // one) and their journal entries with the riel details, or clears a row
@@ -3729,9 +3734,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     console.warn('Could not resolve the cash/bank account; the database picks it:', e);
                 }
             }
+            // A split settlement: the riel part books on its own row to a
+            // riel account; the database refuses it unless it enters Paid.
+            if (opts?.split && pUpdates.payment_status === 'Paid') {
+                let khrAccId = opts.split.khrAccountId || '';
+                if (!khrAccId) {
+                    try {
+                        const { cashAccId } = await resolveRetailLedgerAccounts(undefined, (pUpdates.payment_method as string) || '', 'KHR');
+                        khrAccId = cashAccId || '';
+                    } catch (e) {
+                        console.warn('Could not resolve the riel account; the database will refuse the split:', e);
+                    }
+                }
+                pUpdates.split = {
+                    usd_amount: opts.split.usdAmount,
+                    account_id: khrAccId,
+                    money: { currency: opts.split.money.currency, original_amount: opts.split.money.original_amount, exchange_rate: opts.split.money.exchange_rate },
+                };
+            }
             const paySignature = 'pay:' + id + ':' + JSON.stringify(pUpdates);
-            const [payTxId] = paymentTxKeys.take(paySignature);
+            const [payTxId, splitTxId] = paymentTxKeys.take(paySignature, 2);
             pUpdates.tx_id = payTxId;
+            if (pUpdates.split) (pUpdates.split as Record<string, unknown>).tx_id = splitTxId;
             const { data: payData, error: payErr } = await rpcWithSession('set_order_payment', {
                 p_order_id: id,
                 // The status this save decided from (the fresh read above): the
@@ -3781,6 +3805,22 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // USD only): tag its income row(s) and their journal entries.
             if (opts?.money) {
                 addedTxs = await tagOrderMoney(addedTxs, opts.money, payRes.already_applied ? payTxId : undefined);
+            }
+            if (opts?.split) {
+                // The database wrote the riel part's details with the save;
+                // tagging the row by its OWN id is the compatibility path (a
+                // no-op when the server already did it). Never tagOrderMoney
+                // here: both rows share the retail category, and it would
+                // tag the dollar row riel too.
+                const khrRow = addedTxs.find(t => t.id === splitTxId);
+                if (khrRow || payRes.already_applied) {
+                    await tagTransactionsAndEntries([splitTxId], opts.split.money);
+                    addedTxs = addedTxs.map(t => (t.id === splitTxId ? { ...t, ...opts.split!.money } : t));
+                } else if (addedTxs.length > 0) {
+                    // An older database pack ignored the split and booked one
+                    // dollar row: say so instead of hiding it.
+                    alert(tNow('ui.store.splitPackOutdated'));
+                }
             }
             if (addedTxs.length > 0) {
                 const addedIds = addedTxs.map(t => t.id);
