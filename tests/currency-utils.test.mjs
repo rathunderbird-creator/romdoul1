@@ -41,6 +41,11 @@ check('cod: Paid with stored false → off', cod({ codCollected: false, paymentS
 check('cod: flag undefined, Delivered courier → off', cod({ paymentStatus: 'Unpaid', shipping: ship('Delivered') }) === false);
 check('cod: Deposit Shipped courier → off', cod({ codCollected: false, paymentStatus: 'Deposit', shipping: ship('Shipped') }) === false);
 check('cod: PdFee Delivered courier → off', cod({ codCollected: false, paymentStatus: 'PdFee', shipping: ship('Delivered') }) === false);
+check('cod: Collected marked Paid → off (money arrived; the receipt moves to the bank)', cod({ codCollected: true, paymentStatus: 'Collected', shipping: ship('Delivered') }, null, 'Paid') === false);
+check('cod: Collected marked Settled → off', cod({ codCollected: true, paymentStatus: 'Collected' }, null, 'Settled') === false);
+check('cod: Collected re-saved as Collected → on', cod({ codCollected: true, paymentStatus: 'Collected' }, null, 'Collected') === true);
+check('cod: booked Get File marked Paid → on (only Collected clears at Paid)', cod({ codCollected: true, paymentStatus: 'Get File' }, null, 'Paid') === true);
+check('cod: stored true on an Unpaid order marked Paid → on (not a Collected clear)', cod({ codCollected: true, paymentStatus: 'Unpaid' }, null, 'Paid') === true);
 
 // ── getFileBooksCod (Sales Setup: couriers whose Get File books the COD receipt) ──
 const gf = m.getFileBooksCod;

@@ -83,7 +83,15 @@ export function defaultCodCollected(order: {
     shipping?: { company?: string | null; status?: string | null } | null;
 },
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept so callers can keep passing codPaymentMethods
-_codMethods?: readonly string[] | null): boolean {
+_codMethods?: readonly string[] | null,
+// The payment status this save enters, where the caller knows it. A Paid
+// save on a Collected order says the courier's money ARRIVED: it sends
+// false, and the database moves the Draft receipt's debit from 1210 to
+// the picked cash/bank account (op_repoint_receipt_debit) — the account
+// following the order's Pay By. Only Collected clears this way; a booked
+// Get File keeps its 1210 receipt until Collected or a remittance.
+target?: string | null): boolean {
+    if (order.paymentStatus === 'Collected' && ['Paid', 'Settled', 'Paid/Settled'].includes(target || '')) return false;
     if (order.codCollected === true) return true;
     return order.paymentStatus === 'Collected';
 }

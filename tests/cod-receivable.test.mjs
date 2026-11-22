@@ -358,6 +358,26 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
         (await nIncome('CL1')) === 1 && ek1b.date === k1before.date && String(g.settle_date) === k1before.settle && g.payment_status === 'Paid' && near(ek1b.cod_dr, 17), [ek1b, g]);
     await checkBalanced('CL1 Paid');
 
+    // ---- Collected -> Paid as the app now saves it (cod_collected false):
+    // the courier's money arrived, so the Draft receipt's debit moves from
+    // 1210 to the bank; Paid -> Collected (cod_collected true) moves it back.
+    await order('CLP', 17);
+    await collected('CLP', 'Unpaid');
+    await pay('CLP', 'Collected', { payment_status: 'Paid', amount_received: 17, settle_date: LATER, post_to_ledger: true, cod_collected: false }, LATER);
+    let ek4 = await entry('TX-' + (await tx('CLP')).id);
+    g = await row('CLP');
+    check('CLP Collected -> Paid (flag off): still one receipt, debit moved 1210 -> bank',
+        (await nIncome('CLP')) === 1 && near(ek4.cod_dr, 0) && near(ek4.bank_dr, 17) && near(ek4.rev_cr, 17), ek4);
+    check('CLP: flag false, status Paid', g.cod_collected === false && g.payment_status === 'Paid', g);
+    await checkBalanced('CLP Paid');
+    await pay('CLP', 'Paid', { payment_status: 'Collected', cod_collected: true });
+    ek4 = await entry('TX-' + (await tx('CLP')).id);
+    g = await row('CLP');
+    check('CLP Paid -> Collected (flag on): debit moved back bank -> 1210',
+        (await nIncome('CLP')) === 1 && near(ek4.cod_dr, 17) && near(ek4.bank_dr, 0), ek4);
+    check('CLP: flag true again, status Collected', g.cod_collected === true && g.payment_status === 'Collected', g);
+    await checkBalanced('CLP back to Collected');
+
     await order('CL2', 17);
     await collected('CL2', 'Unpaid');
     await pay('CL2', 'Collected', { payment_status: 'Unpaid', amount_received: 0, settle_date: null });

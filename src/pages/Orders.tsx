@@ -3014,16 +3014,20 @@ const Orders: React.FC = () => {
                         if (payBy) individualUpdates.paymentMethod = payBy as any;
                         // Bulk settles book their receipts too; with no account
                         // picker here, the Pay By steers which cash/bank account
-                        // the Draft RCP entry lands on — unless the courier
-                        // collected the money (the Settle box's default), when
-                        // the receipt debits 1210 COD receivable instead.
+                        // the Draft RCP entry lands on. A Collected order marked
+                        // Paid moves its Draft receipt's debit from 1210 to the
+                        // bank (the money arrived); otherwise only a stored
+                        // flag keeps the receipt on 1210.
                         individualUpdates.postToLedger = true;
-                        individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods);
+                        individualUpdates.codCollected = defaultCodCollected(order, codPaymentMethods, value);
                     } else if (value === 'Get File' || value === 'Collected') {
                         // File collected, money not settled yet — no settle date. Keep a
                         // deposit visible in Received when one was taken (Collected
                         // books its COD receipt in the database).
                         individualUpdates.amountReceived = order.depositAmount || 0;
+                        // Paid taken back to Collected: the receipt's debit
+                        // moves back to 1210 (the courier holds it again).
+                        if (value === 'Collected') individualUpdates.codCollected = true;
                         individualUpdates.settleDate = null as any;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
                         individualUpdates.amountReceived = 0;
@@ -5500,7 +5504,7 @@ const Orders: React.FC = () => {
                     // "អ្នកដឹកប្រមូល (COD)": on for an order a courier has out / has
                     // delivered or one waiting for its payment proof, off for a
                     // direct transfer; a paid order re-opened keeps its flag.
-                    codDefault={defaultCodCollected(paymentMethodTargetOrder, codPaymentMethods)}
+                    codDefault={defaultCodCollected(paymentMethodTargetOrder, codPaymentMethods, 'Paid')}
                     description={paymentMethodTargetOrder.paymentClaim
                         ? fill(t('ui.orders.claim.confirmingDesc'), {
                             kind: paymentMethodTargetOrder.paymentClaim.status === 'Paid' ? t('ui.orders.claim.payment') : t('ui.orders.claim.deposit'),
