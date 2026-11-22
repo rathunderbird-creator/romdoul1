@@ -17,7 +17,7 @@ import { roundCents } from '../utils/money';
 import { discountPresetAmount, discountPresetValueLabel } from '../utils/discountPresets';
 import { priceLevelAmount, priceLevelForPhone, priceLevelPctLabel } from '../utils/priceLevels';
 import { phoneDigits } from '../utils/customerGroups';
-import { defaultCodCollected, isCodPaymentMethod } from '../utils/cashBankAccounts';
+import { defaultCodCollected } from '../utils/cashBankAccounts';
 
 interface CheckoutFormProps {
     cartItems: CartItem[];
@@ -147,11 +147,11 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
         shippingStatus: NonNullable<Sale['shipping']>['status'];
         paymentStatus: 'Unpaid' | 'Deposit' | 'Paid' | 'PdFee' | 'Get File' | 'Collected' | 'Cancel';
         date: string;
-        // "អ្នកដឹកប្រមូល (COD)" on a Paid save: the courier collected the
-        // money (the receipt debits 1210 COD receivable). Off for a new order
-        // paid up front; a settled order being edited keeps its own flag,
-        // any other starts from its shipping state (utils/cashBankAccounts
-        // defaultCodCollected).
+        // sales.cod_collected on a Paid save. The COD box is gone: a Paid
+        // save books the picked cash/bank account, and courier-held money
+        // is Pay Status Collected. True only for an edited order whose flag
+        // is already true (defaultCodCollected), so a booked COD receipt is
+        // never re-pointed to a bank account by an edit.
         codCollected: boolean;
     } = {
         customerName: orderToEdit?.customer?.name || '',
@@ -1352,11 +1352,6 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                         onChange={e => setFormData({
                                             ...formData,
                                             paymentMethod: e.target.value as Sale['paymentMethod'],
-                                            // A Pay By ticked as a COD payment method (Sales
-                                            // Setup) ticks the Paid save's COD box; any other
-                                            // puts it back at the order's own default.
-                                            codCollected: isCodPaymentMethod(codPaymentMethods, e.target.value)
-                                                || (orderToEdit ? defaultCodCollected({ ...orderToEdit, paymentMethod: e.target.value }, codPaymentMethods) : false),
                                         })}
                                         disabled={formData.paymentAfterDelivery}
                                     >
@@ -1459,17 +1454,6 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({ cartItems, orderToEdit, onC
                                             )}
                                         </>
                                     );
-                                })()}
-                                {(() => {
-                                    // A Paid save books a receipt: say who holds the money.
-                                    const num = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);
-                                    const paidNow = !formData.paymentAfterDelivery && total > 0 && num >= total && !['Get File', 'Collected', 'Cancel'].includes(formData.paymentStatus);
-                                    return paidNow ? (
-                                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 500, color: 'var(--color-text-main)', cursor: 'pointer', margin: '8px 0 0 0' }} title={tx('ui.components.settle.codCheckoutHint', 'Tick when the courier collected this money: the receipt is booked to COD receivable until the courier remits it.')}>
-                                            <input type="checkbox" checked={formData.codCollected} onChange={e => setFormData({ ...formData, codCollected: e.target.checked })} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
-                                            {tx('ui.components.settle.codCollected', 'អ្នកដឹកប្រមូល (COD)')}
-                                        </label>
-                                    ) : null;
                                 })()}
                                 {(() => {
                                     const num = formData.amountReceived === '' ? 0 : Number(formData.amountReceived);

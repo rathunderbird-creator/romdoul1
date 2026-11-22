@@ -55,44 +55,37 @@ export const isCashBankAccount = (a: CashBankCandidate): boolean =>
 const isCashBank = isCashBankAccount;
 const byCode = <T extends CashBankCandidate>(a: T, b: T) => (a.account_code || '').localeCompare(b.account_code || '');
 
-// "The courier collected this order's money" — the default of the Settle
-// form's "អ្នកដឹកប្រមូល (COD)" box. On for an order a shipping company has
-// out or has delivered (Shipped / Delivered), and always for one at Get File
-// (the courier has the money and sent its file, courier named or not): that
-// money reaches the shop as the courier's remittance, not as a transfer
-// from the customer. Off for a direct ABA transfer staff
-// confirm on a Confirmed / Pending order. A stored true always counts
-// (someone ticked it). A stored false counts only on a settled order
-// (Paid / Settled / Paid/Settled — the paid set set_order_payment and
-// StoreContext use), where it was decided with the receipt; on any other
-// order it is just the column's default (sales.cod_collected is NOT NULL
-// DEFAULT false, and mapper.ts reads every row as true/false), so the
-// shipping state decides. The user can flip it either way. Every path that
-// marks an order Paid sends this default (the Settle / Record Receipt
-// forms as the box's start, bulk Paid and the OM2 drawer as the value).
-//
-// `codMethods` (Sales Setup › Pay By, "COD payment methods" —
-// app_config.codPaymentMethods, the store's `codPaymentMethods`): an order
-// whose Pay By is one of them is COD whatever its shipping state — the
-// Method says the courier collects. The SQL twin, set_order_payment's
-// wp_internal.op_cod_method, applies the same list when a save says
-// nothing about the flag.
-const SETTLED_STATUSES = ['Paid', 'Settled', 'Paid/Settled', 'Collected'];
+// "The courier collected this order's money" — the value every Paid save
+// sends for sales.cod_collected. The Collected pay status took this job
+// over from the Settle forms' "អ្នកដឹកប្រមូល (COD)" box: a Paid save books
+// the picked cash/bank account, and money a courier still holds is marked
+// Collected (or Get File for a courier ticked in Sales Setup) instead of
+// Paid. True only where 1210 already owns — or this order's status makes
+// it own — the receipt, so a Paid save can never re-point a booked COD
+// receipt to a bank account:
+//   - a stored true always counts (set by Collected, a booked Get File,
+//     or the box while it existed);
+//   - an order AT Collected marked Paid keeps its COD receipt (Paid
+//     after Collected means the status moved on, not that the courier's
+//     money reached the bank — the remittance does that). A booked Get
+//     File keeps its receipt through its stored flag, set when it booked;
+//     a Get File that never booked settles to the bank like any other.
+// Everything the box used to infer (Shipped / Delivered with a courier, a
+// COD payment method) no longer defaults to COD. `_codMethods` (Sales
+// Setup › Pay By "COD payment methods") is kept for callers but unused:
+// the list still marks a save COD on the SERVER when a save says nothing
+// about the flag (wp_internal.op_cod_method) — every app path sends it,
+// so that fallback only serves older clients.
 export function defaultCodCollected(order: {
     codCollected?: boolean | null;
     paymentStatus?: string | null;
     paymentMethod?: string | null;
     shipping?: { company?: string | null; status?: string | null } | null;
-}, codMethods?: readonly string[] | null): boolean {
+},
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept so callers can keep passing codPaymentMethods
+_codMethods?: readonly string[] | null): boolean {
     if (order.codCollected === true) return true;
-    if (order.codCollected === false && SETTLED_STATUSES.includes(order.paymentStatus || '')) return false;
-    if (isCodPaymentMethod(codMethods, order.paymentMethod)) return true;
-    // Get File: the courier collected the money and sent its settlement file
-    // (add_cod_get_file.sql stores true on entering it), so it counts even
-    // when the courier's name was never filled in.
-    if (order.paymentStatus === 'Get File' || order.paymentStatus === 'Collected') return true;
-    if (!order.shipping?.company) return false;
-    return order.shipping.status === 'Shipped' || order.shipping.status === 'Delivered';
+    return order.paymentStatus === 'Collected';
 }
 
 // Whether a courier is ticked in Sales Setup › Shipping Company as "Get File
