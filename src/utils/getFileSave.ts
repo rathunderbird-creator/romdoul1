@@ -88,5 +88,14 @@ export async function saveGetFile(
         // row's Method and the order's Pay By. Unset says nothing, so a
         // method already on the order stands.
         ...(amount?.method ? { paymentMethod: amount.method as Sale['paymentMethod'] } : {}),
-    });
+    },
+        // An amount typed in riel rides along as the booked money's riel
+        // details: updateOrder tags the income row this save books (and its
+        // ledger entry) with them, so Received shows the riel — exactly as
+        // the Settle form's riel does. Collected always books on entry; a
+        // Get File only for a courier ticked in Sales Setup, and with no
+        // row booked the tag is a no-op, so it is safe to send either way.
+        amount?.money.currency === 'KHR'
+            ? { money: { ...amount.money, category: 'លក់រាយ' } }
+            : undefined);
 }

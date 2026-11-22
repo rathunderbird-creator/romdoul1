@@ -68,6 +68,15 @@ check('Collected, Method left unset: the save says nothing about it', calls.at(-
 calls.length = 0;
 await m.saveGetFile(upd, order, { collectUsd: 20, money: usd(20) });
 check('Get File saves no Method', calls[0].updates.paymentStatus === 'Get File' && !('paymentMethod' in calls[0].updates), calls[0]);
+calls.length = 0;
+await m.saveGetFile(upd, order, { collectUsd: 20, money: khr(80000) }, 'Collected');
+check('Collected in riel: the status save carries the riel for the booked row',
+    calls.at(-1).updates.paymentStatus === 'Collected' && calls.at(-1).opts?.money?.currency === 'KHR'
+    && calls.at(-1).opts.money.original_amount === 80000 && calls.at(-1).opts.money.exchange_rate === 4000
+    && calls.at(-1).opts.money.category === 'លក់រាយ', calls.at(-1));
+calls.length = 0;
+await m.saveGetFile(upd, order, { collectUsd: 20, money: usd(20) }, 'Collected');
+check('Collected in dollars: no riel tag', calls.at(-1).opts === undefined, calls.at(-1));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
