@@ -48,7 +48,7 @@ const acct = (id: string, code: string, name: string, type = 'Asset') =>
 const R1 = [acct('00000000-0000-0000-0000-000000001001', '1001', 'Petty Cash'), acct('00000000-0000-0000-0000-000000001010', '1010', 'Bank Account ABA (USD)')];
 const R2 = [acct('00000000-0000-0000-0000-000000001000', '1000', 'Cash')];
 const KHR = [acct('00000000-0000-0000-0000-000000001002', '1002', 'Cash on Hand (KHR)'), acct('00000000-0000-0000-0000-000000001011', '1011', 'Bank Account ABA (KHR)')];
-const OTHER = [acct('00000000-0000-0000-0000-000000001200', '1200', 'Accounts Receivable'), acct('00000000-0000-0000-0000-000000001210', '1210', 'COD receivable (courier)'), acct('00000000-0000-0000-0000-000000004000', '4000', 'Sales Revenue', 'Revenue')];
+const OTHER = [acct('00000000-0000-0000-0000-000000001200', '1200', 'Accounts Receivable'), acct('00000000-0000-0000-0000-000000001210', '1210', 'COD receivable (courier)'), acct('00000000-0000-0000-0000-000000001220', '1220', 'COD receivable (Deliveryman)'), acct('00000000-0000-0000-0000-000000004000', '4000', 'Sales Revenue', 'Revenue')];
 // ?fx=1: the chart already has the two exchange gain/loss accounts (else the
 // Riel Revaluation page offers to add them).
 const FX = params.get('fx') ? [

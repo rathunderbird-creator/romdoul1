@@ -21,7 +21,7 @@ import { useStore } from '../../context/StoreContext';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber } from '../../utils/journalEntryNumber';
-import { isCashBankAccount, isCodReceivableAccount, sortCashBankForPicker } from '../../utils/cashBankAccounts';
+import { isCashBankAccount, isCodCourierAccount, isCodReceivableAccount, sortCashBankForPicker } from '../../utils/cashBankAccounts';
 import CashBankOptions from '../../components/CashBankOptions';
 import MoneyInput from '../../components/MoneyInput';
 import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
@@ -131,7 +131,11 @@ const CodRemittancesPage: React.FC = () => {
             try {
                 const { data: accs, error: accErr } = await supabase.from('chart_of_accounts').select('*').order('account_code', { ascending: true });
                 if (accErr) throw accErr;
-                const cod = (accs || []).find(a => a.account_type === 'Asset' && isCodReceivableAccount(a));
+                // The COURIER receivable (1210) only: a deliveryman's money
+                // (1220) is handed over directly and the order marked Paid —
+                // it never goes through a courier remittance.
+                const cod = (accs || []).find(a => a.account_type === 'Asset' && isCodCourierAccount(a))
+                    || (accs || []).find(a => a.account_type === 'Asset' && isCodReceivableAccount(a));
                 // Two fetches: every line on 1210 (the balance), and the
                 // remittance entries with their lines (the list). The riel
                 // columns arrive with add_khr_currency.sql.
@@ -239,7 +243,9 @@ const CodRemittancesPage: React.FC = () => {
         return () => { alive = false; };
     }, [refreshKey]);
 
-    const codAccount = useMemo(() => accounts.find(a => a.account_type === 'Asset' && isCodReceivableAccount(a)), [accounts]);
+    // Courier first, matching the load above: the page settles 1210.
+    const codAccount = useMemo(() => accounts.find(a => a.account_type === 'Asset' && isCodCourierAccount(a))
+        || accounts.find(a => a.account_type === 'Asset' && isCodReceivableAccount(a)), [accounts]);
     // Where the remittance lands: the cash/bank accounts, petty cash aside
     // (a courier pays into the bank). Riel accounts under their own group.
     const bankAccounts = useMemo(
