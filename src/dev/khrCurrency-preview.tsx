@@ -159,6 +159,7 @@ const mockStore = new Proxy(base, { get: (t, k: string) => (k in t ? t[k] : () =
 
 const order = {
     id: 'dev-order', total: 20, depositAmount: Number(params.get('dep') || 0), amountReceived: 0, paymentStatus: params.get('pdfee') ? 'PdFee' : 'Unpaid',
+    shipping: { company: 'J&T', status: 'Shipped' },
     items: [{ id: 'p1', name: 'Speaker', price: 20, quantity: 1 }], date: new Date().toISOString(), customer: { name: 'Dev Customer', phone: '012345678' },
     customKhrAmount: params.get('khr') ? Number(params.get('khr')) : undefined,
 } as unknown as Sale;

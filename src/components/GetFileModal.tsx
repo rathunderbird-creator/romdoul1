@@ -60,7 +60,9 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
                         <div>
                             <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>{status === 'Collected' ? tx('dashboard2.pay.Collected', 'Collected') : tx('ui.components.getFile.title', 'Get File')}</h2>
                             <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '1px 0 0 0' }}>
-                                {order.customer?.name || tx('ui.components.common.customer', 'Customer')} · {tx('ui.components.deliveryFee.orderTotal', 'Order total')} ${(Number(order.total) || 0).toFixed(2)}
+                                {order.customer?.name || tx('ui.components.common.customer', 'Customer')}
+                                {order.shipping?.company ? ` · ${tx('ui.components.getFile.shippedBy', 'Shipped by')} ${order.shipping.company}` : ''}
+                                {' · '}{tx('ui.components.deliveryFee.orderTotal', 'Order total')} ${(Number(order.total) || 0).toFixed(2)}
                                 {deposit > 0 ? ` · ${tx('ui.components.getFile.deposit', 'Deposit')} $${deposit.toFixed(2)}` : ''}
                             </p>
                         </div>
