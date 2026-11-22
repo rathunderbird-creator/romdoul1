@@ -604,4 +604,79 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
     await checkBalanced('CA1');
 }
 
+// ---------------------------------------------------------------------------
+// 14. Money held by the shop's own deliveryman (p_updates.cod_holder):
+//     Collected books the receipt to 1220 COD receivable (Deliveryman);
+//     the holder is stored and returned; a holder change moves the Draft
+//     between the receivables; the Paid flip clears 1220 like 1210 and the
+//     flip back restores the stored holder; a Get File booking is always
+//     the courier's; a store without 1220 falls back to 1210 with a notice.
+// ---------------------------------------------------------------------------
+{
+    await q(`INSERT INTO chart_of_accounts (account_code, account_name, account_type)
+             SELECT '1220', 'COD receivable (Deliveryman)', 'Asset'
+              WHERE NOT EXISTS (SELECT 1 FROM chart_of_accounts WHERE account_code = '1220')`);
+    const dmanId = (await one(`SELECT id FROM chart_of_accounts WHERE account_code = '1220'`)).id;
+    const cashId = (await one(`SELECT id FROM chart_of_accounts WHERE account_name ~* 'cash on hand' AND account_type = 'Asset' ORDER BY account_code LIMIT 1`)).id;
+    const drOn = async (ref, code) => num((await one(`SELECT COALESCE(sum(l.debit), 0) AS d
+        FROM journal_entry_lines l JOIN journal_entries e ON e.id = l.journal_entry_id JOIN chart_of_accounts a ON a.id = l.account_id
+       WHERE e.reference_id = $1 AND a.account_code = $2`, [ref, code])).d);
+    const holderOf = async id => (await one(`SELECT cod_holder FROM sales WHERE id = $1`, [id])).cod_holder;
+
+    await order('DM1', 17);
+    const r1 = await pay('DM1', 'Unpaid', { payment_status: 'Collected', amount_received: 0, settle_date: null, cod_holder: 'deliveryman' });
+    const ref1 = 'TX-' + (await tx('DM1')).id;
+    check('DM1 Collected held by deliveryman: Dr 1220 17, nothing on 1210 or the bank',
+        r1.applied === true && near(await drOn(ref1, '1220'), 17) && near(await drOn(ref1, '1210'), 0) && near((await entry(ref1)).bank_dr, 0), r1);
+    check('DM1: the money line says the deliveryman holds it', /^COD held by deliveryman — Cust DM1$/.test((await entry(ref1)).money_desc), (await entry(ref1)).money_desc);
+    check('DM1: cod_holder stored and returned', (await holderOf('DM1')) === 'deliveryman' && r1.payment.cod_holder === 'deliveryman', r1.payment);
+    await checkBalanced('DM1 Collected');
+
+    // A Collected re-save never rewrites the booked amount (its Received /
+    // settle-date figures are stripped, as for Get File) — and the receipt
+    // stays on 1220.
+    await pay('DM1', 'Collected', { payment_status: 'Collected', amount_received: 19, settle_date: DAY, post_to_ledger: true, cod_collected: true });
+    check('DM1 re-saved with another amount: receipt stands at 17, still Dr 1220', near(await drOn(ref1, '1220'), 17) && near(await drOn(ref1, '1210'), 0));
+
+    // The holder changed on a COD order: the Draft moves 1220 -> 1210 and back.
+    await pay('DM1', 'Collected', { payment_status: 'Collected', cod_holder: 'courier' });
+    check('DM1 holder -> courier: Dr 1210 17, line relabelled',
+        near(await drOn(ref1, '1210'), 17) && near(await drOn(ref1, '1220'), 0) && /^COD held by courier/.test((await entry(ref1)).money_desc), (await entry(ref1)).money_desc);
+    await pay('DM1', 'Collected', { payment_status: 'Collected', cod_holder: 'deliveryman' });
+    check('DM1 holder back to deliveryman: Dr 1220 17 again', near(await drOn(ref1, '1220'), 17) && near(await drOn(ref1, '1210'), 0));
+    await checkBalanced('DM1 holder moves');
+
+    // The money arrives: the flip clears 1220 onto the picked account, and
+    // flipping back restores the stored holder's receivable.
+    await pay('DM1', 'Collected', { payment_status: 'Paid', cod_collected: false, deposit_account_id: cashId });
+    check('DM1 Collected -> Paid: Dr exactly the picked account, 1220 cleared',
+        near(await drOn(ref1, '1220'), 0) && (await one(`SELECT l.account_id FROM journal_entry_lines l JOIN journal_entries je ON je.id = l.journal_entry_id
+            WHERE je.reference_id = $1 AND l.debit > 0 AND l.account_id <> wp_internal.wp_account('5000', 'Expense', 'cost of goods|cogs')`, [ref1])).account_id === cashId);
+    await pay('DM1', 'Paid', { payment_status: 'Collected', cod_collected: true });
+    check('DM1 Paid -> Collected: back on 1220 (the stored holder), line says deliveryman',
+        near(await drOn(ref1, '1220'), 17) && /^COD held by deliveryman/.test((await entry(ref1)).money_desc), (await entry(ref1)).money_desc);
+    await checkBalanced('DM1 flips');
+
+    // A Get File booking is the courier's whatever the stored holder says.
+    await q(`UPDATE app_config SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{codGetFileCompanies}', '["J&T"]'::jsonb) WHERE id = 1`);
+    await order('DM2', 17);
+    await q(`UPDATE sales SET cod_holder = 'deliveryman' WHERE id = 'DM2'`);
+    await pay('DM2', 'Unpaid', { payment_status: 'Get File', amount_received: 0, settle_date: null });
+    const ref2 = 'TX-' + (await tx('DM2')).id;
+    check('DM2 Get File with a stored deliveryman holder: still Dr 1210 (couriers only)',
+        near(await drOn(ref2, '1210'), 17) && near(await drOn(ref2, '1220'), 0));
+    await q(`UPDATE app_config SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{codGetFileCompanies}', '[]'::jsonb) WHERE id = 1`);
+
+    // No deliveryman account: 1210 with a notice naming 1220.
+    await q(`UPDATE chart_of_accounts SET is_active = false WHERE id = $1`, [dmanId]);
+    await order('DM3', 17);
+    const r3 = await pay('DM3', 'Unpaid', { payment_status: 'Collected', amount_received: 0, settle_date: null, cod_holder: 'deliveryman' });
+    const ref3 = 'TX-' + (await tx('DM3')).id;
+    check('DM3 deliveryman without 1220: Dr 1210, notice names the missing account',
+        near(await drOn(ref3, '1210'), 17) && (r3.notices || []).length === 1 && /Deliveryman/.test(r3.notices[0]) && /1220/.test(r3.notices[0]), r3.notices);
+    check('DM3: the line says courier (where the money actually sits)', /^COD held by courier/.test((await entry(ref3)).money_desc), (await entry(ref3)).money_desc);
+    await q(`UPDATE chart_of_accounts SET is_active = true WHERE id = $1`, [dmanId]);
+    await checkBalanced('DM2 + DM3');
+}
+
 done();

@@ -125,6 +125,10 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS deposit_account_id TEXT;
 -- this column and the 1210 account; added here too so set_order_payment
 -- never fails on a store that ran this pack first).
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS cod_collected BOOLEAN NOT NULL DEFAULT false;
+-- Who holds a COD order's money: 'courier' (default — the shipping
+-- company, receivable 1210) or 'deliveryman' (the shop's own deliveryman,
+-- receivable 1220). Chosen in the Collected popup; NULL means courier.
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS cod_holder TEXT;
 -- A Get File whose receipt was booked as COD (Sales Setup's ticked couriers).
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS get_file_booked BOOLEAN NOT NULL DEFAULT false;
 
@@ -437,13 +441,30 @@ AS $$
     SELECT wp_internal.wp_account('1210', 'Asset', 'cod receivable');
 $$;
 
--- The signature grew a parameter with a default; the old one must go or a
--- nine-argument call would match both and be refused as ambiguous.
+-- The receivable a COD receipt debits, by who holds the money:
+-- 'deliveryman' resolves 1220 COD receivable (Deliveryman); anything else,
+-- or a store without a deliveryman account, resolves the courier's 1210.
+-- The booking (op_post_receipt_entry) notices the deliveryman fallback;
+-- everywhere else it is silent.
+CREATE OR REPLACE FUNCTION wp_internal.op_cod_account(p_holder TEXT)
+RETURNS UUID
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT COALESCE(
+        CASE WHEN lower(COALESCE(p_holder, '')) = 'deliveryman'
+             THEN wp_internal.wp_account('1220', 'Asset', 'receivable.*deliveryman|deliveryman.*receivable') END,
+        wp_internal.op_cod_account());
+$$;
+
+-- The signature grew parameters with defaults; the old ones must go or a
+-- shorter call would match several and be refused as ambiguous.
 DROP FUNCTION IF EXISTS wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT, BOOLEAN);
 CREATE OR REPLACE FUNCTION wp_internal.op_post_receipt_entry(
     p_type TEXT, p_date DATE, p_name TEXT, p_tx UUID, p_amount NUMERIC,
     p_account_id UUID, p_pay_by TEXT, p_cogs_order TEXT, p_status TEXT DEFAULT 'Draft',
-    p_cod BOOLEAN DEFAULT false)
+    p_cod BOOLEAN DEFAULT false, p_cod_holder TEXT DEFAULT NULL)
 RETURNS TEXT
 LANGUAGE plpgsql
 AS $$
@@ -451,6 +472,7 @@ DECLARE
     v_revenue UUID := wp_internal.wp_account('4000', 'Revenue', 'sales revenue', true);
     v_cash UUID := COALESCE(p_account_id, wp_internal.wp_cash_bank_account(p_pay_by, true));
     v_cod BOOLEAN := COALESCE(p_cod, false) AND p_type = 'RCP';
+    v_desc TEXT := 'Receipt';
     v_notice TEXT;
     v_cogs UUID;
     v_inventory UUID;
@@ -460,10 +482,18 @@ DECLARE
     v_entry UUID;
 BEGIN
     IF v_cod THEN
-        -- The courier holds the money: debit the receivable, not the bank.
-        -- The picked cash/bank account is where it will land on remittance.
-        IF wp_internal.op_cod_account() IS NOT NULL THEN
-            v_cash := wp_internal.op_cod_account();
+        -- The courier (or the shop's own deliveryman, p_cod_holder
+        -- 'deliveryman') holds the money: debit that receivable, not the
+        -- bank. The picked cash/bank account is where it will land later.
+        IF wp_internal.op_cod_account(p_cod_holder) IS NOT NULL THEN
+            v_cash := wp_internal.op_cod_account(p_cod_holder);
+            IF lower(COALESCE(p_cod_holder, '')) = 'deliveryman' AND v_cash = wp_internal.op_cod_account() THEN
+                v_desc := 'COD held by courier';
+                v_notice := 'There is no COD receivable (Deliveryman) account in the Chart of Accounts — add an Asset account with code 1220 named ''COD receivable (Deliveryman)''. The receipt was booked to the courier receivable (1210) instead.';
+            ELSE
+                v_desc := CASE WHEN lower(COALESCE(p_cod_holder, '')) = 'deliveryman'
+                               THEN 'COD held by deliveryman' ELSE 'COD held by courier' END;
+            END IF;
         ELSE
             v_notice := 'This payment was marked as collected by the courier, but there is no 1210 COD receivable (courier) account yet — run migrations/add_cod_receivable.sql. The receipt was booked to the cash/bank account instead.';
         END IF;
@@ -487,9 +517,10 @@ BEGIN
     RETURNING id INTO v_entry;
     INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
         (v_entry, v_cash, p_amount, 0,
-         CASE WHEN p_type = 'DEP' THEN 'Deposit'
-              WHEN v_cod AND v_notice IS NULL THEN 'COD held by courier'
-              ELSE 'Receipt' END || ' — ' || p_name),
+         -- v_desc says who holds COD money ('COD held by courier' /
+         -- 'COD held by deliveryman'), or 'Receipt' when the money is on
+         -- a cash/bank account (non-COD, or no receivable to book to).
+         CASE WHEN p_type = 'DEP' THEN 'Deposit' ELSE v_desc END || ' — ' || p_name),
         (v_entry, v_revenue, 0, p_amount, 'Sales — ' || p_name);
     IF v_cost > 0 THEN
         INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES
@@ -506,7 +537,10 @@ $$;
 -- an order that is already Paid. The row's TX-<tx> entry and its Draft
 -- TX-<tx>-ADJ are re-pointed while Draft; a POSTED TX-<tx> entry stays and
 -- the notice says so. Nothing when the order has no receipt entry.
-CREATE OR REPLACE FUNCTION wp_internal.op_repoint_receipt_debit(p_order_id TEXT, p_cod BOOLEAN, p_account_id UUID, p_pay_by TEXT)
+-- The signature grew p_cod_holder; the old one must go or a four-argument
+-- call would match both and be refused as ambiguous.
+DROP FUNCTION IF EXISTS wp_internal.op_repoint_receipt_debit(TEXT, BOOLEAN, UUID, TEXT);
+CREATE OR REPLACE FUNCTION wp_internal.op_repoint_receipt_debit(p_order_id TEXT, p_cod BOOLEAN, p_account_id UUID, p_pay_by TEXT, p_cod_holder TEXT DEFAULT NULL)
 RETURNS TEXT
 LANGUAGE plpgsql
 AS $$
@@ -514,6 +548,7 @@ DECLARE
     v_tx UUID;
     v_main RECORD;
     v_target UUID;
+    v_label TEXT := 'Receipt';
     v_inventory UUID := wp_internal.wp_account('1300', 'Asset', 'inventor|stock');
 BEGIN
     SELECT id INTO v_tx FROM transactions
@@ -529,10 +564,14 @@ BEGIN
       FROM journal_entries WHERE reference_id = 'TX-' || v_tx ORDER BY created_at, id LIMIT 1 FOR UPDATE;
     IF NOT FOUND THEN RETURN NULL; END IF;
     IF p_cod THEN
-        v_target := wp_internal.op_cod_account();
+        -- The receivable for who holds the money; a missing deliveryman
+        -- account falls back to the courier's 1210 (op_cod_account).
+        v_target := wp_internal.op_cod_account(p_cod_holder);
         IF v_target IS NULL THEN
             RETURN 'There is no 1210 COD receivable (courier) account yet — run migrations/add_cod_receivable.sql. The receipt stays on the cash/bank account.';
         END IF;
+        v_label := CASE WHEN lower(COALESCE(p_cod_holder, '')) = 'deliveryman' AND v_target IS DISTINCT FROM wp_internal.op_cod_account()
+                        THEN 'COD held by deliveryman' ELSE 'COD held by courier' END;
     ELSE
         v_target := COALESCE(p_account_id, wp_internal.wp_cash_bank_account(p_pay_by, true));
         IF v_target IS NULL THEN RETURN NULL; END IF;
@@ -551,9 +590,9 @@ BEGIN
        AND e.reference_id IN ('TX-' || v_tx, 'TX-' || v_tx || '-ADJ') AND COALESCE(e.status, 'Posted') = 'Draft'
        AND a.account_type = 'Asset' AND (v_inventory IS NULL OR a.id <> v_inventory) AND a.account_code IS DISTINCT FROM '1300';
     UPDATE journal_entry_lines l SET description = regexp_replace(l.description,
-               '^(COD held by courier|Receipt)( — )', CASE WHEN p_cod THEN 'COD held by courier' ELSE 'Receipt' END || '\2')
+               '^(COD held by courier|COD held by deliveryman|Receipt)( — )', v_label || '\2')
       FROM journal_entries e
-     WHERE l.journal_entry_id = e.id AND e.id = v_main.id AND l.account_id = v_target AND l.description ~ '^(COD held by courier|Receipt) — ';
+     WHERE l.journal_entry_id = e.id AND e.id = v_main.id AND l.account_id = v_target AND l.description ~ '^(COD held by courier|COD held by deliveryman|Receipt) — ';
     RETURN NULL;
 END;
 $$;
@@ -1036,6 +1075,7 @@ AS $$
         'settle_date', s.settle_date, 'payment_method', s.payment_method,
         'deposit_amount', s.deposit_amount, 'deposit_date', s.deposit_date,
         'deposit_method', s.deposit_method, 'cod_collected', COALESCE(s.cod_collected, false),
+        'cod_holder', s.cod_holder,
         'get_file_booked', COALESCE(s.get_file_booked, false));
 $$;
 
@@ -1184,6 +1224,8 @@ DECLARE
     -- (NULL when this save says nothing about it — the stored flag then
     -- stands, false for an order never marked).
     v_cod BOOLEAN := CASE WHEN u ? 'cod_collected' THEN COALESCE(NULLIF(u->>'cod_collected', '')::BOOLEAN, false) END;
+    -- Who holds the COD money ('courier' / 'deliveryman'), set below.
+    v_holder TEXT;
     v_cut NUMERIC;
     -- Split settlement (p_updates.split, sent by the Settle form only): the
     -- receipt is taken part in dollars, part in riel. split.usd_amount is
@@ -1312,6 +1354,13 @@ BEGIN
         -- removed below and the order is no longer the courier's.
         v_cod := false;
     END IF;
+    -- Who holds the COD money (p_updates.cod_holder: 'courier' /
+    -- 'deliveryman' — the Collected popup's choice): the sent value, else
+    -- the order's stored one, else the courier. A Get File booking is
+    -- always the courier's: its tick is per shipping company.
+    v_holder := CASE WHEN lower(COALESCE(NULLIF(u->>'cod_holder', ''), s.cod_holder, '')) = 'deliveryman'
+                     THEN 'deliveryman' ELSE 'courier' END;
+    IF v_target = 'Get File' AND v_entering_paid THEN v_holder := 'courier'; END IF;
 
     v_name := COALESCE(NULLIF(u->>'customer_name', ''), NULLIF(s.customer_snapshot->>'name', ''), 'Customer');
     v_phone := COALESCE(NULLIF(u->>'customer_phone', ''), NULLIF(s.customer_snapshot->>'phone', ''));
@@ -1423,7 +1472,7 @@ BEGIN
                 v_notice := wp_internal.op_post_receipt_entry('RCP',
                     CASE WHEN v_target IN ('Get File', 'Collected') THEN wp_internal.op_local_day(v_date, v_tz) ELSE v_date::DATE END, v_name,
                     ((v_txs->-1)->>'id')::UUID, v_to_record, v_account_id, v_pay_by, p_order_id, 'Draft',
-                    COALESCE(v_cod, s.cod_collected, false));
+                    COALESCE(v_cod, s.cod_collected, false), v_holder);
                 IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
             END IF;
         ELSIF v_post THEN
@@ -1598,14 +1647,24 @@ BEGIN
             END IF;
         END IF;
         -- "Collected by the courier" flipped on a paid order: the receipt's
-        -- debit moves between 1210 COD receivable and cash/bank (a Draft is
+        -- debit moves between the COD receivable and cash/bank (a Draft is
         -- re-pointed, a POSTED entry stays with a notice). Never for a split
         -- settlement (guarded above and in op_repoint_receipt_debit itself).
         IF v_cod IS NOT NULL AND v_cod IS DISTINCT FROM COALESCE(s.cod_collected, false)
            AND (SELECT count(*) FROM transactions
                  WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id) <= 1 THEN
             v_notice := wp_internal.op_repoint_receipt_debit(p_order_id, v_cod, v_account_id,
-                COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name));
+                COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name), v_holder);
+            IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
+        -- The holder changed on an order that stays COD (courier <->
+        -- deliveryman): the Draft receipt's debit moves between the two
+        -- receivables the same way.
+        ELSIF COALESCE(v_cod, s.cod_collected, false) AND u ? 'cod_holder'
+           AND v_holder IS DISTINCT FROM (CASE WHEN lower(COALESCE(s.cod_holder, '')) = 'deliveryman' THEN 'deliveryman' ELSE 'courier' END)
+           AND (SELECT count(*) FROM transactions
+                 WHERE type = 'Income' AND category IN ('លក់រាយ', 'លក់ឥវ៉ាន់') AND order_id = p_order_id) <= 1 THEN
+            v_notice := wp_internal.op_repoint_receipt_debit(p_order_id, true, NULL,
+                COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name), v_holder);
             IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
         END IF;
     END IF;
@@ -1621,6 +1680,7 @@ BEGIN
         deposit_method = CASE WHEN u ? 'deposit_method' THEN NULLIF(u->>'deposit_method', '') ELSE deposit_method END,
         deposit_account_id = CASE WHEN u ? 'deposit_account_id' THEN NULLIF(u->>'deposit_account_id', '') ELSE deposit_account_id END,
         cod_collected = COALESCE(v_cod, cod_collected, false),
+        cod_holder = CASE WHEN u ? 'cod_holder' THEN lower(NULLIF(u->>'cod_holder', '')) ELSE cod_holder END,
         -- Booked at Get File: the order ends at Get File with its receipt on
         -- the books (entered, kept from Paid, or re-saved); any other end
         -- state clears it (Paid's own status says settled from then on).
@@ -1907,9 +1967,10 @@ GRANT EXECUTE ON FUNCTION wp_internal.op_unbook_cogs(TEXT, NUMERIC) TO anon, aut
 GRANT EXECUTE ON FUNCTION wp_internal.op_drop_draft_cogs_entries(TEXT, TEXT[]) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_reverse_booked_cogs(TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_cod_account() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_cod_account(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_cod_method(TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT, BOOLEAN) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION wp_internal.op_repoint_receipt_debit(TEXT, BOOLEAN, UUID, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT, BOOLEAN, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_repoint_receipt_debit(TEXT, BOOLEAN, UUID, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_cogs_only(TEXT, DATE, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_fee_entry(UUID, DATE, TEXT, NUMERIC, UUID, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_has_currency_cols(TEXT) TO anon, authenticated;

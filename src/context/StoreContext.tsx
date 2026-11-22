@@ -432,7 +432,8 @@ export async function postRetailSaleToLedger({
     orderId,
     payBy,
     currency,
-    cod
+    cod,
+    codHolder
 }: {
     txId: string;
     amount: number;
@@ -454,14 +455,16 @@ export async function postRetailSaleToLedger({
     // The payment's currency: a riel payment picks a riel account.
     currency?: Currency;
     // The order's money is with the courier (sales.cod_collected): an RCP
-    // debits 1210 COD receivable instead of the cash/bank account.
+    // debits a COD receivable instead of the cash/bank account — 1220 when
+    // the stored holder (sales.cod_holder) is the deliveryman, else 1210.
     cod?: boolean;
+    codHolder?: string | null;
 }): Promise<boolean> {
     return enqueueLedgerPost(async () => {
     try {
         const resolved = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency);
         const { revenueAcc, pool } = resolved;
-        const cashAccId = (type === 'RCP' && cod ? codReceiptDebitId(pool, { saleCod: true }) : undefined) || resolved.cashAccId;
+        const cashAccId = (type === 'RCP' && cod ? codReceiptDebitId(pool, { saleCod: true, holder: codHolder }) : undefined) || resolved.cashAccId;
         if (revenueAcc && cashAccId) {
             // Read before anything is written. Deposits aren't a completed
             // sale yet — COGS books once, on the Paid-transition (RCP) entry.
@@ -660,16 +663,24 @@ export async function postOrFinalizeTransactionReceipt({
         if (statusDropped) console.warn('Finalized the receipt, but this instance needs migrations/add_entry_status.sql to mark it Posted');
     } else {
         // No Draft yet (e.g. a checkout-born or Payment Tracking Paid): the
-        // order's stored COD flag decides whether the receipt debits 1210.
+        // order's stored COD flag decides whether the receipt debits a COD
+        // receivable, and its stored holder which one (1210 / 1220).
         let cod = false;
+        let codHolder: string | undefined;
         if (type === 'RCP' && orderId) {
-            const { data: sale, error: codErr } = await supabase.from('sales').select('cod_collected').eq('id', orderId).maybeSingle();
+            let { data: sale, error: codErr } = await supabase.from('sales').select('cod_collected, cod_holder').eq('id', orderId).maybeSingle();
+            if (codErr && /cod_holder/i.test(codErr.message || '')) {
+                // A store that hasn't run the cod_holder migration yet.
+                ({ data: sale, error: codErr } = await supabase.from('sales').select('cod_collected').eq('id', orderId).maybeSingle());
+            }
             // Fail closed: a Posted entry cannot be re-posted, so guessing
             // "not COD" on a failed read could leave the receipt on the bank.
             if (codErr) throw codErr;
-            cod = (sale as { cod_collected?: boolean | null } | null)?.cod_collected === true;
+            const row = sale as { cod_collected?: boolean | null; cod_holder?: string | null } | null;
+            cod = row?.cod_collected === true;
+            codHolder = row?.cod_holder || undefined;
         }
-        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId, payBy, currency, cod });
+        const ok = await postRetailSaleToLedger({ txId, amount, date, description, depositAccountId, type, status: 'Posted', reference, notes, orderId, payBy, currency, cod, codHolder });
         if (!ok) {
             throw new Error(tNow('ui.store.ledger.postFailed'));
         }
@@ -3638,7 +3649,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             || updates.depositAmount !== undefined || updates.depositDate !== undefined
             || updates.depositMethod !== undefined || updates.depositAccountId !== undefined
             || updates.depositAccountName !== undefined || updates.postToLedger !== undefined
-            || updates.codCollected !== undefined;
+            || updates.codCollected !== undefined || updates.codHolder !== undefined;
         if (hasPaymentFields() && !(await paymentFunctionsReady())) {
             alert(ORDER_PAYMENT_FUNCTIONS_MISSING_MESSAGE());
             return false;
@@ -3701,6 +3712,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // account (migrations/add_cod_receivable.sql); the account picked
             // below is still sent — it is where the remittance will land.
             if (updates.codCollected !== undefined) pUpdates.cod_collected = updates.codCollected === true;
+            // Who holds the COD money ('courier' / 'deliveryman', the
+            // Collected popup's choice): stored on the order and picked up
+            // by the booking and the Paid->Collected repoint.
+            if (updates.codHolder !== undefined) pUpdates.cod_holder = updates.codHolder || '';
             // The riel details of the money this save books or corrects, with
             // the income category they belong to: the database writes them to
             // the corrected row and its ledger entry (a Draft rewritten, a
@@ -3807,7 +3822,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             paymentTxKeys.release(paySignature);
             const payRes = (payData || {}) as {
                 skipped?: boolean; already_applied?: boolean;
-                payment?: { payment_status?: string | null; amount_received?: number; settle_date?: string | null; payment_method?: string | null; deposit_amount?: number; deposit_date?: string | null; deposit_method?: string | null; cod_collected?: boolean | null; get_file_booked?: boolean | null };
+                payment?: { payment_status?: string | null; amount_received?: number; settle_date?: string | null; payment_method?: string | null; deposit_amount?: number; deposit_date?: string | null; deposit_method?: string | null; cod_collected?: boolean | null; cod_holder?: string | null; get_file_booked?: boolean | null };
                 transactions_added?: Transaction[]; transactions_removed?: string[]; notices?: string[];
             };
             if (payRes.payment) {
@@ -3822,6 +3837,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     // Older packs don't return it: the flag the save sent then
                     // stands (undefined leaves the cached order's as it was).
                     ...(typeof payRes.payment.cod_collected === 'boolean' ? { codCollected: payRes.payment.cod_collected } : {}),
+                    ...(payRes.payment.cod_holder !== undefined ? { codHolder: payRes.payment.cod_holder || undefined } : {}),
                     ...(typeof payRes.payment.get_file_booked === 'boolean' ? { getFileBooked: payRes.payment.get_file_booked } : {}),
                 };
                 if (existingOrder) existingOrder = { ...existingOrder, ...freshPayment };

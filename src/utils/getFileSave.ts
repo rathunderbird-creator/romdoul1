@@ -63,7 +63,7 @@ export function getFileMoneyUpdates(
 export async function saveGetFile(
     updateOrder: UpdateOrder,
     order: Sale,
-    amount?: { collectUsd: number; money: MoneyMeta; method?: string; accountId?: string; accountName?: string },
+    amount?: { collectUsd: number; money: MoneyMeta; method?: string; accountId?: string; accountName?: string; holder?: 'courier' | 'deliveryman' },
     status: CourierStatus = 'Get File',
 ): Promise<boolean> {
     if (amount) {
@@ -96,6 +96,10 @@ export async function saveGetFile(
             depositAccountId: amount.accountId,
             ...(amount.accountName ? { depositAccountName: amount.accountName } : {}),
         } : {}),
+        // Who holds the money (Collected only, offered when the chart has a
+        // deliveryman receivable): courier books the receipt to 1210,
+        // deliveryman to 1220. Unset says nothing — courier by default.
+        ...(amount?.holder ? { codHolder: amount.holder } : {}),
     },
         // An amount typed in riel rides along as the booked money's riel
         // details: updateOrder tags the income row this save books (and its

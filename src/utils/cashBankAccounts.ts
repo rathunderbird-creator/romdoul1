@@ -46,7 +46,20 @@ export type CashBankCandidate = {
 // pickers of the payment forms).
 export const COD_RECEIVABLE_CODE = '1210';
 export const isCodReceivableAccount = (a: { account_code?: string | null; account_name: string }): boolean =>
-    a.account_code === COD_RECEIVABLE_CODE || /receivable/i.test(a.account_name) && /\bcod\b|courier/i.test(a.account_name);
+    a.account_code === COD_RECEIVABLE_CODE || isCodDeliverymanAccount(a)
+    || /receivable/i.test(a.account_name) && /\bcod\b|courier/i.test(a.account_name);
+
+// 1220 "COD receivable (Deliveryman)": the money the shop's OWN deliveryman
+// holds, apart from the couriers' 1210. Chosen in the Collected popup
+// ("Money held by"); the server twin is wp_internal.op_cod_account(holder).
+export const isCodDeliverymanAccount = (a: { account_code?: string | null; account_name: string }): boolean =>
+    a.account_code === '1220' || /receivable/i.test(a.account_name) && /deliveryman/i.test(a.account_name);
+
+// The courier receivable only — what the COD Remittances page settles
+// (couriers remit in batches; a deliveryman hands the money over and the
+// order is simply marked Paid).
+export const isCodCourierAccount = (a: { account_code?: string | null; account_name: string }): boolean =>
+    isCodReceivableAccount(a) && !isCodDeliverymanAccount(a);
 
 // A cash or bank asset account. The receivable is excluded by name as well
 // as by code, so a renamed "COD cash receivable" could never slip back in.
@@ -138,12 +151,18 @@ export const defaultCodPaymentMethods = (paymentMethods: readonly string[] | nul
 // Returns undefined when the receipt is not COD or the store has no 1210.
 export function codReceiptDebitId<T extends CashBankCandidate & { id: string }>(
     pool: T[],
-    opts: { oldDebitAccountIds?: readonly string[] | null; saleCod?: boolean | null }
+    opts: { oldDebitAccountIds?: readonly string[] | null; saleCod?: boolean | null; holder?: string | null }
 ): string | undefined {
-    const cod = pool.find(a => a.account_type === 'Asset' && isCodReceivableAccount(a));
-    if (!cod) return undefined;
-    if (opts.oldDebitAccountIds) return opts.oldDebitAccountIds.includes(cod.id) ? cod.id : undefined;
-    return opts.saleCod === true ? cod.id : undefined;
+    // Both receivables count (1210 courier, 1220 deliveryman): a rebuilt
+    // Draft keeps whichever its own debit sits on; a fresh entry takes the
+    // order's holder (courier unless 'deliveryman' is stored).
+    const cods = pool.filter(a => a.account_type === 'Asset' && isCodReceivableAccount(a));
+    if (cods.length === 0) return undefined;
+    if (opts.oldDebitAccountIds) return cods.find(a => opts.oldDebitAccountIds!.includes(a.id))?.id;
+    if (opts.saleCod !== true) return undefined;
+    const wantDeliveryman = (opts.holder || '').toLowerCase() === 'deliveryman';
+    return (wantDeliveryman ? cods.find(isCodDeliverymanAccount) : undefined)?.id
+        || cods.find(isCodCourierAccount)?.id || cods[0].id;
 }
 
 const isPettyCash = (a: { account_name: string }) => /petty/i.test(a.account_name);
@@ -180,14 +199,18 @@ export function pickCashBankAccount<T extends CashBankCandidate>(
     payBy?: string | null,
     // defaultId: Sales Setup's default deposit account for this currency
     // (depositDefaultFor) — see the step after the exact-name match.
-    opts?: { preferBank?: boolean; currency?: Currency; cod?: boolean; defaultId?: string | null }
+    opts?: { preferBank?: boolean; currency?: Currency; cod?: boolean; codHolder?: string | null; defaultId?: string | null }
 ): T | undefined {
     // A courier-collected receipt lands on the COD receivable, whatever the
     // Method says (the SQL twin, wp_internal.op_post_receipt_entry, makes
     // the same short-circuit; the pick below is only the account the money
     // will reach on remittance).
     if (opts?.cod) {
-        const cod = pool.find(a => a.account_type === 'Asset' && isCodReceivableAccount(a));
+        // The courier receivable unless the deliveryman's is asked for —
+        // never whichever happens to come first in row order.
+        const cods = pool.filter(a => a.account_type === 'Asset' && isCodReceivableAccount(a));
+        const cod = ((opts.codHolder || '').toLowerCase() === 'deliveryman' ? cods.find(isCodDeliverymanAccount) : undefined)
+            || cods.find(isCodCourierAccount) || cods[0];
         if (cod) return cod;
     }
     const all = pool.filter(isCashBank).sort(byCode);

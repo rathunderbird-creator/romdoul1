@@ -7,7 +7,7 @@ import CashBankOptions from './CashBankOptions';
 import { useMoneyField } from '../hooks/useMoneyField';
 import { useAccounting } from '../hooks/useAccounting';
 import { type MoneyMeta } from '../utils/currency';
-import { defaultCashBankAccountId, depositDefaultFor } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, depositDefaultFor, isCodDeliverymanAccount } from '../utils/cashBankAccounts';
 import { useTx } from './useTx';
 
 interface GetFileModalProps {
@@ -22,7 +22,10 @@ interface GetFileModalProps {
     // accountId/accountName (Collected only): the cash/bank account the
     // money lands in when it arrives — stored on the order, used when the
     // order is later marked Paid. Absent when left unset.
-    onConfirm: (data: { collectUsd: number; money: MoneyMeta; method?: string; accountId?: string; accountName?: string }) => void;
+    // holder (Collected only, shown when the chart has a 1220 deliveryman
+    // receivable): who holds the money — 'courier' books the receipt to
+    // 1210, 'deliveryman' to 1220. Absent when the store has no choice.
+    onConfirm: (data: { collectUsd: number; money: MoneyMeta; method?: string; accountId?: string; accountName?: string; holder?: 'courier' | 'deliveryman' }) => void;
 }
 
 // Moving an order to Get File: the courier collects the order's money, so
@@ -43,7 +46,15 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
     const [accountId, setAccountId] = useState('');
     // A pick the user made stands; only the automatic prefill may move.
     const [accountPicked, setAccountPicked] = useState(false);
+    // Who holds the money (Collected only): courier -> receivable 1210,
+    // deliveryman -> 1220. Offered only when the chart has a deliveryman
+    // receivable (1220 "COD receivable (Deliveryman)").
+    const [holder, setHolder] = useState<'courier' | 'deliveryman'>('courier');
     const { accounts, fetchAccounts } = useAccounting();
+    const hasDeliveryman = useMemo(
+        () => accounts.some(a => a.is_active && a.account_type === 'Asset' && isCodDeliverymanAccount(a)),
+        [accounts]
+    );
     const defUsd = depositDefaultFor(salesSettings, 'USD');
     const defKhr = depositDefaultFor(salesSettings, 'KHR');
     // Same pool as the Settle form's "Deposited into": active cash/bank
@@ -63,6 +74,7 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
         setMethod(order.paymentMethod && paymentMethods.includes(order.paymentMethod) ? order.paymentMethod : '');
         setAccountId('');
         setAccountPicked(false);
+        setHolder(order.codHolder === 'deliveryman' ? 'deliveryman' : 'courier');
         if (status === 'Collected') void fetchAccounts();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [order]);
@@ -122,6 +134,15 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
                         labelStyle={labelStyle}
                         inputStyle={inputStyle}
                     />
+                    {status === 'Collected' && hasDeliveryman && (
+                        <div>
+                            <label style={labelStyle}>{tx('ui.components.getFile.holder', 'Money held by')}</label>
+                            <select value={holder} onChange={e => setHolder(e.target.value === 'deliveryman' ? 'deliveryman' : 'courier')} style={inputStyle}>
+                                <option value="courier">{tx('ui.components.getFile.holderCourier', 'Courier (shipping company) — 1210')}</option>
+                                <option value="deliveryman">{tx('ui.components.getFile.holderDeliveryman', 'Deliveryman — 1220')}</option>
+                            </select>
+                        </div>
+                    )}
                     {status === 'Collected' && (
                         <div>
                             <label style={labelStyle}>{tx('ui.components.getFile.method', 'Method (Cash/Bank)')}</label>
@@ -158,6 +179,7 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
                                 ...(status === 'Collected' && accountId
                                     ? { accountId, accountName: paymentAccounts.find(a => a.id === accountId)?.account_name }
                                     : {}),
+                                ...(status === 'Collected' && hasDeliveryman ? { holder } : {}),
                             });
                         }}
                         style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 600, background: '#1D4ED8', opacity: valid ? 1 : 0.5, cursor: valid ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}
