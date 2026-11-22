@@ -1679,10 +1679,10 @@ const PaymentTracking: React.FC = () => {
                 order={getFileTarget?.order ?? null}
                 status={getFileTarget?.status}
                 onClose={() => setGetFileTarget(null)}
-                onConfirm={({ collectUsd, money }) => {
+                onConfirm={({ collectUsd, money, method }) => {
                     const target = getFileTarget;
                     setGetFileTarget(null);
-                    if (target) void saveGetFile(updateOrder, target.order, { collectUsd, money }, target.status);
+                    if (target) void saveGetFile(updateOrder, target.order, { collectUsd, money, method }, target.status);
                 }}
             />
 

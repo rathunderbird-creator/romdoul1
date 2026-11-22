@@ -63,7 +63,7 @@ export function getFileMoneyUpdates(
 export async function saveGetFile(
     updateOrder: UpdateOrder,
     order: Sale,
-    amount?: { collectUsd: number; money: MoneyMeta },
+    amount?: { collectUsd: number; money: MoneyMeta; method?: string },
     status: CourierStatus = 'Get File',
 ): Promise<boolean> {
     if (amount) {
@@ -83,5 +83,10 @@ export async function saveGetFile(
         amountReceived: order.depositAmount || 0,
         settleDate: null as unknown as string,
         expectedPaymentStatus: order.paymentStatus,
+        // Collected's popup can name the Pay By (how the courier will
+        // remit); the receipt still debits 1210 — the method is the income
+        // row's Method and the order's Pay By. Unset says nothing, so a
+        // method already on the order stands.
+        ...(amount?.method ? { paymentMethod: amount.method as Sale['paymentMethod'] } : {}),
     });
 }
