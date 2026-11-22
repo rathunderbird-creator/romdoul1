@@ -4,7 +4,7 @@ import { useStore } from '../context/StoreContext';
 import type { Sale } from '../types';
 import MoneyInput from './MoneyInput';
 import { useMoneyField } from '../hooks/useMoneyField';
-import { type MoneyMeta } from '../utils/currency';
+import { type Currency, type MoneyMeta } from '../utils/currency';
 import { useTx } from './useTx';
 
 interface GetFileModalProps {
@@ -70,10 +70,28 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
                         label={tx('ui.components.getFile.amount', 'Amount the courier collects')}
                         required
                         autoFocus
-                        allowKhr
+                        // Collected has the Method select below; one control, not two.
+                        allowKhr={status !== 'Collected'}
                         labelStyle={labelStyle}
                         inputStyle={inputStyle}
                     />
+                    {status === 'Collected' && (
+                        <div>
+                            <label style={labelStyle}>{tx('ui.components.getFile.method', 'Method')} (KHR/USD)</label>
+                            {/* The currency the courier collected. It switches the amount
+                                field (riel typing sets the riel price, as the toggle did)
+                                and is saved as the order's Pay By, so Retail Payment's
+                                Method shows KHR or USD instead of the bare COD fallback. */}
+                            <select
+                                value={field.currency}
+                                onChange={e => field.setCurrency(e.target.value as Currency)}
+                                style={{ ...inputStyle, cursor: 'pointer' }}
+                            >
+                                <option value="USD">USD $</option>
+                                <option value="KHR">KHR ៛</option>
+                            </select>
+                        </div>
+                    )}
                     <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '8px 10px' }}>
                         {tx('ui.components.getFile.note', 'A different amount changes the order total (the difference goes into the discount). Cash or bank, riel or dollar, is chosen when the courier remits, in Accounting › COD Remittances.')}
                     </div>

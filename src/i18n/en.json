@@ -5267,6 +5267,7 @@
       "getFile": {
         "amount": "Amount the courier collects",
         "deposit": "Deposit",
+        "method": "Method",
         "note": "A different amount changes the order total (the difference goes into the discount). Cash or bank, riel or dollar, is chosen when the courier remits, in Accounting › COD Remittances.",
         "title": "Get File"
       },

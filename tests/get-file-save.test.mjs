@@ -59,6 +59,13 @@ check('Get File no ask from Collected', !m.getFileAsksAmount({ paymentStatus: 'C
 calls.length = 0;
 await m.saveGetFile(upd, order, { collectUsd: 18, money: usd(18) }, 'Collected');
 check('Collected: money first, then Collected', calls.length === 2 && calls[0].updates.total === 23 && calls[1].updates.paymentStatus === 'Collected', calls);
+check('Collected in dollars: Method USD saved as Pay By', calls[1].updates.paymentMethod === 'USD', calls[1]);
+calls.length = 0;
+await m.saveGetFile(upd, order, { collectUsd: 20, money: khr(82000, 4100) }, 'Collected');
+check('Collected in riel: Method KHR saved as Pay By', calls.at(-1).updates.paymentStatus === 'Collected' && calls.at(-1).updates.paymentMethod === 'KHR', calls);
+calls.length = 0;
+await m.saveGetFile(upd, order, { collectUsd: 20, money: usd(20) });
+check('Get File saves no Method', calls[0].updates.paymentStatus === 'Get File' && calls[0].updates.paymentMethod === undefined, calls[0]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

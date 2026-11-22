@@ -83,5 +83,11 @@ export async function saveGetFile(
         amountReceived: order.depositAmount || 0,
         settleDate: null as unknown as string,
         expectedPaymentStatus: order.paymentStatus,
+        // Collected records the currency the courier collected (the popup's
+        // Method, KHR/USD) as the order's Pay By — the receipt row's Method
+        // then shows it instead of the database's bare COD fallback.
+        ...(status === 'Collected' && amount
+            ? { paymentMethod: (amount.money.currency === 'KHR' ? 'KHR' : 'USD') as Sale['paymentMethod'] }
+            : {}),
     });
 }

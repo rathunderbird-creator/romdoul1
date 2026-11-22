@@ -2,7 +2,8 @@
 // `npm run dev` is running. ?chart= picks the chart of accounts the forms see
 // (r1: 1001 Petty Cash + 1010 Bank Account ABA (USD); r2: 1000 Cash only; the
 // *khr variants add 1002 Cash on Hand (KHR) + 1011 Bank Account ABA (KHR)),
-// ?form= the form (delivery, deposit, settle, receipt, finalize, wholesale,
+// ?form= the form (delivery, deposit, getfile / collect = the Get File /
+// Collected amount popup, settle, receipt, finalize, wholesale,
 // supplier, settings, money, setup = Sales Setup, shipping = Select Shipping Company popup,
 // checkout = the order Checkout form, payreq = Copy payment request on an order owing and a Paid one, ?edit=neg|khr reopening a saved one;
 // ?dep= sets that order's existing deposit).
@@ -25,6 +26,7 @@ import { LanguageProvider } from '../context/LanguageContext';
 import DeliveryFeeModal from '../components/DeliveryFeeModal';
 import DepositModal from '../components/DepositModal';
 import SettlePaymentModal from '../components/SettlePaymentModal';
+import GetFileModal from '../components/GetFileModal';
 import RecordReceiptModal from '../components/RecordReceiptModal';
 import RecordCustomerPaymentModal from '../components/RecordCustomerPaymentModal';
 import RecordSupplierPaymentModal from '../components/RecordSupplierPaymentModal';
@@ -199,6 +201,8 @@ const Forms = () => {
     const close = () => { setOpen(false); setTimeout(() => setOpen(true), 400); };
     switch (form) {
         case 'deposit': return <DepositModal order={open ? order : null} onClose={close} showDepositAccount onConfirm={d => show('deposit', d)} />;
+        case 'getfile': return <GetFileModal order={open ? order : null} onClose={close} onConfirm={d => show('getfile', d)} />;
+        case 'collect': return <GetFileModal order={open ? order : null} status="Collected" onClose={close} onConfirm={d => show('collect', d)} />;
         case 'settle': return open ? <SettlePaymentModal isOpen onClose={close} amountDue={20} khrExpected={order.customKhrAmount} orderTotal={20} onConfirm={d => show('settle', d)} /> : null;
         case 'receipt': return open ? <RecordReceiptModal isOpen onClose={close} order={order} onConfirm={d => show('receipt', d)} /> : null;
         case 'finalize': return open ? <RecordReceiptModal isOpen finalizeMode onClose={close} order={order}
