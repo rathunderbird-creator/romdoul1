@@ -5267,8 +5267,6 @@
       },
       "getFile": {
         "amount": "Amount the courier collects",
-        "account": "Collected into Account",
-        "accountNone": "Not set — picked when the money arrives",
         "holder": "Money held by",
         "holderCourier": "Courier (shipping company) — 1210",
         "holderDeliveryman": "Deliveryman — 1220",

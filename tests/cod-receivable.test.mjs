@@ -575,11 +575,12 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
 }
 
 // ---------------------------------------------------------------------------
-// 13. Collected into Account (the Collected popup's account pick): the
-//     Collected save stores deposit_account_id while the receipt still
-//     debits 1210, and the Collected -> Paid flip (cod_collected false +
-//     deposit_account_id, as the app sends it) re-points the debit to
-//     EXACTLY that account — p_account_id wins over the Pay By guess.
+// 13. Server contract: a save may carry deposit_account_id — stored on the
+//     order while a Collected receipt still debits 1210, and a flip to
+//     Paid (cod_collected false + deposit_account_id) re-points the debit
+//     to EXACTLY that account — p_account_id wins over the Pay By guess.
+//     (The Collected popup no longer sends one — the owner removed the
+//     picker — but the Settle form and future callers may.)
 // ---------------------------------------------------------------------------
 {
     await q(`INSERT INTO chart_of_accounts (account_code, account_name, account_type)
@@ -594,7 +595,7 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
         r.applied === true && near(e.cod_dr, 17) && near(e.bank_dr, 0) && near(e.rev_cr, 17), e);
     check('CA1: the pick is stored on the order',
         (await one(`SELECT deposit_account_id FROM sales WHERE id = 'CA1'`)).deposit_account_id === cashId);
-    // The badge flip as the app sends it: status + flag + the stored pick.
+    // A flip that names its account: status + flag + the account.
     await pay('CA1', 'Collected', { payment_status: 'Paid', cod_collected: false, deposit_account_id: cashId });
     const dr = await one(`SELECT l.account_id FROM journal_entry_lines l JOIN journal_entries je ON je.id = l.journal_entry_id
         WHERE je.reference_id = $1 AND l.debit > 0
