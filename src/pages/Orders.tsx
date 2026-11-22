@@ -5519,7 +5519,7 @@ const Orders: React.FC = () => {
                             khr: paymentMethodTargetOrder.paymentClaim.currency === 'KHR' && paymentMethodTargetOrder.paymentClaim.original_amount ? ` = ៛${Math.round(paymentMethodTargetOrder.paymentClaim.original_amount).toLocaleString()}` : '',
                         })
                         : undefined}
-                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, money, receivedUsd, codCollected }) => {
+                    onConfirm={({ paymentMethod, settleDate, depositAccountId, depositAccountName, money, receivedUsd, codCollected, split }) => {
                         // Payment only — the order/shipping status is left untouched.
                         const updates: any = { paymentStatus: 'Paid', paymentMethod, settleDate };
                         updates.amountReceived = paymentMethodTargetOrder.total;
@@ -5545,7 +5545,10 @@ const Orders: React.FC = () => {
                         // Riel received: the receipt shows the riel actually collected.
                         // A dollar change drops a riel override saved earlier (it
                         // was for the old amount; the receipt recomputes it).
-                        if (money?.currency === 'KHR' && money.original_amount && Math.round(money.original_amount) !== Math.round(Number(paymentMethodTargetOrder.customKhrAmount) || 0)) {
+                        if (split) {
+                            // A split save leaves the order's riel price alone:
+                            // the riel part lives on its own income row.
+                        } else if (money?.currency === 'KHR' && money.original_amount && Math.round(money.original_amount) !== Math.round(Number(paymentMethodTargetOrder.customKhrAmount) || 0)) {
                             updates.customKhrAmount = Math.round(money.original_amount);
                         } else if (!money && updates.total !== undefined && paymentMethodTargetOrder.customKhrAmount != null) {
                             updates.customKhrAmount = null;
@@ -5562,8 +5565,15 @@ const Orders: React.FC = () => {
                         // A changed total was worked out from this screen's deposit
                         // and total: the save is refused if they have moved since.
                         const expectMoney = updates.total !== undefined ? { deposit, total: paymentMethodTargetOrder.total } : undefined;
-                        updateOrder(paymentMethodTargetOrder.id, updates, money || expectMoney
-                            ? { ...(money ? { money: { ...money, category: 'លក់រាយ' } } : {}), ...(expectMoney ? { expectMoney } : {}) }
+                        // A split settlement: the riel part books to its own
+                        // riel account row (never opts.money — both rows share
+                        // the retail category).
+                        updateOrder(paymentMethodTargetOrder.id, updates, split || money || expectMoney
+                            ? {
+                                ...(split ? { split: { usdAmount: split.usdAmount, khrAccountId: split.khrAccountId, money: split.money } }
+                                    : money ? { money: { ...money, category: 'លក់រាយ' } } : {}),
+                                ...(expectMoney ? { expectMoney } : {}),
+                            }
                             : undefined);
                     }}
                 />
