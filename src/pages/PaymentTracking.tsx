@@ -1373,8 +1373,10 @@ const PaymentTracking: React.FC = () => {
                                         onChange={(newStatus) => {
                                             if (newStatus === 'Paid' && isCourierBooked(order)) {
                                                 // Booked Get File / Collected: the receipt is already
-                                                // on the books — just mark it Paid, no Settle form.
-                                                updateOrder(order.id, { paymentStatus: 'Paid', expectedPaymentStatus: order.paymentStatus });
+                                                // on the books — no Settle form. A Collected order's
+                                                // flag goes false: its receipt moves 1210 -> bank.
+                                                updateOrder(order.id, { paymentStatus: 'Paid', expectedPaymentStatus: order.paymentStatus,
+                                                    codCollected: defaultCodCollected(order, codPaymentMethods, 'Paid') });
                                                 return;
                                             }
                                             if (newStatus === 'Paid') {
