@@ -5267,8 +5267,6 @@
       },
       "getFile": {
         "amount": "ចំនួនលុយដែលអ្នកដឹកប្រមូល",
-        "account": "លុយចូលគណនី",
-        "accountNone": "មិនទាន់កំណត់ — រើសពេលលុយមកដល់",
         "holder": "លុយនៅជាមួយ",
         "holderCourier": "ក្រុមហ៊ុនដឹកជញ្ជូន (Courier) — 1210",
         "holderDeliveryman": "អ្នកដឹកជញ្ជូន (Deliveryman) — 1220",

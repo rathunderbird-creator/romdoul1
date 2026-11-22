@@ -66,13 +66,6 @@ calls.length = 0;
 await m.saveGetFile(upd, order, { collectUsd: 20, money: usd(20) }, 'Collected');
 check('Collected, Method left unset: the save says nothing about it', calls.at(-1).updates.paymentStatus === 'Collected' && !('paymentMethod' in calls.at(-1).updates), calls);
 calls.length = 0;
-await m.saveGetFile(upd, order, { collectUsd: 20, money: usd(20), accountId: 'acc-aba', accountName: 'Bank Account ABA' }, 'Collected');
-check('Collected into Account: stored as the order\'s deposit account',
-    calls.at(-1).updates.depositAccountId === 'acc-aba' && calls.at(-1).updates.depositAccountName === 'Bank Account ABA', calls.at(-1));
-calls.length = 0;
-await m.saveGetFile(upd, order, { collectUsd: 20, money: usd(20) }, 'Collected');
-check('Collected, account left unset: the save says nothing about it', !('depositAccountId' in calls.at(-1).updates) && !('depositAccountName' in calls.at(-1).updates), calls.at(-1));
-calls.length = 0;
 await m.saveGetFile(upd, order, { collectUsd: 20, money: usd(20), holder: 'deliveryman' }, 'Collected');
 check('Collected held by deliveryman: saved as the order\'s cod holder', calls.at(-1).updates.codHolder === 'deliveryman', calls.at(-1));
 calls.length = 0;

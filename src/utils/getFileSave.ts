@@ -63,7 +63,7 @@ export function getFileMoneyUpdates(
 export async function saveGetFile(
     updateOrder: UpdateOrder,
     order: Sale,
-    amount?: { collectUsd: number; money: MoneyMeta; method?: string; accountId?: string; accountName?: string; holder?: 'courier' | 'deliveryman' },
+    amount?: { collectUsd: number; money: MoneyMeta; method?: string; holder?: 'courier' | 'deliveryman' },
     status: CourierStatus = 'Get File',
 ): Promise<boolean> {
     if (amount) {
@@ -88,14 +88,6 @@ export async function saveGetFile(
         // row's Method and the order's Pay By. Unset says nothing, so a
         // method already on the order stands.
         ...(amount?.method ? { paymentMethod: amount.method as Sale['paymentMethod'] } : {}),
-        // Collected into Account: stored on the order (deposit_account_id).
-        // The receipt booked NOW still debits 1210 (the courier holds the
-        // money); the stored account is where the Collected→Paid flip moves
-        // the debit when the money arrives. Unset says nothing.
-        ...(amount?.accountId ? {
-            depositAccountId: amount.accountId,
-            ...(amount.accountName ? { depositAccountName: amount.accountName } : {}),
-        } : {}),
         // Who holds the money (Collected only, offered when the chart has a
         // deliveryman receivable): courier books the receipt to 1210,
         // deliveryman to 1220. Unset says nothing — courier by default.
