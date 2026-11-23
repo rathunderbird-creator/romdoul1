@@ -23,7 +23,7 @@ import { fill } from '../i18n/translate';
 // The Provinces section: address tree (gazetteer + custom/hidden districts
 // and communes) with the Shipping Points in each commune.
 import ProvincesSection from './salesSetup/ProvincesSection';
-import { getFileBooksCod, isCashBankAccount, isCodPaymentMethod, statusAccountKey, type PayStatusAccountKind } from '../utils/cashBankAccounts';
+import { getFileBooksCod, isCashBankAccount, isCodPaymentMethod, isCodReceivableAccount, statusAccountKey, type PayStatusAccountKind } from '../utils/cashBankAccounts';
 import { isKhrAccountName } from '../utils/currency';
 import { useAccounting } from '../hooks/useAccounting';
 import type { SalesSettings } from '../types';
@@ -384,11 +384,34 @@ const StatusAccountsBlock: React.FC<{ fieldId: (name: string) => string }> = ({ 
                         </div>
                     </section>
                 ))}
-                <section aria-label={t('dashboard2.pay.Collected')} style={{ border: '1px solid var(--color-border)', borderRadius: '10px', padding: '12px 14px', background: 'var(--color-bg)' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '6px' }}>
+                <section aria-label={t('dashboard2.pay.Collected')} style={{ border: '1px solid var(--color-border)', borderRadius: '10px', padding: '12px 14px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '8px' }}>
                         {t('dashboard2.pay.Collected')} · {t('ui.components.getFile.title')}
                     </div>
-                    <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{t('ui.admin.salesSetup.statusAccountsCod')}</div>
+                    {(() => {
+                        // These statuses book a COD RECEIVABLE, never cash/bank:
+                        // the pick here is which receivable Collected opens on
+                        // (the popup's "Money held by" default); each order can
+                        // still choose, and Get File stays the courier's 1210.
+                        const codList = accounts
+                            .filter(a => a.is_active !== false && a.account_type === 'Asset' && isCodReceivableAccount(a))
+                            .sort((a, b) => (a.account_code || '').localeCompare(b.account_code || ''));
+                        const current = salesSettings.statusAccountCollected || '';
+                        const value = codList.some(a => a.id === current) ? current : '';
+                        return (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                                <div>
+                                    <label htmlFor={fieldId('statusAccountCollected')} style={{ ...labelStyle, fontWeight: 500 }}>{t('ui.admin.salesSetup.statusAccountCollectedLabel')}</label>
+                                    <select id={fieldId('statusAccountCollected')} value={value} className="setup-field" style={{ ...inputStyle, cursor: 'pointer' }}
+                                        onChange={e => save('statusAccountCollected', e.target.value)}>
+                                        <option value="">{t('ui.admin.salesSetup.statusAccountCollectedAuto')}</option>
+                                        {codList.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                        );
+                    })()}
+                    <div style={{ ...helpStyle, marginTop: '8px' }}>{t('ui.admin.salesSetup.statusAccountsCod')}</div>
                 </section>
             </div>
             <div style={helpStyle}>{t('ui.admin.salesSetup.statusAccountsHelp')}</div>

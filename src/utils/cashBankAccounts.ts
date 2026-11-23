@@ -202,6 +202,23 @@ type StatusAccountSettings = {
 export const statusAccountKey = (status: PayStatusAccountKind, currency?: Currency | null): keyof StatusAccountSettings =>
     `statusAccount${status}${currency === 'KHR' ? 'Khr' : ''}` as keyof StatusAccountSettings;
 
+// Sales Setup › Sales Payment › Collected / Get File: the COD receivable a
+// Collected booking opens on — the "Money held by" default for an order
+// with no stored holder. 'deliveryman' when the configured account
+// (salesSettings.statusAccountCollected) is the deliveryman's receivable
+// (1220), else 'courier' (1210). Each order's popup still overrides, and a
+// Get File booking stays the courier's regardless (its tick is per
+// shipping company).
+export function defaultCodHolderFor(
+    s: { statusAccountCollected?: string | null } | null | undefined,
+    accounts: readonly { id: string; account_code?: string | null; account_name: string; account_type: string }[]
+): 'courier' | 'deliveryman' {
+    const id = s?.statusAccountCollected;
+    if (!id) return 'courier';
+    const a = accounts.find(x => x.id === id);
+    return a && a.account_type === 'Asset' && isCodDeliverymanAccount(a) ? 'deliveryman' : 'courier';
+}
+
 // Sales Setup › Sales Payment › Account by Pay Status, falling back to the
 // default deposit account, for a payment's currency (app_config
 // salesSettings): the riel keys for KHR, the USD ones otherwise. Without a

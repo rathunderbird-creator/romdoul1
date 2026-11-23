@@ -671,6 +671,12 @@ export interface SalesSettings {
     statusAccountPaidKhr?: string;
     statusAccountPdFee?: string;
     statusAccountPdFeeKhr?: string;
+    // Collected / Get File book a COD receivable, never cash/bank. This
+    // picks WHICH receivable Collected opens on (1210 courier / 1220
+    // deliveryman): the Collected popup's "Money held by" defaults from it
+    // for orders with no stored holder — utils/cashBankAccounts
+    // defaultCodHolderFor. Get File bookings stay on the courier's 1210.
+    statusAccountCollected?: string;
     // Days a new quotation stays valid (CRM › Quotations pre-fills its
     // Valid until); a whole number 1–365 as text, see quotationValidity.ts.
     quotationValidityDays?: string;
