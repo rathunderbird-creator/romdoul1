@@ -32,8 +32,8 @@ const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset
 const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onConfirm, paid }) => {
     const { paymentMethods, khrExchangeRate, salesSettings } = useStore();
     // Sales Setup's default deposit accounts (USD / riel).
-    const defUsd = depositDefaultFor(salesSettings, 'USD');
-    const defKhr = depositDefaultFor(salesSettings, 'KHR');
+    const defUsd = depositDefaultFor(salesSettings, 'USD', 'PdFee');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR', 'PdFee');
     const { accounts, fetchAccounts } = useAccounting();
     const tx = useTx();
     const field = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: DELIVERY_FEE_MAX_PLAUSIBLE_USD });

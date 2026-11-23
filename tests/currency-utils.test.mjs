@@ -120,6 +120,16 @@ check('toggle: a cash default moves to the other currency default', cp('coh', 'K
 check('depositDefaultFor picks by currency', m.depositDefaultFor({ defaultDepositAccountId: 'u', defaultDepositAccountIdKhr: 'k' }, 'KHR') === 'k'
     && m.depositDefaultFor({ defaultDepositAccountId: 'u' }, 'USD') === 'u' && m.depositDefaultFor({ defaultDepositAccountId: 'u' }, undefined) === 'u'
     && m.depositDefaultFor({ defaultDepositAccountId: '' }, 'USD') === undefined && m.depositDefaultFor(null, 'KHR') === undefined);
+// Account by Pay Status: a status's own account wins over the default; an
+// unset one falls back; each currency has its own key.
+const SA = { defaultDepositAccountId: 'u', defaultDepositAccountIdKhr: 'k', statusAccountDeposit: 'dep', statusAccountPaidKhr: 'paidk', statusAccountPdFee: 'fee' };
+check('depositDefaultFor with a status: the status account wins', m.depositDefaultFor(SA, 'USD', 'Deposit') === 'dep'
+    && m.depositDefaultFor(SA, 'USD', 'PdFee') === 'fee' && m.depositDefaultFor(SA, 'KHR', 'Paid') === 'paidk');
+check('depositDefaultFor with a status: unset falls back to the default', m.depositDefaultFor(SA, 'KHR', 'Deposit') === 'k'
+    && m.depositDefaultFor(SA, 'USD', 'Paid') === 'u' && m.depositDefaultFor(SA, 'KHR', 'PdFee') === 'k'
+    && m.depositDefaultFor({}, 'USD', 'Paid') === undefined);
+check('statusAccountKey names the salesSettings keys', m.statusAccountKey('Deposit', 'USD') === 'statusAccountDeposit'
+    && m.statusAccountKey('Paid', 'KHR') === 'statusAccountPaidKhr' && m.statusAccountKey('PdFee', 'KHR') === 'statusAccountPdFeeKhr');
 
 // ── conversions ──
 check('khrToUsd 82000 @ 4100 = 20', m.khrToUsd(82000, 4100) === 20);

@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { mapSaleEntity } from '../utils/mapper';
 import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
-import { codReceiptDebitId, codTicksFor, depositDefaultFor, defaultCodPaymentMethods, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount } from '../utils/cashBankAccounts';
+import { codReceiptDebitId, codTicksFor, depositDefaultFor, defaultCodPaymentMethods, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount, type PayStatusAccountKind } from '../utils/cashBankAccounts';
 import { isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
 import { tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 import { insertJournalLines } from '../utils/journalEntryLines';
@@ -134,7 +134,10 @@ const generateUUID = () => {
 // so the module-level posting helpers below (which have no hooks) use them.
 let retailDepositDefaults: SalesSettings = {};
 
-async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: string | null, currency?: Currency): Promise<{
+async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: string | null, currency?: Currency,
+    // Which Pay Status's Sales Setup account applies when nothing is picked
+    // (Account by Pay Status; absent = the plain default).
+    statusKind?: PayStatusAccountKind): Promise<{
     revenueAcc: { id: string; account_code: string; account_name: string; account_type: string } | undefined;
     cashAccId: string | undefined;
     pool: { id: string; account_code: string; account_name: string; account_type: string }[];
@@ -151,7 +154,7 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: st
     // other never lands on one.
     // With no account picked, Sales Setup's default for this currency wins
     // over the bank guess (a Cash method still goes to Cash on Hand).
-    const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy, { preferBank: true, currency, defaultId: depositDefaultFor(retailDepositDefaults, currency) })?.id;
+    const cashAccId = depositAccountId || pickCashBankAccount(pool, payBy, { preferBank: true, currency, defaultId: depositDefaultFor(retailDepositDefaults, currency, statusKind) })?.id;
     return { revenueAcc, cashAccId, pool };
 }
 
@@ -462,7 +465,7 @@ export async function postRetailSaleToLedger({
 }): Promise<boolean> {
     return enqueueLedgerPost(async () => {
     try {
-        const resolved = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency);
+        const resolved = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency, type === 'DEP' ? 'Deposit' : 'Paid');
         const { revenueAcc, pool } = resolved;
         const cashAccId = (type === 'RCP' && cod ? codReceiptDebitId(pool, { saleCod: true, holder: codHolder }) : undefined) || resolved.cashAccId;
         if (revenueAcc && cashAccId) {
@@ -591,7 +594,7 @@ export async function postOrFinalizeTransactionReceipt({
         // Resolve the accounts (and COGS) BEFORE touching any existing lines —
         // if this fails, the entry's current (valid) lines must be left
         // untouched rather than deleted with nothing to replace them.
-        const resolved = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency);
+        const resolved = await resolveRetailLedgerAccounts(depositAccountId, payBy, currency, type === 'DEP' ? 'Deposit' : 'Paid');
         const { revenueAcc, pool } = resolved;
         if (!revenueAcc || !resolved.cashAccId) {
             throw new Error(tNow('ui.store.ledger.noAccounts'));
@@ -3743,7 +3746,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     ? ((pUpdates.deposit_method as string) || existingOrder?.depositMethod || '')
                     : ((pUpdates.payment_method as string) || paymentRow?.payment_method || '');
                 try {
-                    const { cashAccId } = await resolveRetailLedgerAccounts(undefined, hint, opts?.money?.currency);
+                    const { cashAccId } = await resolveRetailLedgerAccounts(undefined, hint, opts?.money?.currency,
+                        // Which status's Sales Setup account applies (Account
+                        // by Pay Status): the fee, the deposit, else Paid.
+                        pUpdates.payment_status === 'PdFee' ? 'PdFee' : target === 'Deposit' ? 'Deposit' : 'Paid');
                     if (cashAccId) pUpdates.deposit_account_id = cashAccId;
                 } catch (e) {
                     console.warn('Could not resolve the cash/bank account; the database picks it:', e);
@@ -3755,7 +3761,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 let khrAccId = opts.split.khrAccountId || '';
                 if (!khrAccId) {
                     try {
-                        const { cashAccId } = await resolveRetailLedgerAccounts(undefined, (pUpdates.payment_method as string) || '', 'KHR');
+                        const { cashAccId } = await resolveRetailLedgerAccounts(undefined, (pUpdates.payment_method as string) || '', 'KHR', 'Paid');
                         khrAccId = cashAccId || '';
                     } catch (e) {
                         console.warn('Could not resolve the riel account; the database will refuse the split:', e);

@@ -33,8 +33,8 @@ const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset
 const DepositModal: React.FC<DepositModalProps> = ({ order, onClose, onConfirm, showDepositAccount = false, claim, paid }) => {
     const { paymentMethods, khrExchangeRate, salesSettings } = useStore();
     // Sales Setup's default deposit accounts (USD / riel).
-    const defUsd = depositDefaultFor(salesSettings, 'USD');
-    const defKhr = depositDefaultFor(salesSettings, 'KHR');
+    const defUsd = depositDefaultFor(salesSettings, 'USD', 'Deposit');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR', 'Deposit');
     const { accounts, fetchAccounts } = useAccounting();
     // A deposit is less than the order total, so above it is a typo (riel).
     const field = useMoneyField({ shopRate: khrExchangeRate, maxPlausibleUsd: order?.total || null });
