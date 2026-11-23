@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { X, Truck, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAccounting } from '../hooks/useAccounting';
-import type { PaidMoney, Sale } from '../types';
+import type { PaidMoney, PaymentClaim, Sale } from '../types';
 import MoneyInput from './MoneyInput';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
 import CashBankOptions from './CashBankOptions';
@@ -22,6 +22,9 @@ interface DeliveryFeeModalProps {
     // The fee already booked, as it was received (its income row):
     // re-opening the form starts in that currency, on an account in it.
     paid?: PaidMoney;
+    // A Salesman's unconfirmed PdFee claim: the form opens prefilled from
+    // it (amount, method, date, riel) for the confirmer — saving books it.
+    claim?: PaymentClaim;
 }
 
 const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -29,7 +32,7 @@ const today = () => new Date(new Date().getTime() - new Date().getTimezoneOffset
 // Records a cancelled order's delivery-fee-only payment (paymentStatus
 // 'PdFee') — the order itself isn't fulfilled, but the customer paid for
 // delivery, and that gets booked straight to Revenue (not the order total).
-const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onConfirm, paid }) => {
+const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onConfirm, paid, claim }) => {
     const { paymentMethods, khrExchangeRate, salesSettings } = useStore();
     // Sales Setup's default deposit accounts (USD / riel).
     const defUsd = depositDefaultFor(salesSettings, 'USD', 'PdFee');
@@ -53,28 +56,38 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
     useEffect(() => {
         if (order) {
             // Re-opening an already-PdFee order (to correct it) prefills from
-            // the same generic fields Paid/Deposit already reuse for this.
+            // the same generic fields Paid/Deposit already reuse for this; a
+            // Salesman's unconfirmed claim prefills the confirmer's opening.
+            const fromClaim = claim && order.paymentStatus !== 'PdFee' ? claim : undefined;
             const bank = paymentMethods.find(m => m.toLowerCase().includes('bank'));
-            setMethod(order.paymentStatus === 'PdFee' && order.paymentMethod ? order.paymentMethod : (bank || paymentMethods[0] || 'Bank'));
-            setDate(order.paymentStatus === 'PdFee' && order.settleDate ? order.settleDate.slice(0, 10) : today());
-            // Bank first, as the Pay By above; never a riel account by default.
-            // A fee already booked reopens in the currency it was received in,
-            // on an account in that currency (the one it went into, when it
-            // still is).
+            setMethod(order.paymentStatus === 'PdFee' && order.paymentMethod ? order.paymentMethod
+                : (fromClaim?.method && paymentMethods.includes(fromClaim.method) ? fromClaim.method : '') || bank || paymentMethods[0] || 'Bank');
+            setDate(order.paymentStatus === 'PdFee' && order.settleDate ? order.settleDate.slice(0, 10) : (fromClaim?.date || today()));
+            // Bank first, as the Pay By above; never a riel account by default
+            // (a fee the Salesman claimed in riel starts on a riel account,
+            // when there is one). A fee already booked reopens in the currency
+            // it was received in, on an account in that currency (the one it
+            // went into, when it still is).
+            const claimRiel = fromClaim?.currency === 'KHR' && (fromClaim.original_amount || 0) > 0;
             const preferredId = order.paymentStatus === 'PdFee' ? order.depositAccountId : undefined;
             const booked = order.paymentStatus === 'PdFee' ? paid : undefined;
-            const startMethod = order.paymentStatus === 'PdFee' && order.paymentMethod ? order.paymentMethod : (bank || paymentMethods[0] || 'Bank');
-            const accountId = (booked ? defaultCashBankAccountId(paymentAccounts, { currency: booked.currency, preferredId, defaultId: booked.currency === 'KHR' ? defKhr : defUsd, method: startMethod }) : '')
+            const startMethod = order.paymentStatus === 'PdFee' && order.paymentMethod ? order.paymentMethod
+                : (fromClaim?.method && paymentMethods.includes(fromClaim.method) ? fromClaim.method : '') || bank || paymentMethods[0] || 'Bank';
+            const accountId = (claimRiel ? defaultCashBankAccountId(paymentAccounts, { currency: 'KHR', defaultId: defKhr, method: startMethod }) : '')
+                || (booked ? defaultCashBankAccountId(paymentAccounts, { currency: booked.currency, preferredId, defaultId: booked.currency === 'KHR' ? defKhr : defUsd, method: startMethod }) : '')
                 || defaultCashBankAccountId(paymentAccounts, { preferredId, defaultId: defUsd, method: startMethod });
             setDepositAccountId(accountId);
             // A correction of a fee in a riel account reopens in riel.
             const cur = accountCurrency(paymentAccounts.find(a => a.id === accountId));
-            const prev = order.paymentStatus === 'PdFee' && order.amountReceived ? order.amountReceived : '';
+            const prev = order.paymentStatus === 'PdFee' && order.amountReceived ? order.amountReceived
+                : fromClaim ? fromClaim.amount : '';
             field.reset(cur === 'KHR'
-                ? (booked?.currency === 'KHR' && prev !== ''
-                    // The riel received, at its own rate.
-                    ? { amount: rielToReopen(booked.original_amount, booked.exchange_rate, Number(prev)), currency: 'KHR', rate: booked.exchange_rate }
-                    : { amount: prev === '' ? '' : usdToKhr(Number(prev), field.shopRate), currency: 'KHR' })
+                ? (claimRiel
+                    ? { amount: fromClaim!.original_amount!, currency: 'KHR', rate: fromClaim!.exchange_rate || field.shopRate }
+                    : booked?.currency === 'KHR' && prev !== ''
+                        // The riel received, at its own rate.
+                        ? { amount: rielToReopen(booked.original_amount, booked.exchange_rate, Number(prev)), currency: 'KHR', rate: booked.exchange_rate }
+                        : { amount: prev === '' ? '' : usdToKhr(Number(prev), field.shopRate), currency: 'KHR' })
                 : { amount: prev, currency: 'USD' });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -108,6 +121,13 @@ const DeliveryFeeModal: React.FC<DeliveryFeeModalProps> = ({ order, onClose, onC
 
                 {/* Body */}
                 <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {claim && order.paymentStatus !== 'PdFee' && (
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '8px 10px', lineHeight: 1.5 }}>
+                            {claim.by
+                                ? tx('ui.components.deliveryFee.confirmingBy', 'Confirming the delivery fee {by} entered on {date}. Check it arrived, correct anything that differs, then save: that books it.', { by: claim.by, date: claim.date || '' })
+                                : tx('ui.components.deliveryFee.confirming', 'Confirming the delivery fee entered. Check it arrived, correct anything that differs, then save: that books it.')}
+                        </div>
+                    )}
                     <MoneyInput
                         field={field}
                         label={tx('ui.components.deliveryFee.amount', 'Delivery Fee Amount')}

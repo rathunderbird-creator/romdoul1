@@ -350,7 +350,7 @@ const MobileOrderCard: React.FC<MobileOrderCardProps> = ({
                                         readOnly={claimTitle
                                             ? !canConfirmPayments
                                             : (!canEdit || (!isAdmin && (order.shipping?.status === 'ReStock' || order.shipping?.status === 'Drafted' || order.shipping?.status === 'Returned' || order.shipping?.status === 'Cancelled' || paymentBadgeReadOnlyForNonAdmin(order))))}
-                                        disabledOptions={claimTitle ? claimDisabledOptions : [...(isAdmin ? [] : paymentBadgeDisabledForNonAdmin(order)), ...(salesmanDisabledOptions ?? (isSalesman ? ['Deposit', 'Paid', 'PdFee'] : []))]}
+                                        disabledOptions={claimTitle ? claimDisabledOptions : [...(isAdmin ? [] : paymentBadgeDisabledForNonAdmin(order)), ...(salesmanDisabledOptions ?? (isSalesman ? ['Collected'] : []))]}
                                     />
                                 </div>
                             </div>

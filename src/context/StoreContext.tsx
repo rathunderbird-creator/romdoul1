@@ -5,6 +5,7 @@ import { dispatchActivity } from '../utils/activityLogger';
 import { nextJournalEntryNumber, entryDescription } from '../utils/journalEntryNumber';
 import { codReceiptDebitId, codTicksFor, depositDefaultFor, defaultCodPaymentMethods, getFileBooksCod, isCashBankAccount, isCodReceivableAccount, pickCashBankAccount, type PayStatusAccountKind } from '../utils/cashBankAccounts';
 import { isMissingCurrencyColumnError, shopRate, stripCurrency, type Currency, type MoneyMeta } from '../utils/currency';
+import { salesmanClaimFor, stripClaimBookingFields } from '../utils/paymentClaim';
 import { tagRows, tagTransactionsAndEntries } from '../utils/currencyTags';
 import { insertJournalLines } from '../utils/journalEntryLines';
 import { callDbFunction, noticesOf, rpcWithSession, resetGuardedSignatureCache } from '../utils/dbFunctions';
@@ -3435,9 +3436,24 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
 
         if (currentUser?.roleId === 'salesman' && salesmanBooksMoney(updates, existingOrder) && await paymentClaimsReady()) {
-            alert(SALESMAN_NO_BOOKING_MESSAGE());
-            setSalesUpdatedAt(Date.now());
-            return false;
+            // Deposit, Paid or PdFee on an unbooked order: nothing books —
+            // the save becomes the same gray claim the order form writes,
+            // and waits for Admin, Customer Care or an Accountant to
+            // confirm it. Anything else (Collected, a booked order's money,
+            // a courier-ticked Get File) is refused as before.
+            const claim = salesmanClaimFor(updates, existingOrder, currentUser?.name || 'Salesman', opts?.money);
+            if (claim) {
+                stripClaimBookingFields(updates);
+                updates.paymentClaim = claim;
+                opts = undefined;
+                alert(tNow('ui.store.order.claimSaved', {
+                    status: tNow('dashboard2.pay.' + claim.status), amount: claim.amount.toFixed(2),
+                }));
+            } else {
+                alert(SALESMAN_NO_BOOKING_MESSAGE());
+                setSalesUpdatedAt(Date.now());
+                return false;
+            }
         }
 
         // The stock-movement block at the end keys off the status BEFORE this update.

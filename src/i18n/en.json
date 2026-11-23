@@ -3947,6 +3947,7 @@
         "statusFunctionsMissing": "Orders need a one-time database update before an order's shipping status can change, a returned order can be restocked, or the items of a shipped order can be edited: run migrations/add_order_status_function.sql in this store's Supabase SQL editor. Nothing was saved.",
         "paymentFunctionsMissing": "Orders need a one-time database update before an order can be created, its payment saved, orders deleted or a restock's payment cancelled: run migrations/add_order_payment_functions.sql in this store's Supabase SQL editor. Nothing was saved.",
         "salesmanNoBooking": "Only Admin, Customer Care or an Accountant can record money as received.\n\nEnter the deposit or payment on the order form instead: it waits there (gray on the Orders page) for them to confirm.",
+        "claimSaved": "Nothing was booked yet: your {status} of ${amount} is saved on the order (gray on the Orders page) and waits for Admin, Customer Care or an Accountant to confirm it.",
         "postDispatchBlocked": "This order is \"{current}\" and cannot be marked {target} directly.\n\nStock is counted out when an order is Shipped, so skipping that step would leave inventory unchanged — and deleting the order later would add stock back that was never taken.\n\nSet the order back to Drafted, then move it through Confirmed → Shipped.",
         "adminForceStatus": "Admin override — this order is \"{current}\", which normally cannot be marked {target} directly (stock is counted out at the Shipped step).\n\nStock follows the new status: if the goods are still in stock, they are counted out now, as if the order had shipped.\n\nChange it to {target} anyway?",
         "insertItemsFailed": "Failed to insert items: {error}",
@@ -5269,6 +5270,8 @@
       "deliveryFee": {
         "amount": "Delivery Fee Amount",
         "noAccounts": "No cash or bank accounts in the Chart of Accounts yet — the fee saves without one.",
+        "confirming": "Confirming the delivery fee entered. Check it arrived, correct anything that differs, then save: that books it.",
+        "confirmingBy": "Confirming the delivery fee {by} entered on {date}. Check it arrived, correct anything that differs, then save: that books it.",
         "note": "The order is treated as cancelled — only this delivery fee is posted straight to Revenue (account 4005 · Delivery Fee Revenue), not the order total.",
         "orderTotal": "Order total"
       },
