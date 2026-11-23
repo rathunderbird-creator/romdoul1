@@ -1,8 +1,9 @@
 // Sales Setup — defaults for new sell-side documents (modeled on the reference
 // design): a left-nav settings page in the same family as Purchase Setup and
-// Wholesale Setup. In the Defaults section the default deposit accounts are
-// real (app_config salesSettings); the other designed fields have no retail
-// consumer yet, so they are listed read-only under "Not used yet" with what
+// Wholesale Setup. The Sales Payment section holds the money side — the
+// default deposit accounts and the payment request message (app_config
+// salesSettings); Defaults keeps the quotation validity and, read-only under
+// "Not used yet", the designed fields that have no retail consumer, with what
 // the app does today, instead of inputs that look saved but aren't. Page Name, Shipping
 // Company (with each courier's cost per parcel, tracking link and "Get File
 // books the COD receipt"), Pay By, Salesmen, Customer Care and Provinces are
@@ -12,7 +13,7 @@ import React, { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
     SlidersHorizontal, Tag, Tags, Users, MapPin, Percent, Truck, Ban, Landmark,
-    Megaphone, Building2, Plus, Trash2, Wallet, UserCheck, Headphones
+    Megaphone, Building2, Plus, Trash2, Wallet, UserCheck, Headphones, Banknote
 } from 'lucide-react';
 import { useHeader } from '../context/HeaderContext';
 import { useStore } from '../context/StoreContext';
@@ -41,7 +42,7 @@ import { DEFAULT_TRACKING_TEMPLATES, detectCarrier } from '../utils/tracking';
 type SectionKey =
     | 'defaults' | 'paymentTerms' | 'priceLevels' | 'customerGroups' | 'provinces'
     | 'discounts' | 'deliveryTypes' | 'rejectionReasons' | 'openingBalances'
-    | 'pageNames' | 'shippingCompanies' | 'payBy' | 'salesmen' | 'customerCare';
+    | 'pageNames' | 'shippingCompanies' | 'payBy' | 'salesPayment' | 'salesmen' | 'customerCare';
 
 const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
     { key: 'defaults', label: 'Defaults', icon: SlidersHorizontal },
@@ -54,6 +55,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
     { key: 'pageNames', label: 'Page Name', icon: Megaphone },
     { key: 'shippingCompanies', label: 'Shipping Company', icon: Building2 },
     { key: 'payBy', label: 'Pay By', icon: Wallet },
+    { key: 'salesPayment', label: 'Sales Payment', icon: Banknote },
     { key: 'salesmen', label: 'Salesmen', icon: UserCheck },
     { key: 'customerCare', label: 'Customer Care', icon: Headphones },
     { key: 'rejectionReasons', label: 'Rejection Reasons', icon: Ban },
@@ -870,16 +872,31 @@ const SalesSetupPage: React.FC = () => {
                 })}
             </nav>
 
-            {/* ── Defaults ── */}
+            {/* ── Defaults: quotation validity and the designed-but-unwired list.
+                The money side (deposit accounts, payment request) lives in
+                its own Sales Payment section below. ── */}
             {section === 'defaults' && (
                 <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
                         {t('ui.admin.salesSetup.defaultsNote')}
                     </p>
 
-                    <DepositAccountDefaults fieldId={fieldId} />
-
                     <QuotationValidityDefault fieldId={fieldId} />
+
+                    <NotUsedYet />
+                </div>
+            )}
+
+            {/* ── Sales Payment: where a sale's money lands (default deposit
+                accounts, USD + riel) and the payment request message. The
+                methods customers pay by stay in Pay By, one click away. ── */}
+            {section === 'salesPayment' && (
+                <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                        {t('ui.admin.salesSetup.salesPaymentNote')}
+                    </p>
+
+                    <DepositAccountDefaults fieldId={fieldId} />
 
                     <PaymentRequestDefault fieldId={fieldId} />
 
@@ -887,7 +904,13 @@ const SalesSetupPage: React.FC = () => {
                         {t('ui.admin.salesSetup.glNoteBefore')}<b style={{ color: 'var(--color-text-main)' }}>{t('nav.chartOfAccounts')}</b>{t('ui.admin.salesSetup.glNoteAfter')}
                     </div>
 
-                    <NotUsedYet />
+                    <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                        {t('ui.admin.salesSetup.salesPaymentPayByHint')}{' '}
+                        <button type="button" onClick={() => setSection('payBy')}
+                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--color-primary)', fontSize: '12.5px', fontWeight: 600, textDecoration: 'underline' }}>
+                            {t('ui.admin.salesSetup.sections.payBy')}
+                        </button>
+                    </div>
                 </div>
             )}
 
