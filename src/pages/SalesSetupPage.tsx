@@ -23,7 +23,7 @@ import { fill } from '../i18n/translate';
 // The Provinces section: address tree (gazetteer + custom/hidden districts
 // and communes) with the Shipping Points in each commune.
 import ProvincesSection from './salesSetup/ProvincesSection';
-import { getFileBooksCod, isCashBankAccount, isCodPaymentMethod } from '../utils/cashBankAccounts';
+import { getFileBooksCod, isCashBankAccount, isCodPaymentMethod, statusAccountKey, type PayStatusAccountKind } from '../utils/cashBankAccounts';
 import { isKhrAccountName } from '../utils/currency';
 import { useAccounting } from '../hooks/useAccounting';
 import type { SalesSettings } from '../types';
@@ -323,6 +323,75 @@ const DepositAccountDefaults: React.FC<{ fieldId: (name: string) => string }> = 
                 })}
             </div>
             <div style={helpStyle}>{t('ui.admin.salesSetup.depositAccountHelp')}</div>
+        </div>
+    );
+};
+
+// Sales Payment › Account by Pay Status: each money-carrying Pay Status —
+// Deposit, Paid (any settle/receipt), PdFee (delivery fee) — can book to
+// its own cash/bank account, USD and riel separately; Automatic falls back
+// to the default deposit account below (depositDefaultFor). Collected and
+// a booked Get File always debit the COD receivable (1210, or 1220 for a
+// deliveryman), so they are listed read-only. Each select saves on change.
+const StatusAccountsBlock: React.FC<{ fieldId: (name: string) => string }> = ({ fieldId }) => {
+    const { t } = useLanguage();
+    const { showToast } = useToast();
+    const { salesSettings, updateSalesSetting } = useStore();
+    const { accounts, fetchAccounts } = useAccounting();
+    React.useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+    const cashBank = React.useMemo(() => accounts
+        .filter(a => a.is_active !== false && isCashBankAccount(a) && !/petty/i.test(a.account_name))
+        .sort((a, b) => (a.account_code || '').localeCompare(b.account_code || '')), [accounts]);
+    const save = (key: keyof SalesSettings, value: string) => {
+        updateSalesSetting(key, value).catch((err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'),
+            { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error'));
+    };
+    const statuses: { kind: PayStatusAccountKind; label: string }[] = [
+        { kind: 'Deposit', label: t('dashboard2.pay.Deposit') },
+        { kind: 'Paid', label: t('dashboard2.pay.Paid') },
+        { kind: 'PdFee', label: t('dashboard2.pay.PdFee') },
+    ];
+    const currencies: { khr: boolean; label: string }[] = [
+        { khr: false, label: t('ui.admin.salesSetup.depositAccountUsd') },
+        { khr: true, label: t('ui.admin.salesSetup.depositAccountKhr') },
+    ];
+    return (
+        <div>
+            <div style={labelStyle}>{t('ui.admin.salesSetup.statusAccounts')}</div>
+            <div style={{ display: 'grid', gap: '12px' }}>
+                {statuses.map(s => (
+                    <section key={s.kind} aria-label={s.label} style={{ border: '1px solid var(--color-border)', borderRadius: '10px', padding: '12px 14px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '8px' }}>{s.label}</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                            {currencies.map(c => {
+                                const key = statusAccountKey(s.kind, c.khr ? 'KHR' : 'USD') as keyof SalesSettings;
+                                const list = cashBank.filter(a => isKhrAccountName(a.account_name) === c.khr);
+                                const current = (salesSettings[key] as string | undefined) || '';
+                                // A removed/deactivated account reads as
+                                // Automatic (the pickers skip it the same way).
+                                const value = list.some(a => a.id === current) ? current : '';
+                                return (
+                                    <div key={key}>
+                                        <label htmlFor={fieldId(key)} style={{ ...labelStyle, fontWeight: 500 }}>{c.label}</label>
+                                        <select id={fieldId(key)} value={value} className="setup-field" style={{ ...inputStyle, cursor: 'pointer' }}
+                                            onChange={e => save(key, e.target.value)}>
+                                            <option value="">{t('ui.admin.salesSetup.statusAccountAuto')}</option>
+                                            {list.map(a => <option key={a.id} value={a.id}>{a.account_code} · {a.account_name}</option>)}
+                                        </select>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+                ))}
+                <section aria-label={t('dashboard2.pay.Collected')} style={{ border: '1px solid var(--color-border)', borderRadius: '10px', padding: '12px 14px', background: 'var(--color-bg)' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '6px' }}>
+                        {t('dashboard2.pay.Collected')} · {t('ui.components.getFile.title')}
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{t('ui.admin.salesSetup.statusAccountsCod')}</div>
+                </section>
+            </div>
+            <div style={helpStyle}>{t('ui.admin.salesSetup.statusAccountsHelp')}</div>
         </div>
     );
 };
@@ -895,6 +964,8 @@ const SalesSetupPage: React.FC = () => {
                     <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
                         {t('ui.admin.salesSetup.salesPaymentNote')}
                     </p>
+
+                    <StatusAccountsBlock fieldId={fieldId} />
 
                     <DepositAccountDefaults fieldId={fieldId} />
 

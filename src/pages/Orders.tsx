@@ -138,8 +138,9 @@ const ShippingModalComponent: React.FC<{
     targetStatus?: 'Confirmed' | 'Shipped';
 }> = ({ isOpen, onClose, order, targetStatus = 'Shipped' }) => {
     const { shippingCompanies, customerCare, products, updateOrder, updateOrderStatus, khrExchangeRate, salesSettings } = useStore();
-    const defUsd = depositDefaultFor(salesSettings, 'USD');
-    const defKhr = depositDefaultFor(salesSettings, 'KHR');
+    // The shipping popup's money is the order's deposit.
+    const defUsd = depositDefaultFor(salesSettings, 'USD', 'Deposit');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR', 'Deposit');
     const { showToast } = useToast();
     const { t } = useLanguage();
 

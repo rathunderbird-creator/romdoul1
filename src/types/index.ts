@@ -661,6 +661,16 @@ export interface SalesSettings {
     // when nobody picks one: USD, and riel for KHR payments.
     defaultDepositAccountId?: string;
     defaultDepositAccountIdKhr?: string;
+    // Sales Setup › Sales Payment › Account by Pay Status: a Deposit, a Paid
+    // settlement or a PdFee delivery fee can each book to its own account
+    // (USD and riel separately); empty falls back to the defaults above —
+    // utils/cashBankAccounts depositDefaultFor(status).
+    statusAccountDeposit?: string;
+    statusAccountDepositKhr?: string;
+    statusAccountPaid?: string;
+    statusAccountPaidKhr?: string;
+    statusAccountPdFee?: string;
+    statusAccountPdFeeKhr?: string;
     // Days a new quotation stays valid (CRM › Quotations pre-fills its
     // Valid until); a whole number 1–365 as text, see quotationValidity.ts.
     quotationValidityDays?: string;

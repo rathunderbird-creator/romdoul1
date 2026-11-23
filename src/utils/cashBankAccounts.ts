@@ -185,13 +185,34 @@ export function followMethodAccount<T extends CashBankCandidate>(
     return next && next !== currentId ? next : undefined;
 }
 
-// Sales Setup › Defaults › Default deposit account for a payment's currency
-// (app_config salesSettings): the riel one for KHR, the USD one otherwise.
+// The Pay Statuses that can carry their own account in Sales Setup › Sales
+// Payment: a Deposit, a Paid settlement (any settle/receipt), a PdFee
+// delivery fee. Collected and a booked Get File always book the COD
+// receivable (1210/1220 by the holder), so they take no account here.
+export type PayStatusAccountKind = 'Deposit' | 'Paid' | 'PdFee';
+
+type StatusAccountSettings = {
+    defaultDepositAccountId?: string | null; defaultDepositAccountIdKhr?: string | null;
+    statusAccountDeposit?: string | null; statusAccountDepositKhr?: string | null;
+    statusAccountPaid?: string | null; statusAccountPaidKhr?: string | null;
+    statusAccountPdFee?: string | null; statusAccountPdFeeKhr?: string | null;
+};
+
+// The salesSettings key holding a status's account in a currency.
+export const statusAccountKey = (status: PayStatusAccountKind, currency?: Currency | null): keyof StatusAccountSettings =>
+    `statusAccount${status}${currency === 'KHR' ? 'Khr' : ''}` as keyof StatusAccountSettings;
+
+// Sales Setup › Sales Payment › Account by Pay Status, falling back to the
+// default deposit account, for a payment's currency (app_config
+// salesSettings): the riel keys for KHR, the USD ones otherwise. Without a
+// status (older call sites), just the default.
 export function depositDefaultFor(
-    s: { defaultDepositAccountId?: string | null; defaultDepositAccountIdKhr?: string | null } | null | undefined,
-    currency?: Currency | null
+    s: StatusAccountSettings | null | undefined,
+    currency?: Currency | null,
+    status?: PayStatusAccountKind | null
 ): string | undefined {
-    return (currency === 'KHR' ? s?.defaultDepositAccountIdKhr : s?.defaultDepositAccountId) || undefined;
+    const byStatus = status ? s?.[statusAccountKey(status, currency)] : undefined;
+    return byStatus || (currency === 'KHR' ? s?.defaultDepositAccountIdKhr : s?.defaultDepositAccountId) || undefined;
 }
 
 export function pickCashBankAccount<T extends CashBankCandidate>(

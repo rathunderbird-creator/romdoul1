@@ -76,9 +76,10 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
 }) => {
     const tx = useTx();
     const { paymentMethods, khrExchangeRate, salesSettings } = useStore();
-    // Sales Setup's default deposit accounts (USD / riel).
-    const defUsd = depositDefaultFor(salesSettings, 'USD');
-    const defKhr = depositDefaultFor(salesSettings, 'KHR');
+    // Sales Setup's accounts (USD / riel) — this modal records/finalizes the
+    // settle remainder, so the Paid status's account applies.
+    const defUsd = depositDefaultFor(salesSettings, 'USD', 'Paid');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR', 'Paid');
     const { accounts, fetchAccounts } = useAccounting();
     const [selectedMethod, setSelectedMethod] = useState<string>('');
     const [settleDate, setSettleDate] = useState<string>('');

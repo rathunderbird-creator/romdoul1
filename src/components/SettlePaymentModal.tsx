@@ -87,8 +87,8 @@ const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({
     const tx = useTx();
     const { paymentMethods, khrExchangeRate, salesSettings } = useStore();
     // Sales Setup's default deposit accounts (USD / riel).
-    const defUsd = depositDefaultFor(salesSettings, 'USD');
-    const defKhr = depositDefaultFor(salesSettings, 'KHR');
+    const defUsd = depositDefaultFor(salesSettings, 'USD', 'Paid');
+    const defKhr = depositDefaultFor(salesSettings, 'KHR', 'Paid');
     const showCod = codDefault !== undefined;
     // No COD box any more: the save simply sends the caller's default, and
     // the account hint below says where the receipt books.

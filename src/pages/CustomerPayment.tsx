@@ -1074,12 +1074,15 @@ const CustomerPaymentPage: React.FC = () => {
             // pickCashBankAccount's preferBank. A riel payment goes to a riel
             // account (its USD pick when the store has none yet); a USD one
             // never does.
+            // Account by Pay Status: a deposit row takes the Deposit
+            // status's account, a settle receipt the Paid one.
+            const kind = isDepositRow(r) ? 'Deposit' as const : 'Paid' as const;
             if (isKhrRow(r)) {
-                return (pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'KHR', defaultId: depositDefaultFor(salesSettings, 'KHR') })
-                    || pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'USD', defaultId: depositDefaultFor(salesSettings, 'USD') }))?.id;
+                return (pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'KHR', defaultId: depositDefaultFor(salesSettings, 'KHR', kind) })
+                    || pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'USD', defaultId: depositDefaultFor(salesSettings, 'USD', kind) }))?.id;
             }
-            // Sales Setup's default deposit account beats the bank guess.
-            return pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'USD', defaultId: depositDefaultFor(salesSettings, 'USD') })?.id;
+            // Sales Setup's account beats the bank guess.
+            return pickCashBankAccount(accounts, r.pay_by, { preferBank: true, currency: 'USD', defaultId: depositDefaultFor(salesSettings, 'USD', kind) })?.id;
         };
         let ok = 0;
         let moved = 0;
