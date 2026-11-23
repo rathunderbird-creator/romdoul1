@@ -47,6 +47,7 @@ type SectionKey =
 const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
     { key: 'defaults', label: 'Defaults', icon: SlidersHorizontal },
     { key: 'salesPayment', label: 'Sales Payment', icon: Banknote },
+    { key: 'payBy', label: 'Pay By', icon: Wallet },
     { key: 'paymentTerms', label: 'Payment Terms', icon: Tag },
     { key: 'priceLevels', label: 'Price Levels', icon: Tags },
     { key: 'customerGroups', label: 'Customer Groups', icon: Users },
@@ -55,7 +56,6 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ si
     { key: 'deliveryTypes', label: 'Delivery Types', icon: Truck },
     { key: 'pageNames', label: 'Page Name', icon: Megaphone },
     { key: 'shippingCompanies', label: 'Shipping Company', icon: Building2 },
-    { key: 'payBy', label: 'Pay By', icon: Wallet },
     { key: 'salesmen', label: 'Salesmen', icon: UserCheck },
     { key: 'customerCare', label: 'Customer Care', icon: Headphones },
     { key: 'rejectionReasons', label: 'Rejection Reasons', icon: Ban },
