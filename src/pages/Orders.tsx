@@ -1058,9 +1058,11 @@ const Orders: React.FC = () => {
         // Salesman's new orders are Drafted).
         ...(['Drafted', 'ReStock', 'Returned', 'Cancelled'].includes(order.shipping?.status || '') ? ['Get File', 'Collected', 'PdFee'] : []),
     ];
-    // A Salesman books no money here (PdFee books the delivery fee,
-    // Collected the courier's COD).
-    const salesmanDisabled = isSalesmanUser ? ['Deposit', 'Paid', 'Collected', 'PdFee'] : [];
+    // A Salesman's Deposit / Paid / PdFee never books: the store converts
+    // the save into a gray claim for a confirmer (utils/paymentClaim), so
+    // those options are open to them. Collected stays theirs-not-to-touch:
+    // it books the COD receivable at once, with nothing to confirm.
+    const salesmanDisabled = isSalesmanUser ? ['Collected'] : [];
 
     // What the gray Pay Status says on hover.
     const claimTooltip = (c: NonNullable<Sale['paymentClaim']>) =>
@@ -5638,6 +5640,7 @@ const Orders: React.FC = () => {
             <DeliveryFeeModal
                 order={deliveryFeeTargetOrder}
                 paid={paidFor(deliveryFeeTargetOrder, 'PdFee')}
+                claim={deliveryFeeTargetOrder?.paymentClaim?.status === 'PdFee' ? deliveryFeeTargetOrder.paymentClaim : undefined}
                 onClose={() => { paymentOpenSeq.current++; setDeliveryFeeTargetOrder(null); }}
                 onConfirm={({ amount, method, date, depositAccountId, depositAccountName, money }) => {
                     if (!deliveryFeeTargetOrder) return;

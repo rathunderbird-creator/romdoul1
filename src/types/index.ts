@@ -54,7 +54,7 @@ export interface Customer {
 // order stays Unpaid with nothing booked until Admin, Customer Care or an
 // Accountant confirms it on the Orders page.
 export interface PaymentClaim {
-    status: 'Deposit' | 'Paid';
+    status: 'Deposit' | 'Paid' | 'PdFee';
     amount: number;          // USD
     method?: string;
     date?: string;           // YYYY-MM-DD
