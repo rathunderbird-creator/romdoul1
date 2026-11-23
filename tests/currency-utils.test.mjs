@@ -130,6 +130,17 @@ check('depositDefaultFor with a status: unset falls back to the default', m.depo
     && m.depositDefaultFor({}, 'USD', 'Paid') === undefined);
 check('statusAccountKey names the salesSettings keys', m.statusAccountKey('Deposit', 'USD') === 'statusAccountDeposit'
     && m.statusAccountKey('Paid', 'KHR') === 'statusAccountPaidKhr' && m.statusAccountKey('PdFee', 'KHR') === 'statusAccountPdFeeKhr');
+// Collected's picked receivable decides the "Money held by" default.
+const CODS = [
+    { id: 'cour', account_code: '1210', account_name: 'COD receivable (courier)', account_type: 'Asset' },
+    { id: 'dman', account_code: '1220', account_name: 'COD receivable (Deliveryman)', account_type: 'Asset' },
+];
+check('defaultCodHolderFor: deliveryman account -> deliveryman', m.defaultCodHolderFor({ statusAccountCollected: 'dman' }, CODS) === 'deliveryman');
+check('defaultCodHolderFor: courier account / unset / unknown id -> courier',
+    m.defaultCodHolderFor({ statusAccountCollected: 'cour' }, CODS) === 'courier'
+    && m.defaultCodHolderFor({}, CODS) === 'courier'
+    && m.defaultCodHolderFor({ statusAccountCollected: 'gone' }, CODS) === 'courier'
+    && m.defaultCodHolderFor(null, CODS) === 'courier');
 
 // ── conversions ──
 check('khrToUsd 82000 @ 4100 = 20', m.khrToUsd(82000, 4100) === 20);

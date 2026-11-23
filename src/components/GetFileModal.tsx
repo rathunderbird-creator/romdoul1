@@ -6,7 +6,7 @@ import MoneyInput from './MoneyInput';
 import { useMoneyField } from '../hooks/useMoneyField';
 import { useAccounting } from '../hooks/useAccounting';
 import { type MoneyMeta } from '../utils/currency';
-import { isCodDeliverymanAccount } from '../utils/cashBankAccounts';
+import { defaultCodHolderFor, isCodDeliverymanAccount } from '../utils/cashBankAccounts';
 import { useTx } from './useTx';
 
 interface GetFileModalProps {
@@ -30,7 +30,7 @@ interface GetFileModalProps {
 // A changed amount changes the order's total, the difference going into the
 // discount — the same rule as the Settle form's Received Amount.
 const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File', onClose, onConfirm }) => {
-    const { khrExchangeRate, paymentMethods } = useStore();
+    const { khrExchangeRate, paymentMethods, salesSettings } = useStore();
     const tx = useTx();
     const field = useMoneyField({ shopRate: khrExchangeRate });
     // Collected only: the order's Pay By (how the courier will remit).
@@ -40,6 +40,8 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
     // deliveryman -> 1220. Offered only when the chart has a deliveryman
     // receivable (1220 "COD receivable (Deliveryman)").
     const [holder, setHolder] = useState<'courier' | 'deliveryman'>('courier');
+    // A pick made in this opening stands; only the automatic default moves.
+    const [holderTouched, setHolderTouched] = useState(false);
     const { accounts, fetchAccounts } = useAccounting();
     const hasDeliveryman = useMemo(
         () => accounts.some(a => a.is_active && a.account_type === 'Asset' && isCodDeliverymanAccount(a)),
@@ -55,9 +57,18 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
             : { amount: due.toFixed(2), currency: 'USD' });
         setMethod(order.paymentMethod && paymentMethods.includes(order.paymentMethod) ? order.paymentMethod : '');
         setHolder(order.codHolder === 'deliveryman' ? 'deliveryman' : 'courier');
+        setHolderTouched(false);
         if (status === 'Collected') void fetchAccounts();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [order]);
+
+    // An order with no stored holder opens on Sales Setup's pick (Sales
+    // Payment › Collected / Get File) once the accounts arrive — the
+    // configured deliveryman receivable makes Deliveryman the default.
+    useEffect(() => {
+        if (!order || status !== 'Collected' || holderTouched || order.codHolder) return;
+        setHolder(defaultCodHolderFor(salesSettings, accounts));
+    }, [order, status, holderTouched, accounts, salesSettings]);
 
     if (!order) return null;
 
@@ -101,7 +112,7 @@ const GetFileModal: React.FC<GetFileModalProps> = ({ order, status = 'Get File',
                     {status === 'Collected' && hasDeliveryman && (
                         <div>
                             <label style={labelStyle}>{tx('ui.components.getFile.holder', 'Money held by')}</label>
-                            <select value={holder} onChange={e => setHolder(e.target.value === 'deliveryman' ? 'deliveryman' : 'courier')} style={inputStyle}>
+                            <select value={holder} onChange={e => { setHolder(e.target.value === 'deliveryman' ? 'deliveryman' : 'courier'); setHolderTouched(true); }} style={inputStyle}>
                                 <option value="courier">{tx('ui.components.getFile.holderCourier', 'Courier (shipping company) — 1210')}</option>
                                 <option value="deliveryman">{tx('ui.components.getFile.holderDeliveryman', 'Deliveryman — 1220')}</option>
                             </select>
