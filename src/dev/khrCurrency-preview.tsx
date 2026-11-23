@@ -136,6 +136,9 @@ const base: Record<string, unknown> = {
     shippingCompanies: ['J&T', 'VET'], products: [],
     // Sales Setup (?form=setup): J&T ticked for Get File books COD.
     codGetFileCompanies: ['J&T'], setCodGetFileCompany: logWrite('setCodGetFileCompany'),
+    // Pay By's COD-methods tick list crashes without a real array here (the
+    // proxy's fallback for unknown keys is a function).
+    codPaymentMethods: [], setCodPaymentMethod: logWrite('setCodPaymentMethod'),
     salesSettings: {}, updateSalesSetting: logWrite('updateSalesSetting'),
     salesmen: ['Dev Salesman'], addSalesman: logWrite('addSalesman'), removeSalesman: logWrite('removeSalesman'),
     customerCare: ['Dev Admin', 'Dev Care'], addCustomerCare: logWrite('addCustomerCare'), removeCustomerCare: logWrite('removeCustomerCare'),

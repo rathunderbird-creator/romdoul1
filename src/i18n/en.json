@@ -4376,6 +4376,7 @@
           "pageNames": "Page Name",
           "shippingCompanies": "Shipping Company",
           "payBy": "Pay By",
+          "salesPayment": "Sales Payment",
           "salesmen": "Salesmen",
           "customerCare": "Customer Care",
           "rejectionReasons": "Rejection Reasons",
@@ -4388,7 +4389,9 @@
           "receipts": "Receipts",
           "refunds": "Refunds"
         },
-        "defaultsNote": "The default deposit accounts save as soon as you pick. The rest of this page lists settings planned for later, with what the app does today.",
+        "defaultsNote": "The quotation validity saves as soon as you leave the field. The rest of this page lists settings planned for later, with what the app does today. The money side — deposit accounts and the payment request message — lives in Sales Payment.",
+        "salesPaymentNote": "Where a sale's money lands and the message that asks for it. Each field saves on its own as soon as you pick or leave it.",
+        "salesPaymentPayByHint": "The methods customers pay by (Cash, QR, Bank…) are kept under",
         "vatRate": "Default VAT rate (%)",
         "paymentTermsDays": "Payment terms (days)",
         "quotationValidity": "Quotation validity (days)",
