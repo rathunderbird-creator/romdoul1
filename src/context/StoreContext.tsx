@@ -3749,6 +3749,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // second stale screen can't quietly lower the deposit under the
             // amounts already booked.
             if (updates.depositAmount !== undefined && paymentRow) pUpdates.expected_deposit_amount = Number(paymentRow.deposit_amount) || 0;
+            // A Collected order flipped to Paid books nothing new, but the
+            // flip re-points the Draft receipt's debit from the COD
+            // receivable to a cash/bank account. Resolve WHICH one here, as
+            // every booking save does — the Pay By plus Sales Setup's Paid
+            // account, in the receipt's currency — so a Cash Pay By lands
+            // on Cash on Hand instead of the server's bank-first guess
+            // (wp_cash_bank_account knows neither the Cash rule nor the
+            // Sales Setup accounts).
+            if (pUpdates.cod_collected === false && !pUpdates.deposit_account_id
+                && paymentRow?.payment_status === 'Collected'
+                && ['Paid', 'Settled', 'Paid/Settled'].includes((pUpdates.payment_status as string) || '')) {
+                const flipHint = (pUpdates.payment_method as string) || paymentRow?.payment_method || '';
+                // The receipt is riel when the order carries a riel price
+                // (the Collected popup set it when riel was typed).
+                const flipCur: Currency | undefined = Number(existingOrder?.customKhrAmount) > 0 ? 'KHR' : undefined;
+                try {
+                    const { cashAccId } = await resolveRetailLedgerAccounts(undefined, flipHint, flipCur, 'Paid');
+                    if (cashAccId) pUpdates.deposit_account_id = cashAccId;
+                } catch (e) {
+                    console.warn('Could not resolve the flip account; the database picks it:', e);
+                }
+            }
             // Every save that books money names its cash/bank account. With
             // none, the database picks one by name (wp_cash_bank_account); the
             // same pick is made here instead, in the payment's currency, so a

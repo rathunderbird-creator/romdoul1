@@ -117,7 +117,11 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
         // Bank is the default Pay By — settlements normally arrive by bank
         // transfer from the shipping company (still changeable in the dropdown).
         const bankMethod = paymentMethods.find(m => m.toLowerCase().includes('bank'));
-        setSelectedMethod(bankMethod || initialMethod || paymentMethods[0] || 'Cash');
+        // The payment's own Method (the row's Pay By, passed as
+        // initialMethod) wins: Post Now confirms an EXISTING payment, so a
+        // Cash row must open on Cash. Bank stays the default only when the
+        // caller named no method (recording a fresh receipt).
+        setSelectedMethod((initialMethod && paymentMethods.includes(initialMethod) ? initialMethod : '') || bankMethod || paymentMethods[0] || 'Cash');
         setSettleDate(initialDate ? (/^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : dayKeyFromDate(new Date(initialDate))) : localYMD());
         setChosenAccountId('');
         // Default to the order's outstanding balance — an order that already
