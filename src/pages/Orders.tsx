@@ -4714,6 +4714,24 @@ const Orders: React.FC = () => {
                                                                     </td>
                                                                 );
                                                             case 'balance': {
+                                                                // A Collected order's money is with the courier or
+                                                                // deliveryman, not the shop: the pending amount
+                                                                // (total − deposit) stays in the column until the
+                                                                // order is marked Paid, with the riel below exactly
+                                                                // as the Received column shows it. orderBalance
+                                                                // (filters, footers, Dashboard Owed) is unchanged.
+                                                                if (order.paymentStatus === 'Collected') {
+                                                                    const pending = Math.max(0, (Number(order.total) || 0) - (order.depositAmount || 0));
+                                                                    const riel = rielReceived(order);
+                                                                    return (
+                                                                        <td key={colId} title={riel?.title} style={{ ...cellStyle, color: pending > 0 ? '#DC2626' : '#059669', textAlign: 'right' }}>
+                                                                            ${pending.toFixed(2)}
+                                                                            {riel && (
+                                                                                <div style={{ fontSize: '11px', lineHeight: 1.2, color: 'var(--color-text-secondary)' }}>{riel.text}</div>
+                                                                            )}
+                                                                        </td>
+                                                                    );
+                                                                }
                                                                 const balance = orderBalance(order);
                                                                 return (
                                                                     <td key={colId} style={{ ...cellStyle, color: balance > 0 ? '#DC2626' : '#059669', textAlign: 'right' }}>
