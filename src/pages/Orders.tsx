@@ -2595,22 +2595,29 @@ const Orders: React.FC = () => {
         })();
         return () => { cancelled = true; };
     }, [serverOrders]);
-    // The riel behind the Received figure, when any of it came in riel: the
-    // income of the payments that figure shows (the deposit for a Deposit,
-    // deposit + settlement for Paid, the fee for PdFee; nothing for orders
-    // whose figure is still owed), with any dollar part after it.
-    const rielReceived = (order: Sale): { text: string; title: string } | null => {
+    // The riel of this order's income rows of the given kinds, with any
+    // dollar part after it — shared by the Received and Pending Balance
+    // cells, which show different money for a Collected order.
+    const rielOfKinds = (order: Sale, kinds: PaymentKind[]): { text: string; title: string } | null => {
         const cats = orderIncome[order.id];
-        const status = String(order.paymentStatus || '');
-        const kinds: PaymentKind[] = status === 'Deposit' ? ['Deposit']
-            : ['Paid', 'Settled', 'Paid/Settled', 'Collected'].includes(status) ? ['Deposit', 'Paid']
-            : status === 'PdFee' ? ['PdFee'] : [];
         if (!cats || kinds.length === 0) return null;
         const parts = kinds.map(k => cats[PAID_CATEGORY[k]]).filter((s): s is IncomeSplit => !!s);
         const riel = parts.reduce((a, s) => a + s.riel, 0);
         if (riel <= 0) return null;
         const usd = roundCents(parts.reduce((a, s) => a + s.usd, 0));
         return { text: formatKhr(riel) + (usd > 0 ? ` + ${formatUsd(usd)}` : ''), title: parts.flatMap(s => s.lines).join('\n') };
+    };
+    // The riel behind the Received figure, when any of it came in riel: the
+    // income of the payments that figure shows (the deposit for a Deposit —
+    // and for a Collected order, whose collected money sits in Pending
+    // Balance instead; deposit + settlement for Paid, the fee for PdFee;
+    // nothing for orders whose figure is still owed).
+    const rielReceived = (order: Sale): { text: string; title: string } | null => {
+        const status = String(order.paymentStatus || '');
+        const kinds: PaymentKind[] = status === 'Deposit' || status === 'Collected' ? ['Deposit']
+            : ['Paid', 'Settled', 'Paid/Settled'].includes(status) ? ['Deposit', 'Paid']
+            : status === 'PdFee' ? ['PdFee'] : [];
+        return rielOfKinds(order, kinds);
     };
 
     // Carrier statuses for the rows on screen: pull the cached rows, then on
@@ -4648,12 +4655,19 @@ const Orders: React.FC = () => {
                                                             ) : <td key={colId} title={rielReceived(order)?.title} style={{
                                                                 ...cellStyle,
                                                                 textAlign: 'right',
-                                                                // Blue = money in hand (fully paid, a deposit, or a delivery fee on an
-                                                                // otherwise-cancelled order); red = outstanding.
-                                                                color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee') ? '#2563EB' : '#DC2626'
+                                                                // Blue = money in hand (fully paid, a deposit — on a Collected
+                                                                // order too, whose only in-hand money IS its deposit — or a
+                                                                // delivery fee on an otherwise-cancelled order); red = outstanding.
+                                                                color: (order.paymentStatus === 'Paid' || order.paymentStatus === 'Deposit' || order.paymentStatus === 'PdFee'
+                                                                    || (order.paymentStatus === 'Collected' && (order.depositAmount || 0) > 0)) ? '#2563EB' : '#DC2626'
                                                             }}>${(order.paymentStatus === 'Deposit'
                                                                 ? (order.depositAmount || order.amountReceived || 0)
-                                                                : (order.amountReceived ?? order.total)).toFixed(2)}
+                                                                // Collected: the courier holds the money — Received shows
+                                                                // only what the shop actually has (the deposit); the
+                                                                // collected amount sits in Pending Balance.
+                                                                : order.paymentStatus === 'Collected'
+                                                                    ? (order.depositAmount || 0)
+                                                                    : (order.amountReceived ?? order.total)).toFixed(2)}
                                                                 {rielReceived(order) && (
                                                                     // Paid in riel: the riel received, smaller, under the USD.
                                                                     <div style={{ fontSize: '11px', lineHeight: 1.2, color: 'var(--color-text-secondary)' }}>{rielReceived(order)!.text}</div>
@@ -4722,7 +4736,9 @@ const Orders: React.FC = () => {
                                                                 // (filters, footers, Dashboard Owed) is unchanged.
                                                                 if (order.paymentStatus === 'Collected') {
                                                                     const pending = Math.max(0, (Number(order.total) || 0) - (order.depositAmount || 0));
-                                                                    const riel = rielReceived(order);
+                                                                    // The riel the courier collected (the settle rows);
+                                                                    // the deposit's riel stays under Received.
+                                                                    const riel = rielOfKinds(order, ['Paid']);
                                                                     return (
                                                                         <td key={colId} title={riel?.title} style={{ ...cellStyle, color: pending > 0 ? '#DC2626' : '#059669', textAlign: 'right' }}>
                                                                             ${pending.toFixed(2)}
