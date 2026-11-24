@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, lazy, sta
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PAGE_UNKNOWN, type OrderListFilters } from '../utils/orderListFilters';
-import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance } from '../utils/orderMoney';
+import { REVENUE_STATUSES, isRevenueOrder, orderRevenue, orderCollected, orderRevenuePieces, orderBalance, collectedPending } from '../utils/orderMoney';
 import { statusChangeRefusal, paymentChangeRefusal, paymentBadgeReadOnlyForNonAdmin, paymentBadgeDisabledForNonAdmin, isCourierBooked, settleDateChangeRefusal, orderStatusLabel, orderStatusesMatchingLabel } from '../utils/orderStatusRules';
 import { bodyZoom } from '../utils/bodyZoom';
 import { Plus, Search, Filter, X, ChevronLeft, ChevronRight, ChevronDown, Edit, Trash2, ArrowUp, ArrowDown, Upload, User, Copy, ExternalLink, Package, Truck, CreditCard, List, Store, Settings, Printer, Clock, CheckCircle, RefreshCw, ChevronsUpDown, MapPin, Check, Wallet, AlertTriangle, ShieldOff, ShieldCheck, Loader2, Table2, Phone, Boxes, HandCoins } from 'lucide-react';
@@ -2744,10 +2744,16 @@ const Orders: React.FC = () => {
         // Shipped or Delivered, not Cancel-paid) — the same rule the mobile
         // footer and Dashboard 2 use, so all three always agree.
         const totalRevenue = statsOrders.reduce((sum, order) => sum + orderRevenue(order), 0);
-        const totalReceived = statsOrders.reduce((sum, order) => sum + orderCollected(order), 0);
-        // Sum of the per-row Balance column (same rule as the cells, so the
-        // footer always matches what's shown).
-        const totalOutstanding = statsOrders.reduce((sum, order) => sum + orderBalance(order), 0);
+        // A Collected order's money is with the courier/deliveryman: its
+        // Received cell shows only the deposit and its Pending Balance cell
+        // the courier-held remainder, so the footers sum the same rule —
+        // they must always match the rows shown.
+        const totalReceived = statsOrders.reduce((sum, order) => sum + (order.paymentStatus === 'Collected' && isRevenueOrder(order)
+            ? (order.depositAmount || 0)
+            : orderCollected(order)), 0);
+        const totalOutstanding = statsOrders.reduce((sum, order) => sum + (order.paymentStatus === 'Collected'
+            ? collectedPending(order)
+            : orderBalance(order)), 0);
         const totalProducts = statsOrders.reduce((sum, order) => sum + orderRevenuePieces(order), 0);
         const statusCounts = statsOrders.reduce((acc, order) => {
             const status = order.shipping?.status || 'Pending';
@@ -4735,7 +4741,7 @@ const Orders: React.FC = () => {
                                                                 // as the Received column shows it. orderBalance
                                                                 // (filters, footers, Dashboard Owed) is unchanged.
                                                                 if (order.paymentStatus === 'Collected') {
-                                                                    const pending = Math.max(0, (Number(order.total) || 0) - (order.depositAmount || 0));
+                                                                    const pending = collectedPending(order);
                                                                     // The riel the courier collected (the settle rows);
                                                                     // the deposit's riel stays under Received.
                                                                     const riel = rielOfKinds(order, ['Paid']);
