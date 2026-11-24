@@ -49,6 +49,14 @@ export const orderRevenuePieces = (order: Sale): number =>
 // A Deposit order that is still live keeps its original behaviour: it owes
 // total-minus-deposit even while Drafted/Pending, because taking a deposit
 // makes it a firm commitment.
+// The courier-held money of a Collected order — what the Orders table's
+// Pending Balance cell and footer show until the order is marked Paid.
+// Display only: orderBalance below, the canonical "Owed", stays 0 for a
+// Collected order (the CUSTOMER owes nothing — the courier does, on the
+// 1210/1220 receivable), so the Dashboard and OM2 figures are unchanged.
+export const collectedPending = (order: Pick<Sale, 'total' | 'depositAmount'>): number =>
+    Math.max(0, (Number(order.total) || 0) - (order.depositAmount || 0));
+
 export const orderBalance = (order: Sale): number => {
     const s = order.shipping?.status;
     const voided = s === 'Cancelled' || s === 'Returned' || s === 'ReStock';
