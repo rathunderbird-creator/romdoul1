@@ -347,15 +347,15 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
     g = await row('CL1');
     check('CL1 unticked courier: Collected books one receipt, Dr 1210 17 / Cr 4000 17, COGS booked',
         (await nIncome('CL1')) === 1 && near(ek1.cod_dr, 17) && near(ek1.bank_dr, 0) && near(ek1.rev_cr, 17) && num(ek1.cogs) > 0, [rk1, ek1]);
-    check('CL1: settle date stamped, Received = total, flag true, status Collected',
-        g.settle_date !== null && near(g.amount_received, 17) && g.cod_collected === true && g.payment_status === 'Collected', g);
+    check('CL1: NO settle date (money not arrived), Received = total, flag true, status Collected',
+        g.settle_date === null && near(g.amount_received, 17) && g.cod_collected === true && g.payment_status === 'Collected', g);
     await checkBalanced('CL1 Collected');
-    const k1before = { date: ek1.date, settle: String(g.settle_date) };
+    const k1before = { date: ek1.date };
     await pay('CL1', 'Collected', { payment_status: 'Paid', amount_received: 17, settle_date: LATER, post_to_ledger: true, cod_collected: true }, LATER);
     const ek1b = await entry('TX-' + (await tx('CL1')).id);
     g = await row('CL1');
-    check('CL1 Collected -> Paid: still one receipt, same entry date and settle date',
-        (await nIncome('CL1')) === 1 && ek1b.date === k1before.date && String(g.settle_date) === k1before.settle && g.payment_status === 'Paid' && near(ek1b.cod_dr, 17), [ek1b, g]);
+    check('CL1 Collected -> Paid: still one receipt, same entry date; the settle date stamps NOW (the Paid day)',
+        (await nIncome('CL1')) === 1 && ek1b.date === k1before.date && new Date(g.settle_date).toISOString().startsWith(LATER) && g.payment_status === 'Paid' && near(ek1b.cod_dr, 17), [ek1b, g]);
     await checkBalanced('CL1 Paid');
 
     // ---- Collected -> Paid as the app now saves it (cod_collected false):
@@ -368,7 +368,8 @@ const codBalance = async () => num((await one(`SELECT COALESCE(sum(l.debit - l.c
     g = await row('CLP');
     check('CLP Collected -> Paid (flag off): still one receipt, debit moved 1210 -> bank',
         (await nIncome('CLP')) === 1 && near(ek4.cod_dr, 0) && near(ek4.bank_dr, 17) && near(ek4.rev_cr, 17), ek4);
-    check('CLP: flag false, status Paid', g.cod_collected === false && g.payment_status === 'Paid', g);
+    check('CLP: flag false, status Paid, settle date = the Paid save\'s day',
+        g.cod_collected === false && g.payment_status === 'Paid' && new Date(g.settle_date).toISOString().startsWith(LATER), g);
     await checkBalanced('CLP Paid');
     await pay('CLP', 'Paid', { payment_status: 'Collected', cod_collected: true });
     ek4 = await entry('TX-' + (await tx('CLP')).id);

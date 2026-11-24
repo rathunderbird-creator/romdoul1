@@ -1226,6 +1226,9 @@ DECLARE
     v_cod BOOLEAN := CASE WHEN u ? 'cod_collected' THEN COALESCE(NULLIF(u->>'cod_collected', '')::BOOLEAN, false) END;
     -- Who holds the COD money ('courier' / 'deliveryman'), set below.
     v_holder TEXT;
+    -- A Collected order turning Paid: the arrival day, written to
+    -- sales.settle_date only (never into u — see the flip section).
+    v_stamp_settle TEXT;
     v_cut NUMERIC;
     -- Split settlement (p_updates.split, sent by the Settle form only): the
     -- receipt is taken part in dollars, part in riel. split.usd_amount is
@@ -1332,11 +1335,15 @@ BEGIN
             -- money. Booked now, as a settlement of the full total (the app
             -- sends the deposit as Received and no settle date for Get File),
             -- dated today; get_file_booked (set by the UPDATE below) marks it
-            -- booked.
+            -- booked. Collected records NO Settled Date — the money hasn't
+            -- arrived; the date stamps when the order turns Paid (below).
+            -- The receipt entry is still dated today (v_date falls to now).
             v_cod := true;
             v_post := true;
-            u := u || jsonb_build_object('amount_received', COALESCE(s.total, 0),
-                                         'settle_date', COALESCE(NULLIF(v_fields->>'now', ''), now()::TEXT));
+            u := u || jsonb_build_object('amount_received', COALESCE(s.total, 0));
+            IF v_target = 'Get File' THEN
+                u := u || jsonb_build_object('settle_date', COALESCE(NULLIF(v_fields->>'now', ''), now()::TEXT));
+            END IF;
         ELSE
             -- Into Get File / Collected from a settled status (or a re-save): the receipt
             -- stands as booked — the app's Get File figures (deposit as
@@ -1347,6 +1354,17 @@ BEGIN
         -- A booked Get File / Collected marked Paid: nothing more to book (the courier's
         -- remittance is Accounting › COD Remittances), and the receipt keeps
         -- its Get File date — the Paid save's settle date is not applied.
+        -- EXCEPT a Collected order that stored no settle date (Collected
+        -- stamps none): turning Paid records the day the money arrived —
+        -- the save's date, else today. Held in v_stamp_settle and written
+        -- straight to the sales column AFTER the correction section, so the
+        -- Draft receipt's row and entry keep their Collected booking date
+        -- (a date inside u would read as a LED-6 date correction and
+        -- re-date them).
+        IF v_cur = 'Collected' AND s.settle_date IS NULL
+           AND v_target IN ('Paid', 'Settled', 'Paid/Settled') THEN
+            v_stamp_settle := COALESCE(NULLIF(u->>'settle_date', ''), NULLIF(v_fields->>'now', ''), now()::TEXT);
+        END IF;
         u := u - 'settle_date';
     END IF;
     IF v_leaving_paid AND v_cur IN ('Get File', 'Collected') THEN
@@ -1667,6 +1685,12 @@ BEGIN
                 COALESCE(NULLIF(u->>'payment_method', ''), NULLIF(s.payment_method, ''), v_account_name), v_holder);
             IF v_notice IS NOT NULL THEN v_notices := v_notices || v_notice; END IF;
         END IF;
+    END IF;
+
+    -- A Collected order turning Paid stamps its settle date now, after the
+    -- corrections above (which must not see it as a date change).
+    IF v_stamp_settle IS NOT NULL THEN
+        u := u || jsonb_build_object('settle_date', v_stamp_settle);
     END IF;
 
     -- The payment columns, from what this save (after the defaults above) asks.
