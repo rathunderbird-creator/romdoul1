@@ -1080,8 +1080,11 @@ const SalesSetupPage: React.FC = () => {
                 Groups: nothing in retail uses them; say where they live. ── */}
             {POINTER_SECTIONS.has(section) && <PointerSection section={section} />}
 
-            {/* ── Every other section: placeholder until its own data model exists. ── */}
-            {section !== 'defaults' && !LIST_SECTIONS.has(section) && !POINTER_SECTIONS.has(section) && (
+            {/* ── Every other section: placeholder until its own data model
+                exists. defaults and salesPayment have real blocks above —
+                without the exclusion the "reserved" card rendered BESIDE
+                the real Sales Payment content. ── */}
+            {section !== 'defaults' && section !== 'salesPayment' && !LIST_SECTIONS.has(section) && !POINTER_SECTIONS.has(section) && (
                 <div style={{ ...cardStyle, padding: '20px 22px', flex: '1 1 560px', maxWidth: '680px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div>
                         <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--color-text-main)' }}>{sectionLabel(activeSection.key)}</div>
