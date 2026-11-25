@@ -5094,8 +5094,17 @@ const Orders: React.FC = () => {
                                                     return <td key={colId} style={{ ...commonStyle, minWidth: '100px' }}>{fill(t('ui.orders.footer.totalN'), { n: stats.totalOrders })}</td>;
                                                 }
                                                 if (colId === 'total') return <td key={colId} style={{ ...commonStyle, textAlign: 'right' }}>${stats.totalRevenue.toFixed(2)}</td>;
-                                                if (colId === 'received') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: '#2563EB' }}>${stats.totalReceived.toFixed(2)}</td>;
-                                                if (colId === 'balance') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: 'var(--color-red)' }}>${stats.totalOutstanding.toFixed(2)}</td>;
+                                                // Received / Pending Balance totals in both currencies: the
+                                                // riel line is the USD sum at the shop rate (the rows mix
+                                                // dollar and riel money, so an equivalent, not a riel tally).
+                                                if (colId === 'received') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: '#2563EB' }}>
+                                                    ${stats.totalReceived.toFixed(2)}
+                                                    <div style={{ fontSize: '11px', lineHeight: 1.2, color: 'var(--color-text-secondary)', fontWeight: 500 }}>{formatKhr(Math.round(stats.totalReceived * shopRate(khrExchangeRate)))}</div>
+                                                </td>;
+                                                if (colId === 'balance') return <td key={colId} style={{ ...commonStyle, textAlign: 'right', color: 'var(--color-red)' }}>
+                                                    ${stats.totalOutstanding.toFixed(2)}
+                                                    <div style={{ fontSize: '11px', lineHeight: 1.2, color: 'var(--color-text-secondary)', fontWeight: 500 }}>{formatKhr(Math.round(stats.totalOutstanding * shopRate(khrExchangeRate)))}</div>
+                                                </td>;
                                                 if (colId === 'items') return <td key={colId} style={{ ...commonStyle }}>{stats.totalProducts} {t('dashboard2.pieces')}</td>;
 
                                                 return <td key={colId} style={commonStyle}></td>;
