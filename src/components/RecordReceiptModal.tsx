@@ -8,7 +8,7 @@ import { dayKeyFromDate } from '../utils/dateRange';
 import MoneyInput from './MoneyInput';
 import CashBankOptions from './CashBankOptions';
 import { useAccountCurrency, useMoneyField } from '../hooks/useMoneyField';
-import { defaultCashBankAccountId, depositDefaultFor } from '../utils/cashBankAccounts';
+import { defaultCashBankAccountId, depositDefaultFor, isCodReceivableAccount } from '../utils/cashBankAccounts';
 import { accountCurrency, formatMoneyLine, isKhrRow, type MoneyMeta, type MoneyRow } from '../utils/currency';
 
 // Local calendar day as YYYY-MM-DD, `daysAgo` days back. Steps by calendar day
@@ -152,12 +152,21 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     const depositAccountId = chosenAccountId || defaultAccountId;
     const coupling = useAccountCurrency(field, paymentAccounts, depositAccountId, setChosenAccountId, { usd: defUsd, khr: defKhr });
     const amountReceived = finalizeMode ? order.total : field.usd;
+    // Post Now on a COD receipt: the Draft debits a COD receivable (1210
+    // courier / 1220 deliveryman), and the finalize deliberately KEEPS it
+    // there (codReceiptDebitId) — the courier still holds the money.
+    // Receivables stay out of the cash/bank pool, so the form shows the
+    // real account read-only instead of a dropdown it would not honor.
+    const codAccount = useMemo(() => (finalizeMode && initialDepositAccountId
+        ? accounts.find(a => a.id === initialDepositAccountId && a.account_type === 'Asset' && isCodReceivableAccount(a))
+        : undefined), [finalizeMode, initialDepositAccountId, accounts]);
     // Posting a row: the amount is fixed, so the account must match the
     // row's currency (a riel row into a riel account, a USD row into a USD
-    // one). A mismatch is shown and asks before posting.
+    // one). A mismatch is shown and asks before posting. Never for a COD
+    // receipt: its hidden dropdown's default is not what posts.
     const pickedAccount = paymentAccounts.find(a => a.id === depositAccountId);
     const rowCurrency = rowIsKhr ? 'KHR' : 'USD';
-    const finalizeMismatch = finalizeMode && !!pickedAccount && accountCurrency(pickedAccount) !== rowCurrency;
+    const finalizeMismatch = finalizeMode && !codAccount && !!pickedAccount && accountCurrency(pickedAccount) !== rowCurrency;
     const mismatchText = rowCurrency === 'KHR'
         ? tx('ui.components.receiptRecord.rielIntoUsd', 'This row was received in riel ({amt}), but {account} is a dollar account.', { amt: finalizeRow ? formatMoneyLine(finalizeRow) : '', account: pickedAccount?.account_name ?? tx('ui.components.receiptRecord.thisAccount', 'this account') })
         : tx('ui.components.receiptRecord.usdIntoRiel', 'This row was received in dollars, but {account} is a riel account.', { account: pickedAccount?.account_name ?? tx('ui.components.receiptRecord.thisAccount', 'this account') });
@@ -166,7 +175,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
     // too, or a fully-settling receipt would still show a bogus balance.
     const remainingBalance = Math.max(0, order.total - (order.depositAmount || 0) - (amountReceived || 0));
     const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(settleDate);
-    const canRecord = accountsLoaded && dateValid && amountReceived > 0 && !(!finalizeMode && field.rateInvalid) && !(paymentAccounts.length > 0 && !depositAccountId);
+    const canRecord = accountsLoaded && dateValid && amountReceived > 0 && !(!finalizeMode && field.rateInvalid) && !(paymentAccounts.length > 0 && !depositAccountId && !codAccount);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title ?? tx('ui.components.receiptRecord.title', 'Record Receipt')}>
@@ -278,6 +287,21 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                 </div>
                 <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '6px', color: 'var(--color-text-main)' }}>{tx('ui.components.common.depositedInto', 'Deposited into')} <span style={{ color: 'red' }}>*</span></label>
+                    {codAccount ? (
+                        // A COD receipt: the money sits on the receivable and
+                        // posting keeps it there — shown as a fact, not a choice.
+                        <>
+                            <div style={{
+                                width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--color-border)',
+                                background: 'var(--color-bg)', color: 'var(--color-text-main)', fontSize: '14px', boxSizing: 'border-box',
+                            }}>
+                                {(codAccount.account_code ? codAccount.account_code + ' · ' : '') + codAccount.account_name}
+                            </div>
+                            <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                                {tx('ui.components.receiptRecord.codHeld', 'The courier or deliveryman still holds this money, so posting keeps the receipt on this receivable. It reaches a cash/bank account when the order is marked Paid, or through Accounting › COD Remittances.')}
+                            </div>
+                        </>
+                    ) : (
                     <select
                         value={depositAccountId}
                         disabled={!accountsLoaded}
@@ -292,6 +316,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                         <option value="">{tx('ui.components.common.bankOrCash', 'Bank or cash account…')}</option>
                         <CashBankOptions accounts={paymentAccounts} />
                     </select>
+                    )}
                     {finalizeMismatch && (
                         <div data-money-warning role="alert" style={{ marginTop: '8px', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.55)', color: '#B45309' }}>
                             {mismatchText}
@@ -301,7 +326,7 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                         <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                             {tx('ui.components.common.loadingAccounts', 'Loading accounts…')}
                         </div>
-                    ) : paymentAccounts.length === 0 && (
+                    ) : paymentAccounts.length === 0 && !codAccount && (
                         <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                             {tx('ui.components.receiptRecord.noAccounts', 'No cash or bank accounts in the Chart of Accounts yet — the settlement saves without one.')}
                         </div>
@@ -341,11 +366,15 @@ const RecordReceiptModal: React.FC<RecordReceiptModalProps> = ({
                             if (!canRecord) return;
                             if (!finalizeMode && !field.confirmIfSuspicious()) return;
                             if (finalizeMismatch && !window.confirm(`${mismatchText}\n${tx('ui.components.receiptRecord.postAnyway', 'Post it there anyway?')}`)) return;
-                            const depositAccountName = paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
+                            // A COD receipt posts to its receivable, whatever
+                            // the hidden dropdown's default would have been.
+                            const confirmedAccountId = codAccount ? codAccount.id : (depositAccountId || undefined);
+                            const depositAccountName = codAccount ? codAccount.account_name
+                                : paymentAccounts.find(a => a.id === depositAccountId)?.account_name;
                             onConfirm({
                                 paymentMethod: selectedMethod,
                                 settleDate: new Date(settleDate).toISOString(),
-                                depositAccountId: depositAccountId || undefined,
+                                depositAccountId: confirmedAccountId,
                                 depositAccountName,
                                 amountReceived,
                                 receiptReference: receiptReference.trim() || undefined,
