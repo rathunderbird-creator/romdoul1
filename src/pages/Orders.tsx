@@ -1020,7 +1020,7 @@ async function paidMoneyOf(orderId: string, kind: PaymentKind, bookedUsd: number
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods, rejectionReasons, courierDeliveryTypes, customerGroups, customerGroupMembers, setCustomerGroup } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods, rejectionReasons, courierDeliveryTypes, customerGroups, customerGroupMembers, setCustomerGroup, khrExchangeRate } = useStore();
     const { t } = useLanguage();
     // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
     const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
