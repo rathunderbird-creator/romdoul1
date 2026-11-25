@@ -88,8 +88,19 @@ const ChartOfAccountsPage = () => {
     // name when a row has no code — and never edits or deletes existing ones,
     // so the ledger's account references stay safe.
     const VALID_TYPES = useMemo(() => TYPE_CARDS.map(c => c.type), []);
+    // The Export button opens a picker first: every account pre-ticked, with
+    // per-category and select-all toggles, so a partial chart (say, only the
+    // Revenue/Expense skeleton) can be carried to another store.
+    const [exportOpen, setExportOpen] = useState(false);
+    const [exportSel, setExportSel] = useState<Record<string, boolean>>({});
+    const openExport = () => {
+        setExportSel(Object.fromEntries(accounts.map(a => [a.id, true])));
+        setExportOpen(true);
+    };
     const handleExport = () => {
-        const rows = accounts.map(a => ({
+        const chosen = accounts.filter(a => exportSel[a.id]);
+        if (chosen.length === 0) return;
+        const rows = chosen.map(a => ({
             account_code: a.account_code ?? null,
             account_name: a.account_name,
             account_type: a.account_type,
@@ -105,6 +116,7 @@ const ChartOfAccountsPage = () => {
         el.download = `chart_of_accounts_${new Date().toLocaleDateString('en-CA')}.json`;
         el.click();
         URL.revokeObjectURL(url);
+        setExportOpen(false);
     };
     const handleImportFile = async (file: File) => {
         try {
@@ -446,7 +458,7 @@ const ChartOfAccountsPage = () => {
                         <Upload size={16} /> {t('ui.accounting.coa.import')}
                     </button>
                     <button
-                        onClick={handleExport}
+                        onClick={openExport}
                         disabled={accounts.length === 0}
                         style={{
                             display: 'flex', alignItems: 'center', gap: '8px',
@@ -819,6 +831,97 @@ const ChartOfAccountsPage = () => {
                                     style={{ padding: '10px 18px', borderRadius: '8px', border: 'none', background: '#2742c9', color: 'white', fontWeight: 600, fontSize: '13.5px', cursor: ready ? 'pointer' : 'not-allowed', opacity: ready ? 1 : 0.55 }}
                                 >
                                     {editingAccount ? t('ui.accounting.common.saveChanges') : t('ui.accounting.coa.createAccount')}
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
+            </Modal>
+
+            {/* Export picker: choose which accounts go into the JSON file. */}
+            <Modal
+                isOpen={exportOpen}
+                onClose={() => setExportOpen(false)}
+                title={t('ui.accounting.coa.exportTitle')}
+                width="560px"
+            >
+                {(() => {
+                    const selCount = accounts.filter(a => exportSel[a.id]).length;
+                    const allSel = selCount === accounts.length && accounts.length > 0;
+                    const setAll = (ids: string[], on: boolean) =>
+                        setExportSel(prev => {
+                            const next = { ...prev };
+                            for (const id of ids) next[id] = on;
+                            return next;
+                        });
+                    const sorted = [...accounts].sort((a, b) => (a.account_code || '').localeCompare(b.account_code || ''));
+                    return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '4px 0' }}>
+                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{t('ui.accounting.coa.exportHint')}</div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '10px 14px', borderRadius: '10px', background: 'var(--color-bg)' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={allSel}
+                                    ref={el => { if (el) el.indeterminate = selCount > 0 && !allSel; }}
+                                    onChange={e => setAll(accounts.map(a => a.id), e.target.checked)}
+                                    style={{ cursor: 'pointer' }}
+                                />
+                                <span style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--color-text-main)' }}>{t('ui.accounting.coa.exportSelectAll')}</span>
+                                <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--color-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                                    {fill(t('ui.accounting.coa.exportCount'), { n: selCount, total: accounts.length })}
+                                </span>
+                            </label>
+                            <div style={{ maxHeight: '48vh', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: '10px' }}>
+                                {TYPE_CARDS.map(card => {
+                                    const group = sorted.filter(a => a.account_type === card.type);
+                                    if (group.length === 0) return null;
+                                    const groupSel = group.filter(a => exportSel[a.id]).length;
+                                    const groupAll = groupSel === group.length;
+                                    return (
+                                        <React.Fragment key={card.type}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: 'var(--color-bg)', borderBottom: '1px solid #f1f5f9', borderLeft: `3px solid ${card.color}`, cursor: 'pointer', position: 'sticky', top: 0 }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={groupAll}
+                                                    ref={el => { if (el) el.indeterminate = groupSel > 0 && !groupAll; }}
+                                                    onChange={e => setAll(group.map(a => a.id), e.target.checked)}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                                <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: card.color }}>{t('ui.accounting.common.typePlural.' + card.type)}</span>
+                                                <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontVariantNumeric: 'tabular-nums' }}>· {groupSel}/{group.length}</span>
+                                            </label>
+                                            {group.map(acc => (
+                                                <label key={acc.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px 8px 28px', borderBottom: '1px solid #f8fafc', cursor: 'pointer' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={!!exportSel[acc.id]}
+                                                        onChange={e => setAll([acc.id], e.target.checked)}
+                                                        style={{ cursor: 'pointer', flexShrink: 0 }}
+                                                    />
+                                                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)', width: '52px', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{acc.account_code}</span>
+                                                    <span className="d2-khmer" style={{ fontSize: '13px', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        {acc.account_name}
+                                                        {acc.sub_type && <span style={subLabelStyle}>{subDisp(acc.sub_type)}</span>}
+                                                    </span>
+                                                </label>
+                                            ))}
+                                        </React.Fragment>
+                                    );
+                                })}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '2px' }}>
+                                <button
+                                    onClick={() => setExportOpen(false)}
+                                    style={{ padding: '10px 18px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text-main)', fontWeight: 600, fontSize: '13.5px', cursor: 'pointer' }}
+                                >
+                                    {t('common.cancel')}
+                                </button>
+                                <button
+                                    onClick={handleExport}
+                                    disabled={selCount === 0}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '8px', border: 'none', background: '#2742c9', color: 'white', fontWeight: 600, fontSize: '13.5px', cursor: selCount === 0 ? 'not-allowed' : 'pointer', opacity: selCount === 0 ? 0.55 : 1 }}
+                                >
+                                    <Download size={15} /> {fill(t('ui.accounting.coa.exportGo'), { n: selCount })}
                                 </button>
                             </div>
                         </div>
