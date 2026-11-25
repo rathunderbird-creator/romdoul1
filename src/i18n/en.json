@@ -5493,6 +5493,7 @@
         "booksOrder": "Books the order's {amt}; the riel amount and rate are recorded with it.",
         "description": "Please confirm the settle date and payment method.",
         "noAccounts": "No cash or bank accounts in the Chart of Accounts yet — the settlement saves without a ledger entry account.",
+        "codHeld": "The courier or deliveryman still holds this money, so posting keeps the receipt on this receivable. It reaches a cash/bank account when the order is marked Paid, or through Accounting › COD Remittances.",
         "settleDate": "Settle Date",
         "title": "Settle Payment",
         "receivedAmount": "Received Amount",
