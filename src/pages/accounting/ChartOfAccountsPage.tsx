@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Search, ChevronDown, ChevronRight, Check, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, ChevronDown, ChevronRight, Check, AlertTriangle, Download, Upload } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -78,6 +79,86 @@ const ChartOfAccountsPage = () => {
     const typeDisp = (type: string) => t('ui.accounting.common.accountType.' + type);
     const accountsCount = (n: number) => fill(t(n === 1 ? 'ui.accounting.coa.accountCountOne' : 'ui.accounting.coa.accountCount'), { n });
     const { accounts, isLoading, fetchAccounts, saveAccount, deleteAccount } = useAccounting();
+    const { showToast } = useToast();
+    const importInputRef = useRef<HTMLInputElement>(null);
+
+    // ── Export / Import: back the chart up as JSON and replay it on another
+    // store. The export carries no ids and no balances (those are per-store);
+    // the import only ADDS accounts that are missing — matched by code, or by
+    // name when a row has no code — and never edits or deletes existing ones,
+    // so the ledger's account references stay safe.
+    const VALID_TYPES = useMemo(() => TYPE_CARDS.map(c => c.type), []);
+    const handleExport = () => {
+        const rows = accounts.map(a => ({
+            account_code: a.account_code ?? null,
+            account_name: a.account_name,
+            account_type: a.account_type,
+            sub_type: a.sub_type ?? null,
+            description: a.description ?? null,
+            is_active: a.is_active !== false,
+        }));
+        const blob = new Blob([JSON.stringify({ kind: 'chart_of_accounts', exported_at: new Date().toISOString(), accounts: rows }, null, 2)],
+            { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const el = document.createElement('a');
+        el.href = url;
+        el.download = `chart_of_accounts_${new Date().toLocaleDateString('en-CA')}.json`;
+        el.click();
+        URL.revokeObjectURL(url);
+    };
+    const handleImportFile = async (file: File) => {
+        try {
+            const parsed = JSON.parse(await file.text());
+            // The envelope this page exports, or a bare array of accounts.
+            const raw = Array.isArray(parsed) ? parsed : parsed?.accounts;
+            const clean = (Array.isArray(raw) ? raw : [])
+                .map((r: Record<string, unknown>) => ({
+                    account_code: r.account_code == null || r.account_code === '' ? null : String(r.account_code).trim(),
+                    account_name: String(r.account_name ?? '').trim(),
+                    account_type: r.account_type as ChartOfAccount['account_type'],
+                    sub_type: r.sub_type ? String(r.sub_type) : null,
+                    description: r.description ? String(r.description) : null,
+                    is_active: r.is_active !== false,
+                }))
+                .filter(r => r.account_name && VALID_TYPES.includes(r.account_type));
+            if (clean.length === 0) {
+                showToast(t('ui.accounting.coa.importInvalid'), 'error');
+                return;
+            }
+            const byCode = new Set(accounts.filter(a => a.account_code).map(a => String(a.account_code).trim().toLowerCase()));
+            const byName = new Set(accounts.map(a => a.account_name.trim().toLowerCase()));
+            const seen = new Set<string>();
+            const adds = clean.filter(r => {
+                const exists = r.account_code ? byCode.has(r.account_code.toLowerCase()) : byName.has(r.account_name.toLowerCase());
+                if (exists) return false;
+                const key = (r.account_code || r.account_name).toLowerCase();
+                if (seen.has(key)) return false; // a duplicate inside the file
+                seen.add(key);
+                return true;
+            });
+            if (adds.length === 0) {
+                showToast(t('ui.accounting.coa.importNothing'), 'info');
+                return;
+            }
+            const preview = adds.slice(0, 8).map(r => (r.account_code ? r.account_code + ' · ' : '') + r.account_name).join('\n')
+                + (adds.length > 8 ? `\n…+${adds.length - 8}` : '');
+            if (!window.confirm(fill(t('ui.accounting.coa.importConfirm'), { add: adds.length, skip: clean.length - adds.length }) + '\n\n' + preview)) return;
+            // One batch insert; a store without the sub_type column (older
+            // schema) gets the same rows without it — saveAccount's fallback.
+            let { error } = await supabase.from('chart_of_accounts').insert(adds);
+            if (error && /sub_type/i.test(error.message || '')) {
+                ({ error } = await supabase.from('chart_of_accounts').insert(adds.map(r => ({
+                    account_code: r.account_code, account_name: r.account_name, account_type: r.account_type,
+                    description: r.description, is_active: r.is_active,
+                }))));
+            }
+            if (error) throw error;
+            showToast(fill(t('ui.accounting.coa.importDone'), { n: adds.length }), 'success');
+            await fetchAccounts();
+        } catch (e) {
+            showToast(fill(t('ui.accounting.coa.importFailed'), { error: (e as Error)?.message || String(e) }), 'error');
+        }
+    };
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingAccount, setEditingAccount] = useState<ChartOfAccount | null>(null);
@@ -342,18 +423,55 @@ const ChartOfAccountsPage = () => {
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <button 
-                    onClick={() => handleOpenModal()}
-                    style={{ 
-                        display: 'flex', alignItems: 'center', gap: '8px', 
-                        padding: '10px 16px', borderRadius: '8px',
-                        background: '#5469d4', color: 'white', border: 'none',
-                        fontWeight: 600, fontSize: '14px', cursor: 'pointer',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                    }}
-                >
-                    <Plus size={16} /> {t('ui.accounting.coa.addAccount')}
-                </button>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    {/* Export the chart as JSON (no ids, no balances); Import
+                        adds the missing accounts from such a file on another
+                        store — see handleExport / handleImportFile above. */}
+                    <input ref={importInputRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
+                        onChange={e => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            if (file) void handleImportFile(file);
+                        }} />
+                    <button
+                        onClick={() => importInputRef.current?.click()}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '10px 16px', borderRadius: '8px',
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)',
+                            border: '1px solid var(--color-border)',
+                            fontWeight: 600, fontSize: '14px', cursor: 'pointer'
+                        }}
+                    >
+                        <Upload size={16} /> {t('ui.accounting.coa.import')}
+                    </button>
+                    <button
+                        onClick={handleExport}
+                        disabled={accounts.length === 0}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '10px 16px', borderRadius: '8px',
+                            background: 'var(--color-surface)', color: 'var(--color-text-main)',
+                            border: '1px solid var(--color-border)',
+                            fontWeight: 600, fontSize: '14px', cursor: accounts.length === 0 ? 'not-allowed' : 'pointer',
+                            opacity: accounts.length === 0 ? 0.6 : 1
+                        }}
+                    >
+                        <Download size={16} /> {t('ui.accounting.coa.export')}
+                    </button>
+                    <button
+                        onClick={() => handleOpenModal()}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '10px 16px', borderRadius: '8px',
+                            background: '#5469d4', color: 'white', border: 'none',
+                            fontWeight: 600, fontSize: '14px', cursor: 'pointer',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                        }}
+                    >
+                        <Plus size={16} /> {t('ui.accounting.coa.addAccount')}
+                    </button>
+                </div>
             </div>
 
             {/* Summary: real balances per account type, from journal entry lines */}
