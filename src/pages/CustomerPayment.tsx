@@ -456,10 +456,15 @@ const CustomerPaymentPage: React.FC = () => {
                     const txId = ref.slice(3);
                     if (je.id) entryTx.set(String(je.id), txId);
                     if (byTx.get(txId) !== 'Posted') byTx.set(txId, je.status === 'Draft' ? 'Draft' : 'Posted');
-                    // The entry's cash side only — an RCP entry also carries a COGS
+                    // The entry's money side only — an RCP entry also carries a COGS
                     // debit, which must never become the "Deposited into" prefill.
+                    // A COD receivable (1210 courier / 1220 deliveryman) counts:
+                    // the Post form shows it read-only and keeps the debit there,
+                    // so it must learn the receipt IS on a receivable.
                     const debit = (je.lines || []).find(l => Number(l.debit) > 0
-                        && l.account?.account_type === 'Asset' && /cash|bank/i.test(l.account?.account_name || ''));
+                        && l.account?.account_type === 'Asset'
+                        && (/cash|bank/i.test(l.account?.account_name || '')
+                            || isCodReceivableAccount({ account_name: l.account?.account_name || '' })));
                     if (debit && !debitAccountByTx.has(txId)) debitAccountByTx.set(txId, debit.account_id);
                 }
                 if (!cancelled) setLedger({ state: 'ready', byTx, debitAccountByTx, entryTx, refreshError: false, statusMissing });
