@@ -25,7 +25,8 @@ import { isCashBankAccount, isCodCourierAccount, isCodReceivableAccount, sortCas
 import CashBankOptions from '../../components/CashBankOptions';
 import MoneyInput from '../../components/MoneyInput';
 import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
-import { CURRENCY_KEYS, formatMoneyLine, isKhrAccountName, isMissingCurrencyColumnError, khrToUsd, parseAmount, usdToKhr } from '../../utils/currency';
+import { CURRENCY_KEYS, formatKhr, formatMoneyLine, isKhrAccountName, isMissingCurrencyColumnError, khrToUsd, parseAmount, usdToKhr } from '../../utils/currency';
+import { roundCents } from '../../utils/money';
 import type { ChartOfAccount, JournalEntry } from '../../types';
 
 const BLUE = '#2563EB';
@@ -332,6 +333,17 @@ const CodRemittancesPage: React.FC = () => {
     const feeInvalid = fee.trim() !== '' && !(feeTyped >= 0);
     const canSave = !isSaving && amountUsd > 0 && !field.rateInvalid && !feeInvalid && (feeUsd === 0 || !!feeAccountId)
         && !!bankId && !!codAccount && !!date && !!courierName;
+    // "All": everything the chosen courier still holds reaches the bank —
+    // with a fee typed, the amount is held − fee, so Cr 1210 lands on the
+    // held figure exactly and the courier's row empties to zero.
+    const allUsd = chosenHolds ? Math.max(0, roundCents(chosenHolds.held - feeUsd)) : 0;
+    const allRate = Number(field.rate) > 0 ? Number(field.rate) : field.shopRate;
+    const fillAll = () => {
+        if (!(allUsd > 0)) return;
+        // A riel field takes riel: to the single riel (not the usual 100) so
+        // it converts back to the held USD figure to the cent.
+        field.setAmount(String(field.currency === 'KHR' ? usdToKhr(allUsd, allRate, 1) : allUsd));
+    };
 
     const resetForm = () => {
         setEditing(null);
@@ -572,6 +584,20 @@ const CodRemittancesPage: React.FC = () => {
                                 labelStyle={labelStyle}
                                 inputStyle={{ ...inputStyle, fontWeight: 400 }}
                             />
+                            {allUsd > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={fillAll}
+                                    title={tc('allHint')}
+                                    style={{
+                                        marginTop: '6px', padding: '3px 10px', borderRadius: '6px', cursor: 'pointer',
+                                        border: `1px solid color-mix(in srgb, ${BLUE} 45%, var(--color-border))`,
+                                        background: 'transparent', color: BLUE, fontSize: '11px', fontWeight: 700,
+                                    }}
+                                >
+                                    {fill(tc('allBtn'), { amount: field.currency === 'KHR' ? formatKhr(usdToKhr(allUsd, allRate, 1)) : `USD ${fmt(allUsd)}` })}
+                                </button>
+                            )}
                         </div>
                         <div>
                             <label style={labelStyle}>{tc('receivedInto')}</label>

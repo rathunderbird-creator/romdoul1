@@ -2559,6 +2559,8 @@
           "total": "Total",
           "holds": "Still holds USD {amount}"
         },
+        "allBtn": "All · {amount}",
+        "allHint": "Fill in everything this courier still holds (minus the fee, if any)",
         "newEntry": "New remittance",
         "editEntry": "Edit remittance",
         "courier": "Courier",
