@@ -8,8 +8,10 @@ import { supabase } from '../lib/supabase';
 // Adjustment. OPA is a Purchase Setup AP opening balance load. COD is a
 // courier's remittance of cash-on-delivery money (Accounting › COD
 // remittances: Dr bank / Cr 1210 COD receivable). FX is a riel revaluation
-// or exchange (Accounting › Riel Revaluation).
-export type JournalEntryTypeCode = 'RCP' | 'DEP' | 'SPP' | 'WSP' | 'PAY' | 'MAN' | 'REV' | 'EXP' | 'PUR' | 'GRN' | 'DLV' | 'ADJ' | 'OPA' | 'COD' | 'FX';
+// or exchange (Accounting › Riel Revaluation). TRF is a transfer between
+// the shop's own cash/bank accounts (Accounting › Account Transfers:
+// Dr receiving account / Cr sending account).
+export type JournalEntryTypeCode = 'RCP' | 'DEP' | 'SPP' | 'WSP' | 'PAY' | 'MAN' | 'REV' | 'EXP' | 'PUR' | 'GRN' | 'DLV' | 'ADJ' | 'OPA' | 'COD' | 'FX' | 'TRF';
 
 // Human-readable display ID for a journal entry, additive to (never a
 // replacement for) reference_id: JE-{globalSeq}-{TYPE}-{YYYYMMDD}-{dailySeq},
