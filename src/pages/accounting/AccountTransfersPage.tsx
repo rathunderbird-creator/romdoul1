@@ -8,7 +8,7 @@
 // other Draft. Modelled on CodRemittancesPage, with the per-courier table
 // replaced by a per-account balance table (what each account holds now).
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Trash2, RefreshCw, AlertTriangle, ArrowLeftRight, ArrowRight, Pencil, BookOpen } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, AlertTriangle, ArrowLeftRight, ArrowRight, Pencil, BookOpen, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../../hooks/useMobile';
 import { useHeader } from '../../context/HeaderContext';
@@ -400,6 +400,28 @@ const AccountTransfersPage: React.FC = () => {
         }
     };
 
+    // Post a Draft right here (one way, like Journal Entries): the full
+    // refetch also moves the amount from "with Drafts" into the posted
+    // balances above.
+    const handlePost = async (r: XferRow) => {
+        if (r.status !== 'Draft' || busyIds.has(r.entryId)) return;
+        setBusyIds(prev => new Set(prev).add(r.entryId));
+        try {
+            const { error } = await supabase.from('journal_entries').update({ status: 'Posted' }).eq('id', r.entryId);
+            if (error) throw error;
+            if (editing?.entryId === r.entryId) resetForm();
+            showToast(t('ui.wholesale.journal.toast.posted'), 'success');
+            refetch();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast(/status/i.test(msg)
+                ? t('ui.wholesale.journal.toast.postNeedsStatus')
+                : t('ui.wholesale.journal.toast.postFailed') + msg, 'error');
+        } finally {
+            setBusyIds(prev => { const n = new Set(prev); n.delete(r.entryId); return n; });
+        }
+    };
+
     const loading = rows === null;
     const cardStyle: React.CSSProperties = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px' };
     const labelStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', minHeight: '26px', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '6px' };
@@ -652,6 +674,7 @@ const AccountTransfersPage: React.FC = () => {
                                         <StatusChip status={r.status} />
                                         {r.status === 'Draft' && <>
                                             <button onClick={() => startEdit(r)} style={btn}><Pencil size={13} /></button>
+                                            <button onClick={() => handlePost(r)} disabled={busyIds.has(r.entryId)} style={{ ...btn, color: TEAL }}><CheckCircle2 size={13} /> {t('ui.wholesale.journal.post')}</button>
                                             <button onClick={() => handleDelete(r)} disabled={busyIds.has(r.entryId)} style={{ ...btn, color: '#DC2626' }}><Trash2 size={13} /></button>
                                         </>}
                                     </span>
@@ -690,6 +713,7 @@ const AccountTransfersPage: React.FC = () => {
                                             {r.status === 'Draft' ? (
                                                 <span style={{ display: 'inline-flex', gap: '6px' }}>
                                                     <button onClick={() => startEdit(r)} style={btn} title={t('common.edit')}><Pencil size={13} /></button>
+                                                    <button onClick={() => handlePost(r)} disabled={busyIds.has(r.entryId)} style={{ ...btn, color: TEAL }} title={t('ui.wholesale.journal.post')}><CheckCircle2 size={13} /> {t('ui.wholesale.journal.post')}</button>
                                                     <button onClick={() => handleDelete(r)} disabled={busyIds.has(r.entryId)} style={{ ...btn, color: '#DC2626' }} title={t('common.delete')}><Trash2 size={13} /></button>
                                                 </span>
                                             ) : <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{tc('postedLocked')}</span>}
