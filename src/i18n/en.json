@@ -2619,6 +2619,8 @@
         "sameAccount": "Pick two different accounts",
         "balanceLine": "Balance: USD {amount}",
         "overdraw": "More than the posted balance — USD {amount} available",
+        "allBtn": "All · {amount}",
+        "allHint": "Fill in the From account's whole posted balance (minus the fee, if any)",
         "xchgHint": "The two accounts use different currencies — the books move the USD value at the rate; record rate differences on Riel Revaluation.",
         "note": "Note",
         "notePh": "Optional — bank REF# or the reason",
