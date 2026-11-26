@@ -2561,6 +2561,8 @@
         },
         "allBtn": "All · {amount}",
         "allHint": "Fill in everything this courier still holds (minus the fee, if any)",
+        "deliveryman": "Deliveryman (1220)",
+        "dmHint": "Credits 1220 — the deliveryman's receivable. After recording the hand-over here, don't also mark those orders Paid, or 1220 is deducted twice.",
         "newEntry": "New remittance",
         "editEntry": "Edit remittance",
         "courier": "Courier",

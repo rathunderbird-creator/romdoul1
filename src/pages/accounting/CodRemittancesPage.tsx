@@ -21,7 +21,7 @@ import { useStore } from '../../context/StoreContext';
 import { useAccounting } from '../../hooks/useAccounting';
 import { supabase } from '../../lib/supabase';
 import { nextJournalEntryNumber } from '../../utils/journalEntryNumber';
-import { isCashBankAccount, isCodCourierAccount, isCodReceivableAccount, sortCashBankForPicker } from '../../utils/cashBankAccounts';
+import { isCashBankAccount, isCodCourierAccount, isCodDeliverymanAccount, isCodReceivableAccount, sortCashBankForPicker } from '../../utils/cashBankAccounts';
 import CashBankOptions from '../../components/CashBankOptions';
 import MoneyInput from '../../components/MoneyInput';
 import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
@@ -60,6 +60,11 @@ const txIdOf = (ref: string): string | null => {
 // Couriers are grouped by name, case and spaces ignored (the same match
 // Sales Setup's lists make).
 const courierKey = (name: string): string => name.trim().toLowerCase();
+// The shop's own deliveryman: the dropdown's special option (his money sits
+// on 1220, not 1210), and the fixed name his remittances store in the
+// description — the list and the by-courier table translate it for display.
+const DELIVERYMAN = '__deliveryman__';
+const DELIVERYMAN_NAME = 'Deliveryman';
 
 interface RemitRow {
     entryId: string;
@@ -132,18 +137,20 @@ const CodRemittancesPage: React.FC = () => {
             try {
                 const { data: accs, error: accErr } = await supabase.from('chart_of_accounts').select('*').order('account_code', { ascending: true });
                 if (accErr) throw accErr;
-                // The COURIER receivable (1210) only: a deliveryman's money
-                // (1220) is handed over directly and the order marked Paid —
-                // it never goes through a courier remittance.
+                // The courier receivable (1210) and, when the store has one,
+                // the deliveryman's (1220): his hand-overs can be recorded
+                // here too, under the dropdown's deliveryman option.
                 const cod = (accs || []).find(a => a.account_type === 'Asset' && isCodCourierAccount(a))
                     || (accs || []).find(a => a.account_type === 'Asset' && isCodReceivableAccount(a));
-                // Two fetches: every line on 1210 (the balance), and the
-                // remittance entries with their lines (the list). The riel
-                // columns arrive with add_khr_currency.sql.
-                const loadCod = () => cod
+                const codDm = (accs || []).find(a => a.account_type === 'Asset' && isCodDeliverymanAccount(a));
+                const codIds = Array.from(new Set([cod?.id, codDm?.id].filter((x): x is string => !!x)));
+                // Two fetches: every line on 1210/1220 (the balances), and
+                // the remittance entries with their lines (the list). The
+                // riel columns arrive with add_khr_currency.sql.
+                const loadCod = () => codIds.length > 0
                     ? supabase.from('journal_entry_lines')
                         .select(`id, journal_entry_id, account_id, debit, credit, entry:journal_entries!inner(id, date, status, reference_id, description)`)
-                        .eq('account_id', cod.id).limit(5000)
+                        .in('account_id', codIds).limit(5000)
                     : Promise.resolve({ data: [], error: null } as { data: unknown[]; error: null });
                 const loadRemits = (withCurrency: boolean) => supabase
                     .from('journal_entries')
@@ -163,7 +170,7 @@ const CodRemittancesPage: React.FC = () => {
                 // company, else its order's (a Paid checkout's income row
                 // carries none). Anything else — the opening entry, a manual
                 // journal — is unassigned.
-                type CodRaw = { journal_entry_id: unknown; debit: unknown; credit: unknown; entry: { id?: unknown; date?: unknown; status?: unknown; reference_id?: unknown; description?: unknown } | null };
+                type CodRaw = { journal_entry_id: unknown; account_id: unknown; debit: unknown; credit: unknown; entry: { id?: unknown; date?: unknown; status?: unknown; reference_id?: unknown; description?: unknown } | null };
                 const rawCod = (codRes.data || []) as unknown as CodRaw[];
                 const txIds = Array.from(new Set(rawCod.map(l => txIdOf(String(l.entry?.reference_id || ''))).filter((x): x is string => !!x)));
                 const txCourier = new Map<string, string>();
@@ -198,7 +205,12 @@ const CodRemittancesPage: React.FC = () => {
                 setCodLines(rawCod.map(l => ({
                     entryId: String(l.journal_entry_id), debit: Number(l.debit) || 0, credit: Number(l.credit) || 0,
                     status: String(l.entry?.status || 'Posted'), date: String(l.entry?.date || '').slice(0, 10),
-                    courier: courierOf(String(l.entry?.reference_id || ''), String(l.entry?.description || '')),
+                    // Every 1220 line is the deliveryman's whatever its ref
+                    // says: a receipt there means he holds the money, even
+                    // though the order names the courier that shipped it.
+                    courier: codDm && cod?.id !== codDm.id && String(l.account_id) === codDm.id
+                        ? DELIVERYMAN_NAME
+                        : courierOf(String(l.entry?.reference_id || ''), String(l.entry?.description || '')),
                 })));
                 const byId = new Map((accs || []).map(a => [a.id, a]));
                 type RemitRaw = { id: unknown; date: unknown; description: unknown; reference_id: unknown; entry_number?: unknown; status?: unknown; currency?: unknown; original_amount?: unknown; exchange_rate?: unknown; lines: { account_id: unknown; debit: unknown; credit: unknown }[] | null };
@@ -244,9 +256,12 @@ const CodRemittancesPage: React.FC = () => {
         return () => { alive = false; };
     }, [refreshKey]);
 
-    // Courier first, matching the load above: the page settles 1210.
+    // Courier first, matching the load above: the page settles 1210 — and
+    // 1220 under the dropdown's deliveryman option, where the store has it.
     const codAccount = useMemo(() => accounts.find(a => a.account_type === 'Asset' && isCodCourierAccount(a))
         || accounts.find(a => a.account_type === 'Asset' && isCodReceivableAccount(a)), [accounts]);
+    const codDmAccount = useMemo(() => accounts.find(a => a.account_type === 'Asset' && isCodDeliverymanAccount(a)), [accounts]);
+    const showDeliveryman = !!codDmAccount && codDmAccount.id !== codAccount?.id;
     // Where the remittance lands: the cash/bank accounts, petty cash aside
     // (a courier pays into the bank). Riel accounts under their own group.
     const bankAccounts = useMemo(
@@ -323,7 +338,12 @@ const CodRemittancesPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bankAccounts]);
 
-    const courierName = (courier === '__other__' ? courierOther : courier).trim();
+    const courierName = (courier === DELIVERYMAN ? DELIVERYMAN_NAME : courier === '__other__' ? courierOther : courier).trim();
+    // What the entry credits: the deliveryman's 1220 under his option, 1210
+    // otherwise.
+    const creditAccount = courier === DELIVERYMAN ? codDmAccount : codAccount;
+    // Stored names are fixed ("Deliveryman"); the UI shows the translation.
+    const courierLabel = (name: string) => courierKey(name) === courierKey(DELIVERYMAN_NAME) ? tc('deliveryman') : name;
     const chosenHolds = useMemo(() => byCourier.find(g => g.name !== '' && courierKey(g.name) === courierKey(courierName)), [byCourier, courierName]);
     const amountUsd = field.usd;
     const feeTyped = parseAmount(fee);
@@ -332,7 +352,7 @@ const CodRemittancesPage: React.FC = () => {
     const grossUsd = Math.round((amountUsd + feeUsd) * 100) / 100;
     const feeInvalid = fee.trim() !== '' && !(feeTyped >= 0);
     const canSave = !isSaving && amountUsd > 0 && !field.rateInvalid && !feeInvalid && (feeUsd === 0 || !!feeAccountId)
-        && !!bankId && !!codAccount && !!date && !!courierName;
+        && !!bankId && !!creditAccount && !!date && !!courierName;
     // "All": everything the chosen courier still holds reaches the bank —
     // with a fee typed, the amount is held − fee, so Cr 1210 lands on the
     // held figure exactly and the courier's row empties to zero.
@@ -360,12 +380,13 @@ const CodRemittancesPage: React.FC = () => {
         ...(entryNumber ? { entry_number: entryNumber } : {}),
         ...field.meta,
     });
-    // Dr bank (what landed) + Dr expense (the fee the courier kept) / Cr 1210
-    // (both: the courier no longer holds either).
+    // Dr bank (what landed) + Dr expense (the fee the courier kept) / Cr
+    // 1210 — or the deliveryman's 1220 — (both: that holder no longer holds
+    // either).
     const entryLines = () => [
         { account_id: bankId, debit: amountUsd, credit: 0, description: `Remittance from ${courierName}` },
         ...(feeUsd > 0 ? [{ account_id: feeAccountId, debit: feeUsd, credit: 0, description: `Delivery fee kept by ${courierName}` }] : []),
-        { account_id: codAccount!.id, debit: 0, credit: grossUsd, description: `COD remitted — ${courierName}` },
+        { account_id: creditAccount!.id, debit: 0, credit: grossUsd, description: `COD remitted — ${courierName}` },
     ];
 
     const handleSave = async () => {
@@ -419,9 +440,13 @@ const CodRemittancesPage: React.FC = () => {
         if (r.status !== 'Draft') { showToast(tc('toast.postedNoChange'), 'info'); return; }
         setEditing(r);
         setDate(r.date);
-        const known = shippingCompanies.includes(r.courier);
-        setCourier(known ? r.courier : '__other__');
-        if (!known) setCourierOther(r.courier);
+        if (courierKey(r.courier) === courierKey(DELIVERYMAN_NAME)) {
+            setCourier(DELIVERYMAN);
+        } else {
+            const known = shippingCompanies.includes(r.courier);
+            setCourier(known ? r.courier : '__other__');
+            if (!known) setCourierOther(r.courier);
+        }
         setBankRef(r.bankRef);
         if (r.bankId) setBankId(r.bankId);
         const khr = r.currency === 'KHR' && !!r.original_amount;
@@ -437,7 +462,7 @@ const CodRemittancesPage: React.FC = () => {
     const handleDelete = async (r: RemitRow) => {
         if (r.status !== 'Draft') { showToast(tc('toast.postedNoChange'), 'info'); return; }
         if (busyIds.has(r.entryId)) return;
-        if (!confirm(fill(tc('confirm.delete'), { amount: fmt(r.amount), courier: r.courier, date: r.date }))) return;
+        if (!confirm(fill(tc('confirm.delete'), { amount: fmt(r.amount), courier: courierLabel(r.courier), date: r.date }))) return;
         setBusyIds(prev => new Set(prev).add(r.entryId));
         try {
             const { error: lineErr } = await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', r.entryId);
@@ -513,7 +538,7 @@ const CodRemittancesPage: React.FC = () => {
                             <tbody>
                                 {byCourier.map(g => (
                                     <tr key={g.name || '__unassigned__'}>
-                                        <td style={td}>{g.name || <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{tc('byCourier.unassigned')}</span>}</td>
+                                        <td style={td}>{g.name ? courierLabel(g.name) : <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{tc('byCourier.unassigned')}</span>}</td>
                                         <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(g.collected)}</td>
                                         <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(g.remitted)}</td>
                                         <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: g.held < -0.005 ? '#B91C1C' : g.held > 0.005 ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>{fmt(g.held)}</td>
@@ -558,6 +583,7 @@ const CodRemittancesPage: React.FC = () => {
                             <label style={labelStyle}>{tc('courier')}</label>
                             <select value={courier} onChange={e => setCourier(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                                 {shippingCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                                {showDeliveryman && <option value={DELIVERYMAN}>{tc('deliveryman')}</option>}
                                 <option value="__other__">{tc('courierOther')}</option>
                             </select>
                             {courier === '__other__' && (
@@ -567,6 +593,9 @@ const CodRemittancesPage: React.FC = () => {
                                 <div style={{ marginTop: '6px', fontSize: '11px', color: chosenHolds.held < -0.005 ? '#B91C1C' : 'var(--color-text-muted)' }}>
                                     {fill(tc('byCourier.holds'), { amount: fmt(chosenHolds.held) })}
                                 </div>
+                            )}
+                            {courier === DELIVERYMAN && (
+                                <div style={{ marginTop: '6px', fontSize: '11px', color: '#B45309' }}>{tc('dmHint')}</div>
                             )}
                         </div>
                         <div>
@@ -608,7 +637,7 @@ const CodRemittancesPage: React.FC = () => {
                         </div>
                         <div>
                             <label style={labelStyle}>{tc('creditedTo')}</label>
-                            <input type="text" value={codAccount ? `${codAccount.account_code} · ${codAccount.account_name}` : ''} disabled style={{ ...inputStyle, opacity: 0.7 }} />
+                            <input type="text" value={creditAccount ? `${creditAccount.account_code} · ${creditAccount.account_name}` : ''} disabled style={{ ...inputStyle, opacity: 0.7 }} />
                         </div>
                         <div>
                             <label style={labelStyle}>{fill(tc('fee'), { currency: field.currency })}</label>
@@ -632,7 +661,7 @@ const CodRemittancesPage: React.FC = () => {
                                 </select>
                             </div>
                         )}
-                        {amountUsd > 0 && bankId && codAccount && (
+                        {amountUsd > 0 && bankId && creditAccount && (
                             <div style={{ gridColumn: '1 / -1', borderRadius: '10px', border: `1px solid color-mix(in srgb, ${BLUE} 30%, var(--color-border))`, background: `color-mix(in srgb, ${BLUE} 4%, var(--color-surface))`, padding: '10px 14px' }}>
                                 <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: BLUE, marginBottom: '4px' }}>{t('ui.accounting.re.preview')}</div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0', borderBottom: '1px solid var(--color-border)', fontSize: '13px', color: 'var(--color-text-main)' }}>
@@ -646,7 +675,7 @@ const CodRemittancesPage: React.FC = () => {
                                     </div>
                                 )}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0 2px', fontSize: '13px', color: 'var(--color-text-main)' }}>
-                                    <span style={{ paddingLeft: '18px' }}>{fill(t('ui.accounting.re.crDot'), { name: codAccount.account_name })}</span>
+                                    <span style={{ paddingLeft: '18px' }}>{fill(t('ui.accounting.re.crDot'), { name: creditAccount.account_name })}</span>
                                     <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>USD {fmt(grossUsd)}</span>
                                 </div>
                             </div>
@@ -695,7 +724,7 @@ const CodRemittancesPage: React.FC = () => {
                         {rows.map(r => (
                             <div key={r.entryId} style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '13px' }}>
-                                    <span style={{ fontWeight: 700, color: 'var(--color-text-main)' }}>{r.courier}</span>
+                                    <span style={{ fontWeight: 700, color: 'var(--color-text-main)' }}>{courierLabel(r.courier)}</span>
                                     <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{money(r)}</span>
                                 </div>
                                 <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{r.date} · {r.bankName}{r.bankRef ? ` · REF ${r.bankRef}` : ''}{r.fee > 0 ? ` · ${fill(tc('feeShort'), { amount: fmt(r.fee) })}` : ''}</div>
@@ -733,7 +762,7 @@ const CodRemittancesPage: React.FC = () => {
                                     <tr key={r.entryId}>
                                         <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.date}</td>
                                         <td style={{ ...td, fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'nowrap' }}>{r.number}</td>
-                                        <td style={td}>{r.courier}</td>
+                                        <td style={td}>{courierLabel(r.courier)}</td>
                                         <td style={td}>{r.bankName}</td>
                                         <td style={{ ...td, fontFamily: 'monospace', fontSize: '12px' }}>{r.bankRef || '—'}</td>
                                         <td style={{ ...td, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{money(r)}</td>
