@@ -24,7 +24,8 @@ import { isCashBankAccount, sortCashBankForPicker } from '../../utils/cashBankAc
 import CashBankOptions from '../../components/CashBankOptions';
 import MoneyInput from '../../components/MoneyInput';
 import { useAccountCurrency, useMoneyField } from '../../hooks/useMoneyField';
-import { CURRENCY_KEYS, formatMoneyLine, isKhrAccountName, isMissingCurrencyColumnError, khrToUsd, parseAmount, usdToKhr } from '../../utils/currency';
+import { CURRENCY_KEYS, formatKhr, formatMoneyLine, isKhrAccountName, isMissingCurrencyColumnError, khrToUsd, parseAmount, usdToKhr } from '../../utils/currency';
+import { roundCents } from '../../utils/money';
 import type { ChartOfAccount, JournalEntry } from '../../types';
 
 const TEAL = '#0D9488';
@@ -276,6 +277,17 @@ const AccountTransfersPage: React.FC = () => {
     const feeInvalid = fee.trim() !== '' && !(feeTyped >= 0);
     const fromBal = fromId ? balances?.get(fromId) : undefined;
     const overdraws = !!fromBal && grossUsd > 0 && fromBal.posted - grossUsd < -0.005;
+    // "All": the sender's whole posted balance leaves the account — with a
+    // fee typed, the amount is balance − fee, so Cr lands on the balance
+    // exactly and the account empties to zero.
+    const allUsd = fromBal ? Math.max(0, roundCents(fromBal.posted - feeUsd)) : 0;
+    const allRate = Number(field.rate) > 0 ? Number(field.rate) : field.shopRate;
+    const fillAll = () => {
+        if (!(allUsd > 0)) return;
+        // A riel field takes riel: to the single riel (not the usual 100) so
+        // it converts back to the posted USD balance to the cent.
+        field.setAmount(String(field.currency === 'KHR' ? usdToKhr(allUsd, allRate, 1) : allUsd));
+    };
     const canSave = !isSaving && amountUsd > 0 && !field.rateInvalid && !feeInvalid && (feeUsd === 0 || !!feeAccountId)
         && !!fromId && !!toId && !sameAccount && !!date;
 
@@ -521,6 +533,20 @@ const AccountTransfersPage: React.FC = () => {
                                 labelStyle={labelStyle}
                                 inputStyle={{ ...inputStyle, fontWeight: 400 }}
                             />
+                            {allUsd > 0 && !sameAccount && (
+                                <button
+                                    type="button"
+                                    onClick={fillAll}
+                                    title={tc('allHint')}
+                                    style={{
+                                        marginTop: '6px', padding: '3px 10px', borderRadius: '6px', cursor: 'pointer',
+                                        border: `1px solid color-mix(in srgb, ${TEAL} 45%, var(--color-border))`,
+                                        background: 'transparent', color: TEAL, fontSize: '11px', fontWeight: 700,
+                                    }}
+                                >
+                                    {fill(tc('allBtn'), { amount: field.currency === 'KHR' ? formatKhr(usdToKhr(allUsd, allRate, 1)) : `USD ${fmt(allUsd)}` })}
+                                </button>
+                            )}
                             {crossCurrency && (
                                 <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--color-text-muted)' }}>{tc('xchgHint')}</div>
                             )}
