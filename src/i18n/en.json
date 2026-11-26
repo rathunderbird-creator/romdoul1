@@ -74,6 +74,7 @@
     "accountsPayable": "Accounts Payable",
     "accountsReceivable": "Accounts Receivable",
     "codRemittances": "COD Remittances",
+    "accountTransfers": "Account Transfers",
     "fxRevaluation": "Riel Revaluation",
     "payments": "Payments",
     "hrPayroll": "HR & Payroll",
@@ -2591,6 +2592,60 @@
           "deleteFailed": "Failed to delete the remittance",
           "postedNoChange": "Posted entries cannot be changed — record a correcting entry on Journal Entries.",
           "restoreFailed": "and restoring the previous lines also failed; re-enter remittance {ref}"
+        }
+      },
+      "xfer": {
+        "title": "Account Transfers",
+        "subtitle": "Move money between the shop's own cash and bank accounts — bank to cash, cash to petty cash, bank to bank",
+        "card": {
+          "monthTotal": "Transferred this month",
+          "count": "Transfers",
+          "drafts": "Drafts awaiting post"
+        },
+        "byAccount": {
+          "title": "By account",
+          "hint": "Cash and bank balances in USD — the books keep riel accounts at their USD value too. Posted is the books; With Drafts adds what unposted Drafts would move.",
+          "account": "Account",
+          "posted": "Balance (posted)",
+          "withDrafts": "With Drafts",
+          "total": "Total"
+        },
+        "newEntry": "New transfer",
+        "editEntry": "Edit transfer",
+        "from": "From account (Credit)",
+        "to": "To account (Debit)",
+        "fromCol": "From",
+        "toCol": "To",
+        "sameAccount": "Pick two different accounts",
+        "balanceLine": "Balance: USD {amount}",
+        "overdraw": "More than the posted balance — USD {amount} available",
+        "xchgHint": "The two accounts use different currencies — the books move the USD value at the rate; record rate differences on Riel Revaluation.",
+        "note": "Note",
+        "notePh": "Optional — bank REF# or the reason",
+        "fee": "Transfer fee ({currency})",
+        "feePh": "Optional — the bank's charge",
+        "feeAccount": "Fee expense (debit)",
+        "feeNoAccount": "No expense account — add one in Chart of Accounts",
+        "feeCol": "Fee",
+        "feeShort": "fee USD {amount}",
+        "submit": "Record transfer",
+        "draftNote": "Saved as a Draft — review and post it on Journal Entries.",
+        "entries": "Transfers",
+        "empty": "No transfers yet — record the first one above.",
+        "postHint": "Post Drafts on Journal Entries",
+        "postedLocked": "posted",
+        "noAccounts": "This needs at least two cash/bank accounts — add them in Chart of Accounts first.",
+        "confirm": {
+          "delete": "Delete the {amount} transfer {from} → {to} on {date}?"
+        },
+        "toast": {
+          "saved": "Transfer drafted — review and post it on Journal Entries.",
+          "updated": "Transfer updated",
+          "deleted": "Transfer deleted",
+          "saveFailed": "Failed to save the transfer",
+          "deleteFailed": "Failed to delete the transfer",
+          "postedNoChange": "Posted entries cannot be changed — record a correcting entry on Journal Entries.",
+          "restoreFailed": "and restoring the previous lines also failed; re-enter transfer {ref}"
         }
       },
       "fx": {
