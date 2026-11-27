@@ -4287,7 +4287,7 @@ const Orders: React.FC = () => {
                                                 void openPaymentForm(order, 'Paid');
                                                 return;
                                             } else if (status === 'Get File' || status === 'Collected') {
-                                                if (getFileAsksAmount(order, status, salesSettings.collectedStatusOnly)) setGetFileTarget({ order, status });
+                                                if (getFileAsksAmount(order, status)) setGetFileTarget({ order, status });
                                                 else moveToGetFile(order, status);
                                                 return;
                                             } else {
@@ -4731,7 +4731,7 @@ const Orders: React.FC = () => {
                                                                                     void openPaymentForm(order, 'PdFee');
                                                                                     return;
                                                                                 } else if (newStatus === 'Get File' || newStatus === 'Collected') {
-                                                                                    if (getFileAsksAmount(order, newStatus, salesSettings.collectedStatusOnly)) setGetFileTarget({ order, status: newStatus });
+                                                                                    if (getFileAsksAmount(order, newStatus)) setGetFileTarget({ order, status: newStatus });
                                                                                     else moveToGetFile(order, newStatus);
                                                                                     return;
                                                                                 } else if (newStatus === 'Cancel') {
