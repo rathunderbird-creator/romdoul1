@@ -233,7 +233,7 @@ export interface StoreContextType {
     setProductsInactive: (ids: string[], inactive: boolean) => Promise<void>;
     // opts.money: the riel details of the money this save books (the
     // income row and its journal entry are tagged after the save).
-    updateOrder: (id: string, updates: Partial<Sale>, opts?: { money?: MoneyRecord & { category?: string }; expectMoney?: { deposit: number; total: number } }) => Promise<boolean>; // false: not everything was saved (the user has been told why)
+    updateOrder: (id: string, updates: Partial<Sale>, opts?: { money?: MoneyRecord & { category?: string }; expectMoney?: { deposit: number; total: number }; noticeSink?: string[] }) => Promise<boolean>; // false: not everything was saved (the user has been told why); noticeSink collects notices/refusals instead of alert() per save (bulk edits show one combined dialog)
     updateOrders: (ids: string[], updates: Partial<Sale>) => Promise<void>;
     deleteOrders: (ids: string[]) => Promise<void>;
     restoreOrders: (ids: string[]) => Promise<void>;

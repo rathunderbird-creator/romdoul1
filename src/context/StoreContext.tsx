@@ -170,8 +170,12 @@ async function resolveRetailLedgerAccounts(depositAccountId?: string, payBy?: st
 // usdAmount is the dollar part, money the riel part's details, and
 // khrAccountId the riel cash/bank account (resolved by currency when
 // absent). The database books two rows and two entries in one transaction.
+// noticeSink: where this save's notices and refusal messages go instead of
+// their own blocking alert() each. A bulk edit passes one shared array over
+// the whole batch and shows a single combined dialog at the end — without
+// it, N orders with POSTED receipts meant N alerts in a row.
 export type OrderMoneyOpts = { money?: MoneyMeta & { category?: string }; expectMoney?: { deposit: number; total: number };
-    split?: { usdAmount: number; khrAccountId?: string; money: MoneyMeta } };
+    split?: { usdAmount: number; khrAccountId?: string; money: MoneyMeta }; noticeSink?: string[] };
 
 // Tags the income rows set_order_payment returned (new ones and a corrected
 // one) and their journal entries with the riel details, or clears a row
@@ -3525,7 +3529,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (updates.paymentStatus !== undefined) {
             const { data: freshRow, error: freshErr } = await supabase.from('sales').select(paymentColumns).eq('id', id).single();
             if (freshErr || !freshRow) {
-                alert(tNow('ui.store.order.paymentUnconfirmed'));
+                if (opts?.noticeSink) opts.noticeSink.push(tNow('ui.store.order.paymentUnconfirmed'));
+                else alert(tNow('ui.store.order.paymentUnconfirmed'));
                 return false;
             }
             paymentRow = freshRow as PaymentRow;
@@ -3539,7 +3544,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 || Math.abs((Number((freshRow as { total?: number | null }).total) || 0) - expectMoney.total) > 0.005)) {
                 setSales(prev => prev.map(s => s.id === id ? { ...s, ...freshPayment, total: Number((freshRow as { total?: number | null }).total) || 0 } : s));
                 setSalesUpdatedAt(Date.now());
-                alert(tNow('ui.store.order.moneyChangedElsewhere'));
+                if (opts?.noticeSink) opts.noticeSink.push(tNow('ui.store.order.moneyChangedElsewhere'));
+                else alert(tNow('ui.store.order.moneyChangedElsewhere'));
                 return false;
             }
 
@@ -3551,7 +3557,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (shownStatus !== undefined && updates.paymentStatus !== shownStatus && !PAID_STATUSES.includes(shownStatus) && PAID_STATUSES.includes(currentStatus) && !PAID_STATUSES.includes(updates.paymentStatus)) {
                 setSales(prev => prev.map(s => s.id === id ? { ...s, ...freshPayment } : s));
                 setSalesUpdatedAt(Date.now());
-                alert(tNow('ui.store.order.justMarked', { status: orderStatusText(currentStatus) }));
+                if (opts?.noticeSink) opts.noticeSink.push(tNow('ui.store.order.justMarked', { status: orderStatusText(currentStatus) }));
+                else alert(tNow('ui.store.order.justMarked', { status: orderStatusText(currentStatus) }));
                 return false;
             }
 
@@ -3833,7 +3840,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             });
             if (payErr) {
                 console.error('Failed to save the payment:', payErr);
-                alert(orderPaymentRpcMessage(payErr));
+                if (opts?.noticeSink) opts.noticeSink.push(orderPaymentRpcMessage(payErr));
+                else alert(orderPaymentRpcMessage(payErr));
                 setSalesUpdatedAt(Date.now());
                 return false;
             }
@@ -3891,7 +3899,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 setTransactions(prev => prev.filter(t => !removedTxs.includes(t.id)));
             }
             if (payRes.notices && payRes.notices.length > 0) {
-                alert(payRes.notices.join('\n'));
+                if (opts?.noticeSink) opts.noticeSink.push(...payRes.notices);
+                else alert(payRes.notices.join('\n'));
             }
             // A payment status other than Unpaid has now been saved (Deposit/Paid
             // confirming a Salesman's claim, or Get File/PdFee/Cancel replacing
