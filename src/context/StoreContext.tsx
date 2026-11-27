@@ -3599,10 +3599,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // (Returns & Restocks lists it). Resetting it to Pending put them back "in
         // stock" on paper only.
         //
-        // Get File: Delivered. If the order never shipped, the stock-out is recorded
-        // now (entering Delivered from an on-hand status is the goods leaving). Not
+        // Get File / booked Collected: Delivered. If the order never shipped, the
+        // stock-out is recorded now (entering Delivered from an on-hand status is
+        // the goods leaving — the booked money must match goods that left). Not
         // for a restocked or cancelled order: its goods are on the shelf, and
-        // flipping it to Delivered would take them out again.
+        // flipping it to Delivered would take them out again. A plain Collected
+        // (Sales Setup's collectedStatusOnly: books nothing) moves no stock and
+        // leaves the order status alone.
         //
         // A form echoes the status it was showing (expectedShippingStatus). When the
         // database has moved on since (someone shipped it meanwhile), sending that
@@ -3624,7 +3627,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                         forced = true;
                     }
                 }
-            } else if ((updates.paymentStatus === 'Get File' || updates.paymentStatus === 'Collected') && !['ReStock', 'Cancelled'].includes(shippingStatusBeforeUpdate || '')) {
+            } else if ((updates.paymentStatus === 'Get File'
+                || (updates.paymentStatus === 'Collected' && !retailDepositDefaults.collectedStatusOnly))
+                && !['ReStock', 'Cancelled'].includes(shippingStatusBeforeUpdate || '')) {
                 shipping = { ...(existingOrder?.shipping || {}), ...(updates.shipping || {}), status: 'Delivered' } as Sale['shipping'];
                 forced = true;
             }
