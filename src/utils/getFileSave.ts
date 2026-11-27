@@ -14,12 +14,12 @@ export type CourierStatus = 'Get File' | 'Collected';
  * Whether moving to Get File / Collected opens the amount popup. Not for an
  * order already settled (Paid, Collected, a booked Get File: its receipt
  * stands as booked, the database keeps it) nor one already at the target;
- * those save straight away. With Sales Setup's "Collected is a plain
- * status" switch on (salesSettings.collectedStatusOnly), Collected books
- * nothing, so there is no amount or holder to ask for either.
+ * those save straight away. The popup opens for Collected whatever Sales
+ * Setup's "Collected is a plain status" switch says: the collected amount,
+ * its riel and who holds the money are still recorded on the order — with
+ * the switch on, that is ALL the save does (no receipt, no entry).
  */
-export const getFileAsksAmount = (order: Pick<Sale, 'paymentStatus' | 'getFileBooked'>, target: CourierStatus = 'Get File', collectedStatusOnly = false): boolean => {
-    if (target === 'Collected' && collectedStatusOnly) return false;
+export const getFileAsksAmount = (order: Pick<Sale, 'paymentStatus' | 'getFileBooked'>, target: CourierStatus = 'Get File'): boolean => {
     const current = String(order.paymentStatus || '');
     if (current === target) return false;
     if (['Paid', 'Settled', 'Paid/Settled', 'Collected'].includes(current)) return false;
@@ -99,9 +99,10 @@ export async function saveGetFile(
         // An amount typed in riel rides along as the booked money's riel
         // details: updateOrder tags the income row this save books (and its
         // ledger entry) with them, so Received shows the riel — exactly as
-        // the Settle form's riel does. Collected always books on entry; a
-        // Get File only for a courier ticked in Sales Setup, and with no
-        // row booked the tag is a no-op, so it is safe to send either way.
+        // the Settle form's riel does. Collected books on entry unless Sales
+        // Setup made it a plain status; a Get File only for a courier ticked
+        // in Sales Setup. With no row booked the tag is a no-op, so it is
+        // safe to send either way.
         amount?.money.currency === 'KHR'
             ? { money: { ...amount.money, category: 'លក់រាយ' } }
             : undefined);

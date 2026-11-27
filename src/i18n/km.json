@@ -4483,7 +4483,7 @@
         "statusAccountCollectedAuto": "ស្វ័យប្រវត្តិ — 1210 COD receivable (ក្រុមហ៊ុនដឹក)",
         "statusAccountsCod": "Status ទាំងនេះតែងតែកត់ត្រាទៅគណនី COD receivable មិនមែនសាច់ប្រាក់/ធនាគារទេ។ គណនីដែលជ្រើសទីនេះ ជាលំនាំដើមនៃ \"លុយនៅជាមួយ\" ក្នុងផ្ទាំង Collected (ការបញ្ជាទិញនីមួយៗនៅតែអាចជ្រើសបាន)៖ Get File នៅតែចូល 1210 របស់ក្រុមហ៊ុនដឹក។ លុយចូលគណនីសាច់ប្រាក់/ធនាគារ ពេលប្តូរទៅ Paid ឬតាម គណនេយ្យ › COD Remittances។",
         "collectedStatusOnly": "Collected ជា status ធម្មតា (មិនចុះ Journal Entry)",
-        "collectedStatusOnlyHint": "បើធីក៖ ដាក់ Collected មិនកត់បញ្ជីអ្វីទេ — គ្មាន COD receipt គ្មានគណនី គ្មាន popup \"លុយនៅជាមួយ\"; លុយចុះបញ្ជីតែម្តង ពេល order ប្តូរទៅ Paid។ Order ដែលបានកត់បញ្ជីមុនពេលធីក នៅរក្សា receipt ដដែល ហើយ settle តាមរបៀបដែលបានកត់ (COD Remittances)។ សមតុល្យដែល courier កាន់ក្នុងផេកនោះ នឹងលែងកើនពី order Collected ថ្មី។",
+        "collectedStatusOnlyHint": "បើធីក៖ ដាក់ Collected មិនកត់បញ្ជីអ្វីទេ — គ្មាន COD receipt គ្មានគណនី គ្មាន journal entry។ Popup នៅតែសួរលុយដែល courier ប្រមូល (ចំនួន, រៀល, អ្នកកាន់លុយ) ហើយរក្សាទុកលើ order; លុយចុះបញ្ជីតែម្តង ពេល order ប្តូរទៅ Paid។ Order ដែលបានកត់បញ្ជីមុនពេលធីក នៅរក្សា receipt ដដែល ហើយ settle តាមរបៀបដែលបានកត់ (COD Remittances)។ សមតុល្យដែល courier កាន់ក្នុងផេកនោះ នឹងលែងកើនពី order Collected ថ្មី។",
         "statusAccountsHelp": "រក្សាទុកភ្លាមៗពេលអ្នកជ្រើស។ ពេល Pay Status នេះកត់ត្រាលុយ ហើយគ្មាននរណាជ្រើសគណនីក្នុងទម្រង់ លុយចូលគណនីដែលកំណត់ទីនេះ។ ស្វ័យប្រវត្តិ ប្រើគណនីដាក់ប្រាក់លំនាំដើមខាងក្រោម។",
         "depositAccountUsd": "ការទូទាត់ជាដុល្លារ",
         "depositAccountKhr": "ការទូទាត់ជារៀល",

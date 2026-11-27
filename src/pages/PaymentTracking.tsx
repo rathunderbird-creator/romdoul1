@@ -39,7 +39,7 @@ const getStatusBorderColor = (s: string) => {
 };
 
 const PaymentTracking: React.FC = () => {
-    const { updateOrder, updateOrders, updateOrderStatus, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders, hasPermission, khrExchangeRate, codPaymentMethods, salesSettings } = useStore();
+    const { updateOrder, updateOrders, updateOrderStatus, salesUpdatedAt, currentUser, users, shippingCompanies, customerCare, refreshData, deleteOrders, hasPermission, khrExchangeRate, codPaymentMethods } = useStore();
     const { showToast } = useToast();
     const { setHeaderContent } = useHeader();
     const navigate = useNavigate();
@@ -1393,7 +1393,7 @@ const PaymentTracking: React.FC = () => {
                                                 return;
                                             }
                                             if (newStatus === 'Get File' || newStatus === 'Collected') {
-                                                if (getFileAsksAmount(order, newStatus, salesSettings.collectedStatusOnly)) setGetFileTarget({ order, status: newStatus });
+                                                if (getFileAsksAmount(order, newStatus)) setGetFileTarget({ order, status: newStatus });
                                                 else void saveGetFile(updateOrder, order, undefined, newStatus);
                                                 return;
                                             }
