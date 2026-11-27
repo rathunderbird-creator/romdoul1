@@ -1026,6 +1026,8 @@
         "confirmRestock": "Are you sure you want to restock {n} orders ? ",
         "nSelected": "{n} selected",
         "partlyUpdated": "Updated {done} of {n} orders; {failed} not saved",
+        "noticesHeader": "Notes from this bulk change ({n}):",
+        "noticesMore": "… and {n} more. Posted receipts stay as they are — book the moves in Journal Entries.",
         "restock": "Restock",
         "salesmanNoMoney": "Only Admin, Customer Care or an Accountant can record money as received.\n\nEnter the deposit or payment on the order form instead: it waits there (gray on the Orders page) for them to confirm.",
         "updateFailed": "Failed to update orders",

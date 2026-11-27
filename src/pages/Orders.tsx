@@ -3008,6 +3008,12 @@ const Orders: React.FC = () => {
                     return;
                 }
                 const now = new Date().toISOString();
+                // One shared sink over the batch: every order's server notices
+                // (a POSTED receipt left as it is, a refusal) land here, and
+                // ONE combined dialog shows after the loop — not an alert per
+                // order, which a Collected → Paid batch of posted receipts
+                // used to turn into a popup storm.
+                const batchNotices: string[] = [];
                 const saveOne = (id: string) => {
                     const order = serverOrders.find(s => s.id === id) || sales.find(s => s.id === id);
                     if (!order) return Promise.resolve(true);
@@ -3053,7 +3059,7 @@ const Orders: React.FC = () => {
                         if (value === 'Unpaid' && order.paymentClaim && canConfirmPayments) individualUpdates.paymentClaim = null;
                     }
                     
-                    return updateOrder(id, { ...individualUpdates, expectedPaymentStatus: order.paymentStatus });
+                    return updateOrder(id, { ...individualUpdates, expectedPaymentStatus: order.paymentStatus }, { noticeSink: batchNotices });
                 };
                 // Get File moves stock (an unshipped order is counted out as Delivered), and
                 // stock is read-modify-write per product, so those saves go one at a time:
@@ -3062,6 +3068,17 @@ const Orders: React.FC = () => {
                 const results: boolean[] = [];
                 if (value === 'Get File' || value === 'Collected') { for (const id of ids) results.push(await saveOne(id)); } else { results.push(...await Promise.all(ids.map(saveOne))); }
                 notSaved = results.filter(ok => !ok).length;
+                if (batchNotices.length > 0) {
+                    // Identical lines collapse (the same refusal repeated);
+                    // distinct ones (each order's own JE number) are capped so
+                    // a big batch still fits in one readable dialog.
+                    const unique = Array.from(new Set(batchNotices));
+                    const MAX_LINES = 10;
+                    const shown = unique.slice(0, MAX_LINES);
+                    const more = unique.length - shown.length;
+                    alert(fill(t('ui.orders.bulk.noticesHeader'), { n: unique.length }) + '\n\n' + shown.join('\n\n')
+                        + (more > 0 ? '\n\n' + fill(t('ui.orders.bulk.noticesMore'), { n: more }) : ''));
+                }
             }
 
             if (notSaved > 0) {
