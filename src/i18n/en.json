@@ -4482,6 +4482,8 @@
         "statusAccountCollectedLabel": "COD receivable the money sits on",
         "statusAccountCollectedAuto": "Automatic — 1210 COD receivable (courier)",
         "statusAccountsCod": "These statuses always book a COD receivable, never cash/bank. The account picked here is what the Collected popup's \"Money held by\" opens on (each order can still choose); a Get File booking stays on the courier's 1210. The money reaches a cash/bank account when the order is marked Paid, or through Accounting › COD Remittances.",
+        "collectedStatusOnly": "Collected is a plain status (no journal entry)",
+        "collectedStatusOnlyHint": "Ticked: marking Collected books nothing — no COD receipt, no account, no \"Money held by\" popup; the money books once, when the order turns Paid. Orders booked before ticking keep their receipts and settle the booked way (COD Remittances). The courier-held balances on that page stop growing from Collected orders.",
         "statusAccountsHelp": "Saved as soon as you pick. When this Pay Status books money and nobody picks an account on the form, it goes to the account set here; Automatic falls back to the default deposit account below.",
         "depositAccountUsd": "US dollar payments",
         "depositAccountKhr": "Riel payments",

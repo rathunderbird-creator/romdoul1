@@ -4968,7 +4968,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     // clears it, so two people editing different fields never collide.
     const salesSettings: SalesSettings = useMemo(() => config.salesSettings || {}, [config.salesSettings]);
     useEffect(() => { retailDepositDefaults = salesSettings; }, [salesSettings]);
-    const updateSalesSetting = async (key: keyof SalesSettings, value: string) => {
+    const updateSalesSetting = async (key: keyof SalesSettings, value: string | boolean) => {
         await updateConfigOps({ salesSettings: value ? { op: 'merge', value: { [key]: value } } : { op: 'unsetKeys', keys: [key] } });
     };
 

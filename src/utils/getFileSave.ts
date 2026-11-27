@@ -14,9 +14,12 @@ export type CourierStatus = 'Get File' | 'Collected';
  * Whether moving to Get File / Collected opens the amount popup. Not for an
  * order already settled (Paid, Collected, a booked Get File: its receipt
  * stands as booked, the database keeps it) nor one already at the target;
- * those save straight away.
+ * those save straight away. With Sales Setup's "Collected is a plain
+ * status" switch on (salesSettings.collectedStatusOnly), Collected books
+ * nothing, so there is no amount or holder to ask for either.
  */
-export const getFileAsksAmount = (order: Pick<Sale, 'paymentStatus' | 'getFileBooked'>, target: CourierStatus = 'Get File'): boolean => {
+export const getFileAsksAmount = (order: Pick<Sale, 'paymentStatus' | 'getFileBooked'>, target: CourierStatus = 'Get File', collectedStatusOnly = false): boolean => {
+    if (target === 'Collected' && collectedStatusOnly) return false;
     const current = String(order.paymentStatus || '');
     if (current === target) return false;
     if (['Paid', 'Settled', 'Paid/Settled', 'Collected'].includes(current)) return false;

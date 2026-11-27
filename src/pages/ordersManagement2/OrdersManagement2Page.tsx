@@ -28,7 +28,7 @@ const COLUMN_LABELS: Record<string, string> = {
 };
 
 const OrdersManagement2Page: React.FC = () => {
-    const { updateOrderStatus, updateOrder, updateOrders, currentUser, salesmen, shippingCompanies, pages, customerCare, paymentMethods, codPaymentMethods, hasPermission } = useStore();
+    const { updateOrderStatus, updateOrder, updateOrders, currentUser, salesmen, shippingCompanies, pages, customerCare, paymentMethods, codPaymentMethods, hasPermission, salesSettings } = useStore();
     const { setHeaderContent } = useHeader();
     const { t } = useLanguage();
     const { tx } = useOM2Lang();
@@ -309,6 +309,9 @@ const OrdersManagement2Page: React.FC = () => {
                 }
             } else if (field === 'paymentStatus') {
                 const now = new Date().toISOString();
+                // One shared sink over the batch — one combined dialog after
+                // the loop, not an alert per order (same as classic Orders).
+                const batchNotices: string[] = [];
                 const saveOne = (id: string) => {
                     const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
                     if (!order) return Promise.resolve(true);
@@ -337,13 +340,14 @@ const OrdersManagement2Page: React.FC = () => {
                         individualUpdates.settleDate = null;
                         // Paid taken back to Collected: the receipt's debit
                         // moves back to 1210 (the courier holds it again).
-                        if (value === 'Collected') individualUpdates.codCollected = true;
+                        // Not with "Collected is a plain status" on.
+                        if (value === 'Collected' && !salesSettings.collectedStatusOnly) individualUpdates.codCollected = true;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
                         individualUpdates.amountReceived = 0;
                         individualUpdates.settleDate = null;
                     }
                     individualUpdates.expectedPaymentStatus = order.paymentStatus;
-                    return updateOrder(id, individualUpdates as any);
+                    return updateOrder(id, individualUpdates as any, { noticeSink: batchNotices });
                 };
                 // Get File moves stock (an unshipped order is counted out as Delivered), and
                 // stock is read-modify-write per product, so those saves go one at a time:
@@ -352,6 +356,13 @@ const OrdersManagement2Page: React.FC = () => {
                 const results: boolean[] = [];
                 if (value === 'Get File' || value === 'Collected') { for (const id of orderIds) results.push(await saveOne(id)); } else { results.push(...await Promise.all(orderIds.map(saveOne))); }
                 notSaved = results.filter(ok => !ok).length;
+                if (batchNotices.length > 0) {
+                    const unique = Array.from(new Set(batchNotices));
+                    const shown = unique.slice(0, 10);
+                    const more = unique.length - shown.length;
+                    alert(tx('ui.orders.bulk.noticesHeader', 'Notes from this bulk change ({n}):', { n: unique.length }) + '\n\n' + shown.join('\n\n')
+                        + (more > 0 ? '\n\n' + tx('ui.orders.bulk.noticesMore', '… and {n} more. Posted receipts stay as they are — book the moves in Journal Entries.', { n: more }) : ''));
+                }
             }
             const savedCount = orderIds.length - notSaved;
             await logActivity('bulk_edit', `Bulk edited ${savedCount} order(s): ${field}`, currentUser?.id, currentUser?.name, { count: savedCount, field, value });

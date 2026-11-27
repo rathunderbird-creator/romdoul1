@@ -402,6 +402,22 @@ AS $$
          WHERE c.id::TEXT = '1' AND lower(btrim(x)) = lower(btrim(p_company)));
 $$;
 
+-- Whether entering Collected books the COD receipt (Dr 1210/1220 / Cr
+-- revenue) at once. Sales Setup › Sales Payment can turn that off
+-- (salesSettings.collectedStatusOnly = true): Collected is then a plain
+-- tracking status — nothing books until the order turns Paid — the
+-- pre-Collected-booking behavior. Orders booked while it was on keep
+-- their receipts (sales.cod_collected marks them) and settle the booked
+-- way. The app's twin gate is utils/getFileSave getFileAsksAmount.
+CREATE OR REPLACE FUNCTION wp_internal.op_collected_books_cod()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT NOT COALESCE((SELECT (c.data->'salesSettings'->>'collectedStatusOnly')::BOOLEAN
+                           FROM app_config c WHERE c.id::TEXT = '1'), false);
+$$;
+
 -- Whether a Pay By is one of Sales Setup › Pay By's "COD payment methods"
 -- (app_config.data.codPaymentMethods, names compared case- and
 -- space-insensitively). With the key never saved, a Method named COD. The
@@ -1310,12 +1326,26 @@ BEGIN
     -- or Get File for a courier ticked in Sales Setup (op_get_file_books_cod
     -- decides when an order ENTERS Get File; once booked, get_file_booked
     -- keeps it settled even if the courier is unticked later).
-    v_cur_settled := wp_internal.op_is_settled(v_cur, s.get_file_booked);
-    -- Collected (the courier collected the customer's money) is always
-    -- booked as COD, whatever the courier's Sales Setup tick says.
-    v_tgt_settled := v_target IN ('Paid', 'Settled', 'Paid/Settled', 'Collected')
+    -- A Collected order counts as settled only when its receipt was really
+    -- booked — cod_collected marks that (every booking writes it below).
+    -- With Collected bookings turned off in Sales Setup, new Collected
+    -- orders carry false and stay unsettled; orders booked before the
+    -- switch keep true and settle the booked way.
+    v_cur_settled := wp_internal.op_is_settled(v_cur, s.get_file_booked)
+        AND (v_cur <> 'Collected' OR COALESCE(s.cod_collected, false));
+    -- Collected (the courier collected the customer's money) is booked as
+    -- COD, whatever the courier's Sales Setup tick says — unless Sales
+    -- Setup turned Collected bookings off (op_collected_books_cod).
+    v_tgt_settled := v_target IN ('Paid', 'Settled', 'Paid/Settled')
+        OR (v_target = 'Collected' AND wp_internal.op_collected_books_cod())
         OR (v_target = 'Get File' AND CASE WHEN v_cur = 'Get File' THEN v_cur_settled
                                            ELSE wp_internal.op_get_file_books_cod(COALESCE(NULLIF(u->>'shipping_company', ''), s.shipping_company)) END);
+    -- A booked Collected re-saved as Collected while bookings are off: the
+    -- receipt stands (only Paid, Unpaid or Cancel moves it) — settled, so a
+    -- mere re-save never unbooks it.
+    IF v_cur = 'Collected' AND v_target = 'Collected' AND v_cur_settled THEN
+        v_tgt_settled := true;
+    END IF;
     v_entering_paid := v_tgt_settled AND NOT v_cur_settled;
     v_leaving_paid := v_target_given AND NOT v_tgt_settled AND v_cur_settled;
     -- Only a settlement is ever COD: a deposit, a delivery fee or a cancel
@@ -1367,9 +1397,12 @@ BEGIN
         END IF;
         u := u - 'settle_date';
     END IF;
-    IF v_leaving_paid AND v_cur IN ('Get File', 'Collected') THEN
+    IF v_leaving_paid AND (v_cur IN ('Get File', 'Collected') OR v_target = 'Collected') THEN
         -- A booked Get File / Collected taken back (Unpaid, Cancel, ...): its receipt is
-        -- removed below and the order is no longer the courier's.
+        -- removed below and the order is no longer the courier's. Landing on
+        -- an UNBOOKED Collected (bookings off) clears the flag too — the
+        -- receipt is gone, so the marker must not read as still booked, or a
+        -- later Paid would book nothing.
         v_cod := false;
     END IF;
     -- Who holds the COD money (p_updates.cod_holder: 'courier' /
@@ -1940,9 +1973,12 @@ DECLARE
     v_today DATE := COALESCE(NULLIF(p_fields->>'today', '')::DATE, CURRENT_DATE);
     r RECORD;
 BEGIN
-    FOR r IN SELECT id, payment_status, get_file_booked FROM sales WHERE id = ANY(p_ids) ORDER BY id FOR NO KEY UPDATE
+    FOR r IN SELECT id, payment_status, get_file_booked, cod_collected FROM sales WHERE id = ANY(p_ids) ORDER BY id FOR NO KEY UPDATE
     LOOP
-        IF wp_internal.op_is_settled(r.payment_status, r.get_file_booked) THEN
+        -- Same marker rule as set_order_payment: a Collected order has
+        -- income to remove only when its receipt was really booked.
+        IF wp_internal.op_is_settled(r.payment_status, r.get_file_booked)
+           AND (r.payment_status <> 'Collected' OR COALESCE(r.cod_collected, false)) THEN
             v_paid := v_paid || r.id;
             v_res := wp_internal.op_remove_paid_income(r.id, v_today);
             v_removed := v_removed || (v_res->'removed');
@@ -1993,6 +2029,7 @@ GRANT EXECUTE ON FUNCTION wp_internal.op_reverse_booked_cogs(TEXT, DATE) TO anon
 GRANT EXECUTE ON FUNCTION wp_internal.op_cod_account() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_cod_account(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_cod_method(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION wp_internal.op_collected_books_cod() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_receipt_entry(TEXT, DATE, TEXT, UUID, NUMERIC, UUID, TEXT, TEXT, TEXT, BOOLEAN, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_repoint_receipt_debit(TEXT, BOOLEAN, UUID, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION wp_internal.op_post_cogs_only(TEXT, DATE, TEXT) TO anon, authenticated;

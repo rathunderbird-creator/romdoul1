@@ -1020,7 +1020,7 @@ async function paidMoneyOf(orderId: string, kind: PaymentKind, bookedUsd: number
 const Orders: React.FC = () => {
     console.log('Orders render');
     // (Move refs below state declarations)
-    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods, rejectionReasons, courierDeliveryTypes, customerGroups, customerGroupMembers, setCustomerGroup, khrExchangeRate } = useStore();
+    const { sales, updateOrderStatus, updateOrder, updateOrders, deleteOrders, editingOrder, setEditingOrder, pinnedOrderColumns, importOrders, bulkRestockOrders, hasPermission, users, shippingCompanies, pages, refreshData, currentUser, salesUpdatedAt, loadMoreOrders, hasMoreOrders, isLoadingMore, blockedCustomers, addBlockedCustomer, addBlockedCustomers, removeBlockedCustomer, removeBlockedCustomers, addOnlineOrder, trackingUrlTemplates, codPaymentMethods, rejectionReasons, courierDeliveryTypes, customerGroups, customerGroupMembers, setCustomerGroup, khrExchangeRate, salesSettings } = useStore();
     const { t } = useLanguage();
     // Carrier tracking: cached statuses for the rows on screen + on-demand lookups.
     const { trackingMap, isTracking, loadCached, trackOrders } = useShipmentTracking();
@@ -3049,7 +3049,9 @@ const Orders: React.FC = () => {
                         individualUpdates.amountReceived = order.depositAmount || 0;
                         // Paid taken back to Collected: the receipt's debit
                         // moves back to 1210 (the courier holds it again).
-                        if (value === 'Collected') individualUpdates.codCollected = true;
+                        // Not with "Collected is a plain status" on — nothing
+                        // books, so nothing is the courier's either.
+                        if (value === 'Collected' && !salesSettings.collectedStatusOnly) individualUpdates.codCollected = true;
                         individualUpdates.settleDate = null as any;
                     } else if (value === 'Cancel' || value === 'Unpaid') {
                         individualUpdates.amountReceived = 0;
@@ -4285,7 +4287,7 @@ const Orders: React.FC = () => {
                                                 void openPaymentForm(order, 'Paid');
                                                 return;
                                             } else if (status === 'Get File' || status === 'Collected') {
-                                                if (getFileAsksAmount(order, status)) setGetFileTarget({ order, status });
+                                                if (getFileAsksAmount(order, status, salesSettings.collectedStatusOnly)) setGetFileTarget({ order, status });
                                                 else moveToGetFile(order, status);
                                                 return;
                                             } else {
@@ -4729,7 +4731,7 @@ const Orders: React.FC = () => {
                                                                                     void openPaymentForm(order, 'PdFee');
                                                                                     return;
                                                                                 } else if (newStatus === 'Get File' || newStatus === 'Collected') {
-                                                                                    if (getFileAsksAmount(order, newStatus)) setGetFileTarget({ order, status: newStatus });
+                                                                                    if (getFileAsksAmount(order, newStatus, salesSettings.collectedStatusOnly)) setGetFileTarget({ order, status: newStatus });
                                                                                     else moveToGetFile(order, newStatus);
                                                                                     return;
                                                                                 } else if (newStatus === 'Cancel') {
