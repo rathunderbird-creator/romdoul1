@@ -436,7 +436,7 @@ export interface StoreContextType {
 
     // Sales Setup › Defaults; '' clears a field.
     salesSettings: SalesSettings;
-    updateSalesSetting: (key: keyof SalesSettings, value: string) => Promise<void>;
+    updateSalesSetting: (key: keyof SalesSettings, value: string | boolean) => Promise<void>; // false/'' unsets the key (absent = the default)
 
     // Warehouses
     warehouses: Warehouse[];
@@ -677,6 +677,12 @@ export interface SalesSettings {
     // for orders with no stored holder — utils/cashBankAccounts
     // defaultCodHolderFor. Get File bookings stay on the courier's 1210.
     statusAccountCollected?: string;
+    // true: Collected is a plain tracking status again — no "Money held by"
+    // popup, no COD receipt, no journal entry; the money books once, when
+    // the order turns Paid (the pre-Collected-booking behavior). The server
+    // twin is wp_internal.op_collected_books_cod; orders booked before the
+    // switch keep their receipts and settle the booked way.
+    collectedStatusOnly?: boolean;
     // Days a new quotation stays valid (CRM › Quotations pre-fills its
     // Valid until); a whole number 1–365 as text, see quotationValidity.ts.
     quotationValidityDays?: string;

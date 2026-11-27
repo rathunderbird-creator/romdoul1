@@ -306,7 +306,7 @@ const DepositAccountDefaults: React.FC<{ fieldId: (name: string) => string }> = 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                 {rows.map(r => {
                     const list = cashBank.filter(a => isKhrAccountName(a.account_name) === r.khr);
-                    const current = salesSettings[r.key] || '';
+                    const current = String(salesSettings[r.key] || '');
                     // A saved account that was removed or deactivated reads as
                     // Automatic (the posting helpers ignore it the same way).
                     const value = list.some(a => a.id === current) ? current : '';
@@ -411,6 +411,19 @@ const StatusAccountsBlock: React.FC<{ fieldId: (name: string) => string }> = ({ 
                             </div>
                         );
                     })()}
+                    {/* The old, pre-booking behavior on request: Collected as
+                        a plain tracking status. The server twin reading this
+                        is wp_internal.op_collected_books_cod. */}
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', fontSize: '13px', color: 'var(--color-text-main)', cursor: 'pointer' }}>
+                        <input
+                            type="checkbox"
+                            checked={!!salesSettings.collectedStatusOnly}
+                            onChange={e => updateSalesSetting('collectedStatusOnly', e.target.checked).catch((err: unknown) => showToast(fill(t('ui.admin.salesSetup.saveFailed'),
+                                { error: (err as Error)?.message || t('ui.admin.salesSetup.unknownError') }), 'error'))}
+                        />
+                        <span>{t('ui.admin.salesSetup.collectedStatusOnly')}</span>
+                    </label>
+                    <div style={{ ...helpStyle, marginTop: '4px' }}>{t('ui.admin.salesSetup.collectedStatusOnlyHint')}</div>
                     <div style={{ ...helpStyle, marginTop: '8px' }}>{t('ui.admin.salesSetup.statusAccountsCod')}</div>
                 </section>
             </div>
