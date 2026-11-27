@@ -4762,8 +4762,13 @@ const Orders: React.FC = () => {
                                                                 if (order.paymentStatus === 'Collected') {
                                                                     const pending = collectedPending(order);
                                                                     // The riel the courier collected (the settle rows);
-                                                                    // the deposit's riel stays under Received.
-                                                                    const riel = rielOfKinds(order, ['Paid']);
+                                                                    // the deposit's riel stays under Received. An
+                                                                    // UNBOOKED Collected (Sales Setup's plain-status
+                                                                    // switch) has no income row to carry the riel —
+                                                                    // the popup stored it on the order instead.
+                                                                    const orderKhr = !order.codCollected ? Math.round(Number(order.customKhrAmount) || 0) : 0;
+                                                                    const riel = rielOfKinds(order, ['Paid'])
+                                                                        ?? (orderKhr > 0 ? { text: formatKhr(orderKhr), title: formatKhr(orderKhr) } : null);
                                                                     return (
                                                                         <td key={colId} title={riel?.title} style={{ ...cellStyle, color: pending > 0 ? '#DC2626' : '#059669', textAlign: 'right' }}>
                                                                             ${pending.toFixed(2)}
