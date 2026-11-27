@@ -239,7 +239,7 @@ const PaymentTracking: React.FC = () => {
                 const allowedIds = ids.filter(id => {
                     const order = serverOrders.find(s => s.id === id);
                     const refusal = settleDateChangeRefusal(
-                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked },
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked, codCollected: order?.codCollected },
                         { isAdmin, canRestock }
                     );
                     if (refusal) { lastReason = refusal; notSaved++; return false; }
@@ -281,7 +281,7 @@ const PaymentTracking: React.FC = () => {
 
                     // ORD-9: a non-admin can't bulk-unpay or bulk-cancel Paid orders.
                     const refusal = paymentChangeRefusal(
-                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus, getFileBooked: order.getFileBooked },
+                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus, getFileBooked: order.getFileBooked, codCollected: order.codCollected },
                         value,
                         { isAdmin, canRestock }
                     );

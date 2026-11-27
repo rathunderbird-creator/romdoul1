@@ -15,8 +15,13 @@ export interface OrderStatusView {
     paymentStatus?: string | null;
     // A Get File whose receipt was booked as COD (Sales Setup's ticked
     // couriers): its receipt is on the books, so it locks like Paid.
-    // (Collected is always booked as COD, so needs no marker.)
     getFileBooked?: boolean | null;
+    // A Collected whose receipt was really booked (sales.cod_collected —
+    // every booking writes it). With Sales Setup's "Collected is a plain
+    // status" switch on, a new Collected books nothing and the marker stays
+    // false: such an order is NOT courier-booked (marking it Paid settles
+    // through the normal Settle form, and nothing is locked).
+    codCollected?: boolean | null;
 }
 
 /**
@@ -35,12 +40,13 @@ export const isBookedGetFile = (order: OrderStatusView): boolean =>
 
 /**
  * An order whose receipt is on the books as the courier's COD: a booked Get
- * File, or Collected (the courier collected the customer's money — always
- * booked as COD receivable, add_order_payment_functions.sql). Marking it Paid
- * books nothing more: the courier's remittance is Accounting › COD Remittances.
+ * File, or a BOOKED Collected (cod_collected — set by every booking,
+ * add_order_payment_functions.sql; a plain-status Collected books nothing
+ * and stays out). Marking a booked one Paid books nothing more: the
+ * courier's remittance is Accounting › COD Remittances.
  */
 export const isCourierBooked = (order: OrderStatusView): boolean =>
-    isBookedGetFile(order) || order.paymentStatus === 'Collected';
+    isBookedGetFile(order) || (order.paymentStatus === 'Collected' && !!order.codCollected);
 
 // The ways forward out of a courier-booked order: Collected (from a booked
 // Get File) and Paid when the courier remits. The database books nothing more

@@ -67,7 +67,7 @@ const OrdersManagement2Page: React.FC = () => {
         if (enforceRules) {
             const order = data.orders.find(o => o.id === edit.orderId) || data.rangeOrders.find(o => o.id === edit.orderId);
             const actor = { isAdmin: currentUser?.roleId === 'admin', canRestock: hasPermission('restock_orders') };
-            const view = { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked };
+            const view = { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked, codCollected: order?.codCollected };
             const refusal =
                 (edit.orderStatus !== undefined && edit.orderStatus !== order?.shipping?.status
                     ? statusChangeRefusal(view, edit.orderStatus, actor) : null)
@@ -267,7 +267,7 @@ const OrdersManagement2Page: React.FC = () => {
                     // Already there: fill in a missing reason, never replace one.
                     if (order?.shipping?.status === value) { if (!(order?.returnReason || '').trim()) atTarget.push(id); continue; }
                     const refusal = statusChangeRefusal(
-                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked },
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked, codCollected: order?.codCollected },
                         value,
                         actor
                     );
@@ -298,7 +298,7 @@ const OrdersManagement2Page: React.FC = () => {
                 const allowedIds = orderIds.filter(id => {
                     const order = data.orders.find(o => o.id === id) || data.rangeOrders.find(o => o.id === id);
                     const refusal = settleDateChangeRefusal(
-                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked },
+                        { shippingStatus: order?.shipping?.status, paymentStatus: order?.paymentStatus, getFileBooked: order?.getFileBooked, codCollected: order?.codCollected },
                         actor
                     );
                     if (refusal) { lastReason = refusal; notSaved++; return false; }
@@ -317,7 +317,7 @@ const OrdersManagement2Page: React.FC = () => {
                     if (!order) return Promise.resolve(true);
                     // ORD-9: a non-admin can't bulk-unpay or bulk-cancel Paid orders.
                     const refusal = paymentChangeRefusal(
-                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus, getFileBooked: order.getFileBooked },
+                        { shippingStatus: order.shipping?.status, paymentStatus: order.paymentStatus, getFileBooked: order.getFileBooked, codCollected: order.codCollected },
                         value,
                         actor
                     );
